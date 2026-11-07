@@ -1,10 +1,7 @@
 /* ============================================================
-   Self-hosted webfonts for the Prompting for Attorneys course.
-   Only the two canonical primaries are included:
-     • Libre Franklin — body + display (variable, 100–900)
-     • Roboto Mono    — labels, wordmark, code (variable, 100–700)
-   Source: @fontsource-variable 5.3.0, Latin subset.
+   Webfonts for the Prompting for Attorneys course (VT copy).
+   Served from Google Fonts CDN — val.town vals are text-only,
+   so the self-hosted woff2 files cannot ship inside the val.
    ============================================================ */
 
-@font-face{font-family:'Libre Franklin';font-style:normal;font-weight:100 900;font-display:swap;src:url("../fonts/libre-franklin.woff2") format('woff2');}
-@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:100 700;font-display:swap;src:url("../fonts/roboto-mono.woff2") format('woff2');}
+@import url("https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@100..900&family=Roboto+Mono:wght@100..700&display=swap");

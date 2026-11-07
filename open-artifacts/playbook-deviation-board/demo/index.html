@@ -130,7 +130,7 @@ a {
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
-  @media (min-width: var(--bp-mobile)) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
+  @media (min-width: 768px) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
   .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
   h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
@@ -256,6 +256,6 @@ a {
   document.getElementById("mdBtn").onclick = () => download("board.md", renderBoard(board), "text/markdown");
   document.getElementById("jsonBtn").onclick = () => download("board-output.json", JSON.stringify(board, null, 2) + "\n", "application/json");
 </script>
-<style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>
-<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');var filled=out&&out.innerText.trim().length>40;if(filled)return;var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(x.textContent)});if(b)b.click()}catch(e){}});</script></body>
+<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
+<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>
