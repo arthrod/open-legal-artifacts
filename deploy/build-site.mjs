@@ -97,15 +97,26 @@ if (existsSync(distIndex)) {
   console.log(`site/index.html (${(statSync(join(SITE, "index.html")).size / 1024).toFixed(1)} KB)`);
 }
 
-// 2) artifact demos
-const OA = join(ROOT, "open-artifacts");
+// 2) artifact demos — open reimplementations AND originals with demos
+const demoRoots = [join(ROOT, "open-artifacts"), join(ROOT, "artifacts")];
 let n = 0, oversized = 0;
-for (const entry of readdirSync(OA)) {
-  const demo = join(OA, entry, "demo", "index.html");
-  if (!statSync(join(OA, entry)).isDirectory() || !existsSync(demo)) continue;
-  const html = decorate(bundle(demo));
-  writeFileSync(join(SITE, `${entry}.html`), html);
-  if (html.length > 78_000) { oversized++; console.warn(`  ⚠ ${entry}: ${(html.length / 1024).toFixed(1)} KB — near the 80KB val file cap`); }
-  n++;
+const seen = new Set();
+for (const OA of demoRoots) {
+  if (!existsSync(OA)) continue;
+  for (const entry of readdirSync(OA)) {
+    const demo = join(OA, entry, "demo", "index.html");
+    if (!statSync(join(OA, entry)).isDirectory() || !existsSync(demo) || seen.has(entry)) continue;
+    seen.add(entry);
+    let html = decorate(bundle(demo));
+    if (html.length > 78_000) {
+      oversized++;
+      // over the VT 80KB/file cap: drop the ~30KB base64 Departure Mono woff2;
+      // --font-mono falls back to JetBrains Mono / ui-monospace
+      html = html.replace(/@font-face\s*\{[^}]*Departure Mono[^}]*\}/g, "");
+      console.warn(`  ⚠ ${entry}: ${(html.length / 1024).toFixed(1)} KB → font stripped (${(html.length / 1024).toFixed(1)} KB)`);
+    }
+    writeFileSync(join(SITE, `${entry}.html`), html);
+    n++;
+  }
 }
 console.log(`site: ${n} artifact pages${oversized ? ` (${oversized} oversized)` : ""}`);

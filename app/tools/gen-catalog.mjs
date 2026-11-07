@@ -36,8 +36,10 @@ const ORIGINALS = [
     tagline:
       "Structured law-firm intake: narrative → AI-proposed questions with suggested answers → human review → matter summary, conflict-party list, urgency flags. Fail-closed validation.",
     repoDir: "artifacts/client-intake",
+    demoPage: "open-artifacts/client-intake/demo/index.html",
     links: [
-      { label: "Live demo", url: "https://arthrod--bf6161ba-d937-11f1-a5d4-1607ee4eb77e.web.val.run/" },
+      { label: "Interactive demo", url: "open-artifacts/client-intake/demo/index.html" },
+      { label: "Live app", url: "https://arthrod--bf6161ba-d937-11f1-a5d4-1607ee4eb77e.web.val.run/" },
       { label: "Val Town source", url: "https://www.val.town/x/arthrod/client-intake" },
     ],
   },
@@ -47,8 +49,10 @@ const ORIGINALS = [
     tagline:
       "Pasted or uploaded agreement → ACC-style playbook draft (preferred / fallbacks / avoid, risk RYG, escalation) with source-quote verification behind every term.",
     repoDir: "artifacts/contracts-playbook",
+    demoPage: "open-artifacts/contracts-playbook/demo/index.html",
     links: [
-      { label: "Live demo", url: "https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/" },
+      { label: "Interactive demo", url: "open-artifacts/contracts-playbook/demo/index.html" },
+      { label: "Live app", url: "https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/" },
       { label: "Val Town source", url: "https://www.val.town/x/arthrod/playbook-from-doc" },
     ],
   },
@@ -58,8 +62,10 @@ const ORIGINALS = [
     tagline:
       "Ten-lesson interactive course teaching lawyers to write verifiable prompts — schema-first, with documented fallbacks. Static site, no dependencies.",
     repoDir: "artifacts/prompting-for-attorneys",
+    demoPage: "open-artifacts/prompting-for-attorneys/demo/index.html",
     links: [
-      { label: "Live", url: "https://www.val.town/x/arthrod/prompting-for-attorneys" },
+      { label: "Open the course", url: "open-artifacts/prompting-for-attorneys/demo/index.html" },
+      { label: "On Val Town", url: "https://www.val.town/x/arthrod/prompting-for-attorneys" },
     ],
   },
   {
@@ -68,7 +74,9 @@ const ORIGINALS = [
     tagline:
       "Portuguese (pt-BR) PII detection under the LGPD: GLiNER fine-tune + OpenAI Privacy Filter fine-tune, benchmark dataset, Hugging Face demos.",
     repoDir: "artifacts/pii-ptbr-lgpd",
+    demoPage: "open-artifacts/pii-ptbr-lgpd/demo/index.html",
     links: [
+      { label: "Interactive demo (rules-based)", url: "open-artifacts/pii-ptbr-lgpd/demo/index.html" },
       { label: "HF demo · GLiNER", url: "https://huggingface.co/spaces/arthrod/gliner-ptbr-pii-demo" },
       { label: "HF demo · OPF", url: "https://huggingface.co/spaces/arthrod/gliner-opf-ptbr-pii-demo" },
     ],

@@ -1,0 +1,7 @@
+/* ============================================================
+   Webfonts for the Prompting for Attorneys course (VT copy).
+   Served from Google Fonts CDN — val.town vals are text-only,
+   so the self-hosted woff2 files cannot ship inside the val.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@100..900&family=Roboto+Mono:wght@100..700&display=swap");

@@ -1,0 +1,24 @@
+/* lesson layout */
+.lesson{display:grid;grid-template-columns:240px minmax(0,1fr);gap:clamp(32px,5vw,80px);padding-top:clamp(28px,4vw,56px);padding-bottom:120px}
+.rail{position:sticky;top:84px;align-self:start}
+.rail .mono{color:var(--muted);margin-bottom:14px;display:block}
+.rail ol{list-style:none;border-top:1px solid var(--faint)}
+.rail li a{display:grid;grid-template-columns:28px 1fr 14px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--faint);font-size:15px;color:var(--muted);transition:color var(--t-fast)}
+.rail li a:hover{color:var(--ink)}
+.rail li a .n{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.06em}
+.rail li a .d{width:9px;height:9px;border:1px solid var(--ink);justify-self:end}
+.rail li.done a .d{background:var(--mark);border-color:var(--mark)}
+.rail li.cur a{color:var(--ink);font-weight:600}
+.rail li.cur a .d{background:var(--ink)}
+.rail .back{margin-top:20px;display:inline-block;color:var(--muted)}
+.rail .back:hover{color:var(--ink)}
+.art{max-width:760px}
+.art .eyebrow{display:flex;gap:18px;flex-wrap:wrap}
+.art .eyebrow span+span::before{content:"·";margin-right:18px;color:var(--faint)}
+.art h1{font-size:var(--fs-display);font-weight:var(--display-weight);line-height:1.02;letter-spacing:-.025em}
+.art .one{font-size:var(--fs-lede);line-height:1.5;color:var(--ink-soft);margin-top:22px;max-width:56ch;padding-left:20px;border-left:3px solid var(--mark)}
+.sec{margin-top:clamp(44px,6vw,72px)}
+.sec>.lab{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.sec>.lab .mono{color:var(--ink)}
+.sec>.lab .mono.r{color:var(--muted)}
+.situation{border:1px solid var(--ink);padding:22px 24px;font-size:var(--fs-lede);line-height:1.45;background:var(--surface)}

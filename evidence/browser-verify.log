@@ -1,3 +1,8 @@
 /a/limitations-radar: title=Limitations Radar — open legal artifact markers=CLM-101+filed_timely bodyLen=1704
 /a/cite-check: title=Cite check — open artifact markers=EXACT+NOT_FOUND bodyLen=5029
 /a/privilege-log-builder: title=Privilege Log Builder — open legal artifact markers=attorney-client+work-product bodyLen=1996
+/a/client-intake: load=true interactive=true bodyLen=1664
+/a/contracts-playbook: load=true interactive=true bodyLen=16208
+/a/pii-ptbr-lgpd: load=true interactive=false bodyLen=3555
+/a/prompting-for-attorneys: load=false interactive=true bodyLen=313
+url: https://arthrod--4075ab70dae211f1929a1607ee4eb77e.web.val.run/course/ | bodyLen: 2382 | lessons: true | title: Prompting for Attorneys — Arthur Souza Rodrigues

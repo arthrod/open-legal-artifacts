@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Client intake — open artifact demo</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 56px var(--pad-x-mobile) 96px; }
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
+  .lede { color: var(--text-secondary); max-width: 68ch; line-height: 1.6; margin: 0 0 10px; }
+  .simlabel { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; border: var(--hairline); display: inline-block; padding: 3px 8px; margin: 6px 0 0; color: var(--text-secondary); }
+  .steps { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: var(--hairline); margin: 28px 0 0; }
+  .steps div { flex: 1 1 120px; background: #fff; padding: 8px 12px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; color: var(--text-secondary); }
+  .steps div.on { color: var(--text); box-shadow: inset 0 -4px 0 var(--accent); }
+  h2 { font-family: var(--font-mono); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 0 0 2px; }
+  .card { background: #fff; border: var(--hairline); padding: 20px; margin-bottom: 16px; }
+  .notes { color: var(--text-secondary); font-size: 12.5px; }
+  .optgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); }
+  .opt { background: #fff; padding: 14px; cursor: pointer; text-align: left; border: 0; font: inherit; }
+  .opt .l { font-weight: 600; font-size: 14px; }
+  .opt .b { color: var(--text-secondary); font-size: 12.5px; margin-top: 2px; }
+  .opt.on { box-shadow: inset 0 0 0 2px var(--text); }
+  .opt.on .l { background: linear-gradient(transparent 55%, var(--accent) 55%); }
+  label { font-size: 13px; font-weight: 600; display: block; margin: 14px 0 4px; }
+  label .req { color: var(--text-secondary); font-weight: 400; }
+  input[type=text], textarea { width: 100%; box-sizing: border-box; font-family: var(--font-body); font-size: 14px; border: var(--hairline); background: #fff; padding: 9px 10px; }
+  input[type=date] { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: #fff; padding: 8px 10px; }
+  textarea { min-height: 96px; resize: vertical; }
+  input:focus, textarea:focus { outline: 2px solid var(--text); outline-offset: -1px; }
+  button.primary { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
+  button.ghost { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; color: var(--text); padding: 8px 14px; cursor: pointer; }
+  button.ghost:hover { background: var(--hover); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .err { border: 2px solid var(--text); background: var(--accent); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin-top: 12px; display: none; }
+  .q { background: #fff; border: var(--hairline); padding: 16px; margin-bottom: 10px; }
+  .q .head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .q .id { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+  .tag { font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--text); padding: 1px 7px; white-space: nowrap; }
+  .tag.edited { background: var(--accent); border-color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-family: var(--font-mono); font-size: 11.5px; border: var(--hairline); background: #fff; padding: 4px 9px; cursor: pointer; }
+  .chip.on { border-color: var(--text); background: var(--text); color: var(--bg); }
+  .banner { border: var(--hairline); border-left: 4px solid var(--accent); background: #fff; padding: 10px 14px; font-size: 13px; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 7px 10px; }
+  td { border-bottom: var(--hairline); padding: 7px 10px; vertical-align: top; }
+  tr:hover td { background: var(--hover); }
+  .ref { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.04em; margin: 6px 0 18px; }
+  .ref b { background: linear-gradient(transparent 60%, var(--accent) 60%); }
+  pre, textarea.json { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 11.5px; border: var(--hairline); background: #fff; padding: 12px; white-space: pre-wrap; word-break: break-word; }
+  textarea.json { min-height: 200px; resize: vertical; }
+  .summarybox { border: var(--hairline); background: #fff; padding: 14px 16px; font-size: 14px; line-height: 1.65; }
+  .oknote { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 6px; display: none; }
+  .disclaimer { color: var(--text-secondary); font-size: 11.5px; max-width: 70ch; margin-top: 28px; line-height: 1.6; }
+  section[hidden] { display: none; }
+  ol.plain { padding-left: 20px; font-size: 13.5px; }
+  ol.plain li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Client intake</h1>
+  <div class="rule"></div>
+  <p class="lede">A guided legal client intake that turns a plain-language description into a structured intake the firm can act on: proposed questions with suggested answers, a conflict-check party list, and urgency / deadline flags.</p>
+  <p class="simlabel">deterministic simulation of the live app — no LLM, no network · all data fictional</p>
+  <div class="steps" id="rail"></div>
+
+  <!-- ============================== 1 · start -->
+  <section id="s-start">
+    <h2>1 · Who is filling this out</h2>
+    <div class="optgrid" id="personas"></div>
+
+    <h2>Matter area</h2>
+    <div class="optgrid" id="areas"></div>
+
+    <h2>What's going on</h2>
+    <div class="card">
+      <label for="f-name">Name <span class="req">(optional — seeds the name suggestion)</span></label>
+      <input type="text" id="f-name" autocomplete="off" />
+      <label for="f-narrative">Describe what's going on <span class="req">(a sentence or two, fictional)</span></label>
+      <textarea id="f-narrative">My landlord is trying to evict me after I withheld part of one rent payment because repairs were ignored for months. There is a court date on 2026-11-18. I want to stay in my apartment.</textarea>
+      <div class="actions">
+        <button class="primary" id="btn-start">Propose the intake questions →</button>
+      </div>
+      <div class="err" id="err-start"></div>
+      <p class="notes" style="margin-top:10px">In the live app this calls <code>/api/elicit-intake</code> (gpt-5-nano, strict JSON). Here the proposal comes from the area's rules catalog in <code>core.js</code>.</p>
+    </div>
+  </section>
+
+  <!-- ============================== 2 · proposal -->
+  <section id="s-questions" hidden>
+    <h2>2 · Proposed questions <span style="text-transform:none; letter-spacing:0">— the simulated AI proposal</span></h2>
+    <div class="card">
+      <h3 id="q-intro"></h3>
+      <p class="notes" id="q-empathy" style="margin-top:6px"></p>
+      <div class="banner" id="q-urgency" hidden></div>
+      <div id="q-list"></div>
+      <div class="actions">
+        <button class="ghost" id="btn-back-q">← Back</button>
+        <button class="primary" id="btn-review">Review &amp; edit answers →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 3 · review -->
+  <section id="s-review" hidden>
+    <h2>3 · Review — accept or rewrite each answer</h2>
+    <div class="card">
+      <p class="notes" style="margin-bottom:12px">Every answer starts as the suggested draft. Edit anything; the tag flips from <span class="tag">draft accepted</span> to <span class="tag edited">rewritten</span>.</p>
+      <div id="r-list"></div>
+      <div class="actions">
+        <button class="ghost" id="btn-back-r">← Back</button>
+        <button class="primary" id="btn-finalize">Build the firm summary →</button>
+      </div>
+      <div class="err" id="err-review"></div>
+    </div>
+  </section>
+
+  <!-- ============================== 4 · confirm gate -->
+  <section id="s-confirm" hidden>
+    <h2>4 · Confirm — nothing is saved until you confirm</h2>
+    <div class="card">
+      <div class="banner">This mirrors the live app's confirm-before-record gate: the intake below is a preview only. It becomes a record when you submit it.</div>
+      <h3>Matter summary (firm-facing)</h3>
+      <div class="summarybox" id="c-summary" style="margin:8px 0 4px"></div>
+      <p class="notes" id="c-meta"></p>
+      <h3 style="margin-top:22px">Conflict-check parties</h3>
+      <div id="c-parties"></div>
+      <h3 style="margin-top:22px">Urgency flags</h3>
+      <div id="c-flags"></div>
+      <h3 style="margin-top:22px">What happens next</h3>
+      <ol class="plain" id="c-steps"></ol>
+      <div class="actions" id="c-actions">
+        <button class="ghost" id="btn-back-c">← Back to review</button>
+        <button class="primary" id="btn-confirm" data-sure="0">Submit this intake →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 5 · record -->
+  <section id="s-saved" hidden>
+    <h2>5 · Firm record</h2>
+    <div class="card" style="text-align:center">
+      <p class="notes" style="text-transform:uppercase; letter-spacing:0.1em">Demo finished — reference number</p>
+      <div class="ref" id="ref"></div>
+      <p class="notes" id="saved-note"></p>
+    </div>
+    <div class="card">
+      <h3>Matter summary</h3>
+      <div class="summarybox" id="f-summary" style="margin:8px 0"></div>
+      <p class="notes" id="f-meta"></p>
+      <h3 style="margin-top:20px">Conflict-check parties <span class="notes">(deterministic name-pattern extraction)</span></h3>
+      <div id="f-parties" style="margin-top:8px"></div>
+      <h3 style="margin-top:20px">Urgency</h3>
+      <div id="f-urgency" style="margin-top:8px"></div>
+      <h3 style="margin-top:20px">What happens next</h3>
+      <ol class="plain" id="f-steps" style="margin-top:8px"></ol>
+    </div>
+    <div class="card">
+      <h3>Confirmed record — copyable summary (Markdown)</h3>
+      <textarea class="json" id="out-md" spellcheck="false"></textarea>
+      <div class="oknote" id="md-copied">Copied to clipboard.</div>
+      <div class="actions">
+        <button class="ghost" data-copy="out-md">Copy summary</button>
+        <button class="ghost" data-dl="out-md">Download .md</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Confirmed record — JSON</h3>
+      <textarea class="json" id="out-json" spellcheck="false"></textarea>
+      <div class="oknote" id="json-copied">Copied to clipboard.</div>
+      <div class="actions">
+        <button class="ghost" data-copy="out-json">Copy JSON</button>
+        <button class="ghost" data-dl="out-json">Download .json</button>
+        <button class="primary" id="btn-again">Start a new intake</button>
+      </div>
+    </div>
+    <p class="disclaimer">This intake gathered information only. It is not legal advice and creates no attorney–client relationship until the firm accepts the matter. All names, parties and facts in this demo are fictional; the live app runs at arthrod--bf6161ba-d937-11f1-a5d4-1607ee4eb77e.web.val.run.</p>
+  </section>
+</div>
+
+<script type="module">
+import {
+  PERSONAS, AREAS, proposeQuestions, firstMissingRequired,
+  urgencyFlags, buildFirmSummary, confirmIntake, summaryText,
+} from '../core/core.js';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const today = new Date().toISOString().slice(0, 10);
+
+// The worked example is pinned to its own as-of date so its urgency flags are
+// reproducible whenever the page is opened.
+const EXAMPLE_AS_OF = '2026-11-07';
+const EXAMPLE_RAND = 0.5;
+
+// ---------------------------------------------------------------- state
+const state = {
+  stage: 'start',
+  persona: 'client',
+  area: null,
+  name: '',
+  narrative: '',
+  proposal: null,
+  answers: {},
+  asOf: today,
+};
+
+const STAGES = [
+  ['start', '1 · who & matter'],
+  ['questions', '2 · proposed questions'],
+  ['review', '3 · review & edit'],
+  ['confirm', '4 · confirm gate'],
+  ['saved', '5 · firm record'],
+];
+
+function renderRail() {
+  $('rail').innerHTML = STAGES.map(([id, label]) =>
+    `<div class="${state.stage === id ? 'on' : ''}">${label}</div>`).join('');
+}
+
+function show(stage) {
+  state.stage = stage;
+  for (const [id] of STAGES) $('s-' + id).hidden = id !== stage;
+  renderRail();
+  window.scrollTo({ top: 0 });
+}
+
+// ------------------------------------------------------------ step 1
+function renderStart() {
+  $('personas').innerHTML = PERSONAS.map((p) => `
+    <button class="opt ${state.persona === p.id ? 'on' : ''}" data-persona="${p.id}">
+      <div class="l">${esc(p.label)}</div><div class="b">${esc(p.blurb)}</div>
+    </button>`).join('');
+  $('areas').innerHTML = AREAS.map((a) => `
+    <button class="opt ${state.area === a.id ? 'on' : ''}" data-area="${a.id}">
+      <div class="l">${esc(a.label)}</div><div class="b">${esc(a.blurb)}</div>
+    </button>`).join('');
+  document.querySelectorAll('[data-persona]').forEach((b) =>
+    b.addEventListener('click', () => { state.persona = b.dataset.persona; renderStart(); }));
+  document.querySelectorAll('[data-area]').forEach((b) =>
+    b.addEventListener('click', () => { state.area = b.dataset.area; renderStart(); }));
+}
+
+$('btn-start').addEventListener('click', () => {
+  const err = $('err-start');
+  err.style.display = 'none';
+  state.name = $('f-name').value.trim();
+  state.narrative = $('f-narrative').value.trim();
+  if (!state.area) { err.textContent = 'Pick the kind of matter so we can ask the right questions.'; err.style.display = 'block'; return; }
+  if (state.narrative.length < 20) { err.textContent = 'Tell us a little more — a sentence or two about what\'s going on.'; err.style.display = 'block'; return; }
+  state.proposal = proposeQuestions(state.area, { contactName: state.name });
+  renderQuestions();
+  show('questions');
+});
+
+// ------------------------------------------------------------ step 2
+function partyTable(parties) {
+  if (!parties.length) return '<p class="notes">No recognizable names yet.</p>';
+  return `<table><thead><tr><th>Name</th><th>Kind</th><th>Role</th></tr></thead><tbody>
+    ${parties.map((p) => `<tr><td><strong>${esc(p.name)}</strong></td><td>${esc(p.kind)}</td><td>${esc(p.role)}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function flagsList(flags, level) {
+  if (!flags.length) return `<p class="notes">No rule-driven flags — self-reported level: ${esc(level)}.</p>`;
+  return `<table><thead><tr><th>Rule</th><th>Level</th><th>Reason</th></tr></thead><tbody>
+    ${flags.map((f) => `<tr><td><span class="tag edited">${esc(f.rule)}</span></td><td>${esc(f.level)}</td><td>${esc(f.reason)}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderQuestions() {
+  const p = state.proposal;
+  $('q-intro').textContent = p.intro + ' — ' + p.areaLabel;
+  $('q-empathy').textContent = state.persona === 'client' ? p.empathyNote : '';
+  // urgency banner: the same deterministic rules the finalize stage uses,
+  // applied to the proposed drafts (the app flags time-sensitivity at elicit).
+  const draftFlags = urgencyFlags(Object.fromEntries(p.questions.map((q) => [q.id, q.draft])), state.asOf);
+  const ub = $('q-urgency');
+  if (draftFlags.length) {
+    ub.hidden = false;
+    ub.innerHTML = '<strong>Time-sensitive:</strong> ' + draftFlags.map((f) => esc(f.reason)).join(' · ');
+  } else ub.hidden = true;
+  $('q-list').innerHTML = p.questions.map((q) => `
+    <div class="q">
+      <div class="head"><h3 style="margin:0">${esc(q.label)}${q.required ? ' *' : ''}</h3><span class="id">${esc(q.id)} · ${esc(q.type)}</span></div>
+      ${q.help ? `<p class="notes">${esc(q.help)}</p>` : ''}
+      <p class="notes" style="margin-top:8px">suggested draft: <span class="tag">${esc(draftDisplay(q))}</span></p>
+    </div>`).join('');
+}
+
+function draftDisplay(q) {
+  if (q.type === 'choice' && Array.isArray(q.options) && typeof q.options[0] === 'object') {
+    return q.options.find((o) => o.id === q.draft)?.label ?? q.draft;
+  }
+  return q.draft || '(empty)';
+}
+
+$('btn-back-q').addEventListener('click', () => show('start'));
+$('btn-review').addEventListener('click', () => {
+  state.answers = Object.fromEntries(state.proposal.questions.map((q) => [q.id, q.draft]));
+  renderReview();
+  show('review');
+});
+
+// ------------------------------------------------------------ step 3
+function renderReview() {
+  const p = state.proposal;
+  $('r-list').innerHTML = p.questions.map((q) => {
+    const val = state.answers[q.id] ?? '';
+    const edited = val !== q.draft;
+    const chips = (q.type === 'choice' && Array.isArray(q.options))
+      ? `<div class="chips">${q.options.map((o) => {
+          const oid = typeof o === 'object' ? o.id : o;
+          return `<button class="chip ${val === oid ? 'on' : ''}" data-q="${q.id}" data-val="${esc(oid)}">${esc(typeof o === 'object' ? o.label : o)}</button>`;
+        }).join('')}</div>`
+      : '';
+    const input = q.type === 'date'
+      ? `<input type="date" data-in="${q.id}" value="${esc(val)}" />`
+      : `<input type="text" data-in="${q.id}" value="${esc(val)}" autocomplete="off" />`;
+    return `
+    <div class="q">
+      <div class="head">
+        <h3 style="margin:0">${esc(q.label)}${q.required ? ' *' : ''}</h3>
+        <span>${edited ? `<span class="tag edited">rewritten</span> <button class="ghost" data-reset="${q.id}" style="padding:2px 8px">reset to draft</button>` : '<span class="tag">draft accepted</span>'}</span>
+      </div>
+      ${q.help ? `<p class="notes">${esc(q.help)}</p>` : ''}
+      ${input}
+      ${chips}
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-in]').forEach((el) =>
+    el.addEventListener('input', () => { state.answers[el.dataset.in] = el.value; renderReview(); }));
+  document.querySelectorAll('[data-q]').forEach((el) =>
+    el.addEventListener('click', () => { state.answers[el.dataset.q] = el.dataset.val; renderReview(); }));
+  document.querySelectorAll('[data-reset]').forEach((el) =>
+    el.addEventListener('click', () => {
+      const q = state.proposal.questions.find((x) => x.id === el.dataset.reset);
+      state.answers[q.id] = q.draft; renderReview();
+    }));
+}
+
+$('btn-back-r').addEventListener('click', () => show('questions'));
+$('btn-finalize').addEventListener('click', () => {
+  const err = $('err-review');
+  const miss = firstMissingRequired(state.proposal.questions, state.answers);
+  if (miss) { err.textContent = `"${miss.label}" is required — pick a suggestion or write your own.`; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  renderConfirm();
+  show('confirm');
+});
+
+// ------------------------------------------------------------ step 4
+function currentFirm() {
+  return buildFirmSummary(
+    { ...state.answers, matter_area: state.area, persona: state.persona },
+    state.asOf,
+  );
+}
+
+function renderConfirm() {
+  const firm = currentFirm();
+  $('c-summary').textContent = firm.summary;
+  $('c-meta').textContent = `Jurisdiction: ${firm.jurisdiction || 'unknown'} · Contact: ${firm.contact_method || 'unspecified'} — ${firm.contact_detail || 'unspecified'} · Urgency: ${firm.urgency.label}${firm.urgency.escalate ? ' (escalate to an attorney)' : ''}`;
+  $('c-parties').innerHTML = partyTable(firm.conflict_parties);
+  $('c-flags').innerHTML = flagsList(firm.urgency.flags, firm.urgency.label);
+  $('c-steps').innerHTML = firm.next_steps.map((s) => `<li>${esc(s)}</li>`).join('');
+  const btn = $('btn-confirm');
+  btn.dataset.sure = '0';
+  btn.textContent = 'Submit this intake →';
+}
+
+$('btn-back-c').addEventListener('click', () => show('review'));
+$('btn-confirm').addEventListener('click', () => {
+  const btn = $('btn-confirm');
+  if (btn.dataset.sure === '0') { // asking-sure, like the live app
+    btn.dataset.sure = '1';
+    btn.textContent = 'Really submit? Yes, create the record';
+    return;
+  }
+  const record = confirmIntake({
+    persona: state.persona,
+    matterArea: state.area,
+    narrative: state.narrative,
+    answers: state.answers,
+    asOf: state.asOf,
+    refRand: EXAMPLE_RAND,
+  });
+  renderSaved(record);
+  show('saved');
+});
+
+// ------------------------------------------------------------ step 5
+function renderSaved(record) {
+  $('ref').innerHTML = `<b>${esc(record.reference)}</b>`;
+  $('saved-note').textContent = `Confirmed on ${state.asOf}. In the live public demo this returns a DEMO- reference and stores nothing; with storage enabled the record is persisted to the firm's intake list.`;
+  $('f-summary').textContent = record.summary;
+  $('f-meta').textContent = `Matter: ${record.matter_area_label} · Jurisdiction: ${record.jurisdiction || 'unknown'} · Contact: ${record.contact_method || 'unspecified'} — ${record.contact_detail || 'unspecified'}`;
+  $('f-parties').innerHTML = partyTable(record.conflict_parties);
+  $('f-urgency').innerHTML =
+    `<div class="banner" style="margin:0">Level: <strong>${esc(record.urgency.label)}</strong>${record.urgency.escalate ? ' — flagged for attorney escalation' : ''}</div>` +
+    flagsList(record.urgency.flags, record.urgency.label);
+  $('f-steps').innerHTML = record.next_steps.map((s) => `<li>${esc(s)}</li>`).join('');
+  $('out-md').value = summaryText(record);
+  $('out-json').value = JSON.stringify(record, null, 2);
+}
+
+// copy / download helpers
+document.querySelectorAll('[data-copy]').forEach((btn) =>
+  btn.addEventListener('click', async () => {
+    const src = $(btn.dataset.copy).value;
+    try { await navigator.clipboard.writeText(src); }
+    catch { // clipboard may be unavailable (file://) — select the text instead
+      $(btn.dataset.copy).select();
+    }
+    const note = $(btn.dataset.copy === 'out-md' ? 'md-copied' : 'json-copied');
+    note.style.display = 'block';
+    setTimeout(() => { note.style.display = 'none'; }, 1600);
+  }));
+document.querySelectorAll('[data-dl]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    const src = $(btn.dataset.dl).value;
+    const isJson = btn.dataset.dl === 'out-json';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([src], { type: isJson ? 'application/json' : 'text/markdown' }));
+    a.download = isJson ? 'intake-record.json' : 'intake-summary.md';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }));
+
+$('btn-again').addEventListener('click', () => {
+  state.area = null;
+  state.name = '';
+  state.narrative = '';
+  state.proposal = null;
+  state.answers = {};
+  $('f-name').value = '';
+  $('f-narrative').value = '';
+  const btn = $('btn-confirm'); btn.dataset.sure = '0'; btn.textContent = 'Submit this intake →';
+  renderStart();
+  show('start');
+});
+
+// ---------------------------------------- prefilled worked example on load
+// A complete landlord-tenant intake (Mara Ellison, fictional): every suggested
+// draft accepted except the identity/contact answers, then confirmed — so the
+// full reviewed firm summary renders immediately.
+function loadWorkedExample() {
+  state.persona = 'client';
+  state.area = 'landlord_tenant';
+  state.name = 'Mara Ellison';
+  state.narrative = 'My landlord is trying to evict me after I withheld part of one rent payment because repairs were ignored for months. There is a court date on 2026-11-18. I want to stay in my apartment.';
+  state.proposal = proposeQuestions(state.area, { contactName: state.name });
+  state.answers = Object.fromEntries(state.proposal.questions.map((q) => [q.id, q.draft]));
+  Object.assign(state.answers, {
+    full_name: 'Mara Ellison',
+    contact_method: 'Phone call',
+    contact_detail: '555-0143',
+    key_dates: 'Court date 2026-11-18 for the eviction hearing',
+    matter_detail: 'My landlord filed an eviction after I withheld part of one rent payment over ignored repairs.',
+  });
+  state.asOf = EXAMPLE_AS_OF; // pin the example's clock
+  const record = confirmIntake({
+    persona: state.persona,
+    matterArea: state.area,
+    narrative: state.narrative,
+    answers: state.answers,
+    asOf: state.asOf,
+    refRand: EXAMPLE_RAND,
+  });
+  renderSaved(record);
+  show('saved');
+  state.asOf = today; // a fresh interactive run uses today's clock
+}
+
+renderStart();
+renderRail();
+loadWorkedExample();
+</script>
+</body>
+</html>
