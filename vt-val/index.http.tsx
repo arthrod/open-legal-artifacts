@@ -60,6 +60,10 @@ export default async function (req: Request): Promise<Response> {
   const m = p.match(/^\/a\/([a-z0-9-]+)$/);
   if (m && ARTIFACTS.includes(m[1])) return page(`/site/${m[1]}.html`);
 
+  // Demo-asset paths used by the catalog app (same pages, gh-pages-compatible)
+  const dm = p.match(/^\/open-artifacts\/([a-z0-9-]+)\/demo\/(index\.html)?$/);
+  if (dm && ARTIFACTS.includes(dm[1])) return page(`/site/${dm[1]}.html`);
+
   // Legacy path aliases: /<artifact-name> → /a/<artifact-name>
   const bare = p.slice(1);
   if (ARTIFACTS.includes(bare)) {

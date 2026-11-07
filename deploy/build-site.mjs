@@ -52,12 +52,12 @@ function inlineModuleImports(html, base) {
       .replace(/from\s+["'](\.\.?\/[^"']+)["']/g, (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `from data:text/javascript;base64,${readFileSync(path).toString("base64")}`;
+        return `from "data:text/javascript;base64,${readFileSync(path).toString("base64")}"`;
       })
       .replace(/import\s+["'](\.\.?\/[^"']+)["']/g, (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `import data:text/javascript;base64,${readFileSync(path).toString("base64")}`;
+        return `import "data:text/javascript;base64,${readFileSync(path).toString("base64")}"`;
       });
     return `<script type="module">${inlined}</script>`;
   });
@@ -70,6 +70,22 @@ function bundle(htmlPath) {
   html = inlineJs(html, base);
   html = inlineModuleImports(html, base);
   return html;
+}
+
+// Bundle-time chrome for artifact pages: site back-link + disclaimer footer.
+function decorate(html) {
+  if (!html.includes("ola-backlink")) {
+    const bar = `<a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">\u2190 Open Legal Artifacts</a>`;
+    html = html.replace(/<body([^>]*)>/i, (m) => m + bar);
+  }
+  if (!html.includes("<footer") && !/not legal advice/i.test(html)) {
+    const foot = `<footer style="max-width:1100px;margin:32px auto 0;padding:16px 20px;border-top:1px solid #e8e8e5;color:#6b6b6b;font-size:12px;line-height:1.5;">Rules-as-data defaults are illustrative examples, not verified law. Not legal advice. <a href="https://github.com/arthrod/open-legal-artifacts" style="color:inherit;">MIT \u00b7 open-legal-artifacts</a></footer>`;
+    html = html.replace(/<\/body>/i, foot + "</body>");
+  }
+  // Normalize artifact-page H1s to one scale (inspector R3-03) and auto-run
+  // prefilled demos so no page opens on a "Press Run" placeholder (R3-01).
+  const polish = `<style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>\n<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');var filled=out&&out.innerText.trim().length>40;if(filled)return;var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(x.textContent)});if(b)b.click()}catch(e){}});</script>`;
+  return html.replace(/<\/body>/i, polish + "</body>");
 }
 
 // 1) landing: build the app fresh, then inline dist
@@ -87,7 +103,7 @@ let n = 0, oversized = 0;
 for (const entry of readdirSync(OA)) {
   const demo = join(OA, entry, "demo", "index.html");
   if (!statSync(join(OA, entry)).isDirectory() || !existsSync(demo)) continue;
-  const html = bundle(demo);
+  const html = decorate(bundle(demo));
   writeFileSync(join(SITE, `${entry}.html`), html);
   if (html.length > 78_000) { oversized++; console.warn(`  ⚠ ${entry}: ${(html.length / 1024).toFixed(1)} KB — near the 80KB val file cap`); }
   n++;

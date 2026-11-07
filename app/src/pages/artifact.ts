@@ -4,7 +4,11 @@ import { el } from "../router.js";
 
 /** Relative-from-dist path to an open-artifacts directory. */
 function oaPath(name: string, tail = ""): string {
-  return `../open-artifacts/${name}/${tail}`;
+  return `open-artifacts/${name}/${tail}`;
+}
+
+function ghPath(name: string, tail = ""): string {
+  return `https://github.com/arthrod/open-legal-artifacts/blob/main/open-artifacts/${name}/${tail}`;
 }
 
 function originalPage(a: OriginalEntry): HTMLElement {
@@ -38,10 +42,10 @@ function openPage(a: OpenEntry): HTMLElement {
     );
   }
   if (a.hasSpec) {
-    links.push(`<a href="${oaPath(a.name, "spec.md")}" rel="noopener" target="_blank">Spec&nbsp;↗</a>`);
+    links.push(`<a href="${ghPath(a.name, "spec.md")}" rel="noopener" target="_blank">Spec&nbsp;↗</a>`);
   }
   if (a.hasReadme) {
-    links.push(`<a href="${oaPath(a.name)}" rel="noopener" target="_blank">README&nbsp;↗</a>`);
+    links.push(`<a href="${ghPath(a.name, "README.md")}" rel="noopener" target="_blank">README&nbsp;↗</a>`);
   }
   if (a.inAppDemo) {
     links.push(`<a href="${a.inAppDemo}">In-app demo&nbsp;→</a>`);

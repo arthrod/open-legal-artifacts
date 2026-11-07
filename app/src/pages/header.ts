@@ -23,7 +23,7 @@ export function demoHeader(opts: {
       </div>
       <div class="meta-box">
         <h3>Source</h3>
-        <p><a href="../open-artifacts/${opts.repoName}/" rel="noopener">../open-artifacts/${opts.repoName}/</a> — spec, deterministic core, tests, MIT.</p>
+        <p><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/${opts.repoName}/" rel="noopener">open-artifacts/${opts.repoName}/</a> — spec, deterministic core, tests, MIT.</p>
       </div>
     </div>
   </div>`);

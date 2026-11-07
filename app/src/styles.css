@@ -278,6 +278,14 @@ pre {
   border: var(--hairline);
 }
 
+/* a trailing orphan tile would leave empty grey grid cells — span it instead */
+.cards > .tile:last-child:nth-child(3n+1) {
+  grid-column: 1 / -1;
+}
+.cards > .tile:last-child:nth-child(3n+2) {
+  grid-column: span 2;
+}
+
 .tile {
   background: var(--bg);
   padding: 1.4rem 1.4rem 1.2rem;
