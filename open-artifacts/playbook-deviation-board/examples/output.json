@@ -1,0 +1,140 @@
+{
+  "contractName": "Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional)",
+  "playbookId": "PB-NDA-2026-v3",
+  "summary": {
+    "compliant": 1,
+    "deviates": 4,
+    "dealBreaker": 2,
+    "unclassified": 1
+  },
+  "rows": [
+    {
+      "clauseId": "C1",
+      "ruleId": "term",
+      "classification": "compliant",
+      "matchedTier": "preferred",
+      "matchedLabel": "3-year fixed term",
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "This Agreement commences on the Effective Date and continues for three (3) years",
+        "charStart": 10,
+        "charEnd": 90
+      },
+      "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for three (3) years. Neither party may assign this Agreement without the other's prior written consent.",
+      "reason": "matches preferred standard (3-year fixed term)",
+      "routedTo": null,
+      "heading": "Term"
+    },
+    {
+      "clauseId": "C2",
+      "ruleId": "term",
+      "classification": "deviates",
+      "matchedTier": 1,
+      "matchedLabel": "Evergreen, 90-day exit",
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice",
+        "charStart": 10,
+        "charEnd": 139
+      },
+      "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice of non-renewal.",
+      "reason": "matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard",
+      "routedTo": "Legal Operations",
+      "heading": "Term"
+    },
+    {
+      "clauseId": "C3",
+      "ruleId": "term",
+      "classification": "deviates",
+      "matchedTier": 2,
+      "matchedLabel": "Evergreen, 30-day exit",
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice",
+        "charStart": 10,
+        "charEnd": 139
+      },
+      "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice of non-renewal.",
+      "reason": "matches fallback tier 2 (Evergreen, 30-day exit), not the preferred standard",
+      "routedTo": "General Counsel",
+      "heading": "Term"
+    },
+    {
+      "clauseId": "C4",
+      "ruleId": "term",
+      "classification": "deal_breaker",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "3.1 Term. This Agreement commences on the Effective Date and continues in perpetuity unless terminated by mutual written agreement.",
+        "charStart": 0,
+        "charEnd": 131
+      },
+      "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues in perpetuity unless terminated by mutual written agreement.",
+      "reason": "matches avoid rule \"perpetual-term\": contains \"in perpetuity\"",
+      "routedTo": "General Counsel",
+      "heading": "Term"
+    },
+    {
+      "clauseId": "C5",
+      "ruleId": "liability",
+      "classification": "deal_breaker",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim, excluding breaches of Section 4 (Confidentiality), for which the receiving party accepts unlimited liability.",
+        "charStart": 0,
+        "charEnd": 276
+      },
+      "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim, excluding breaches of Section 4 (Confidentiality), for which the receiving party accepts unlimited liability.",
+      "reason": "matches avoid rule \"uncapped-liability\": contains \"unlimited liability\"",
+      "routedTo": "General Counsel",
+      "heading": "Limitation of Liability"
+    },
+    {
+      "clauseId": "C6",
+      "ruleId": "liability",
+      "classification": "deviates",
+      "matchedTier": 1,
+      "matchedLabel": "Mutual cap at total contract value",
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement",
+        "charStart": 15,
+        "charEnd": 135
+      },
+      "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement.",
+      "reason": "matches fallback tier 1 (Mutual cap at total contract value), not the preferred standard",
+      "routedTo": "Legal Operations",
+      "heading": "Limitation of Liability"
+    },
+    {
+      "clauseId": "C7",
+      "ruleId": "term",
+      "classification": "deviates",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 0.7142857142857143,
+      "clauseQuote": null,
+      "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for eighteen (18) months.",
+      "reason": "no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has []",
+      "routedTo": "General Counsel",
+      "heading": "Term"
+    },
+    {
+      "clauseId": "C8",
+      "heading": "Governing Law",
+      "ruleId": null,
+      "classification": "unclassified",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 0,
+      "clauseQuote": null,
+      "clauseText": "11.1 Governing Law. This Agreement is governed by the laws of the State of Delaware, without regard to conflict-of-laws principles.",
+      "reason": "no rule topic matches heading \"Governing Law\" (best similarity 0.00 < 0.3)",
+      "routedTo": "Legal Operations"
+    }
+  ]
+}

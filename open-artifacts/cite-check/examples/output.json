@@ -1,0 +1,261 @@
+{
+  "documentName": "Appellant's Opening Brief — Halcyon Dynamics, Inc. v. Meridian Freight Systems, LLC (No. 26-1187, fictional)",
+  "summary": {
+    "total": 9,
+    "exact": 5,
+    "normalized": 1,
+    "fuzzy": 1,
+    "not_found": 2,
+    "pinpointIssues": 2
+  },
+  "results": [
+    {
+      "id": "Q1 (brief p. 6)",
+      "classification": "exact",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "12",
+        "charStart": 198,
+        "charEnd": 295,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "p. 12",
+        "parsed": {
+          "kind": "page",
+          "from": 12
+        },
+        "status": "ok",
+        "detail": "quote is located on 12"
+      },
+      "notes": [
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q2 (brief p. 7)",
+      "classification": "normalized",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "12",
+        "charStart": 198,
+        "charEnd": 279,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "p. 12",
+        "parsed": {
+          "kind": "page",
+          "from": 12
+        },
+        "status": "ok",
+        "detail": "quote is located on 12"
+      },
+      "notes": [
+        "matches modulo case/punctuation/whitespace",
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q3 (brief p. 9)",
+      "classification": "fuzzy",
+      "similarity": 0.7,
+      "coverage": 0.8235294117647058,
+      "anchor": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "12",
+        "charStart": 198,
+        "charEnd": 295,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "p. 12",
+        "parsed": {
+          "kind": "page",
+          "from": 12
+        },
+        "status": "ok",
+        "detail": "quote is located on 12"
+      },
+      "notes": [
+        "substantial overlap but not verbatim — requires human review",
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q4 (brief p. 11)",
+      "classification": "not_found",
+      "similarity": 0.2608695652173913,
+      "coverage": 0.4,
+      "anchor": null,
+      "bestCandidate": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "11",
+        "charStart": 38,
+        "charEnd": 103,
+        "verbatim": "A. The trailer arrived at the dock around 4 p.m. and the seal was"
+      },
+      "pinpoint": {
+        "raw": "p. 12",
+        "parsed": {
+          "kind": "page",
+          "from": 12
+        },
+        "status": "unverifiable",
+        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
+      },
+      "notes": [
+        "best candidate similarity 0.26 below threshold 0.7"
+      ]
+    },
+    {
+      "id": "Q5 (brief p. 13)",
+      "classification": "exact",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "12",
+        "charStart": 198,
+        "charEnd": 295,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "p. 15",
+        "parsed": {
+          "kind": "page",
+          "from": 15
+        },
+        "status": "mismatch",
+        "detail": "pinpoint says p. 15 but the quote is located on 12"
+      },
+      "notes": [
+        "PINPOINT ISSUE: pinpoint says p. 15 but the quote is located on 12",
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q6 (brief p. 14)",
+      "classification": "exact",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "msa",
+        "sourceName": "Master Services Agreement (Halcyon–Meridian, 2024)",
+        "segmentKind": "section",
+        "segmentLabel": "5.2",
+        "charStart": 0,
+        "charEnd": 96,
+        "verbatim": "Customer may terminate this Agreement for convenience upon ninety (90) days prior written notice"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "§ 5.2",
+        "parsed": {
+          "kind": "section",
+          "label": "5.2"
+        },
+        "status": "ok",
+        "detail": "quote is located in § 5.2"
+      },
+      "notes": [
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q7 (brief p. 15)",
+      "classification": "exact",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "msa",
+        "sourceName": "Master Services Agreement (Halcyon–Meridian, 2024)",
+        "segmentKind": "section",
+        "segmentLabel": "9.1",
+        "charStart": 98,
+        "charEnd": 189,
+        "verbatim": "Neither party shall be liable for indirect or consequential damages, including lost profits"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "§ 5.2",
+        "parsed": {
+          "kind": "section",
+          "label": "5.2"
+        },
+        "status": "mismatch",
+        "detail": "pinpoint says § 5.2 but the quote is located in § 9.1"
+      },
+      "notes": [
+        "PINPOINT ISSUE: pinpoint says § 5.2 but the quote is located in § 9.1",
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q8 (brief p. 16)",
+      "classification": "exact",
+      "similarity": 1,
+      "coverage": 1,
+      "anchor": {
+        "sourceId": "nair-decl",
+        "sourceName": "Declaration of Priya Nair (Feb. 2, 2026)",
+        "segmentKind": "paragraph",
+        "segmentLabel": "8",
+        "charStart": 107,
+        "charEnd": 202,
+        "verbatim": "The photographs show water staining on four of the eleven pallets delivered under this shipment"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "¶ 8",
+        "parsed": {
+          "kind": "paragraph",
+          "number": 8
+        },
+        "status": "ok",
+        "detail": "quote is located in ¶ 8"
+      },
+      "notes": [
+        "proposition support is an LLM/human judgment — not evaluated by this core"
+      ]
+    },
+    {
+      "id": "Q9 (brief p. 17)",
+      "classification": "not_found",
+      "similarity": 0,
+      "coverage": 0,
+      "anchor": null,
+      "pinpoint": {
+        "raw": "p. 3",
+        "parsed": {
+          "kind": "page",
+          "from": 3
+        },
+        "status": "unverifiable",
+        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
+      },
+      "bestCandidate": null,
+      "notes": [
+        "source \"weber-emails\" not provided"
+      ]
+    }
+  ]
+}

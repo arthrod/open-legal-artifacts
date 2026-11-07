@@ -1,0 +1,5 @@
+| Document | What is the term / subscription length? | What notice is required to terminate for convenience? | What is the liability cap? | Is assignment permitted? | What law governs the agreement? |
+|---|---|---|---|---|---|
+| MSA — Corydon Analytics (signed Mar. 2025, fictional) | 3 years from the Effective Date [§ 2] | 90 days prior written notice [§ 3] | Fees paid in the preceding 12 months [§ 8] | No — consent required [§ 11] | England and Wales [§ 14] |
+| NDA — Lightway Optics (draft v4, fictional) | 2 years from the Effective Date [§ 1] | 30 days written notice [§ 4] | $50,000 total [§ 7] | No (receiving party may not assign) [§ 9] | New York [§ 12] |
+| SaaS Order Form — Harbor Freight Data Co. (counter-signed, fictional) | 12 months, auto-renewing | 60 days notice | **UNVERIFIED** (not_answered) | Yes, to a merger successor | **UNVERIFIED** (quote_not_verified) |

@@ -1,0 +1,10 @@
+.git
+.vscode
+.cursorrules
+.DS_Store
+node_modules
+vendor
+*_test.ts
+
+DESIGN.md
+.gitignore

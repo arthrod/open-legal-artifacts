@@ -1,0 +1,11 @@
+/* Contrast adaptations over the DS tokens: darker secondary ink, no sub-12px labels, body at full ink. */
+:root{--muted:#4A4A47;--ink-prose:#0A0A0A;--on-dark-muted:#D6D6D1;--on-dark-faint:#B4B4AF;--fs-body:18px;--fs-label:12px;--fs-micro:12px;--px:clamp(20px,5vw,56px)}
+html[data-size="large"]{--fs-body:20px;--fs-label:13px;--fs-micro:13px}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--ff);font-size:var(--fs-body);line-height:1.6;letter-spacing:-0.01em;-webkit-font-smoothing:antialiased;text-wrap:pretty}
+a{color:var(--ink);text-decoration:none}a:hover{color:var(--ink)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.mono{font-family:var(--mono);font-weight:var(--mono-weight);text-transform:uppercase;letter-spacing:.08em;font-size:var(--fs-label)}
+.sq{display:inline-block;width:9px;height:9px;background:var(--mark);vertical-align:middle;margin-right:10px;position:relative;top:-1px}
+.wrap{max-width:var(--page-max);margin:0 auto;padding:0 var(--px)}
