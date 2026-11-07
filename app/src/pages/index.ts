@@ -84,7 +84,11 @@ export function indexPage(): HTMLElement {
         </div>
         <h3 class="tile-title"><a href="#/a/${a.name}">${a.title}</a></h3>
         <p class="tile-desc">${a.tagline}</p>
-        <div class="tile-links"><a href="#/a/${a.name}">Details&nbsp;→</a></div>
+        <div class="tile-links">
+          ${a.hasDemo ? `<a href="open-artifacts/${a.name}/demo/index.html" rel="noopener" target="_blank">Demo&nbsp;↗</a>` : ""}
+          <a href="${GITHUB}/tree/main/open-artifacts/${a.name}" rel="noopener" target="_blank">Repo&nbsp;↗</a>
+          <a href="#/a/${a.name}">Details&nbsp;→</a>
+        </div>
       </article>`),
     );
   }
