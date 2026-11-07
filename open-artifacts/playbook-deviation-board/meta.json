@@ -1,0 +1,8 @@
+{
+  "name": "playbook-deviation-board",
+  "tagline": "Clause classification against a playbook as data — same playbook + contract always yields the same board, with quoted evidence and escalation routing.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Playbook deviation board (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

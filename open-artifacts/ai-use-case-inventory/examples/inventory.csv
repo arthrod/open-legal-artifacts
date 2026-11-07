@@ -1,0 +1,8 @@
+id,name,department,tier,basisRule,matchedKeyword,dataSensitivity,humanOversight,autonomy,gaps,severity
+"AI-01","NDA fallback drafter","Legal","minimal","default","","confidential","human-in-loop","draft-with-review","none","minor"
+"AI-02","Talent screen","People","high","employment-screening","cv screening","personal","notify","act-with-review","missing-oversight; autonomy-high-tier","blocker/major"
+"AI-03","Community trust index","Marketplace","prohibited","social-scoring","social scoring","personal","none","autonomous","prohibited-practice; no-evaluation","blocker/minor"
+"AI-04","Client intake helper","Sales","limited","transparency-chatbot","chatbot","confidential","human-decides","assist","","none"
+"AI-05","Climatesco claims triage","Warranty","high","essential-services","insurance eligibility","personal","human-in-loop","draft-with-review","","none"
+"AI-06","Shop-floor safety vision","Facilities","high","law-enforcement","biometric identification","special-category","human-decides","act-with-review","autonomy-high-tier","major"
+"AI-07","Deal-room summarizer","Corp Dev","minimal","default","","confidential","human-in-loop","draft-with-review","none","minor"

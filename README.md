@@ -2,7 +2,8 @@
 
 > Open legal artifacts: every legal AI artifact, open and better.
 
-**Playground: <https://arthrod.github.io/open-legal-artifacts/>** ·
+**Playground: <https://arthrod--4075ab70dae211f1929a1607ee4eb77e.web.val.run/>** (Val Town — canonical) ·
+<https://arthrod.github.io/open-legal-artifacts/> (mirror) ·
 Repo: <https://github.com/arthrod/open-legal-artifacts>
 
 An open playground of legal-AI artifacts by [Arthur Souza Rodrigues](https://arthur.law) —

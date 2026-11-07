@@ -1,0 +1,8 @@
+{
+  "name": "eviction-notice-check-board",
+  "tagline": "Eviction notice facts vs editable jurisdiction rules-as-data — per-requirement pass/fail/unverified with the rule cited, never guesses",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Eviction notice checker (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

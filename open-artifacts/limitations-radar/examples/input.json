@@ -1,0 +1,54 @@
+{
+  "asOf": "2026-11-07",
+  "claims": [
+    {
+      "id": "CLM-101",
+      "claimType": "personal_injury",
+      "jurisdiction": "CA",
+      "injuryDate": "2025-03-10",
+      "discoveryDate": "2025-04-02",
+      "tollingEvents": [],
+      "filingDate": "2027-03-15"
+    },
+    {
+      "id": "CLM-102",
+      "claimType": "breach_of_contract_written",
+      "jurisdiction": "NY",
+      "injuryDate": "2022-06-01",
+      "discoveryDate": null,
+      "tollingEvents": [
+        { "type": "bankruptcy_stay", "startDate": "2022-09-01", "endDate": "2023-05-01" }
+      ],
+      "filingDate": null
+    },
+    {
+      "id": "CLM-103",
+      "claimType": "fraud",
+      "jurisdiction": "TX",
+      "injuryDate": "2021-02-15",
+      "discoveryDate": "2021-01-20",
+      "tollingEvents": [],
+      "filingDate": null
+    },
+    {
+      "id": "CLM-104",
+      "claimType": "personal_injury",
+      "jurisdiction": "CA",
+      "injuryDate": "2024-11-01",
+      "discoveryDate": "2024-11-05",
+      "tollingEvents": [
+        { "type": "minority", "startDate": "2024-12-01", "stillOngoing": true }
+      ],
+      "filingDate": null
+    },
+    {
+      "id": "CLM-105",
+      "claimType": "property_damage",
+      "jurisdiction": "ZZ",
+      "injuryDate": "2025-01-01",
+      "discoveryDate": "2025-01-01",
+      "tollingEvents": [],
+      "filingDate": null
+    }
+  ]
+}

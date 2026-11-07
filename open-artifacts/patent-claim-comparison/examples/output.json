@@ -1,0 +1,359 @@
+{
+  "matter": "Aurora Grid Systems LLC v. Heltex Energy Corp. (fictional)",
+  "parsed": {
+    "setA": [
+      {
+        "number": 1,
+        "text": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array; and\na pressure-relief valve in fluid communication with the coolant channel.",
+        "preamble": {
+          "text": "A thermal management system for a battery module, the system comprising:",
+          "span": [
+            3,
+            75
+          ]
+        },
+        "transitional": "comprising",
+        "dependsOn": null,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "a coolant channel defined through a stack of prismatic cells",
+            "span": [
+              75,
+              137
+            ]
+          },
+          {
+            "id": "L2",
+            "text": "a temperature sensor array disposed on at least two faces of the stack",
+            "span": [
+              137,
+              209
+            ]
+          },
+          {
+            "id": "L3",
+            "text": "a controller configured to modulate coolant flow based on the temperature sensor array",
+            "span": [
+              209,
+              297
+            ]
+          },
+          {
+            "id": "L4",
+            "text": "a pressure-relief valve in fluid communication with the coolant channel.",
+            "span": [
+              297,
+              374
+            ]
+          }
+        ],
+        "type": "independent"
+      },
+      {
+        "number": 2,
+        "text": "2. The system of claim 1, wherein the coolant is a dielectric fluid.",
+        "preamble": {
+          "text": "The system of claim 1",
+          "span": [
+            3,
+            26
+          ]
+        },
+        "transitional": null,
+        "dependsOn": 1,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "wherein the coolant is a dielectric fluid.",
+            "span": [
+              26,
+              68
+            ]
+          }
+        ],
+        "type": "dependent"
+      },
+      {
+        "number": 3,
+        "text": "3. The system of claim 1, wherein the controller derates the stack when any sensor exceeds a threshold; and wherein the derating persists for at least five minutes.",
+        "preamble": {
+          "text": "The system of claim 1",
+          "span": [
+            3,
+            26
+          ]
+        },
+        "transitional": null,
+        "dependsOn": 1,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "wherein the controller derates the stack when any sensor exceeds a threshold",
+            "span": [
+              26,
+              103
+            ]
+          },
+          {
+            "id": "L2",
+            "text": "wherein the derating persists for at least five minutes.",
+            "span": [
+              108,
+              164
+            ]
+          }
+        ],
+        "type": "dependent"
+      }
+    ],
+    "setB": [
+      {
+        "number": 1,
+        "text": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold; and\na pressure-relief valve in fluid communication with the coolant channel.",
+        "preamble": {
+          "text": "A thermal management system for a battery module, the system comprising:",
+          "span": [
+            3,
+            75
+          ]
+        },
+        "transitional": "comprising",
+        "dependsOn": null,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "a coolant channel defined through a stack of prismatic cells",
+            "span": [
+              75,
+              137
+            ]
+          },
+          {
+            "id": "L2",
+            "text": "a temperature sensor array disposed on at least two faces of the stack",
+            "span": [
+              137,
+              209
+            ]
+          },
+          {
+            "id": "L3",
+            "text": "a controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold",
+            "span": [
+              209,
+              323
+            ]
+          },
+          {
+            "id": "L4",
+            "text": "a pressure-relief valve in fluid communication with the coolant channel.",
+            "span": [
+              323,
+              400
+            ]
+          }
+        ],
+        "type": "independent"
+      },
+      {
+        "number": 2,
+        "text": "2. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.",
+        "preamble": {
+          "text": "The system of claim 1",
+          "span": [
+            3,
+            26
+          ]
+        },
+        "transitional": null,
+        "dependsOn": 1,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.",
+            "span": [
+              26,
+              103
+            ]
+          }
+        ],
+        "type": "dependent"
+      },
+      {
+        "number": 4,
+        "text": "4. The system of claim 1, wherein the pressure-relief valve opens at a cracking pressure below 3 bar.",
+        "preamble": {
+          "text": "The system of claim 1",
+          "span": [
+            3,
+            26
+          ]
+        },
+        "transitional": null,
+        "dependsOn": 1,
+        "limitations": [
+          {
+            "id": "L1",
+            "text": "wherein the pressure-relief valve opens at a cracking pressure below 3 bar.",
+            "span": [
+              26,
+              101
+            ]
+          }
+        ],
+        "type": "dependent"
+      }
+    ]
+  },
+  "result": {
+    "claims": [
+      {
+        "claimNo": 1,
+        "aClaim": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array; and\na pressure-relief valve in fluid communication with the coolant channel.",
+        "bClaim": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold; and\na pressure-relief valve in fluid communication with the coolant channel.",
+        "aDependsOn": null,
+        "bDependsOn": null,
+        "dependencyChanged": false,
+        "result": "compared",
+        "comparison": {
+          "rows": [
+            {
+              "relation": "matched",
+              "aId": "L1",
+              "aText": "a coolant channel defined through a stack of prismatic cells",
+              "aSpan": [
+                75,
+                137
+              ],
+              "bId": "L1",
+              "bText": "a coolant channel defined through a stack of prismatic cells",
+              "bSpan": [
+                75,
+                137
+              ],
+              "similarity": 1,
+              "note": "substantively identical wording"
+            },
+            {
+              "relation": "matched",
+              "aId": "L2",
+              "aText": "a temperature sensor array disposed on at least two faces of the stack",
+              "aSpan": [
+                137,
+                209
+              ],
+              "bId": "L2",
+              "bText": "a temperature sensor array disposed on at least two faces of the stack",
+              "bSpan": [
+                137,
+                209
+              ],
+              "similarity": 1,
+              "note": "substantively identical wording"
+            },
+            {
+              "relation": "modified",
+              "aId": "L3",
+              "aText": "a controller configured to modulate coolant flow based on the temperature sensor array",
+              "aSpan": [
+                209,
+                297
+              ],
+              "bId": "L3",
+              "bText": "a controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold",
+              "bSpan": [
+                209,
+                323
+              ],
+              "similarity": 0.818,
+              "note": "wording changed — review amendment scope"
+            },
+            {
+              "relation": "matched",
+              "aId": "L4",
+              "aText": "a pressure-relief valve in fluid communication with the coolant channel.",
+              "aSpan": [
+                297,
+                374
+              ],
+              "bId": "L4",
+              "bText": "a pressure-relief valve in fluid communication with the coolant channel.",
+              "bSpan": [
+                323,
+                400
+              ],
+              "similarity": 1,
+              "note": "substantively identical wording"
+            }
+          ],
+          "counts": {
+            "matched": 3,
+            "modified": 1,
+            "removed": 0,
+            "added": 0
+          }
+        }
+      },
+      {
+        "claimNo": 2,
+        "aClaim": "2. The system of claim 1, wherein the coolant is a dielectric fluid.",
+        "bClaim": "2. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.",
+        "aDependsOn": 1,
+        "bDependsOn": 1,
+        "dependencyChanged": false,
+        "result": "compared",
+        "comparison": {
+          "rows": [
+            {
+              "relation": "modified",
+              "aId": "L1",
+              "aText": "wherein the coolant is a dielectric fluid.",
+              "aSpan": [
+                26,
+                68
+              ],
+              "bId": "L1",
+              "bText": "wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.",
+              "bSpan": [
+                26,
+                103
+              ],
+              "similarity": 0.5,
+              "note": "wording changed — review amendment scope"
+            }
+          ],
+          "counts": {
+            "matched": 0,
+            "modified": 1,
+            "removed": 0,
+            "added": 0
+          }
+        }
+      },
+      {
+        "claimNo": 3,
+        "aClaim": "3. The system of claim 1, wherein the controller derates the stack when any sensor exceeds a threshold; and wherein the derating persists for at least five minutes.",
+        "bClaim": null,
+        "result": "claim removed in set B",
+        "comparison": null
+      },
+      {
+        "claimNo": 4,
+        "aClaim": null,
+        "bClaim": "4. The system of claim 1, wherein the pressure-relief valve opens at a cracking pressure below 3 bar.",
+        "result": "claim added in set B",
+        "comparison": null
+      }
+    ],
+    "totals": {
+      "matched": 3,
+      "modified": 2,
+      "removed": 0,
+      "added": 0,
+      "claimsOnlyInA": 1,
+      "claimsOnlyInB": 1
+    },
+    "noTeachingFound": 0
+  }
+}

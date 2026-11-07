@@ -1,0 +1,8 @@
+{
+  "name": "subpoena-response",
+  "tagline": "Subpoena tracker: configurable deadline math, structured scope, privilege workflow, objection library.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Subpoena Response Tool — PwC (Claude for Legal partner gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

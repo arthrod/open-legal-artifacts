@@ -1,0 +1,240 @@
+{
+  "asOf": "2026-11-07",
+  "cases": [
+    {
+      "id": "PB-2026-010",
+      "client": "C. Moreau (fictional)",
+      "problem": "eviction defense",
+      "state": "active",
+      "openedDate": "2026-10-20",
+      "lastActivityDate": "2026-10-28",
+      "volunteerId": "V-01",
+      "outcome": null,
+      "hours": 8,
+      "stale": false,
+      "staleFor": 10,
+      "flags": [],
+      "matches": [
+        {
+          "volunteerId": "V-01",
+          "score": 100,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "housing",
+            "tenant-defense",
+            "spanish"
+          ]
+        },
+        {
+          "volunteerId": "V-04",
+          "score": 100,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "housing",
+            "tenant-defense",
+            "spanish"
+          ]
+        },
+        {
+          "volunteerId": "V-02",
+          "score": 65,
+          "eligible": false,
+          "missingRequired": [
+            "tenant-defense"
+          ],
+          "matched": [
+            "housing",
+            "spanish"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PB-2026-011",
+      "client": "J. Baptiste (fictional)",
+      "problem": "custody modification",
+      "state": "ready",
+      "openedDate": "2026-11-02",
+      "lastActivityDate": "2026-11-03",
+      "volunteerId": null,
+      "outcome": null,
+      "hours": 0,
+      "stale": false,
+      "staleFor": 4,
+      "flags": [],
+      "matches": [
+        {
+          "volunteerId": "V-03",
+          "score": 85,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "family",
+            "spanish"
+          ]
+        },
+        {
+          "volunteerId": "V-06",
+          "score": 85,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "family",
+            "immigration"
+          ]
+        },
+        {
+          "volunteerId": "V-01",
+          "score": 15,
+          "eligible": false,
+          "missingRequired": [
+            "family"
+          ],
+          "matched": [
+            "spanish"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PB-2026-012",
+      "client": "S. Nakamura (fictional)",
+      "problem": "benefits denial appeal",
+      "state": "triage",
+      "openedDate": "2026-08-14",
+      "lastActivityDate": "2026-09-20",
+      "volunteerId": null,
+      "outcome": null,
+      "hours": 0,
+      "stale": true,
+      "staleFor": 48,
+      "flags": [
+        "no activity for 48 days (> 30)"
+      ],
+      "matches": [
+        {
+          "volunteerId": "V-05",
+          "score": 100,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "benefits",
+            "consumer"
+          ]
+        },
+        {
+          "volunteerId": "V-02",
+          "score": 70,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "benefits"
+          ]
+        },
+        {
+          "volunteerId": "V-04",
+          "score": 70,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "benefits"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PB-2026-006",
+      "client": "A. Ferro (fictional)",
+      "problem": "wage theft consultation",
+      "state": "closed",
+      "openedDate": "2026-05-02",
+      "lastActivityDate": "2026-06-30",
+      "volunteerId": "V-05",
+      "outcome": "advice-only",
+      "hours": 6.5,
+      "stale": false,
+      "staleFor": null,
+      "flags": [],
+      "matches": []
+    },
+    {
+      "id": "PB-2025-044",
+      "client": "P. Vargas (fictional)",
+      "problem": "eviction defense",
+      "state": "closed",
+      "openedDate": "2025-09-10",
+      "lastActivityDate": "2026-03-12",
+      "volunteerId": "V-04",
+      "outcome": "favorable-settlement",
+      "hours": 41,
+      "stale": false,
+      "staleFor": null,
+      "flags": [],
+      "matches": []
+    },
+    {
+      "id": "PB-2026-013",
+      "client": "L. Osei-Bonsu (fictional)",
+      "problem": "family law TRO",
+      "state": "placed",
+      "openedDate": "2026-11-05",
+      "lastActivityDate": "2026-11-06",
+      "volunteerId": null,
+      "outcome": null,
+      "hours": 0,
+      "stale": false,
+      "staleFor": 1,
+      "flags": [
+        "state is placed but no volunteerId set"
+      ],
+      "matches": [
+        {
+          "volunteerId": "V-03",
+          "score": 70,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "family"
+          ]
+        },
+        {
+          "volunteerId": "V-06",
+          "score": 70,
+          "eligible": true,
+          "missingRequired": [],
+          "matched": [
+            "family"
+          ]
+        },
+        {
+          "volunteerId": "V-01",
+          "score": 0,
+          "eligible": false,
+          "missingRequired": [
+            "family"
+          ],
+          "matched": []
+        }
+      ]
+    }
+  ],
+  "impact": {
+    "openCases": 4,
+    "closedCases": 2,
+    "withdrawnCases": 0,
+    "placedCases": 4,
+    "totalHours": 55.5,
+    "byOutcome": {
+      "advice-only": 1,
+      "favorable-settlement": 1
+    },
+    "staleCases": 1,
+    "flaggedCases": 2
+  },
+  "settings": {
+    "staleDays": 30,
+    "matchLimit": 3
+  }
+}

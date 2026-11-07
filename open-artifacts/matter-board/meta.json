@@ -1,0 +1,8 @@
+{
+  "name": "matter-board",
+  "tagline": "A matter board whose core is change detection — every field change between snapshots flagged with a timestamp.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Matter board (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

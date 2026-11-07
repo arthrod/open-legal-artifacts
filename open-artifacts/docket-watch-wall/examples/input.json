@@ -1,0 +1,21 @@
+{
+  "firm": "Calder & Voss LLP (fictional)",
+  "watchers": [
+    { "id": "w1", "name": "Judge Whitfield — commercial docket", "judge": "whitfield", "practiceArea": "commercial-litigation" },
+    { "id": "w2", "name": "Bluecrest Logistics — party watch", "party": "bluecrest" },
+    { "id": "w3", "name": "Employment docket", "practiceArea": "employment" }
+  ],
+  "seenStore": { "ids": ["E-100", "E-101"], "updatedAt": "2026-03-28T09:00:00Z", "count": 2 },
+  "entries": [
+    { "id": "E-102", "date": "2026-04-01", "description": "Joint stipulation extending expert disclosures",
+      "case": { "name": "Meridian Foods v. Bluecrest Logistics", "judge": "Hon. A. Whitfield", "parties": ["Meridian Foods, Inc.", "Bluecrest Logistics LLC"], "practiceArea": "commercial-litigation", "court": "N.D. Ill. (fictional)" } },
+    { "id": "E-103", "date": "2026-04-02", "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+      "case": { "name": "Meridian Foods v. Bluecrest Logistics", "judge": "Hon. A. Whitfield", "parties": ["Meridian Foods, Inc.", "Bluecrest Logistics LLC"], "practiceArea": "commercial-litigation", "court": "N.D. Ill. (fictional)" } },
+    { "id": "E-104", "date": "2026-04-02", "description": "Order to show cause re: failure to appear at mediation",
+      "case": { "name": "Orr v. Talos Systems", "judge": "Hon. M. Delgado", "parties": ["Dana Orr", "Talos Systems, Inc."], "practiceArea": "employment", "court": "C.D. Cal. (fictional)" } },
+    { "id": "E-105", "date": "2026-04-03", "description": "Notice of deposition of PMK scheduled",
+      "case": { "name": "Orr v. Talos Systems", "judge": "Hon. M. Delgado", "parties": ["Dana Orr", "Talos Systems, Inc."], "practiceArea": "employment", "court": "C.D. Cal. (fictional)" } },
+    { "id": "E-100", "date": "2026-03-27", "description": "Complaint filed (already seen — should not re-fire)",
+      "case": { "name": "Meridian Foods v. Bluecrest Logistics", "judge": "Hon. A. Whitfield", "parties": ["Meridian Foods, Inc.", "Bluecrest Logistics LLC"], "practiceArea": "commercial-litigation", "court": "N.D. Ill. (fictional)" } }
+  ]
+}

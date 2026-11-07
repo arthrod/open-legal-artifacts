@@ -1,0 +1,8 @@
+{
+  "name": "entity-compliance-calendar",
+  "tagline": "Filing deadlines across every entity — rules-as-data obligations, recurrence math, and delinquency flagged at the true age of the miss.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Entity compliance calendar (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,98 @@
+{
+  "capturedAt": "2026-11-07T09:00:00Z",
+  "asOf": "2026-11-07",
+  "stages": [
+    {
+      "stage": "discovery",
+      "matters": [
+        {
+          "id": "M-101",
+          "name": "Halberd v. Perigee (fictional)",
+          "client": "Halberd Logistics",
+          "owner": "t.nguyen",
+          "stage": "discovery",
+          "nextStep": "Deposition prep — Dr. Okafor",
+          "nextDeadline": "2026-11-18",
+          "updatedAt": "2026-11-05T11:30:00Z"
+        }
+      ]
+    },
+    {
+      "stage": "filing",
+      "matters": [
+        {
+          "id": "M-102",
+          "name": "Quill trademark opposition",
+          "client": "Quill Coffee Co.",
+          "owner": "s.okafor",
+          "stage": "filing",
+          "nextStep": "File opposition",
+          "nextDeadline": "2026-11-12",
+          "status": "awaiting-signature",
+          "notes": "Client signature received; file Monday.",
+          "updatedAt": "2026-11-06T08:45:00Z"
+        }
+      ]
+    },
+    {
+      "stage": "closed",
+      "matters": [
+        {
+          "id": "M-103",
+          "name": "Brightwater lease review",
+          "client": "Brightwater LLC",
+          "owner": "t.nguyen",
+          "stage": "closed",
+          "nextStep": "Send execution copies",
+          "nextDeadline": "2026-11-08",
+          "updatedAt": null
+        }
+      ]
+    },
+    {
+      "stage": "intake",
+      "matters": [
+        {
+          "id": "M-105",
+          "name": "Northwind vendor suite",
+          "client": "Northwind Robotics",
+          "owner": "a.fern",
+          "stage": "intake",
+          "nextStep": "Conflicts check",
+          "nextDeadline": "2026-11-21",
+          "updatedAt": "2026-11-07T08:15:00Z"
+        }
+      ]
+    }
+  ],
+  "flagged": [
+    {
+      "id": "M-103",
+      "name": "Brightwater lease review",
+      "flag": "due-soon",
+      "deadline": "2026-11-08",
+      "days": 1
+    },
+    {
+      "id": "M-102",
+      "name": "Quill trademark opposition",
+      "flag": "due-soon",
+      "deadline": "2026-11-12",
+      "days": 5
+    },
+    {
+      "id": "M-101",
+      "name": "Halberd v. Perigee (fictional)",
+      "flag": "due-soon",
+      "deadline": "2026-11-18",
+      "days": 11
+    },
+    {
+      "id": "M-105",
+      "name": "Northwind vendor suite",
+      "flag": "due-soon",
+      "deadline": "2026-11-21",
+      "days": 14
+    }
+  ]
+}

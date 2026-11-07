@@ -1,0 +1,8 @@
+{
+  "name": "venture-term-sheet-benchmark",
+  "tagline": "Term sheets × a dated, sourced, editable market grid — per-term verdicts, nothing invented.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Venture term sheet benchmark — Wilson Sonsini Goodrich & Rosati (Claude for Legal partner gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

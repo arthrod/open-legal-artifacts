@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cite check — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
+  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
+  .counts div:last-child { border-right: none; }
+  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+  tr.flag td { background: #fffbe6; }
+  .pill { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill.exact { background: var(--text); color: var(--bg); }
+  .pill.fuzzy, .pill.mismatch { background: var(--accent); }
+  .pill.not_found { background: var(--text); color: var(--bg); }
+  .ev { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+  .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
+  .ev .q { font-family: var(--font-mono); font-size: 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">open-legal-artifacts · deterministic core</div>
+    <h1>Cite check</h1>
+    <div class="rule"></div>
+    <p class="lede">Every quotation in a legal document verified against its cited source — <b>no LLM in the
+      loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets,
+      and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open
+      reimplementation of Anthropic's closed artifact.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 9 quotes —
+      including one paraphrase that drifts, one correct quote cited to the wrong page, and one source not in the record.</p>
+  </header>
+
+  <section>
+    <h2>Summary</h2>
+    <div class="counts" id="counts"></div>
+    <div class="scroll"><table id="results"></table></div>
+    <div class="row">
+      <button id="mdBtn">Export report.md</button>
+      <button id="jsonBtn" class="ghost">Export output.json</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Evidence — located quotes &amp; flags</h2>
+    <div id="evidence"></div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic core — an optional LLM only judges proposition support for located quotes (schema in spec.md);
+    classification and anchoring are pure code. All example data fictional. Not legal advice.
+    <code>anthropic counterpart: Cite check (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { runCiteCheck, renderReport } from "../core/core.js";
+  import EXAMPLE from "./example.js";
+
+  const report = runCiteCheck(EXAMPLE);
+  const s = report.summary;
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  document.getElementById("counts").innerHTML =
+    `<div><b>${s.total}</b><span>quotes checked</span></div>` +
+    `<div><b>${s.exact}</b><span>exact</span></div>` +
+    `<div><b>${s.normalized}</b><span>normalized</span></div>` +
+    `<div><b>${s.fuzzy}</b><span>fuzzy</span></div>` +
+    `<div><b>${s.not_found}</b><span>not found</span></div>` +
+    `<div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+
+  document.getElementById("results").innerHTML =
+    `<tr><th>Quote</th><th>Verdict</th><th>Similarity</th><th>Anchor</th><th>Pinpoint</th></tr>` +
+    report.results
+      .map((r) => {
+        const anchor = r.anchor
+          ? `${esc(r.anchor.sourceName)}${r.anchor.segmentLabel !== null ? `, ${esc(r.anchor.segmentKind)} ${esc(r.anchor.segmentLabel)}` : ""} <code>${r.anchor.charStart}–${r.anchor.charEnd}</code>`
+          : r.bestCandidate
+            ? `closest: ${esc(r.bestCandidate.sourceName)} <code>${r.bestCandidate.charStart}–${r.bestCandidate.charEnd}</code>`
+            : "—";
+        const pin = r.pinpoint ? `<span class="pill ${r.pinpoint.status === "mismatch" ? "mismatch" : r.pinpoint.status === "ok" ? "exact" : ""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}` : "—";
+        return `<tr class="${r.classification !== "exact" ? "flag" : ""}"><td class="mono"><code>${esc(r.id)}</code></td>` +
+          `<td><span class="pill ${r.classification}">${r.classification}</span></td>` +
+          `<td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td></tr>`;
+      })
+      .join("");
+
+  document.getElementById("evidence").innerHTML = report.results
+    .map((r) => {
+      const a = r.anchor ?? r.bestCandidate;
+      return `<div class="ev"><b><code>${esc(r.id)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
+        ` ${a ? `— anchored at <b>${esc(a.sourceName)}</b>${a.segmentLabel !== null ? ` (${esc(a.segmentKind)} ${esc(a.segmentLabel)})` : ""} chars ${a.charStart}–${a.charEnd}` : "— no locating anchor in the provided sources"}` +
+        (a ? `<blockquote>${esc(a.verbatim.replace(/\n/g, " "))}</blockquote>` : "") +
+        (r.pinpoint ? `<div style="margin-top:6px">Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}</div>` : "") +
+        r.notes.map((n) => `<div style="margin-top:4px;color:var(--text-secondary)">· ${esc(n)}</div>`).join("") +
+        `</div>`;
+    })
+    .join("");
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
+  document.getElementById("mdBtn").onclick = () => download("cite-check-report.md", renderReport(report), "text/markdown");
+  document.getElementById("jsonBtn").onclick = () => download("cite-check-output.json", JSON.stringify(report, null, 2) + "\n", "application/json");
+</script>
+</body>
+</html>

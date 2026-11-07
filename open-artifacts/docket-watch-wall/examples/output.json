@@ -1,0 +1,220 @@
+{
+  "wall": [
+    {
+      "watcher": {
+        "id": "w1",
+        "name": "Judge Whitfield — commercial docket",
+        "judge": "whitfield",
+        "practiceArea": "commercial-litigation"
+      },
+      "newEntries": [
+        {
+          "id": "E-102",
+          "date": "2026-04-01",
+          "description": "Joint stipulation extending expert disclosures",
+          "case": {
+            "name": "Meridian Foods v. Bluecrest Logistics",
+            "judge": "Hon. A. Whitfield",
+            "parties": [
+              "Meridian Foods, Inc.",
+              "Bluecrest Logistics LLC"
+            ],
+            "practiceArea": "commercial-litigation",
+            "court": "N.D. Ill. (fictional)"
+          }
+        },
+        {
+          "id": "E-103",
+          "date": "2026-04-02",
+          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+          "case": {
+            "name": "Meridian Foods v. Bluecrest Logistics",
+            "judge": "Hon. A. Whitfield",
+            "parties": [
+              "Meridian Foods, Inc.",
+              "Bluecrest Logistics LLC"
+            ],
+            "practiceArea": "commercial-litigation",
+            "court": "N.D. Ill. (fictional)"
+          }
+        }
+      ]
+    },
+    {
+      "watcher": {
+        "id": "w2",
+        "name": "Bluecrest Logistics — party watch",
+        "party": "bluecrest"
+      },
+      "newEntries": [
+        {
+          "id": "E-102",
+          "date": "2026-04-01",
+          "description": "Joint stipulation extending expert disclosures",
+          "case": {
+            "name": "Meridian Foods v. Bluecrest Logistics",
+            "judge": "Hon. A. Whitfield",
+            "parties": [
+              "Meridian Foods, Inc.",
+              "Bluecrest Logistics LLC"
+            ],
+            "practiceArea": "commercial-litigation",
+            "court": "N.D. Ill. (fictional)"
+          }
+        },
+        {
+          "id": "E-103",
+          "date": "2026-04-02",
+          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+          "case": {
+            "name": "Meridian Foods v. Bluecrest Logistics",
+            "judge": "Hon. A. Whitfield",
+            "parties": [
+              "Meridian Foods, Inc.",
+              "Bluecrest Logistics LLC"
+            ],
+            "practiceArea": "commercial-litigation",
+            "court": "N.D. Ill. (fictional)"
+          }
+        }
+      ]
+    },
+    {
+      "watcher": {
+        "id": "w3",
+        "name": "Employment docket",
+        "practiceArea": "employment"
+      },
+      "newEntries": [
+        {
+          "id": "E-104",
+          "date": "2026-04-02",
+          "description": "Order to show cause re: failure to appear at mediation",
+          "case": {
+            "name": "Orr v. Talos Systems",
+            "judge": "Hon. M. Delgado",
+            "parties": [
+              "Dana Orr",
+              "Talos Systems, Inc."
+            ],
+            "practiceArea": "employment",
+            "court": "C.D. Cal. (fictional)"
+          }
+        },
+        {
+          "id": "E-105",
+          "date": "2026-04-03",
+          "description": "Notice of deposition of PMK scheduled",
+          "case": {
+            "name": "Orr v. Talos Systems",
+            "judge": "Hon. M. Delgado",
+            "parties": [
+              "Dana Orr",
+              "Talos Systems, Inc."
+            ],
+            "practiceArea": "employment",
+            "court": "C.D. Cal. (fictional)"
+          }
+        }
+      ]
+    }
+  ],
+  "escalatedNew": [
+    {
+      "watcherId": "w1",
+      "entry": {
+        "id": "E-103",
+        "date": "2026-04-02",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+        "case": {
+          "name": "Meridian Foods v. Bluecrest Logistics",
+          "judge": "Hon. A. Whitfield",
+          "parties": [
+            "Meridian Foods, Inc.",
+            "Bluecrest Logistics LLC"
+          ],
+          "practiceArea": "commercial-litigation",
+          "court": "N.D. Ill. (fictional)"
+        }
+      },
+      "escalations": [
+        {
+          "ruleId": "sanctions",
+          "label": "Sanctions motion/order",
+          "level": "urgent",
+          "match": "sanction"
+        }
+      ]
+    },
+    {
+      "watcherId": "w2",
+      "entry": {
+        "id": "E-103",
+        "date": "2026-04-02",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+        "case": {
+          "name": "Meridian Foods v. Bluecrest Logistics",
+          "judge": "Hon. A. Whitfield",
+          "parties": [
+            "Meridian Foods, Inc.",
+            "Bluecrest Logistics LLC"
+          ],
+          "practiceArea": "commercial-litigation",
+          "court": "N.D. Ill. (fictional)"
+        }
+      },
+      "escalations": [
+        {
+          "ruleId": "sanctions",
+          "label": "Sanctions motion/order",
+          "level": "urgent",
+          "match": "sanction"
+        }
+      ]
+    },
+    {
+      "watcherId": "w3",
+      "entry": {
+        "id": "E-104",
+        "date": "2026-04-02",
+        "description": "Order to show cause re: failure to appear at mediation",
+        "case": {
+          "name": "Orr v. Talos Systems",
+          "judge": "Hon. M. Delgado",
+          "parties": [
+            "Dana Orr",
+            "Talos Systems, Inc."
+          ],
+          "practiceArea": "employment",
+          "court": "C.D. Cal. (fictional)"
+        }
+      },
+      "escalations": [
+        {
+          "ruleId": "show-cause",
+          "label": "Order to show cause",
+          "level": "urgent",
+          "match": "show cause"
+        }
+      ]
+    }
+  ],
+  "nextSeenStore": {
+    "ids": [
+      "E-100",
+      "E-101",
+      "E-102",
+      "E-103",
+      "E-104",
+      "E-105"
+    ],
+    "updatedAt": "2026-04-03T09:00:00Z",
+    "count": 6
+  },
+  "stats": {
+    "entriesInFeed": 5,
+    "watchers": 3,
+    "newEntries": 6,
+    "escalated": 3
+  }
+}

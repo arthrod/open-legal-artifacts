@@ -1,0 +1,8 @@
+{
+  "name": "pro-bono-case-board",
+  "tagline": "Pro bono case tracker: guarded intake→placement→closure workflow, deterministic volunteer-skill matching, stale flags, impact rollups",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Pro bono case tracker (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

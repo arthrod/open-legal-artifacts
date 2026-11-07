@@ -1,0 +1,180 @@
+{
+  "asOf": "2026-04-30",
+  "jurisdiction": "DC",
+  "ruleset": {
+    "id": "DC",
+    "name": "District of Columbia (example ruleset)",
+    "version": "2026-11-example"
+  },
+  "rows": [
+    {
+      "entryId": 1,
+      "date": "2026-01-01",
+      "type": "rent",
+      "note": "January rent",
+      "amount": 1400,
+      "balanceAfter": 1400,
+      "lawfulBalanceAfter": 1400
+    },
+    {
+      "entryId": 2,
+      "date": "2026-01-03",
+      "type": "payment",
+      "note": "money order #4401 (fictional)",
+      "amount": 1400,
+      "balanceAfter": 0,
+      "lawfulBalanceAfter": 0
+    },
+    {
+      "entryId": 3,
+      "date": "2026-01-15",
+      "type": "misc_fee",
+      "note": "administrative fee",
+      "amount": 250,
+      "balanceAfter": 250,
+      "lawfulBalanceAfter": 0
+    },
+    {
+      "entryId": 4,
+      "date": "2026-02-01",
+      "type": "rent",
+      "note": "February rent",
+      "amount": 1400,
+      "balanceAfter": 1650,
+      "lawfulBalanceAfter": 1400
+    },
+    {
+      "entryId": 5,
+      "date": "2026-02-04",
+      "type": "payment",
+      "note": "money order #4487 (fictional)",
+      "amount": 1400,
+      "balanceAfter": 250,
+      "lawfulBalanceAfter": 0
+    },
+    {
+      "entryId": 6,
+      "date": "2026-02-05",
+      "type": "late_fee",
+      "note": "February late fee",
+      "amount": 70,
+      "balanceAfter": 320,
+      "lawfulBalanceAfter": 0
+    },
+    {
+      "entryId": 7,
+      "date": "2026-03-01",
+      "type": "rent",
+      "note": "March rent",
+      "amount": 1400,
+      "balanceAfter": 1720,
+      "lawfulBalanceAfter": 1400
+    },
+    {
+      "entryId": 8,
+      "date": "2026-03-01",
+      "type": "rent",
+      "note": "March rent (again)",
+      "amount": 1400,
+      "balanceAfter": 3120,
+      "lawfulBalanceAfter": 2800
+    },
+    {
+      "entryId": 9,
+      "date": "2026-03-20",
+      "type": "payment",
+      "note": "money order #4533 (fictional)",
+      "amount": 1400,
+      "balanceAfter": 1720,
+      "lawfulBalanceAfter": 1400
+    },
+    {
+      "entryId": 10,
+      "date": "2026-03-21",
+      "type": "late_fee",
+      "note": "March late fee",
+      "amount": 150,
+      "balanceAfter": 1870,
+      "lawfulBalanceAfter": 1470
+    },
+    {
+      "entryId": 11,
+      "date": "2026-04-01",
+      "type": "rent",
+      "note": "April rent",
+      "amount": 1400,
+      "balanceAfter": 3270,
+      "lawfulBalanceAfter": 2870
+    },
+    {
+      "entryId": 12,
+      "date": "2026-04-06",
+      "type": "payment",
+      "note": "partial payment (fictional)",
+      "amount": 1000,
+      "balanceAfter": 2270,
+      "lawfulBalanceAfter": 1870
+    },
+    {
+      "entryId": 13,
+      "date": "2026-04-10",
+      "type": "payment",
+      "note": "balance of April (fictional)",
+      "amount": 400,
+      "balanceAfter": 1870,
+      "lawfulBalanceAfter": 1470
+    }
+  ],
+  "disputes": [
+    {
+      "issue": "duplicate_rent_entry",
+      "severity": "overcharge",
+      "month": "2026-03",
+      "amountInQuestion": 1400,
+      "ruleId": "LEDGER-COMPLETENESS",
+      "text": "2 rent entries recorded for 2026-03; only one monthly rent charge is expected.",
+      "entryIds": [
+        7,
+        8
+      ]
+    },
+    {
+      "issue": "late_fee_before_grace",
+      "severity": "overcharge",
+      "entryId": 6,
+      "month": "2026-02",
+      "amountInQuestion": 70,
+      "ruleId": "DC-LF",
+      "text": "Fee charged for 2026-02, but rent was paid by 2026-02-04, within the 5-day grace window (due 2026-02-01)."
+    },
+    {
+      "issue": "late_fee_over_cap",
+      "severity": "overcharge",
+      "entryId": 10,
+      "month": "2026-03",
+      "amountInQuestion": 80,
+      "ruleId": "DC-LF",
+      "text": "Fee 150.00 exceeds the 5% of monthly rent cap of 70.00 for 2026-03."
+    },
+    {
+      "issue": "disallowed_charge_type",
+      "severity": "overcharge",
+      "entryId": 3,
+      "month": "2026-01",
+      "amountInQuestion": 250,
+      "ruleId": "DC-ALLOWABLE",
+      "text": "Charge of type \"misc_fee\" (250.00 on 2026-01-15) is not an allowable charge type in the DC example ruleset."
+    }
+  ],
+  "balance": {
+    "ledgerFinal": 1870,
+    "lawfulFinal": 1470,
+    "overchargeTotal": 400
+  },
+  "underpayments": [],
+  "gate": {
+    "required": true,
+    "message": "Recomputation uses illustrative example rulesets; figures are screening estimates for attorney review, not a determination of what is owed. Verify against the actual lease, ledger originals, and current local law."
+  },
+  "expectedMonths": 4
+}

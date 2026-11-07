@@ -1,0 +1,8 @@
+{
+  "name": "access-to-justice-front-door",
+  "tagline": "Plain-language triage: deterministic keyword matcher + confidence gate → legal-aid referrals or human escalation; referral info only, never advice",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Access to justice intake triage (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

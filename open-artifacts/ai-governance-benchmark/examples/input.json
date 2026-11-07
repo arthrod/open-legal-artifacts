@@ -1,0 +1,24 @@
+{
+  "org": {
+    "name": "Northlake Logistics (fictional)",
+    "sector": "freight brokerage",
+    "headquarters": "Columbus, Ohio (fictionalized)",
+    "assessment_date": "2026-10-12",
+    "assessor": "in-house counsel + IT lead"
+  },
+  "answers": [
+    { "questionId": "inv-1", "level": 2, "evidence": "Spreadsheet of AI tools started in Q1 2026; 9 tools listed, last refreshed 2026-06." },
+    { "questionId": "inv-2", "level": 1, "evidence": "Owners noted for 4 of 9 tools; rest unmapped." },
+    { "questionId": "inv-3", "level": 0, "evidence": "No data-flow documentation exists for any tool." },
+    { "questionId": "risk-1", "level": 1, "evidence": "Informal security review for the pricing model only, by email thread 2026-03." },
+    { "questionId": "risk-2", "level": 0, "evidence": "No re-assessment after the March launch." },
+    { "questionId": "risk-3", "level": 0, "evidence": "AI screening of driver applicants in pilot — no heightened review." },
+    { "questionId": "ven-1", "level": 2, "evidence": "Standard SaaS security questionnaire covers 3 of 6 AI vendors; skips model-change notices." },
+    { "questionId": "ven-2", "level": 1, "evidence": "One DPA mentions no-training-on-our-data; others silent." },
+    { "questionId": "ir-1", "level": 0, "evidence": "No AI-specific incident path; general IT helpdesk only." },
+    { "questionId": "ir-2", "level": 0, "evidence": "No severity levels defined for AI issues." },
+    { "questionId": "ir-3", "level": 1, "evidence": "After the misrouting outage (2026-05) fixes were made but nothing written down." },
+    { "questionId": "trn-1", "level": 1, "evidence": "One all-hands slide deck on ChatGPT policy from 2025; no role-based content." },
+    { "questionId": "trn-2", "level": 2, "evidence": "Legal inbox published in handbook; usage unclear." }
+  ]
+}

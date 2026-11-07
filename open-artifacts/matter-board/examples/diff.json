@@ -1,0 +1,96 @@
+{
+  "prevCapturedAt": "2026-11-01T09:00:00Z",
+  "currCapturedAt": "2026-11-07T09:00:00Z",
+  "added": [
+    {
+      "id": "M-105",
+      "name": "Northwind vendor suite",
+      "client": "Northwind Robotics",
+      "owner": "a.fern",
+      "stage": "intake",
+      "nextStep": "Conflicts check",
+      "nextDeadline": "2026-11-21",
+      "updatedAt": "2026-11-07T08:15:00Z"
+    }
+  ],
+  "removed": [
+    {
+      "id": "M-104",
+      "name": "Oldmatter wind-down",
+      "client": "Gone Corp",
+      "owner": "j.moreau",
+      "stage": "closing",
+      "nextStep": "Archive file",
+      "nextDeadline": "2026-10-31",
+      "updatedAt": "2026-10-20T09:00:00Z"
+    }
+  ],
+  "changed": [
+    {
+      "id": "M-101",
+      "name": "Halberd v. Perigee (fictional)",
+      "field": "nextDeadline",
+      "from": "2026-11-20",
+      "to": "2026-11-18",
+      "severity": "critical",
+      "changedAt": "2026-11-05T11:30:00Z",
+      "source": "matter.updatedAt"
+    },
+    {
+      "id": "M-101",
+      "name": "Halberd v. Perigee (fictional)",
+      "field": "nextStep",
+      "from": "Respond to RFP set two",
+      "to": "Deposition prep — Dr. Okafor",
+      "severity": "minor",
+      "changedAt": "2026-11-05T11:30:00Z",
+      "source": "matter.updatedAt"
+    },
+    {
+      "id": "M-101",
+      "name": "Halberd v. Perigee (fictional)",
+      "field": "owner",
+      "from": "j.moreau",
+      "to": "t.nguyen",
+      "severity": "major",
+      "changedAt": "2026-11-05T11:30:00Z",
+      "source": "matter.updatedAt"
+    },
+    {
+      "id": "M-102",
+      "name": "Quill trademark opposition",
+      "field": "notes",
+      "from": null,
+      "to": "Client signature received; file Monday.",
+      "severity": "minor",
+      "changedAt": "2026-11-06T08:45:00Z",
+      "source": "matter.updatedAt"
+    },
+    {
+      "id": "M-102",
+      "name": "Quill trademark opposition",
+      "field": "status",
+      "from": null,
+      "to": "awaiting-signature",
+      "severity": "major",
+      "changedAt": "2026-11-06T08:45:00Z",
+      "source": "matter.updatedAt"
+    },
+    {
+      "id": "M-103",
+      "name": "Brightwater lease review",
+      "field": "stage",
+      "from": "closing",
+      "to": "closed",
+      "severity": "major",
+      "changedAt": "2026-11-07T09:00:00Z",
+      "source": "snapshot.capturedAt"
+    }
+  ],
+  "counts": {
+    "added": 1,
+    "removed": 1,
+    "changed": 6,
+    "critical": 1
+  }
+}

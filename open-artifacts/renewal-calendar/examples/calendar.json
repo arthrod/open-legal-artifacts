@@ -1,0 +1,184 @@
+{
+  "asOf": "2026-11-07",
+  "events": [
+    {
+      "contractId": "CTR-002",
+      "contractName": "Lantern Warehouse Lease",
+      "counterparty": "Lantern Properties LLC",
+      "clauseType": "auto-renewal",
+      "quote": "Tenant must notify Landlord of intent not to renew at least ninety (90) days before the end of the calendar quarter in which the term expires.",
+      "expression": "90 days before quarter end",
+      "normalized": {
+        "status": "ambiguous",
+        "date": "2026-10-02",
+        "reason": "90 days before quarter end (2026-12-31)",
+        "ambiguityFlag": {
+          "type": "quarter-selection",
+          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07."
+        },
+        "candidates": [
+          "2026-10-02"
+        ]
+      },
+      "status": "ambiguous",
+      "date": "2026-10-02",
+      "noticeDeadline": "2026-07-04",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "90 days before quarter end (2026-12-31)",
+      "ambiguityFlag": {
+        "type": "quarter-selection",
+        "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07."
+      }
+    },
+    {
+      "contractId": "CTR-002",
+      "contractName": "Lantern Warehouse Lease",
+      "counterparty": "Lantern Properties LLC",
+      "clauseType": "price-adjustment",
+      "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end.",
+      "expression": "within 60 days of quarter end",
+      "normalized": {
+        "status": "ambiguous",
+        "date": "2026-11-01",
+        "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
+        "candidates": [
+          "2026-11-01",
+          "2027-03-01"
+        ],
+        "ambiguityFlag": {
+          "type": "window-direction-and-quarter",
+          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
+        }
+      },
+      "status": "ambiguous",
+      "date": "2026-11-01",
+      "noticeDeadline": "2026-07-04",
+      "leadTimeDays": 120,
+      "leadTimeSource": "rules.byClauseType[price-adjustment]",
+      "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
+      "ambiguityFlag": {
+        "type": "window-direction-and-quarter",
+        "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
+      }
+    },
+    {
+      "contractId": "CTR-004",
+      "contractName": "Quillmaster Reseller Deal",
+      "counterparty": "Quillmaster Inc.",
+      "clauseType": "auto-renewal",
+      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
+      "expression": "2026-11-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2026-11-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2026-11-01",
+      "noticeDeadline": "2026-08-03",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "explicit ISO date in clause data"
+    },
+    {
+      "contractId": "CTR-004",
+      "contractName": "Quillmaster Reseller Deal",
+      "counterparty": "Quillmaster Inc.",
+      "clauseType": "termination-for-convenience",
+      "quote": "Either party may terminate for convenience on thirty (30) days written notice.",
+      "expression": "2026-11-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2026-11-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2026-11-01",
+      "noticeDeadline": "2026-10-02",
+      "leadTimeDays": 30,
+      "leadTimeSource": "rules.byClauseType[termination-for-convenience]",
+      "reason": "explicit ISO date in clause data"
+    },
+    {
+      "contractId": "CTR-001",
+      "contractName": "Foundry SaaS MSA",
+      "counterparty": "Foundry Cloud Ltd.",
+      "clauseType": "auto-renewal",
+      "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term.",
+      "expression": "2027-04-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2027-04-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2027-04-01",
+      "noticeDeadline": "2027-01-01",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "explicit ISO date in clause data"
+    },
+    {
+      "contractId": "CTR-001",
+      "contractName": "Foundry SaaS MSA",
+      "counterparty": "Foundry Cloud Ltd.",
+      "clauseType": "termination-for-convenience",
+      "quote": "Either party may terminate for convenience on thirty (30) days written notice.",
+      "expression": "2027-04-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2027-04-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2027-04-01",
+      "noticeDeadline": "2027-03-02",
+      "leadTimeDays": 30,
+      "leadTimeSource": "clause override",
+      "reason": "explicit ISO date in clause data"
+    },
+    {
+      "contractId": "CTR-003",
+      "contractName": "Helix Maintenance Agreement",
+      "counterparty": "Helix Service Co.",
+      "clauseType": "evergreen",
+      "quote": "This agreement continues in force until terminated; initial term ends June 15, 2028.",
+      "expression": "2028-06-15",
+      "normalized": {
+        "status": "exact",
+        "date": "2028-06-15",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2028-06-15",
+      "noticeDeadline": "2028-03-17",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[evergreen]",
+      "reason": "explicit ISO date in clause data"
+    }
+  ],
+  "unresolved": [
+    {
+      "contractId": "CTR-003",
+      "contractName": "Helix Maintenance Agreement",
+      "counterparty": "Helix Service Co.",
+      "clauseType": "notice",
+      "quote": "The parties may amend the notice period by mutual agreement.",
+      "expression": "on mutual agreement",
+      "normalized": {
+        "status": "unresolved",
+        "date": null,
+        "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
+      },
+      "status": "unresolved",
+      "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "confirmed": 5,
+    "ambiguous": 2,
+    "unresolved": 1
+  }
+}

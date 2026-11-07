@@ -1,0 +1,8 @@
+{
+  "name": "record-sealing-screener",
+  "tagline": "Case facts in, sealing eligibility out — every flag cites its rule, nothing is guessed.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Record sealing screener — Rising for Justice (Claude for Legal A2J gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

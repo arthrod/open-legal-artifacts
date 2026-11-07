@@ -1,0 +1,8 @@
+{
+  "name": "immigration-papers-reader",
+  "tagline": "Case facts → required-docs checklist, date-math statuses, readiness score, referral flag.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Immigration papers reader — Mobile Pathways (Claude for Legal partner gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,189 @@
+{
+  "summary": {
+    "entries": 11,
+    "fees": 52185,
+    "disbursements": 1840.25,
+    "writeOffs": 1889,
+    "netSpend": 52136.25,
+    "hourlyChecked": 9,
+    "rateOk": 5,
+    "rateExceptions": 4,
+    "overBudget": 1,
+    "unbudgeted": 0,
+    "writeOffFlags": 1
+  },
+  "rateFindings": [
+    {
+      "kind": "rate",
+      "entryId": "L-003",
+      "matterId": "M-210",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "timekeeper": "A. Reyes",
+      "level": "partner",
+      "billedRate": 925,
+      "hours": 2,
+      "status": "over_rate",
+      "expectedRate": 850,
+      "rateVariance": 75,
+      "amountImpact": 150,
+      "detail": "billed 925/h for level \"partner\" but card rate is 850/h (firm card, from 2026-07-01) — impact 150 over 2h"
+    },
+    {
+      "kind": "rate",
+      "entryId": "L-005",
+      "matterId": "M-211",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "timekeeper": "S. Ito",
+      "level": "partner",
+      "billedRate": 950,
+      "hours": 5,
+      "status": "over_rate",
+      "expectedRate": 900,
+      "rateVariance": 50,
+      "amountImpact": 250,
+      "detail": "billed 950/h for level \"partner\" but card rate is 900/h (matter card, from 2026-07-01) — impact 250 over 5h"
+    },
+    {
+      "kind": "rate",
+      "entryId": "L-006",
+      "matterId": "M-212",
+      "firmId": "MVL",
+      "period": "2026-08",
+      "timekeeper": "P. Dorn",
+      "level": "partner",
+      "billedRate": 775,
+      "hours": 2.5,
+      "status": "no_rate_card",
+      "expectedRate": null,
+      "rateVariance": null,
+      "amountImpact": null,
+      "detail": "no rate card covers firm \"MVL\" on 2026-08-20"
+    },
+    {
+      "kind": "rate",
+      "entryId": "L-007",
+      "matterId": "M-212",
+      "firmId": "MVL",
+      "period": "2026-10",
+      "timekeeper": "P. Dorn",
+      "level": "counsel",
+      "billedRate": 600,
+      "hours": 1.5,
+      "status": "unknown_level",
+      "expectedRate": null,
+      "rateVariance": null,
+      "amountImpact": null,
+      "detail": "level \"counsel\" is not on rate card for firm \"MVL\" — expected rate cannot be determined"
+    }
+  ],
+  "budgetVariances": [
+    {
+      "matterId": "M-210",
+      "firmId": "HPL",
+      "gross": 11762.75,
+      "writeOffs": 89,
+      "net": 11673.75,
+      "approved": 8000,
+      "variance": 3673.75,
+      "variancePct": 45.92,
+      "status": "over",
+      "budgetScopes": [
+        "matter M-210 firm HPL"
+      ]
+    },
+    {
+      "matterId": "M-211",
+      "firmId": "HPL",
+      "gross": 14425,
+      "writeOffs": 1800,
+      "net": 12625,
+      "approved": 50000,
+      "variance": -37375,
+      "variancePct": -74.75,
+      "status": "within",
+      "budgetScopes": [
+        "matter M-211 firm all"
+      ]
+    },
+    {
+      "matterId": "M-212",
+      "firmId": "MVL",
+      "gross": 27837.5,
+      "writeOffs": 0,
+      "net": 25900,
+      "approved": 30000,
+      "variance": -4100,
+      "variancePct": -13.67,
+      "status": "within",
+      "budgetScopes": [
+        "matter M-212 firm MVL period 2026-10"
+      ]
+    }
+  ],
+  "writeOffFlags": [
+    {
+      "kind": "write_off",
+      "entryId": "L-010",
+      "matterId": "M-211",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "timekeeper": "S. Ito",
+      "amount": 7200,
+      "writeOff": 1800,
+      "writeOffPct": 25,
+      "flag": "high_write_off",
+      "detail": "write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: \"Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.\""
+    }
+  ],
+  "periodRollups": [
+    {
+      "period": "2026-08",
+      "entries": 2,
+      "fees": 4412.5,
+      "disbursements": 0,
+      "writeOffs": 0,
+      "net": 4412.5,
+      "byFirm": {
+        "HPL": 2475,
+        "MVL": 1937.5
+      },
+      "byMatter": {
+        "M-211": 2475,
+        "M-212": 1937.5
+      }
+    },
+    {
+      "period": "2026-09",
+      "entries": 6,
+      "fees": 20092.5,
+      "disbursements": 1840.25,
+      "writeOffs": 1800,
+      "net": 20132.75,
+      "byFirm": {
+        "HPL": 20132.75
+      },
+      "byMatter": {
+        "M-210": 9982.75,
+        "M-211": 10150
+      }
+    },
+    {
+      "period": "2026-10",
+      "entries": 3,
+      "fees": 27680,
+      "disbursements": 0,
+      "writeOffs": 89,
+      "net": 27591,
+      "byFirm": {
+        "HPL": 1691,
+        "MVL": 25900
+      },
+      "byMatter": {
+        "M-210": 1691,
+        "M-212": 25900
+      }
+    }
+  ]
+}

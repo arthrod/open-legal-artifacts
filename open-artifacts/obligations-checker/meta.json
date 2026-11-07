@@ -1,0 +1,8 @@
+{
+  "name": "obligations-checker",
+  "tagline": "Contract obligations register: per-obligation compliance status from deadlines + satisfaction records, breach-risk flags, CSV export",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Contract obligations tracker (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

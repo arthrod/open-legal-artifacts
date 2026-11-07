@@ -1,0 +1,8 @@
+{
+  "name": "rent-ledger-reviewer",
+  "tagline": "Recomputes a landlord rent ledger entry by entry and flags every charge the rules don't allow.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Rent ledger reviewer — Rising for Justice (Claude for Legal A2J gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

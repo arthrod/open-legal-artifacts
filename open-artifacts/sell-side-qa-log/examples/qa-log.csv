@@ -1,0 +1,9 @@
+id,buyer,category,status,question,currentAnswer,pendingDraft,contradiction,answers
+Q-001,Oryx Growth Partners,litigation,sent,Are there any pending lawsuits against the target?,Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.,,number_conflict; antonym_conflict,2
+Q-002,Lantern Harbor Capital,litigation,sent,Does the target have any active litigation exposure?,No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.,,number_conflict; antonym_conflict,1
+Q-003,Oryx Growth Partners,customers,sent,How many customers does the target have?,"The target serves 1,200 active customers across 14 locations.",,number_conflict,1
+Q-004,Fairwind Industrials,customers,sent,What is the customer base?,Approximately 950 active customers as of the latest quarter.,,number_conflict,1
+Q-005,Lantern Harbor Capital,financials,draft-pending,What was 2025 revenue growth?,Revenue grew 12% in 2025.,"Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",number_conflict,2
+Q-006,Oryx Growth Partners,financials,sent,How did profitability trend in 2025?,EBITDA increased 4% year over year in 2025.,,number_conflict,1
+Q-007,Lantern Harbor Capital,ip,open,Is the IP exclusively licensed?,,,,0
+Q-008,Fairwind Industrials,ip,draft-pending,Are any licenses exclusive?,The core patent portfolio is licensed exclusively to Meridian Manufacturing.,The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.,,2

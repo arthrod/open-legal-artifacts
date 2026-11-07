@@ -1,0 +1,43 @@
+{
+  "asOf": "2026-11-07",
+  "notices": [
+    {
+      "id": "E-1031",
+      "caption": "Kimura v. Bridge Street Apartments (fictional)",
+      "jurisdiction": "california-example",
+      "noticeType": "pay-or-quit",
+      "statedPeriodDays": 3,
+      "serviceDate": "2026-10-01",
+      "filedDate": "2026-10-03",
+      "serviceMethod": "post-and-mail",
+      "contents": {
+        "amount-due": true,
+        "payment-person": true,
+        "payment-methods": false,
+        "nonrent-fees-excluded": true
+      }
+    },
+    {
+      "id": "E-1032",
+      "caption": "Abernathy v. Foxglove Rentals (fictional)",
+      "jurisdiction": "new-york-example",
+      "noticeType": "rent-demand",
+      "statedPeriodDays": 14,
+      "serviceMethod": "conspicuous-place",
+      "contents": {
+        "amount-due": true
+      }
+    },
+    {
+      "id": "E-1033",
+      "caption": "Sorenson v. Delta Flats HOA (fictional)",
+      "jurisdiction": "ohio-example",
+      "noticeType": "notice-to-leave",
+      "statedPeriodDays": 3,
+      "serviceMethod": "certified-carrier-pigeon",
+      "contents": {
+        "statutory-language": false
+      }
+    }
+  ]
+}

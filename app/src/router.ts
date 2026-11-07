@@ -1,5 +1,6 @@
 // Minimal hash router for the static playground. No framework, no backend.
 import { indexPage } from "./pages/index.js";
+import { artifactPage } from "./pages/artifact.js";
 import { citeCheckPage } from "./pages/cite-check.js";
 import { deviationBoardPage } from "./pages/deviation-board.js";
 import { chronologyPage } from "./pages/chronology.js";
@@ -33,8 +34,17 @@ export function currentPath(): string {
 export function render(): void {
   const app = document.getElementById("app");
   if (!app) throw new Error("#app missing");
-  const page = routes[currentPath()] ?? notFound;
-  app.replaceChildren(page());
+
+  const path = currentPath();
+  let page: HTMLElement;
+  const detail = path.match(/^\/a\/([^/]+)$/);
+  if (detail) {
+    page = artifactPage(decodeURIComponent(detail[1]));
+  } else {
+    const factory = routes[path];
+    page = factory ? factory() : notFound();
+  }
+  app.replaceChildren(page);
   window.scrollTo(0, 0);
 }
 
@@ -42,6 +52,6 @@ function notFound(): HTMLElement {
   return el(`<div class="page">
     <h1>Not found</h1>
     <p class="lede">No page at <code>${window.location.hash}</code>.</p>
-    <p><a class="backlink" href="#/">← Back to the gallery</a></p>
+    <p><a class="backlink" href="#/">← Back to the catalog</a></p>
   </div>`);
 }

@@ -1,0 +1,231 @@
+{
+  "deal": {
+    "name": "Project Copperfield — sale of Kestrel Data Systems, Inc. (fictional)"
+  },
+  "summary": {
+    "items": 8,
+    "sent": 7,
+    "draftOnly": 0,
+    "open": 1,
+    "pendingDrafts": 2,
+    "contradictions": 4
+  },
+  "items": [
+    {
+      "id": "Q-001",
+      "buyerId": "B1",
+      "buyer": "Oryx Growth Partners",
+      "category": "litigation",
+      "question": "Are there any pending lawsuits against the target?",
+      "status": "sent",
+      "currentAnswer": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.",
+      "currentAnswerAt": "2026-10-03",
+      "pendingDraft": null,
+      "answersCount": 2,
+      "contradicted": true
+    },
+    {
+      "id": "Q-002",
+      "buyerId": "B2",
+      "buyer": "Lantern Harbor Capital",
+      "category": "litigation",
+      "question": "Does the target have any active litigation exposure?",
+      "status": "sent",
+      "currentAnswer": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.",
+      "currentAnswerAt": "2026-10-05",
+      "pendingDraft": null,
+      "answersCount": 1,
+      "contradicted": true
+    },
+    {
+      "id": "Q-003",
+      "buyerId": "B1",
+      "buyer": "Oryx Growth Partners",
+      "category": "customers",
+      "question": "How many customers does the target have?",
+      "status": "sent",
+      "currentAnswer": "The target serves 1,200 active customers across 14 locations.",
+      "currentAnswerAt": "2026-10-04",
+      "pendingDraft": null,
+      "answersCount": 1,
+      "contradicted": true
+    },
+    {
+      "id": "Q-004",
+      "buyerId": "B3",
+      "buyer": "Fairwind Industrials",
+      "category": "customers",
+      "question": "What is the customer base?",
+      "status": "sent",
+      "currentAnswer": "Approximately 950 active customers as of the latest quarter.",
+      "currentAnswerAt": "2026-10-06",
+      "pendingDraft": null,
+      "answersCount": 1,
+      "contradicted": true
+    },
+    {
+      "id": "Q-005",
+      "buyerId": "B2",
+      "buyer": "Lantern Harbor Capital",
+      "category": "financials",
+      "question": "What was 2025 revenue growth?",
+      "status": "draft-pending",
+      "currentAnswer": "Revenue grew 12% in 2025.",
+      "currentAnswerAt": "2026-10-02",
+      "pendingDraft": "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",
+      "answersCount": 2,
+      "contradicted": true
+    },
+    {
+      "id": "Q-006",
+      "buyerId": "B1",
+      "buyer": "Oryx Growth Partners",
+      "category": "financials",
+      "question": "How did profitability trend in 2025?",
+      "status": "sent",
+      "currentAnswer": "EBITDA increased 4% year over year in 2025.",
+      "currentAnswerAt": "2026-10-08",
+      "pendingDraft": null,
+      "answersCount": 1,
+      "contradicted": true
+    },
+    {
+      "id": "Q-007",
+      "buyerId": "B2",
+      "buyer": "Lantern Harbor Capital",
+      "category": "ip",
+      "question": "Is the IP exclusively licensed?",
+      "status": "open",
+      "currentAnswer": null,
+      "currentAnswerAt": null,
+      "pendingDraft": null,
+      "answersCount": 0,
+      "contradicted": false
+    },
+    {
+      "id": "Q-008",
+      "buyerId": "B3",
+      "buyer": "Fairwind Industrials",
+      "category": "ip",
+      "question": "Are any licenses exclusive?",
+      "status": "draft-pending",
+      "currentAnswer": "The core patent portfolio is licensed exclusively to Meridian Manufacturing.",
+      "currentAnswerAt": "2026-10-09",
+      "pendingDraft": "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.",
+      "answersCount": 2,
+      "contradicted": false
+    }
+  ],
+  "contradictions": [
+    {
+      "category": "customers",
+      "kind": "number_conflict",
+      "between": [
+        "Q-003",
+        "Q-004"
+      ],
+      "detail": "disjoint bare-count values: Q-003 (sent) says 1200, Q-004 (sent) says 950 — 1200 vs 950",
+      "evidence": [
+        {
+          "itemId": "Q-003",
+          "answerStatus": "sent",
+          "quote": "The target serves 1,200 active customers across 14 locations."
+        },
+        {
+          "itemId": "Q-004",
+          "answerStatus": "sent",
+          "quote": "Approximately 950 active customers as of the latest quarter."
+        }
+      ]
+    },
+    {
+      "category": "financials",
+      "kind": "number_conflict",
+      "between": [
+        "Q-005",
+        "Q-006"
+      ],
+      "detail": "disjoint \"%\" values: Q-005 (sent) says 12, Q-006 (sent) says 4 — 12 vs 4",
+      "evidence": [
+        {
+          "itemId": "Q-005",
+          "answerStatus": "sent",
+          "quote": "Revenue grew 12% in 2025."
+        },
+        {
+          "itemId": "Q-006",
+          "answerStatus": "sent",
+          "quote": "EBITDA increased 4% year over year in 2025."
+        }
+      ]
+    },
+    {
+      "category": "litigation",
+      "kind": "number_conflict",
+      "between": [
+        "Q-001",
+        "Q-002"
+      ],
+      "detail": "disjoint bare-count values: Q-001 (sent) says 3, Q-002 (sent) says 2/2024 — 3 vs 2/2024",
+      "evidence": [
+        {
+          "itemId": "Q-001",
+          "answerStatus": "sent",
+          "quote": "There are 3 pending lawsuits: two employment matters and one commercial dispute."
+        },
+        {
+          "itemId": "Q-002",
+          "answerStatus": "sent",
+          "quote": "All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
+        }
+      ]
+    },
+    {
+      "category": "litigation",
+      "kind": "antonym_conflict",
+      "between": [
+        "Q-001",
+        "Q-002"
+      ],
+      "detail": "Q-001 says \"yes\" where Q-002 says \"no\"",
+      "evidence": [
+        {
+          "itemId": "Q-001",
+          "answerStatus": "sent",
+          "quote": "Yes."
+        },
+        {
+          "itemId": "Q-002",
+          "answerStatus": "sent",
+          "quote": "No."
+        }
+      ]
+    }
+  ],
+  "readiness": {
+    "score": 69,
+    "band": "nearly ready",
+    "components": {
+      "coverage": 0.875,
+      "pipeline": 0.875,
+      "consistency": 0.25
+    },
+    "weights": {
+      "coverage": 0.5,
+      "pipeline": 0.2,
+      "consistency": 0.3
+    },
+    "bands": {
+      "nearly": 60,
+      "ready": 85
+    },
+    "contradictedItems": [
+      "Q-001",
+      "Q-002",
+      "Q-003",
+      "Q-004",
+      "Q-005",
+      "Q-006"
+    ]
+  }
+}

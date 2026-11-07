@@ -1,0 +1,20 @@
+{
+  "term_sheet": {
+    "company": "Quillform Analytics, Inc. (fictional)",
+    "round": "series_a",
+    "vintage": 2026,
+    "lead_investor": "Fathom Ridge Capital (fictional)",
+    "terms": {
+      "liquidation_preference_multiple": 1.5,
+      "participation": "participating",
+      "anti_dilution": "full_ratchet",
+      "seniority": "senior_to_all_prior",
+      "investor_board_seats": 2,
+      "dividends": "cumulative",
+      "redemption": "investor_demand_after_5y",
+      "pro_rata_rights": "granted_major_investors",
+      "pay_to_play": "none",
+      "founder_vesting_restart": true
+    }
+  }
+}

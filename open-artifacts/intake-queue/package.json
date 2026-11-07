@@ -1,0 +1,5 @@
+{
+  "name": "intake-queue",
+  "private": true,
+  "type": "module"
+}

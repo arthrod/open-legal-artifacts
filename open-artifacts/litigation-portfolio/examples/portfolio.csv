@@ -1,0 +1,7 @@
+id,name,client,claimType,status,stage,solDeadline,daysRemaining,solStatus,ruleCite,exposureLow,exposureHigh,exposureBand,flags
+LIT-2026-014,Harbor Bakehouse v. Northwind Logistics (fictional),Harbor Bakehouse Co.,breach-of-written-contract,active,discovery,2029-09-12,1040,ok,"e.g. Cal. Code Civ. Proc. § 337 (4 yr) — US default, verify per state",120000,340000,medium,
+LIT-2026-021,Delgado v. Summit Ridge Hospitality (fictional),M. Delgado,personal-injury-negligence,active,expert discovery,2026-11-20,13,critical,"e.g. Cal. Code Civ. Proc. § 335.1 (2 yr) — US default, verify per state",15000,48000,low,
+LIT-2025-003,Cedar Lane HOA v. Brightpath Solar (fictional),Cedar Lane HOA,property-damage,settlement,mediation scheduled,2027-02-01,86,warning,"e.g. Cal. Code Civ. Proc. § 338(b) (3 yr) — US default, verify per state",40000,210000,medium,
+LIT-2026-030,Okonkwo v. Meridian Foods (fictional),P. Okonkwo,employment-discrimination-federal,assessing,pre-charge intake,2027-06-26,231,ok,"42 U.S.C. § 2000e-5(e) (300-day EEOC charge window) — US default, verify",,95000,medium,
+LIT-2024-108,Vance v. Quill & Press Publishing (fictional),R. Vance,fraud,trial,pre-trial conference,2028-03-18,497,ok,"e.g. Cal. Code Civ. Proc. § 338(d) (3 yr, discovery) — US default, verify per state",600000,1200000,high,
+LIT-2026-041,Tidewater Fisheries v. Unknown Vessel Operator (fictional),Tidewater Fisheries LLC,admiralty-collision,assessing,identifying defendant,,,unverified,,,,unquantified,"unknown claim type ""admiralty-collision"" — no limitation rule configured"

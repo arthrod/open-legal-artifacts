@@ -1,0 +1,24 @@
+export default {
+  "asOf": "2026-11-07",
+  "previous": {
+    "capturedAt": "2026-11-01T09:00:00Z",
+    "source": "clio-export-week-44.csv (fictional)",
+    "matters": [
+      { "id": "M-101", "name": "Halberd v. Perigee (fictional)", "client": "Halberd Logistics", "owner": "j.moreau", "stage": "discovery", "nextStep": "Respond to RFP set two", "nextDeadline": "2026-11-20", "updatedAt": "2026-10-28T14:00:00Z" },
+      { "id": "M-102", "name": "Quill trademark opposition", "client": "Quill Coffee Co.", "owner": "s.okafor", "stage": "filing", "nextStep": "File opposition", "nextDeadline": "2026-11-12", "updatedAt": "2026-10-30T10:00:00Z" },
+      { "id": "M-103", "name": "Brightwater lease review", "client": "Brightwater LLC", "owner": "t.nguyen", "stage": "closing", "nextStep": "Send execution copies", "nextDeadline": "2026-11-08", "updatedAt": "2026-10-25T16:00:00Z" },
+      { "id": "M-104", "name": "Oldmatter wind-down", "client": "Gone Corp", "owner": "j.moreau", "stage": "closing", "nextStep": "Archive file", "nextDeadline": "2026-10-31", "updatedAt": "2026-10-20T09:00:00Z" }
+    ]
+  },
+  "current": {
+    "capturedAt": "2026-11-07T09:00:00Z",
+    "source": "clio-export-week-45.csv (fictional)",
+    "matters": [
+      { "id": "M-101", "name": "Halberd v. Perigee (fictional)", "client": "Halberd Logistics", "owner": "t.nguyen", "stage": "discovery", "nextStep": "Deposition prep — Dr. Okafor", "nextDeadline": "2026-11-18", "updatedAt": "2026-11-05T11:30:00Z" },
+      { "id": "M-102", "name": "Quill trademark opposition", "client": "Quill Coffee Co.", "owner": "s.okafor", "stage": "filing", "nextStep": "File opposition", "nextDeadline": "2026-11-12", "status": "awaiting-signature", "notes": "Client signature received; file Monday.", "updatedAt": "2026-11-06T08:45:00Z" },
+      { "id": "M-103", "name": "Brightwater lease review", "client": "Brightwater LLC", "owner": "t.nguyen", "stage": "closed", "nextStep": "Send execution copies", "nextDeadline": "2026-11-08", "updatedAt": null },
+      { "id": "M-105", "name": "Northwind vendor suite", "client": "Northwind Robotics", "owner": "a.fern", "stage": "intake", "nextStep": "Conflicts check", "nextDeadline": "2026-11-21", "updatedAt": "2026-11-07T08:15:00Z" }
+    ]
+  }
+}
+

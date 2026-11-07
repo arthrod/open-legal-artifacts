@@ -1,0 +1,40 @@
+{
+  "jurisdiction": "CA",
+  "asOf": "2026-11-07",
+  "client": {
+    "id": "CL-0417",
+    "name": "Dana Whitfield (fictional)",
+    "probationStatus": "completed",
+    "finesPaid": true,
+    "pendingCases": false,
+    "rapSheetObtained": true
+  },
+  "convictions": [
+    {
+      "id": "V1",
+      "offense": "Forgery (fictional)",
+      "offenseCategory": "fraud",
+      "offenseClass": "felony_class_W",
+      "dispositionDate": "2018-05-04",
+      "sentenceCompletedDate": "2020-08-21",
+      "probationTerminatedDate": "2020-08-21"
+    },
+    {
+      "id": "V2",
+      "offense": "Shoplifting (fictional)",
+      "offenseCategory": "theft",
+      "offenseClass": "misdemeanor",
+      "dispositionDate": "2016-11-17",
+      "sentenceCompletedDate": "2017-02-10",
+      "probationTerminatedDate": "2017-06-30"
+    }
+  ],
+  "filings": [
+    {
+      "reliefTypeId": "CA-dismissal-petition",
+      "convictionId": "V2",
+      "date": "2026-09-15",
+      "status": "filed"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "ai-use-case-inventory",
+  "tagline": "Firm-wide AI use-case register with a transparent EU AI Act-ish rules-as-data rubric, gap flags, dashboard, CSV export.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "AI use-case inventory (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

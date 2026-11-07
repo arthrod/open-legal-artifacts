@@ -1,0 +1,7 @@
+kind,ref,matterId,firmId,period,status,detail,amount
+rate,L-003,M-210,HPL,2026-09,over_rate,"billed 925/h for level ""partner"" but card rate is 850/h (firm card, from 2026-07-01) — impact 150 over 2h",150
+rate,L-005,M-211,HPL,2026-09,over_rate,"billed 950/h for level ""partner"" but card rate is 900/h (matter card, from 2026-07-01) — impact 250 over 5h",250
+rate,L-006,M-212,MVL,2026-08,no_rate_card,"no rate card covers firm ""MVL"" on 2026-08-20",
+rate,L-007,M-212,MVL,2026-10,unknown_level,"level ""counsel"" is not on rate card for firm ""MVL"" — expected rate cannot be determined",
+budget,M-210×HPL,M-210,HPL,,over,net spend 11673.75 exceeds approved 8000 by 3673.75 (45.92%),3673.75
+write_off,L-010,M-211,HPL,2026-09,high_write_off,"write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: ""Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.""",1800

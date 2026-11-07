@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sell-side Q&amp;A log — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 24px; flex-wrap: wrap; }
+  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 110px; }
+  .counts div:last-child { border-right: none; }
+  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  .readiness { border: var(--hairline); background: #fff; padding: 18px 20px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+  .readiness .score { font-family: var(--font-mono); font-size: 40px; font-weight: 500; }
+  .readiness .band { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; background: var(--accent); padding: 2px 8px; }
+  .readiness .comp { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); line-height: 1.9; }
+  .bar { position: relative; background: var(--hover); height: 10px; width: 220px; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--text); }
+  .conflict { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+  .conflict .k { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
+  .conflict blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
+  .conflict blockquote b { color: var(--text); font-family: var(--font-mono); font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+  tr.flag td { background: #fffbe6; }
+  .pill { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill.open { background: var(--text); color: var(--bg); }
+  .pill.draft, .pill.draft-pending { background: var(--accent); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  button.chip { background: transparent; color: var(--text); padding: 6px 12px; font-size: 12px; }
+  button.chip.active { background: var(--text); color: var(--bg); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  .scroll { overflow-x: auto; }
+  .q { color: var(--text-secondary); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">open-legal-artifacts · deterministic core · rules-as-data</div>
+    <h1>Sell-side Q&amp;A log</h1>
+    <div class="rule"></div>
+    <p class="lede">A diligence Q&amp;A log whose core <b>cross-examines the answers</b>: questions carry
+      buyer, category, and answer history (draft/sent); deterministic heuristics detect contradictions
+      between answers — numbers by unit, terms by antonym pairs — each flagged with verbatim evidence
+      quotes; and a disclosure-readiness score is computed from the log itself. Open reimplementation
+      of Anthropic's closed artifact.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): Project Copperfield, three buyers,
+      eight questions — including a pending draft that quietly changes the EBITDA story.</p>
+  </header>
+
+  <section>
+    <h2>Workflow state</h2>
+    <div class="counts" id="counts"></div>
+    <div class="readiness" id="readiness"></div>
+  </section>
+
+  <section>
+    <h2>Contradictions (deterministic heuristics — attorney review required)</h2>
+    <div id="contradictions"></div>
+    <div class="row">
+      <button id="jsonBtn">Export log JSON</button>
+      <button id="csvBtn" class="ghost">Export log CSV</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Q&amp;A log</h2>
+    <div class="row" id="filterChips" style="margin: 0 0 12px"></div>
+    <div class="scroll"><table id="log"></table></div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic heuristics — an optional LLM may draft answers from data-room excerpts (schema in spec.md),
+    but workflow state, contradiction detection, and the readiness score are pure code. Flags are for human
+    review, never legal conclusions. All example data fictional. Not legal advice.
+    <code>anthropic counterpart: Sell-side Q&amp;A log (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { buildQaLog, qaLogToCsv, qaLogToJson } from "../core/core.js";
+  import EXAMPLE from "./example.js";
+
+  const log = buildQaLog(EXAMPLE);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  const s = log.summary;
+  document.getElementById("counts").innerHTML =
+    `<div><b>${s.items}</b><span>questions</span></div>` +
+    `<div><b>${s.sent}</b><span>sent</span></div>` +
+    `<div><b>${s.open}</b><span>open</span></div>` +
+    `<div><b>${s.pendingDrafts}</b><span>draft-pending</span></div>` +
+    `<div><b>${s.contradictions}</b><span>contradictions</span></div>`;
+
+  const r = log.readiness;
+  document.getElementById("readiness").innerHTML =
+    `<div><span class="score">${r.score}</span><span class="band">${r.band}</span></div>` +
+    `<div class="comp">coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}<br>` +
+    `pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}<br>` +
+    `consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}</div>` +
+    `<div class="bar"><i style="width:${r.score}%"></i></div>`;
+
+  document.getElementById("contradictions").innerHTML = log.contradictions.length
+    ? log.contradictions
+        .map(
+          (c) =>
+            `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.between.join(" vs "))}</b> · ${esc(c.category)} — ${esc(c.detail)}.` +
+            c.evidence.map((e) => `<blockquote><b>${esc(e.itemId)} (${e.answerStatus}):</b> ${esc(e.quote)}</blockquote>`).join("") +
+            `</div>`
+        )
+        .join("")
+    : `<div class="conflict">No contradictions detected within categories.</div>`;
+
+  // log table with buyer filter
+  const buyers = ["all", ...new Set(log.items.map((i) => i.buyer))];
+  const chips = document.getElementById("filterChips");
+  chips.innerHTML = buyers.map((b, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-b="${esc(b)}">${esc(b)}</button>`).join("");
+  function renderLog(filter) {
+    const rows = log.items.filter((i) => filter === "all" || i.buyer === filter);
+    document.getElementById("log").innerHTML =
+      `<tr><th>Id</th><th>Buyer</th><th>Category</th><th>Status</th><th>Question / current answer</th><th>Answers</th></tr>` +
+      rows
+        .map((it) => {
+          const status = it.status === "draft-pending" ? "draft-pending" : it.status;
+          return (
+            `<tr class="${it.contradicted ? "flag" : ""}">` +
+            `<td class="mono"><code>${esc(it.id)}</code></td>` +
+            `<td>${esc(it.buyer)}</td>` +
+            `<td>${esc(it.category)}</td>` +
+            `<td><span class="pill ${status}">${status}</span>${it.contradicted ? `<br><span class="pill open">conflict</span>` : ""}</td>` +
+            `<td><div class="q">${esc(it.question)}</div><div>${it.currentAnswer ? esc(it.currentAnswer) : "<i>no sent answer yet</i>"}</div>` +
+            (it.pendingDraft ? `<div class="q">⌛ pending draft: ${esc(it.pendingDraft)}</div>` : "") + `</td>` +
+            `<td class="mono">${it.answersCount}</td></tr>`
+          );
+        })
+        .join("");
+  }
+  renderLog("all");
+  chips.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-b]");
+    if (!btn) return;
+    chips.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderLog(btn.dataset.b);
+  });
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
+  document.getElementById("jsonBtn").onclick = () => download("qa-log.json", qaLogToJson(log), "application/json");
+  document.getElementById("csvBtn").onclick = () => download("qa-log.csv", qaLogToCsv(log), "text/csv");
+</script>
+</body>
+</html>

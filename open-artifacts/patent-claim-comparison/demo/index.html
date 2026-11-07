@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patent claim comparison — open legal artifacts</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); }
+  .wrap { max-width:var(--max-width); margin:0 auto; padding:48px var(--pad-x-mobile) 96px; }
+  h1 { font-size:28px; font-weight:700; letter-spacing:-0.02em; margin:0 0 8px; }
+  .tagline { color:var(--text-secondary); font-size:15px; margin:0 0 24px; }
+  .rule { height:2px; width:56px; background:var(--accent); border:0; margin:0 0 32px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.14em; color:var(--text-secondary); margin:40px 0 12px; font-family:var(--font-mono); font-weight:400; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
+  textarea { width:100%; box-sizing:border-box; min-height:260px; font-family:var(--font-mono); font-size:12px; line-height:1.6; border:1px solid var(--border); border-radius:0; background:#fff; padding:14px; color:var(--text); resize:vertical; }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
+  button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
+  button:hover { background:#333; }
+  .muted { color:var(--text-secondary); font-size:12px; }
+  .pills { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 16px; }
+  .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
+  .pill b { font-weight:400; background:var(--accent); padding:0 4px; margin-left:6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
+  th { font-family:var(--font-mono); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
+  td { border-bottom:1px solid var(--border); padding:9px 10px; vertical-align:top; }
+  .rel { font-family:var(--font-mono); font-size:11px; white-space:nowrap; }
+  .rel.matched { background:var(--accent); padding:1px 5px; }
+  .note { color:var(--text-secondary); font-size:12px; }
+  .claimhdr { font-family:var(--font-mono); font-size:12px; margin:22px 0 6px; }
+  .dep { border-left:3px solid var(--accent); padding-left:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Patent claim comparison</h1>
+  <p class="tagline">Clause-splitting claim parser · limitation-by-limitation alignment · span anchors · "no teaching found" rows are explicit, never inferred. Fictional data.</p>
+  <hr class="rule">
+
+  <h2>Claim sets</h2>
+  <div class="cols">
+    <textarea id="setA" spellcheck="false"></textarea>
+    <textarea id="setB" spellcheck="false"></textarea>
+  </div>
+  <div class="row">
+    <button id="run">Compare sets</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div class="pills" id="totals"></div>
+  <div id="chart"></div>
+
+  <p class="muted">Deterministic core · <code>open-artifacts/patent-claim-comparison/core/core.js</code> · first-pass charting, attorney review required · not legal advice.</p>
+</div>
+
+<script type="module">
+import { compareClaimSets } from '../core/core.js';
+
+const SET_A = `1. A thermal management system for a battery module, the system comprising:
+a coolant channel defined through a stack of prismatic cells;
+a temperature sensor array disposed on at least two faces of the stack;
+a controller configured to modulate coolant flow based on the temperature sensor array; and
+a pressure-relief valve in fluid communication with the coolant channel.
+2. The system of claim 1, wherein the coolant is a dielectric fluid.
+3. The system of claim 1, wherein the controller derates the stack when any sensor exceeds a threshold; and wherein the derating persists for at least five minutes.`;
+
+const SET_B = `1. A thermal management system for a battery module, the system comprising:
+a coolant channel defined through a stack of prismatic cells;
+a temperature sensor array disposed on at least two faces of the stack;
+a controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold; and
+a pressure-relief valve in fluid communication with the coolant channel.
+2. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.
+4. The system of claim 1, wherein the pressure-relief valve opens at a cracking pressure below 3 bar.`;
+
+const $ = (id) => document.getElementById(id);
+$('setA').value = SET_A; $('setB').value = SET_B;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function run() {
+  const res = compareClaimSets($('setA').value, $('setB').value);
+  const t = res.totals;
+  $('totals').innerHTML = `
+    <span class="pill">matched<b>${t.matched}</b></span>
+    <span class="pill">modified<b>${t.modified}</b></span>
+    <span class="pill">removed<b>${t.removed}</b></span>
+    <span class="pill">added<b>${t.added}</b></span>
+    <span class="pill">claims only in A<b>${t.claimsOnlyInA}</b></span>
+    <span class="pill">claims only in B<b>${t.claimsOnlyInB}</b></span>
+    <span class="pill">no-teaching rows<b>${res.noTeachingFound}</b></span>`;
+  let html = '';
+  for (const c of res.claims) {
+    html += `<p class="claimhdr">Claim ${c.claimNo ?? '(unnumbered)'} — ${esc(c.result)}${c.dependencyChanged ? ' <span class="pill">dependency changed</span>' : ''}</p>`;
+    if (!c.comparison) { html += `<p class="note">${esc((c.aClaim || c.bClaim || '').slice(0, 160))}…</p>`; continue; }
+    html += `<table>
+      <tr><th>#</th><th>Set A limitation</th><th>Relation</th><th>Set B limitation</th><th>Sim</th><th>Note</th></tr>
+      ${c.comparison.rows.map((r) => `<tr>
+        <td>${esc(r.aId || '—')}</td><td>${esc(r.aText || '—')}</td>
+        <td><span class="rel ${r.relation}">${r.relation}</span></td>
+        <td>${esc(r.bText || '—')}</td>
+        <td>${r.similarity || '—'}</td>
+        <td class="note">${esc(r.note)}</td>
+      </tr>`).join('')}</table>`;
+  }
+  $('chart').innerHTML = html;
+  $('status').textContent = `${res.claims.length} claims compared`;
+}
+$('run').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>

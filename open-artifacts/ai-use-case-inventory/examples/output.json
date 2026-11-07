@@ -1,0 +1,222 @@
+{
+  "organization": "Vestra Dynamics Corp. (fictional)",
+  "total": 7,
+  "counts": {
+    "prohibited": 1,
+    "high": 3,
+    "limited": 1,
+    "minimal": 2
+  },
+  "gapCounts": {
+    "blocker": 2,
+    "major": 2,
+    "minor": 3
+  },
+  "blockers": [
+    {
+      "id": "AI-02",
+      "name": "Talent screen",
+      "tier": "high",
+      "gap": "High tier with no meaningful human oversight — mandatory oversight gap."
+    },
+    {
+      "id": "AI-03",
+      "name": "Community trust index",
+      "tier": "prohibited",
+      "gap": "Prohibited-style practice per rubric — suspend pending counsel review."
+    }
+  ],
+  "byDepartment": {
+    "Legal": 1,
+    "People": 1,
+    "Marketplace": 1,
+    "Sales": 1,
+    "Warranty": 1,
+    "Facilities": 1,
+    "Corp Dev": 1
+  },
+  "items": [
+    {
+      "record": {
+        "id": "AI-01",
+        "name": "NDA fallback drafter",
+        "purpose": "Drafts fallback positions for NDAs for attorney review",
+        "dataSensitivity": "confidential",
+        "humanOversight": "human-in-loop",
+        "autonomy": "draft-with-review",
+        "department": "Legal"
+      },
+      "tier": "minimal",
+      "basis": {
+        "ruleId": "default",
+        "note": "no rubric rule matched; minimal by default"
+      },
+      "gaps": [
+        {
+          "id": "none",
+          "severity": "minor",
+          "message": "No gaps flagged by the rubric — keep in inventory."
+        }
+      ],
+      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
+    },
+    {
+      "record": {
+        "id": "AI-02",
+        "name": "Talent screen",
+        "purpose": "CV screening and candidate ranking for engineering roles",
+        "dataSensitivity": "personal",
+        "humanOversight": "notify",
+        "autonomy": "act-with-review",
+        "department": "People",
+        "existingControls": [
+          "DPA signed"
+        ]
+      },
+      "tier": "high",
+      "basis": {
+        "ruleId": "employment-screening",
+        "matchedKeyword": "cv screening",
+        "evidenceNote": "EU AI Act Annex III 4(a)-style: employment and worker management."
+      },
+      "gaps": [
+        {
+          "id": "missing-oversight",
+          "severity": "blocker",
+          "message": "High tier with no meaningful human oversight — mandatory oversight gap."
+        },
+        {
+          "id": "autonomy-high-tier",
+          "severity": "major",
+          "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
+        }
+      ],
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+    },
+    {
+      "record": {
+        "id": "AI-03",
+        "name": "Community trust index",
+        "purpose": "Social scoring of marketplace users for general trustworthiness",
+        "dataSensitivity": "personal",
+        "humanOversight": "none",
+        "autonomy": "autonomous",
+        "department": "Marketplace"
+      },
+      "tier": "prohibited",
+      "basis": {
+        "ruleId": "social-scoring",
+        "matchedKeyword": "social scoring",
+        "evidenceNote": "EU AI Act Art. 5(1)(c)-style: evaluating or classifying persons for general social behavior."
+      },
+      "gaps": [
+        {
+          "id": "prohibited-practice",
+          "severity": "blocker",
+          "message": "Prohibited-style practice per rubric — suspend pending counsel review."
+        },
+        {
+          "id": "no-evaluation",
+          "severity": "minor",
+          "message": "Autonomous action without logged evaluation/red-team/monitoring control."
+        }
+      ],
+      "nistRmf": "Govern: prohibit; remove system (GE-1)."
+    },
+    {
+      "record": {
+        "id": "AI-04",
+        "name": "Client intake helper",
+        "purpose": "Customer-facing assistant chatbot answering intake questions",
+        "dataSensitivity": "confidential",
+        "humanOversight": "human-decides",
+        "autonomy": "assist",
+        "department": "Sales"
+      },
+      "tier": "limited",
+      "basis": {
+        "ruleId": "transparency-chatbot",
+        "matchedKeyword": "chatbot",
+        "evidenceNote": "EU AI Act Art. 50-style transparency: users must be told they interact with AI."
+      },
+      "gaps": [],
+      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish)."
+    },
+    {
+      "record": {
+        "id": "AI-05",
+        "name": "Climatesco claims triage",
+        "purpose": "Insurance eligibility pre-checks for warranty claims",
+        "dataSensitivity": "personal",
+        "humanOversight": "human-in-loop",
+        "autonomy": "draft-with-review",
+        "department": "Warranty",
+        "existingControls": [
+          "model card v3",
+          "eval log"
+        ]
+      },
+      "tier": "high",
+      "basis": {
+        "ruleId": "essential-services",
+        "matchedKeyword": "insurance eligibility",
+        "evidenceNote": "EU AI Act Annex III 5-style: essential private/public services."
+      },
+      "gaps": [],
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+    },
+    {
+      "record": {
+        "id": "AI-06",
+        "name": "Shop-floor safety vision",
+        "purpose": "Biometric identification for shift access at the Nampo plant",
+        "dataSensitivity": "special-category",
+        "humanOversight": "human-decides",
+        "autonomy": "act-with-review",
+        "department": "Facilities",
+        "existingControls": [
+          "GDPR mapping v1"
+        ]
+      },
+      "tier": "high",
+      "basis": {
+        "ruleId": "law-enforcement",
+        "matchedKeyword": "biometric identification",
+        "evidenceNote": "EU AI Act Annex III 6/2-style: law enforcement and remote biometric ID."
+      },
+      "gaps": [
+        {
+          "id": "autonomy-high-tier",
+          "severity": "major",
+          "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
+        }
+      ],
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+    },
+    {
+      "record": {
+        "id": "AI-07",
+        "name": "Deal-room summarizer",
+        "purpose": "Summarizes diligence data rooms for the deal team",
+        "dataSensitivity": "confidential",
+        "humanOversight": "human-in-loop",
+        "autonomy": "draft-with-review",
+        "department": "Corp Dev"
+      },
+      "tier": "minimal",
+      "basis": {
+        "ruleId": "default",
+        "note": "no rubric rule matched; minimal by default"
+      },
+      "gaps": [
+        {
+          "id": "none",
+          "severity": "minor",
+          "message": "No gaps flagged by the rubric — keep in inventory."
+        }
+      ],
+      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
+    }
+  ],
+  "disclaimer": "First-pass screen against a configurable EU AI Act-ish rubric; not a compliance determination. Fictional data. Not legal advice."
+}

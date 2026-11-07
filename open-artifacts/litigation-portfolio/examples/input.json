@@ -1,0 +1,91 @@
+{
+  "asOf": "2026-11-07",
+  "matters": [
+    {
+      "id": "LIT-2026-014",
+      "name": "Harbor Bakehouse v. Northwind Logistics (fictional)",
+      "client": "Harbor Bakehouse Co.",
+      "claimType": "breach-of-written-contract",
+      "accrualDate": "2025-09-12",
+      "status": "active",
+      "stage": "discovery",
+      "exposureLow": 120000,
+      "exposureHigh": 340000,
+      "counsel": "A. Ferreira (fictional)",
+      "venue": "Superior Court, fictional county",
+      "strategy": "No ex parte contact; meet-and-confer before motions; 2-week extension courtesy",
+      "nextDeadline": "2026-11-20"
+    },
+    {
+      "id": "LIT-2026-021",
+      "name": "Delgado v. Summit Ridge Hospitality (fictional)",
+      "client": "M. Delgado",
+      "claimType": "personal-injury-negligence",
+      "accrualDate": "2024-11-20",
+      "status": "active",
+      "stage": "expert discovery",
+      "exposureLow": 15000,
+      "exposureHigh": 48000,
+      "counsel": "J. Okafor (fictional)",
+      "venue": "District Court, fictional county",
+      "strategy": "Early mediation offer after expert reports exchange"
+    },
+    {
+      "id": "LIT-2025-003",
+      "name": "Cedar Lane HOA v. Brightpath Solar (fictional)",
+      "client": "Cedar Lane HOA",
+      "claimType": "property-damage",
+      "accrualDate": "2023-08-02",
+      "tollingEvents": [
+        { "from": "2024-04-01", "to": "2024-10-01", "reason": "contractual tolling agreement (fictional)" }
+      ],
+      "status": "settlement",
+      "stage": "mediation scheduled",
+      "exposureLow": 40000,
+      "exposureHigh": 210000,
+      "counsel": "A. Ferreira (fictional)",
+      "venue": "Superior Court, fictional county",
+      "strategy": "Mediation-first; no filing until demand response"
+    },
+    {
+      "id": "LIT-2026-030",
+      "name": "Okonkwo v. Meridian Foods (fictional)",
+      "client": "P. Okonkwo",
+      "claimType": "employment-discrimination-federal",
+      "accrualDate": "2026-08-30",
+      "status": "assessing",
+      "stage": "pre-charge intake",
+      "exposureHigh": 95000,
+      "counsel": "unassigned",
+      "venue": "EEOC (fictional region)",
+      "strategy": "File charge before 300-day window closes"
+    },
+    {
+      "id": "LIT-2024-108",
+      "name": "Vance v. Quill & Press Publishing (fictional)",
+      "client": "R. Vance",
+      "claimType": "fraud",
+      "accrualDate": "2022-05-01",
+      "discoveryDate": "2025-03-18",
+      "status": "trial",
+      "stage": "pre-trial conference",
+      "exposureLow": 600000,
+      "exposureHigh": 1200000,
+      "counsel": "S. Lindqvist (fictional)",
+      "venue": "District Court, fictional county",
+      "strategy": "No settlement communication without client sign-off"
+    },
+    {
+      "id": "LIT-2026-041",
+      "name": "Tidewater Fisheries v. Unknown Vessel Operator (fictional)",
+      "client": "Tidewater Fisheries LLC",
+      "claimType": "admiralty-collision",
+      "accrualDate": "2026-03-04",
+      "status": "assessing",
+      "stage": "identifying defendant",
+      "counsel": "unassigned",
+      "venue": "TBD",
+      "strategy": "Investigate ownership registry before filing"
+    }
+  ]
+}

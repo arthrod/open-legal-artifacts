@@ -1,0 +1,219 @@
+{
+  "matter": "Kestrel Bio Fuels v. Kestrel Dynamics, Inc. (fictional)",
+  "generatedFrom": "metadata heuristics — every entry requires attorney review before service",
+  "inferenceRulesVersion": "2026-11-example",
+  "entries": [
+    {
+      "logNumber": 1,
+      "docId": "KV-0001",
+      "date": "2026-02-03",
+      "docType": "email",
+      "author": "A. Moreno",
+      "authorRole": "attorney",
+      "recipients": [
+        "J. Vale"
+      ],
+      "cc": [],
+      "subject": "Initial case assessment",
+      "description": "email re: Initial case assessment",
+      "privilegeType": "attorney_client",
+      "basis": [
+        {
+          "type": "attorney_client",
+          "text": "Author \"A. Moreno\" is attorney; client-side recipient(s) present; no third-party recipients."
+        }
+      ],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "near_duplicate",
+          "text": "part of near-duplicate group ND-1"
+        }
+      ],
+      "status": "draft"
+    },
+    {
+      "logNumber": 2,
+      "docId": "KV-0002",
+      "date": "2026-02-03",
+      "docType": "email",
+      "author": "A. Moreno",
+      "authorRole": "attorney",
+      "recipients": [
+        "J. Vale"
+      ],
+      "cc": [],
+      "subject": "Initial case assessment",
+      "description": "email re: Initial case assessment",
+      "privilegeType": "attorney_client",
+      "basis": [
+        {
+          "type": "attorney_client",
+          "text": "Author \"A. Moreno\" is attorney; client-side recipient(s) present; no third-party recipients."
+        }
+      ],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "near_duplicate",
+          "text": "part of near-duplicate group ND-1"
+        }
+      ],
+      "status": "draft"
+    },
+    {
+      "logNumber": 3,
+      "docId": "KV-0007",
+      "date": "2026-02-11",
+      "docType": "memo",
+      "author": "A. Moreno",
+      "authorRole": "attorney",
+      "recipients": [],
+      "cc": [],
+      "subject": "Research memo: forum-selection exposure",
+      "description": "memo re: Research memo: forum-selection exposure",
+      "privilegeType": "work_product",
+      "basis": [
+        {
+          "type": "work_product",
+          "text": "Counsel author and document flagged anticipationOfLitigation."
+        }
+      ],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "incomplete_entry",
+          "text": "no recipients listed"
+        }
+      ],
+      "status": "incomplete"
+    },
+    {
+      "logNumber": 4,
+      "docId": "KV-0014",
+      "date": "2026-02-19",
+      "docType": "email",
+      "author": "A. Moreno",
+      "authorRole": "attorney",
+      "recipients": [
+        "J. Vale",
+        "T. Boyd"
+      ],
+      "cc": [],
+      "subject": "Draft settlement ranges",
+      "description": "email re: Draft settlement ranges",
+      "privilegeType": "none_inferred",
+      "basis": [],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "third_party_present",
+          "text": "Third-party recipient(s) T. Boyd break the confidentiality pattern — attorney-client NOT inferred from metadata."
+        }
+      ],
+      "status": "draft"
+    },
+    {
+      "logNumber": 5,
+      "docId": "KV-0022",
+      "date": "2026-03-02",
+      "docType": "email",
+      "author": "R. Silva",
+      "authorRole": "operations",
+      "recipients": [
+        "M. Ito"
+      ],
+      "cc": [],
+      "subject": "Shipping schedule Q2",
+      "description": "email re: Shipping schedule Q2",
+      "privilegeType": "none_inferred",
+      "basis": [],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "no_privilege_signal",
+          "text": "No counsel↔client pattern and no work-product markers in metadata; treated as likely non-privileged pending review."
+        }
+      ],
+      "status": "draft"
+    },
+    {
+      "logNumber": 6,
+      "docId": "KV-0031",
+      "date": "2026-03-09",
+      "docType": "notes",
+      "author": "L. Chu",
+      "authorRole": "paralegal",
+      "recipients": [
+        "A. Moreno"
+      ],
+      "cc": [],
+      "subject": "Witness interview prep notes — Ibarra",
+      "description": "notes re: Witness interview prep notes — Ibarra",
+      "privilegeType": "work_product",
+      "basis": [
+        {
+          "type": "work_product",
+          "text": "Counsel author and docType \"notes\" matches typical work-product document types."
+        }
+      ],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [],
+      "status": "draft"
+    },
+    {
+      "logNumber": 7,
+      "docId": "KV-0035",
+      "date": null,
+      "docType": "letter",
+      "author": "L. Chu",
+      "authorRole": null,
+      "recipients": [],
+      "cc": [],
+      "subject": "Draft demand letter",
+      "description": "letter re: Draft demand letter",
+      "privilegeType": "none_inferred",
+      "basis": [],
+      "confidence": "metadata_heuristic",
+      "reviewFlags": [
+        {
+          "code": "no_privilege_signal",
+          "text": "No counsel↔client pattern and no work-product markers in metadata; treated as likely non-privileged pending review."
+        },
+        {
+          "code": "incomplete_entry",
+          "text": "date missing"
+        },
+        {
+          "code": "incomplete_entry",
+          "text": "author name or role missing"
+        },
+        {
+          "code": "incomplete_entry",
+          "text": "no recipients listed"
+        }
+      ],
+      "status": "incomplete"
+    }
+  ],
+  "nearDuplicates": [
+    {
+      "group": "ND-1",
+      "docIds": [
+        "KV-0001",
+        "KV-0002"
+      ],
+      "reason": "identical author/recipient/type/subject signature"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "attorneyClient": 2,
+    "workProduct": 2,
+    "both": 0,
+    "noneInferred": 3,
+    "incomplete": 2,
+    "nearDuplicateGroups": 1
+  },
+  "disclaimer": "Draft log generated from document metadata only. Privilege determinations require attorney review of document content; heuristics are not legal conclusions."
+}

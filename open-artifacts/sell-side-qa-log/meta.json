@@ -1,0 +1,8 @@
+{
+  "name": "sell-side-qa-log",
+  "tagline": "A diligence Q&A log whose core cross-examines the answers — deterministic contradiction detection with evidence quotes and an auditable readiness score.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Sell-side Q&A log (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

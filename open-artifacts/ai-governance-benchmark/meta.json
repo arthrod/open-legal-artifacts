@@ -1,0 +1,8 @@
+{
+  "name": "ai-governance-benchmark",
+  "tagline": "Transparent, versioned AI-governance maturity rubric — score, gap-map, and export with evidence.",
+  "category": "partner-built",
+  "anthropic_counterpart": "AI governance benchmark — Goodwin (Claude for Legal partner gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

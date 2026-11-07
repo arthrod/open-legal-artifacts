@@ -1,0 +1,8 @@
+{
+  "name": "record-clearance",
+  "tagline": "Relief-type checklists, filing-deadline math, and status tracking from per-jurisdiction rules-as-data.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Record clearance — The Access Project (Claude for Legal A2J gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "limitations-radar",
+  "tagline": "Statute-of-limitations deadlines from rules-as-data: discovery-rule accrual, statutory tolling, saved-by margins, ICS alerts.",
+  "category": "original-idea",
+  "anthropic_counterpart": null,
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

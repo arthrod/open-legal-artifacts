@@ -1,0 +1,95 @@
+[
+  {
+    "askedBy": "j.moreau@example.test",
+    "question": "Which NDA template do I use for a new analytics vendor?",
+    "answered": true,
+    "answer": "Use the Mutual NDA (Form L-102) for all prospective vendors; do not sign the vendor's own paper. Exceptions (shorter term, no residuals clause) route to Commercial Legal.",
+    "sourceId": "kb-001",
+    "confidence": {
+      "level": "high",
+      "reasons": [
+        "best match \"Which NDA template should I use for a prospective vendor?\" scored 17 (tags: nda, vendor; terms: nda, template, use, vendor)",
+        "score 17 ≥ high threshold 9",
+        "guidance verified 53d ago (within 365d window)"
+      ]
+    },
+    "escalate": false,
+    "route": null,
+    "auditId": "AUD-00001",
+    "answerPreview": "Use the Mutual NDA (Form L-102) for all prospective vendors; do not sign the vendor's own paper. Exceptions (shorter ter"
+  },
+  {
+    "askedBy": "s.okafor@example.test",
+    "question": "Can I expense client entertainment over $500 for the Halberd dinner?",
+    "answered": true,
+    "answer": "Entertainment above $500 requires pre-approval from Finance and the responsible partner, logged in the matter file before the event, not after.",
+    "sourceId": "kb-003",
+    "confidence": {
+      "level": "high",
+      "reasons": [
+        "best match \"Can I expense client entertainment over $500?\" scored 15 (tags: expenses; terms: expense, client, entertainment, over, 500)",
+        "score 15 ≥ high threshold 9",
+        "guidance verified 158d ago (within 365d window)"
+      ]
+    },
+    "escalate": false,
+    "route": null,
+    "auditId": "AUD-00002",
+    "answerPreview": "Entertainment above $500 requires pre-approval from Finance and the responsible partner, logged in the matter file befor"
+  },
+  {
+    "askedBy": "j.moreau@example.test",
+    "question": "How long do we retain website visitor data under the privacy policy?",
+    "answered": true,
+    "answer": "26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).",
+    "sourceId": "kb-005",
+    "confidence": {
+      "level": "medium",
+      "reasons": [
+        "best match \"How long do we retain website visitor data?\" scored 18 (tags: privacy, data-retention; terms: long, retain, website, visitor, data, privacy, policy)",
+        "score 18 ≥ high threshold 9",
+        "guidance is 981d old (> 365d freshness window) — downgraded one tier"
+      ]
+    },
+    "escalate": false,
+    "route": null,
+    "auditId": "AUD-00003",
+    "answerPreview": "26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9)."
+  },
+  {
+    "askedBy": "t.nguyen@example.test",
+    "question": "Do we need a license to launch a satellite for the marketing team?",
+    "answered": false,
+    "answer": null,
+    "sourceId": null,
+    "confidence": {
+      "level": "low",
+      "reasons": [
+        "no knowledge-base entry matched any question term or tag"
+      ]
+    },
+    "escalate": true,
+    "route": "legal-intake",
+    "auditId": "AUD-00004",
+    "answerPreview": null
+  },
+  {
+    "askedBy": "s.okafor@example.test",
+    "question": "A reporter is asking about the outage — what do I say about the data privacy incident?",
+    "answered": true,
+    "answer": "Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides on regulator notification under the incident runbook.",
+    "sourceId": "kb-004",
+    "confidence": {
+      "level": "high",
+      "reasons": [
+        "best match \"How do I report a suspected data privacy incident?\" scored 14 (tags: privacy, incident; terms: data, privacy, incident)",
+        "score 14 ≥ high threshold 9",
+        "guidance verified 8d ago (within 365d window)"
+      ]
+    },
+    "escalate": false,
+    "route": null,
+    "auditId": "AUD-00005",
+    "answerPreview": "Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides "
+  }
+]

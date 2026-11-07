@@ -1,0 +1,8 @@
+{
+  "name": "docket-watch-wall",
+  "tagline": "Per-watcher wall of new docket entries: judge/party/practice filters, seen-store diffing, escalation flags — offline, CourtListener RECAP as a spec'd hook.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Docket watch wall (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

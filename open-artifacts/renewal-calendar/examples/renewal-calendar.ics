@@ -1,0 +1,130 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//open-legal-artifacts//renewal-calendar//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:CTR-002-auto-renewal-20261002@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20260704
+SUMMARY:[?] NOTICE DEADLINE — Lantern Warehouse Lease (auto-renewal)
+DESCRIPTION:Clause: "Tenant must notify Landlord of intent not to renew a
+ t least ninety (90) days before the end of the calendar quarter in which
+  the term expires."\nNormalization: 90 days before quarter end (2026-12-
+ 31)\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\nAMBIGUOUS
+  (quarter-selection): Assumed nearest quarter end 2026-12-31 on/after 20
+ 26-11-07.\nContract: Lantern Warehouse Lease [CTR-002] c/o Lantern Prope
+ rties LLC\nFictional example data. Human confirmation required — not l
+ egal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Lantern Warehouse Lease
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-002-price-adjustment-20261101@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20260704
+SUMMARY:[?] NOTICE DEADLINE — Lantern Warehouse Lease (price-adjustment)
+DESCRIPTION:Clause: "Base rent shall adjust to CPI within sixty (60) days
+  of quarter end."\nNormalization: "within 60 days of quarter end" — di
+ rection unstated\; conservatively using the EARLIER candidate (quarter e
+ nd − 60d)\nNotice lead time: 120d (rules.byClauseType[price-adjustment
+ ])\nAMBIGUOUS (window-direction-and-quarter): Assumed nearest quarter en
+ d 2026-12-31 on/after 2026-11-07 and "before" reading (conservative). Co
+ nfirm clause intent with a lawyer.\nContract: Lantern Warehouse Lease [C
+ TR-002] c/o Lantern Properties LLC\nFictional example data. Human confir
+ mation required — not legal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Lantern Warehouse Lease
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-004-auto-renewal-20261101@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20260803
+SUMMARY:NOTICE DEADLINE — Quillmaster Reseller Deal (auto-renewal)
+DESCRIPTION:Clause: "Renews annually each November 1 unless notice is giv
+ en sixty (60) days prior."\nNormalization: explicit ISO date in clause d
+ ata\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\nStatus: c
+ onfirmed\nContract: Quillmaster Reseller Deal [CTR-004] c/o Quillmaster 
+ Inc.\nFictional example data. Human confirmation required — not legal 
+ advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Quillmaster Reseller Deal
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-004-termination-for-convenience-20261101@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261002
+SUMMARY:NOTICE DEADLINE — Quillmaster Reseller Deal (termination-for-co
+ nvenience)
+DESCRIPTION:Clause: "Either party may terminate for convenience on thirty
+  (30) days written notice."\nNormalization: explicit ISO date in clause 
+ data\nNotice lead time: 30d (rules.byClauseType[termination-for-convenie
+ nce])\nStatus: confirmed\nContract: Quillmaster Reseller Deal [CTR-004] 
+ c/o Quillmaster Inc.\nFictional example data. Human confirmation require
+ d — not legal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Quillmaster Reseller Deal
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-001-auto-renewal-20270401@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270101
+SUMMARY:NOTICE DEADLINE — Foundry SaaS MSA (auto-renewal)
+DESCRIPTION:Clause: "This Agreement renews automatically for successive o
+ ne (1) year terms unless either party gives written notice at least nine
+ ty (90) days prior to the end of the then-current term."\nNormalization:
+  explicit ISO date in clause data\nNotice lead time: 90d (rules.byClause
+ Type[auto-renewal])\nStatus: confirmed\nContract: Foundry SaaS MSA [CTR-
+ 001] c/o Foundry Cloud Ltd.\nFictional example data. Human confirmation 
+ required — not legal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Foundry SaaS MSA
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-001-termination-for-convenience-20270401@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270302
+SUMMARY:NOTICE DEADLINE — Foundry SaaS MSA (termination-for-convenience)
+DESCRIPTION:Clause: "Either party may terminate for convenience on thirty
+  (30) days written notice."\nNormalization: explicit ISO date in clause 
+ data\nNotice lead time: 30d (clause override)\nStatus: confirmed\nContra
+ ct: Foundry SaaS MSA [CTR-001] c/o Foundry Cloud Ltd.\nFictional example
+  data. Human confirmation required — not legal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Foundry SaaS MSA
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CTR-003-evergreen-20280615@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20280317
+SUMMARY:NOTICE DEADLINE — Helix Maintenance Agreement (evergreen)
+DESCRIPTION:Clause: "This agreement continues in force until terminated\;
+  initial term ends June 15\, 2028."\nNormalization: explicit ISO date in
+  clause data\nNotice lead time: 90d (rules.byClauseType[evergreen])\nSta
+ tus: confirmed\nContract: Helix Maintenance Agreement [CTR-003] c/o Heli
+ x Service Co.\nFictional example data. Human confirmation required — n
+ ot legal advice.
+BEGIN:VALARM
+TRIGGER:-P14D
+ACTION:DISPLAY
+DESCRIPTION:Notice window opening — Helix Maintenance Agreement
+END:VALARM
+END:VEVENT
+END:VCALENDAR

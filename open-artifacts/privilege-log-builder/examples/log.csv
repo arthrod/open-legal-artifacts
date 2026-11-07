@@ -1,0 +1,8 @@
+log_number,doc_id,date,doc_type,author,author_role,recipients,cc,privilege_type,description,flags
+1,KV-0001,2026-02-03,email,A. Moreno,attorney,J. Vale,,attorney_client,email re: Initial case assessment,near_duplicate
+2,KV-0002,2026-02-03,email,A. Moreno,attorney,J. Vale,,attorney_client,email re: Initial case assessment,near_duplicate
+3,KV-0007,2026-02-11,memo,A. Moreno,attorney,,,work_product,memo re: Research memo: forum-selection exposure,incomplete_entry
+4,KV-0014,2026-02-19,email,A. Moreno,attorney,J. Vale; T. Boyd,,none_inferred,email re: Draft settlement ranges,third_party_present
+5,KV-0022,2026-03-02,email,R. Silva,operations,M. Ito,,none_inferred,email re: Shipping schedule Q2,no_privilege_signal
+6,KV-0031,2026-03-09,notes,L. Chu,paralegal,A. Moreno,,work_product,notes re: Witness interview prep notes — Ibarra,
+7,KV-0035,,letter,L. Chu,,,,none_inferred,letter re: Draft demand letter,no_privilege_signal; incomplete_entry; incomplete_entry; incomplete_entry

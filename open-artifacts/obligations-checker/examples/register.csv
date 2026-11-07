@@ -1,0 +1,8 @@
+id,clause,party,verb,text,dueDate,amount,status,breachRisk,satisfiedOn,evidence,flags
+OBL-1,§ 4.1,Customer,pay,"pay the Phase 2 milestone fee of $48,000",2026-10-30,48000,overdue,true,,,breach risk: due 2026-10-30 — 8 days past with no satisfaction record
+OBL-2,§ 5.2,Supplier,deliver,deliver the platform security audit report,2026-11-12,,due-soon,false,,,due in 5 days (≤ 14) with no satisfaction record yet
+OBL-3,§ 5.4,Supplier,notify,notify Customer of any security incident within 72 hours of discovery,,,conditional,false,,,"no calendar due date — triggered by condition: ""within 72 hours of discovery of a security incident""; monitor manually"
+OBL-4,§ 6.3,Customer,return,return all Confidential Materials within 30 days of termination,,,conditional,false,,,"no calendar due date — triggered by condition: ""within 30 days of termination of the Agreement""; monitor manually"
+OBL-5,§ 7.1,Supplier,maintain,maintain commercial general liability insurance of at least $1M,2027-03-31,,satisfied,false,2026-04-15,certificate of insurance COI-2026-1187 (fictional),
+OBL-6,§ 8.2,Supplier,deliver,deliver the Q3 API usage statement,2026-09-30,,satisfied,false,2026-10-03,email thread 2026-10-03 (fictional),"satisfied 3 days late (due 2026-09-30, done 2026-10-03)"
+OBL-7,§ 9.5,Both,renew,exchange written renewal notices for the pilot extension,end of the pilot period,,unscheduled,false,,,"dueDate ""end of the pilot period"" not valid ISO — compliance unverified, never guessed"

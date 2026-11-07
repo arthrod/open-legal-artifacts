@@ -1,0 +1,8 @@
+{
+  "name": "jurisdiction-survey-matrix",
+  "tagline": "Jurisdictions × legal questions in one table — every cell cited and dated, unverified cells never guessed.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Jurisdiction survey matrix (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,209 @@
+{
+  "asOf": "2026-11-07",
+  "matters": [
+    {
+      "id": "LIT-2026-014",
+      "name": "Harbor Bakehouse v. Northwind Logistics (fictional)",
+      "client": "Harbor Bakehouse Co.",
+      "claimType": "breach-of-written-contract",
+      "claimLabel": "Breach of written contract",
+      "status": "active",
+      "stage": "discovery",
+      "rulesOfRoad": {
+        "counsel": "A. Ferreira (fictional)",
+        "venue": "Superior Court, fictional county",
+        "strategy": "No ex parte contact; meet-and-confer before motions; 2-week extension courtesy",
+        "nextDeadline": "2026-11-20"
+      },
+      "sol": {
+        "deadline": "2029-09-12",
+        "daysRemaining": 1040,
+        "status": "ok",
+        "accrualUsed": "2025-09-12",
+        "ruleCite": "e.g. Cal. Code Civ. Proc. § 337 (4 yr) — US default, verify per state"
+      },
+      "exposure": {
+        "low": 120000,
+        "high": 340000,
+        "band": "medium",
+        "bandBasis": "high estimate $340,000"
+      },
+      "flags": []
+    },
+    {
+      "id": "LIT-2026-021",
+      "name": "Delgado v. Summit Ridge Hospitality (fictional)",
+      "client": "M. Delgado",
+      "claimType": "personal-injury-negligence",
+      "claimLabel": "Personal injury — negligence",
+      "status": "active",
+      "stage": "expert discovery",
+      "rulesOfRoad": {
+        "counsel": "J. Okafor (fictional)",
+        "venue": "District Court, fictional county",
+        "strategy": "Early mediation offer after expert reports exchange",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": "2026-11-20",
+        "daysRemaining": 13,
+        "status": "critical",
+        "accrualUsed": "2024-11-20",
+        "ruleCite": "e.g. Cal. Code Civ. Proc. § 335.1 (2 yr) — US default, verify per state"
+      },
+      "exposure": {
+        "low": 15000,
+        "high": 48000,
+        "band": "low",
+        "bandBasis": "high estimate $48,000"
+      },
+      "flags": []
+    },
+    {
+      "id": "LIT-2025-003",
+      "name": "Cedar Lane HOA v. Brightpath Solar (fictional)",
+      "client": "Cedar Lane HOA",
+      "claimType": "property-damage",
+      "claimLabel": "Property damage",
+      "status": "settlement",
+      "stage": "mediation scheduled",
+      "rulesOfRoad": {
+        "counsel": "A. Ferreira (fictional)",
+        "venue": "Superior Court, fictional county",
+        "strategy": "Mediation-first; no filing until demand response",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": "2027-02-01",
+        "daysRemaining": 86,
+        "status": "warning",
+        "accrualUsed": "2023-08-02",
+        "ruleCite": "e.g. Cal. Code Civ. Proc. § 338(b) (3 yr) — US default, verify per state"
+      },
+      "exposure": {
+        "low": 40000,
+        "high": 210000,
+        "band": "medium",
+        "bandBasis": "high estimate $210,000"
+      },
+      "flags": []
+    },
+    {
+      "id": "LIT-2026-030",
+      "name": "Okonkwo v. Meridian Foods (fictional)",
+      "client": "P. Okonkwo",
+      "claimType": "employment-discrimination-federal",
+      "claimLabel": "Employment discrimination (Title VII route)",
+      "status": "assessing",
+      "stage": "pre-charge intake",
+      "rulesOfRoad": {
+        "counsel": "unassigned",
+        "venue": "EEOC (fictional region)",
+        "strategy": "File charge before 300-day window closes",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": "2027-06-26",
+        "daysRemaining": 231,
+        "status": "ok",
+        "accrualUsed": "2026-08-30",
+        "ruleCite": "42 U.S.C. § 2000e-5(e) (300-day EEOC charge window) — US default, verify"
+      },
+      "exposure": {
+        "low": null,
+        "high": 95000,
+        "band": "medium",
+        "bandBasis": "high estimate $95,000"
+      },
+      "flags": []
+    },
+    {
+      "id": "LIT-2024-108",
+      "name": "Vance v. Quill & Press Publishing (fictional)",
+      "client": "R. Vance",
+      "claimType": "fraud",
+      "claimLabel": "Fraud / misrepresentation",
+      "status": "trial",
+      "stage": "pre-trial conference",
+      "rulesOfRoad": {
+        "counsel": "S. Lindqvist (fictional)",
+        "venue": "District Court, fictional county",
+        "strategy": "No settlement communication without client sign-off",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": "2028-03-18",
+        "daysRemaining": 497,
+        "status": "ok",
+        "accrualUsed": "2025-03-18",
+        "ruleCite": "e.g. Cal. Code Civ. Proc. § 338(d) (3 yr, discovery) — US default, verify per state"
+      },
+      "exposure": {
+        "low": 600000,
+        "high": 1200000,
+        "band": "high",
+        "bandBasis": "high estimate $1,200,000"
+      },
+      "flags": []
+    },
+    {
+      "id": "LIT-2026-041",
+      "name": "Tidewater Fisheries v. Unknown Vessel Operator (fictional)",
+      "client": "Tidewater Fisheries LLC",
+      "claimType": "admiralty-collision",
+      "claimLabel": "admiralty-collision",
+      "status": "assessing",
+      "stage": "identifying defendant",
+      "rulesOfRoad": {
+        "counsel": "unassigned",
+        "venue": "TBD",
+        "strategy": "Investigate ownership registry before filing",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": null,
+        "daysRemaining": null,
+        "status": "unverified",
+        "accrualUsed": null,
+        "ruleCite": null
+      },
+      "exposure": {
+        "low": null,
+        "high": null,
+        "band": "unquantified",
+        "bandBasis": "no exposure estimate on file"
+      },
+      "flags": [
+        "unknown claim type \"admiralty-collision\" — no limitation rule configured"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "byStatus": {
+      "active": 2,
+      "settlement": 1,
+      "assessing": 2,
+      "trial": 1
+    },
+    "solAlerts": 1,
+    "solUnverified": 1,
+    "exposureByBand": {
+      "low": {
+        "matters": 1,
+        "totalHighEstimate": 48000
+      },
+      "medium": {
+        "matters": 3,
+        "totalHighEstimate": 645000
+      },
+      "high": {
+        "matters": 1,
+        "totalHighEstimate": 1200000
+      },
+      "unquantified": 1
+    },
+    "flagged": 1
+  },
+  "disclaimer": "Limitation periods are configurable US defaults, not legal advice; verify ruleCite against current law in the governing jurisdiction before relying on any deadline."
+}

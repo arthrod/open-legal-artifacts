@@ -1,0 +1,308 @@
+{
+  "asOf": "2026-11-07",
+  "jurisdiction": "CA",
+  "ruleset": {
+    "id": "CA",
+    "name": "California (example ruleset)",
+    "version": "2026-11-example"
+  },
+  "items": [
+    {
+      "convictionId": "V1",
+      "offense": "Forgery (fictional)",
+      "reliefTypeId": "CA-dismissal-petition",
+      "reliefName": "Dismissal petition (record clearance)",
+      "ruleId": "CA-CR1",
+      "checklist": [
+        {
+          "id": "CA-CR1-a",
+          "label": "Probation completed or terminated",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "probationStatus = completed"
+        },
+        {
+          "id": "CA-CR1-b",
+          "label": "All fines, fees, and restitution paid",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "finesPaid = true"
+        },
+        {
+          "id": "CA-CR1-c",
+          "label": "No pending criminal cases",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR1-d",
+          "label": "Offense not excluded from relief",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "category/class not in exclusion list"
+        }
+      ],
+      "filing": null,
+      "earliestFilingDate": "2020-08-21",
+      "lastFilingDate": null,
+      "status": "ready_to_file",
+      "referral": null
+    },
+    {
+      "convictionId": "V2",
+      "offense": "Shoplifting (fictional)",
+      "reliefTypeId": "CA-dismissal-petition",
+      "reliefName": "Dismissal petition (record clearance)",
+      "ruleId": "CA-CR1",
+      "checklist": [
+        {
+          "id": "CA-CR1-a",
+          "label": "Probation completed or terminated",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "probationStatus = completed"
+        },
+        {
+          "id": "CA-CR1-b",
+          "label": "All fines, fees, and restitution paid",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "finesPaid = true"
+        },
+        {
+          "id": "CA-CR1-c",
+          "label": "No pending criminal cases",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR1-d",
+          "label": "Offense not excluded from relief",
+          "ruleId": "CA-CR1",
+          "status": "met",
+          "detail": "category/class not in exclusion list"
+        }
+      ],
+      "filing": {
+        "reliefTypeId": "CA-dismissal-petition",
+        "convictionId": "V2",
+        "date": "2026-09-15",
+        "status": "filed"
+      },
+      "earliestFilingDate": "2017-06-30",
+      "lastFilingDate": null,
+      "status": "filed",
+      "referral": null
+    },
+    {
+      "convictionId": "V1",
+      "offense": "Forgery (fictional)",
+      "reliefTypeId": "CA-cert-rehab",
+      "reliefName": "Certificate of Rehabilitation",
+      "ruleId": "CA-CR2",
+      "checklist": [
+        {
+          "id": "CA-CR2-a",
+          "label": "Probation completed",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "probationStatus = completed"
+        },
+        {
+          "id": "CA-CR2-b",
+          "label": "All court-ordered payments satisfied",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "finesPaid = true"
+        },
+        {
+          "id": "CA-CR2-c",
+          "label": "No pending cases",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR2-d",
+          "label": "Offense not categorically excluded",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "category/class not in exclusion list"
+        },
+        {
+          "id": "CA-CR2-e",
+          "label": "7 years since completion of sentence",
+          "ruleId": "CA-CR2",
+          "status": "not_met",
+          "detail": "7 years from 2020-08-21; satisfied 2027-08-21",
+          "date": "2027-08-21"
+        }
+      ],
+      "filing": null,
+      "earliestFilingDate": "2027-08-21",
+      "lastFilingDate": null,
+      "status": "waiting",
+      "referral": "Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic."
+    },
+    {
+      "convictionId": "V2",
+      "offense": "Shoplifting (fictional)",
+      "reliefTypeId": "CA-cert-rehab",
+      "reliefName": "Certificate of Rehabilitation",
+      "ruleId": "CA-CR2",
+      "checklist": [
+        {
+          "id": "CA-CR2-a",
+          "label": "Probation completed",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "probationStatus = completed"
+        },
+        {
+          "id": "CA-CR2-b",
+          "label": "All court-ordered payments satisfied",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "finesPaid = true"
+        },
+        {
+          "id": "CA-CR2-c",
+          "label": "No pending cases",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR2-d",
+          "label": "Offense not categorically excluded",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "category/class not in exclusion list"
+        },
+        {
+          "id": "CA-CR2-e",
+          "label": "7 years since completion of sentence",
+          "ruleId": "CA-CR2",
+          "status": "met",
+          "detail": "7 years from 2017-02-10; satisfied 2024-02-10",
+          "date": "2024-02-10"
+        }
+      ],
+      "filing": null,
+      "earliestFilingDate": "2024-02-10",
+      "lastFilingDate": null,
+      "status": "ready_to_file",
+      "referral": "Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic."
+    },
+    {
+      "convictionId": "V1",
+      "offense": "Forgery (fictional)",
+      "reliefTypeId": "CA-governor-pardon",
+      "reliefName": "Governor's pardon (application)",
+      "ruleId": "CA-CR3",
+      "checklist": [
+        {
+          "id": "CA-CR3-a",
+          "label": "No pending cases",
+          "ruleId": "CA-CR3",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR3-b",
+          "label": "10 years since sentence completion",
+          "ruleId": "CA-CR3",
+          "status": "not_met",
+          "detail": "10 years from 2020-08-21; satisfied 2030-08-21",
+          "date": "2030-08-21"
+        },
+        {
+          "id": "CA-CR3-c",
+          "label": "Certified rap sheet obtained for the application",
+          "ruleId": "CA-CR3",
+          "status": "met",
+          "detail": "rapSheetObtained = true"
+        }
+      ],
+      "filing": null,
+      "earliestFilingDate": "2030-08-21",
+      "lastFilingDate": null,
+      "status": "waiting",
+      "referral": "Pardon applications route through the governor's office — refer to counsel."
+    },
+    {
+      "convictionId": "V2",
+      "offense": "Shoplifting (fictional)",
+      "reliefTypeId": "CA-governor-pardon",
+      "reliefName": "Governor's pardon (application)",
+      "ruleId": "CA-CR3",
+      "checklist": [
+        {
+          "id": "CA-CR3-a",
+          "label": "No pending cases",
+          "ruleId": "CA-CR3",
+          "status": "met",
+          "detail": "pendingCases = false"
+        },
+        {
+          "id": "CA-CR3-b",
+          "label": "10 years since sentence completion",
+          "ruleId": "CA-CR3",
+          "status": "not_met",
+          "detail": "10 years from 2017-02-10; satisfied 2027-02-10",
+          "date": "2027-02-10"
+        },
+        {
+          "id": "CA-CR3-c",
+          "label": "Certified rap sheet obtained for the application",
+          "ruleId": "CA-CR3",
+          "status": "met",
+          "detail": "rapSheetObtained = true"
+        }
+      ],
+      "filing": null,
+      "earliestFilingDate": "2027-02-10",
+      "lastFilingDate": null,
+      "status": "waiting",
+      "referral": "Pardon applications route through the governor's office — refer to counsel."
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "ready_to_file": 2,
+    "waiting": 3,
+    "blocked": 0,
+    "data_needed": 0,
+    "filed": 1,
+    "granted": 0,
+    "denied": 0
+  },
+  "referrals": [
+    {
+      "reliefTypeId": "CA-cert-rehab",
+      "convictionId": "V1",
+      "note": "Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic."
+    },
+    {
+      "reliefTypeId": "CA-cert-rehab",
+      "convictionId": "V2",
+      "note": "Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic."
+    },
+    {
+      "reliefTypeId": "CA-governor-pardon",
+      "convictionId": "V1",
+      "note": "Pardon applications route through the governor's office — refer to counsel."
+    },
+    {
+      "reliefTypeId": "CA-governor-pardon",
+      "convictionId": "V2",
+      "note": "Pardon applications route through the governor's office — refer to counsel."
+    }
+  ],
+  "gate": {
+    "required": true,
+    "message": "Example rulesets only. Prerequisites marked unknown need court records before any determination; verify everything with counsel or a legal aid clinic before filing."
+  }
+}

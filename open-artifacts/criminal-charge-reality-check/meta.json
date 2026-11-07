@@ -1,0 +1,8 @@
+{
+  "name": "criminal-charge-reality-check",
+  "tagline": "Typical timeline stages, heuristic outcome bands, and what moves the range — heuristics, never predictions.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Criminal charge reality check — Zealous (Claude for Legal A2J gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

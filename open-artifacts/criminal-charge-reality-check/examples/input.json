@@ -1,0 +1,15 @@
+{
+  "jurisdiction": "NY",
+  "charge": "Criminal possession of stolen property, 4th degree (fictional)",
+  "chargeClass": "felony_class_D",
+  "filedOn": "2026-11-02",
+  "client": {
+    "priorConvictions": 1,
+    "detained": true,
+    "counselAtArraignment": true,
+    "evidenceIssues": false
+  },
+  "stageOverrides": {
+    "trial": { "min": 240, "typical": 330, "max": 420 }
+  }
+}

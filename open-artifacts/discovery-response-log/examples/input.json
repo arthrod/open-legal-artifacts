@@ -1,0 +1,52 @@
+{
+  "case": "Harlow v. Vestra Dynamics Corp. (fictional)",
+  "court": "N.D. Cal. (fictional filing)",
+  "servedDate": "2026-03-10",
+  "serviceMethod": "mail",
+  "requests": [
+    {
+      "requestNo": "RFP 1",
+      "type": "rfp",
+      "text": "All documents concerning the design, testing, or manufacture of the VX-2 battery module.",
+      "responseText": "After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below.",
+      "objectionIds": ["overbroad", "trade-secret"]
+    },
+    {
+      "requestNo": "RFP 7",
+      "type": "rfp",
+      "text": "All communications with counsel concerning the VX-2 thermal events.",
+      "responseText": "",
+      "objectionIds": ["privileged", "work-product"],
+      "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log"
+    },
+    {
+      "requestNo": "ROG 3",
+      "type": "interrogatory",
+      "text": "Identify every person with knowledge of the QC-14 test deviations.",
+      "responseText": "Vestra identifies: (1) Priya Nair, QC Director; (2) Daniel Okafor, Line Supervisor; (3) Wei-Lin Sung, outside consultant.",
+      "objectionIds": []
+    },
+    {
+      "requestNo": "RFA 12",
+      "type": "rfa",
+      "text": "Admit that the QC-14 test log was altered after March 2025.",
+      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
+      "objectionIds": ["vague-ambiguous", "assumes-facts"]
+    }
+  ],
+  "meetAndConferRounds": [
+    {
+      "requestNo": "RFP 1",
+      "label": "M&C round 1 — narrowed to VX-2 modules shipped 2024-2026",
+      "patch": {
+        "responseText": "After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below.",
+        "objectionIds": ["trade-secret"]
+      }
+    },
+    {
+      "requestNo": "RFP 1",
+      "label": "M&C round 2 — overbroad objection withdrawn",
+      "patch": { "objectionIds": ["trade-secret"], "responseText": "Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order." }
+    }
+  ]
+}

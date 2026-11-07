@@ -1,0 +1,22 @@
+{
+  "case_type": "employment_based",
+  "today": "2026-11-07",
+  "applicant": {
+    "name": "M. Ferreira-Lindqvist (fictional)",
+    "a_number": "A098-XXX-XXX (fictionalized)",
+    "petitioner_employer": "Solstice Robotics, Inc. (fictional)"
+  },
+  "documents": {
+    "government_id": { "present": true, "expiry_date": "2028-03-14" },
+    "i140_notice": { "present": true },
+    "employment_letter": { "present": true },
+    "pay_stubs": { "present": true },
+    "i693_medical": { "present": true, "expiry_date": "2027-01-30" },
+    "tax_returns": { "present": false }
+  },
+  "key_dates": {
+    "I-485 interview (fictional)": "2026-11-18",
+    "EAD renewal deadline (fictional)": "2026-12-01"
+  },
+  "complexity": ["prior_denial"]
+}

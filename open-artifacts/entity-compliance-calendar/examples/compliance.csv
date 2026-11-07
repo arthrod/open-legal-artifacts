@@ -1,0 +1,26 @@
+entityId,entity,jurisdiction,obligationId,obligation,recurring,status,nextDue,period,statuteCite,ruleNote,skipReason
+E-1,"Northwind Robotics, Inc.",US-DE,de-franchise,DE franchise tax,annual,scheduled,2027-03-15,2027,fictional 8 Del. C. § 391-analog,"annual, formation anniversary (03-15)",
+E-1,"Northwind Robotics, Inc.",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE
+E-1,"Northwind Robotics, Inc.",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE
+E-1,"Northwind Robotics, Inc.",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE
+E-1,"Northwind Robotics, Inc.",US-DE,de-registered-agent,DE registered agent renewal,annual,scheduled,2027-06-01,2027,fictional 8 Del. C. § 132-analog,"annual, fixed 6/1",
+E-2,"Northwind Robotics California, Inc.",US-CA,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA
+E-2,"Northwind Robotics California, Inc.",US-CA,ca-sos-biennial,CA statement of information,biennial,delinquent,2025-06-01,2025,fictional Cal. Corp. Code § 6210-analog,"biennial, formation anniversary (06-01), even-cycle from formation year",
+E-2,"Northwind Robotics California, Inc.",US-CA,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-CA
+E-2,"Northwind Robotics California, Inc.",US-CA,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-CA
+E-2,"Northwind Robotics California, Inc.",US-CA,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA
+E-3,Northwind Robotics NY LLC,US-NY,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]"
+E-3,Northwind Robotics NY LLC,US-NY,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-NY
+E-3,Northwind Robotics NY LLC,US-NY,ny-annual-report,NY biennial statement,biennial,delinquent,2021-04-15,2021,fictional NY LLC Law § 301-analog,"biennial, fixed 4/15",
+E-3,Northwind Robotics NY LLC,US-NY,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-NY
+E-3,Northwind Robotics NY LLC,US-NY,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-NY
+E-4,Northwind Robotics Texas LLC,US-TX,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]"
+E-4,Northwind Robotics Texas LLC,US-TX,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-TX
+E-4,Northwind Robotics Texas LLC,US-TX,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-TX
+E-4,Northwind Robotics Texas LLC,US-TX,tx-initial-report,TX initial information report,event,satisfied,2026-08-30,once,fictional Tex. Bus. Orgs. Code § 5.257-analog,event obligation satisfied (filing recorded),
+E-4,Northwind Robotics Texas LLC,US-TX,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-TX
+E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity status ""dissolved"" — tracking paused"
+E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE
+E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE
+E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE
+E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,"entity status ""dissolved"" — tracking paused"

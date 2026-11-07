@@ -1,0 +1,123 @@
+{
+  "round": "series_a",
+  "vintage": 2026,
+  "company": "Quillform Analytics, Inc. (fictional)",
+  "gridAsOf": "2026-01",
+  "sourceNote": "Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.",
+  "terms": [
+    {
+      "name": "liquidation_preference_multiple",
+      "value": 1.5,
+      "verdict": "outside_market",
+      "detail": "1.5 xis above the 1–1 xrange.",
+      "benchmark": "1–1 x",
+      "source": {
+        "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "participation",
+      "value": "participating",
+      "verdict": "outside_market",
+      "detail": "“participating” is not in the standard set (non_participating).",
+      "benchmark": "non_participating",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "anti_dilution",
+      "value": "full_ratchet",
+      "verdict": "outside_market",
+      "detail": "“full_ratchet” is not in the standard set (broad_based_weighted_average).",
+      "benchmark": "broad_based_weighted_average",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "seniority",
+      "value": "senior_to_all_prior",
+      "verdict": "outside_market",
+      "detail": "“senior_to_all_prior” is not in the standard set (pari_passu).",
+      "benchmark": "pari_passu",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "investor_board_seats",
+      "value": 2,
+      "verdict": "inside_market",
+      "detail": "2 seatswithin 1–2 seatsrange.",
+      "benchmark": "1–2 seats",
+      "source": {
+        "name": "EXAMPLE DEFAULT — not market data; replace with your own dated source",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "dividends",
+      "value": "cumulative",
+      "verdict": "outside_market",
+      "detail": "“cumulative” is not in the standard set (none, non_cumulative).",
+      "benchmark": "none, non_cumulative",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "redemption",
+      "value": "investor_demand_after_5y",
+      "verdict": "outside_market",
+      "detail": "“investor_demand_after_5y” is not in the standard set (none).",
+      "benchmark": "none",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "pro_rata_rights",
+      "value": "granted_major_investors",
+      "verdict": "inside_market",
+      "detail": "“granted_major_investors” is in the standard set (granted_major_investors).",
+      "benchmark": "granted_major_investors",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "pay_to_play",
+      "value": "none",
+      "verdict": "inside_market",
+      "detail": "“none” is in the standard set (none, present).",
+      "benchmark": "none, present",
+      "source": {
+        "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
+        "asOf": "2026-01"
+      }
+    },
+    {
+      "name": "founder_vesting_restart",
+      "value": true,
+      "verdict": "no_benchmark",
+      "detail": "No benchmark entry for this term in this round’s grid; add one rather than guessing.",
+      "benchmark": "—",
+      "source": null
+    }
+  ],
+  "counts": {
+    "inside_market": 3,
+    "outside_market": 6,
+    "unknown_value_type": 0,
+    "no_benchmark": 1
+  },
+  "warnings": []
+}

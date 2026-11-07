@@ -1,0 +1,70 @@
+{
+  "asOf": "2026-11-07",
+  "settings": { "dueSoonDays": 14 },
+  "contract": "Development & License Agreement between Kestrel Robotics, Inc. and Kestrel Robotics (fictional parties).",
+  "obligations": [
+    {
+      "id": "OBL-1",
+      "clause": "§ 4.1",
+      "party": "Customer",
+      "verb": "pay",
+      "text": "pay the Phase 2 milestone fee of $48,000",
+      "dueDate": "2026-10-30",
+      "amount": 48000
+    },
+    {
+      "id": "OBL-2",
+      "clause": "§ 5.2",
+      "party": "Supplier",
+      "verb": "deliver",
+      "text": "deliver the platform security audit report",
+      "dueDate": "2026-11-12"
+    },
+    {
+      "id": "OBL-3",
+      "clause": "§ 5.4",
+      "party": "Supplier",
+      "verb": "notify",
+      "text": "notify Customer of any security incident within 72 hours of discovery",
+      "dueDate": null,
+      "condition": "within 72 hours of discovery of a security incident"
+    },
+    {
+      "id": "OBL-4",
+      "clause": "§ 6.3",
+      "party": "Customer",
+      "verb": "return",
+      "text": "return all Confidential Materials within 30 days of termination",
+      "dueDate": null,
+      "condition": "within 30 days of termination of the Agreement"
+    },
+    {
+      "id": "OBL-5",
+      "clause": "§ 7.1",
+      "party": "Supplier",
+      "verb": "maintain",
+      "text": "maintain commercial general liability insurance of at least $1M",
+      "dueDate": "2027-03-31"
+    },
+    {
+      "id": "OBL-6",
+      "clause": "§ 8.2",
+      "party": "Supplier",
+      "verb": "deliver",
+      "text": "deliver the Q3 API usage statement",
+      "dueDate": "2026-09-30"
+    },
+    {
+      "id": "OBL-7",
+      "clause": "§ 9.5",
+      "party": "Both",
+      "verb": "renew",
+      "text": "exchange written renewal notices for the pilot extension",
+      "dueDate": "end of the pilot period"
+    }
+  ],
+  "satisfaction": [
+    { "obligationId": "OBL-6", "satisfiedOn": "2026-10-03", "evidence": "email thread 2026-10-03 (fictional)", "note": "delivered 3 days late" },
+    { "obligationId": "OBL-5", "satisfiedOn": "2026-04-15", "evidence": "certificate of insurance COI-2026-1187 (fictional)" }
+  ]
+}

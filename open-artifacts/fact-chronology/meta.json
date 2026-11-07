@@ -1,0 +1,8 @@
+{
+  "name": "fact-chronology",
+  "tagline": "A fact chronology where every entry carries its evidence — source anchors, date-precision normalization, topic conflicts and gaps, deterministically.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Fact chronology (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

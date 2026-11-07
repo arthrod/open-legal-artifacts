@@ -1,0 +1,142 @@
+{
+  "asOf": "2026-11-07",
+  "obligations": [
+    {
+      "id": "OBL-1",
+      "clause": "§ 4.1",
+      "party": "Customer",
+      "verb": "pay",
+      "text": "pay the Phase 2 milestone fee of $48,000",
+      "dueDate": "2026-10-30",
+      "condition": null,
+      "amount": 48000,
+      "status": "overdue",
+      "breachRisk": true,
+      "flags": [
+        "breach risk: due 2026-10-30 — 8 days past with no satisfaction record"
+      ],
+      "satisfaction": null
+    },
+    {
+      "id": "OBL-2",
+      "clause": "§ 5.2",
+      "party": "Supplier",
+      "verb": "deliver",
+      "text": "deliver the platform security audit report",
+      "dueDate": "2026-11-12",
+      "condition": null,
+      "amount": null,
+      "status": "due-soon",
+      "breachRisk": false,
+      "flags": [
+        "due in 5 days (≤ 14) with no satisfaction record yet"
+      ],
+      "satisfaction": null
+    },
+    {
+      "id": "OBL-3",
+      "clause": "§ 5.4",
+      "party": "Supplier",
+      "verb": "notify",
+      "text": "notify Customer of any security incident within 72 hours of discovery",
+      "dueDate": null,
+      "condition": "within 72 hours of discovery of a security incident",
+      "amount": null,
+      "status": "conditional",
+      "breachRisk": false,
+      "flags": [
+        "no calendar due date — triggered by condition: \"within 72 hours of discovery of a security incident\"; monitor manually"
+      ],
+      "satisfaction": null
+    },
+    {
+      "id": "OBL-4",
+      "clause": "§ 6.3",
+      "party": "Customer",
+      "verb": "return",
+      "text": "return all Confidential Materials within 30 days of termination",
+      "dueDate": null,
+      "condition": "within 30 days of termination of the Agreement",
+      "amount": null,
+      "status": "conditional",
+      "breachRisk": false,
+      "flags": [
+        "no calendar due date — triggered by condition: \"within 30 days of termination of the Agreement\"; monitor manually"
+      ],
+      "satisfaction": null
+    },
+    {
+      "id": "OBL-5",
+      "clause": "§ 7.1",
+      "party": "Supplier",
+      "verb": "maintain",
+      "text": "maintain commercial general liability insurance of at least $1M",
+      "dueDate": "2027-03-31",
+      "condition": null,
+      "amount": null,
+      "status": "satisfied",
+      "breachRisk": false,
+      "flags": [],
+      "satisfaction": {
+        "satisfiedOn": "2026-04-15",
+        "evidence": "certificate of insurance COI-2026-1187 (fictional)",
+        "note": null
+      }
+    },
+    {
+      "id": "OBL-6",
+      "clause": "§ 8.2",
+      "party": "Supplier",
+      "verb": "deliver",
+      "text": "deliver the Q3 API usage statement",
+      "dueDate": "2026-09-30",
+      "condition": null,
+      "amount": null,
+      "status": "satisfied",
+      "breachRisk": false,
+      "flags": [
+        "satisfied 3 days late (due 2026-09-30, done 2026-10-03)"
+      ],
+      "satisfaction": {
+        "satisfiedOn": "2026-10-03",
+        "evidence": "email thread 2026-10-03 (fictional)",
+        "note": "delivered 3 days late"
+      }
+    },
+    {
+      "id": "OBL-7",
+      "clause": "§ 9.5",
+      "party": "Both",
+      "verb": "renew",
+      "text": "exchange written renewal notices for the pilot extension",
+      "dueDate": "end of the pilot period",
+      "condition": null,
+      "amount": null,
+      "status": "unscheduled",
+      "breachRisk": false,
+      "flags": [
+        "dueDate \"end of the pilot period\" not valid ISO — compliance unverified, never guessed"
+      ],
+      "satisfaction": null
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "byStatus": {
+      "overdue": 1,
+      "due-soon": 1,
+      "conditional": 2,
+      "satisfied": 2,
+      "unscheduled": 1
+    },
+    "breachRisk": 1,
+    "satisfied": 2,
+    "satisfiedLate": 1,
+    "open": 2,
+    "flagged": 6,
+    "unscheduledOrConditional": 3
+  },
+  "settings": {
+    "dueSoonDays": 14
+  }
+}

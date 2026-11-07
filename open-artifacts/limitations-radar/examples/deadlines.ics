@@ -1,0 +1,61 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//open-legal-artifacts//limitations-radar//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:CLM-101-sol-20270402@limitations-radar
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270402
+SUMMARY:SOL deadline — personal_injury (CA), claim CLM-101
+DESCRIPTION:Claim CLM-101 (personal_injury\, CA). Accrual 2025-04-02\; 0 t
+ olling day(s). Filed 2027-03-15 (saved by 18 days). Example ruleset — ver
+ ify with counsel.
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:30-day warning: SOL deadline for CLM-101
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CLM-102-sol-20290129@limitations-radar
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20290129
+SUMMARY:SOL deadline — breach_of_contract_written (NY), claim CLM-102
+DESCRIPTION:Claim CLM-102 (breach_of_contract_written\, NY). Accrual 2022-
+ 06-01\; 242 tolling day(s). Status deadline_upcoming. Example ruleset — v
+ erify with counsel.
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:30-day warning: SOL deadline for CLM-102
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CLM-103-sol-20250120@limitations-radar
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20250120
+SUMMARY:[OVERDUE] SOL deadline — fraud (TX), claim CLM-103
+DESCRIPTION:Claim CLM-103 (fraud\, TX). Accrual 2021-01-20\; 0 tolling day
+ (s). Status deadline_passed_unfiled. Example ruleset — verify with counse
+ l.
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:30-day warning: SOL deadline for CLM-103
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:CLM-104-sol-20281011@limitations-radar
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20281011
+SUMMARY:SOL deadline — personal_injury (CA), claim CLM-104
+DESCRIPTION:Claim CLM-104 (personal_injury\, CA). Accrual 2024-11-05\; 706
+  tolling day(s). Status deadline_upcoming. Example ruleset — verify with 
+ counsel.
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:30-day warning: SOL deadline for CLM-104
+END:VALARM
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,62 @@
+{
+  "matter": "Kestrel Bio Fuels v. Kestrel Dynamics, Inc. (fictional)",
+  "documents": [
+    {
+      "id": "KV-0001",
+      "date": "2026-02-03",
+      "docType": "email",
+      "author": { "name": "A. Moreno", "role": "attorney" },
+      "recipients": [{ "name": "J. Vale", "role": "client" }],
+      "subject": "Initial case assessment"
+    },
+    {
+      "id": "KV-0002",
+      "date": "2026-02-03",
+      "docType": "email",
+      "author": { "name": "A. Moreno", "role": "attorney" },
+      "recipients": [{ "name": "J. Vale", "role": "client" }],
+      "subject": "Initial case assessment"
+    },
+    {
+      "id": "KV-0007",
+      "date": "2026-02-11",
+      "docType": "memo",
+      "author": { "name": "A. Moreno", "role": "attorney" },
+      "recipients": [],
+      "subject": "Research memo: forum-selection exposure",
+      "anticipationOfLitigation": true
+    },
+    {
+      "id": "KV-0014",
+      "date": "2026-02-19",
+      "docType": "email",
+      "author": { "name": "A. Moreno", "role": "attorney" },
+      "recipients": [{ "name": "J. Vale", "role": "client" }, { "name": "T. Boyd", "role": "third_party" }],
+      "subject": "Draft settlement ranges"
+    },
+    {
+      "id": "KV-0022",
+      "date": "2026-03-02",
+      "docType": "email",
+      "author": { "name": "R. Silva", "role": "operations" },
+      "recipients": [{ "name": "M. Ito", "role": "vendor" }],
+      "subject": "Shipping schedule Q2"
+    },
+    {
+      "id": "KV-0031",
+      "date": "2026-03-09",
+      "docType": "notes",
+      "author": { "name": "L. Chu", "role": "paralegal" },
+      "recipients": [{ "name": "A. Moreno", "role": "attorney" }],
+      "subject": "Witness interview prep notes — Ibarra"
+    },
+    {
+      "id": "KV-0035",
+      "date": null,
+      "docType": "letter",
+      "author": { "name": "L. Chu" },
+      "recipients": [],
+      "subject": "Draft demand letter"
+    }
+  ]
+}

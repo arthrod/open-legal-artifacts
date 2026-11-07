@@ -1,0 +1,9 @@
+kind,matterId,matter,field,from,to,severity,changedAt,timestampSource
+changed,M-101,Halberd v. Perigee (fictional),nextDeadline,2026-11-20,2026-11-18,critical,2026-11-05T11:30:00Z,matter.updatedAt
+changed,M-101,Halberd v. Perigee (fictional),nextStep,Respond to RFP set two,Deposition prep — Dr. Okafor,minor,2026-11-05T11:30:00Z,matter.updatedAt
+changed,M-101,Halberd v. Perigee (fictional),owner,j.moreau,t.nguyen,major,2026-11-05T11:30:00Z,matter.updatedAt
+changed,M-102,Quill trademark opposition,notes,,Client signature received; file Monday.,minor,2026-11-06T08:45:00Z,matter.updatedAt
+changed,M-102,Quill trademark opposition,status,,awaiting-signature,major,2026-11-06T08:45:00Z,matter.updatedAt
+changed,M-103,Brightwater lease review,stage,closing,closed,major,2026-11-07T09:00:00Z,snapshot.capturedAt
+added,M-105,Northwind vendor suite,*,,intake,,2026-11-07T09:00:00Z,snapshot.capturedAt
+removed,M-104,Oldmatter wind-down,*,closing,,,2026-11-07T09:00:00Z,snapshot.capturedAt

@@ -1,0 +1,8 @@
+{
+  "name": "regulatory-horizon-scan",
+  "tagline": "Laws on one timeline, scored for impact — by a rubric you can audit and diff.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Regulatory horizon scan (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

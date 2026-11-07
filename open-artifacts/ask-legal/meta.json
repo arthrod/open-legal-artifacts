@@ -1,0 +1,8 @@
+{
+  "name": "ask-legal",
+  "tagline": "Answers routine questions from approved guidance — with confidence reasons, escalation that never guesses, and a full audit log.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Ask legal (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

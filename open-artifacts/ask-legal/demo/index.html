@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ask legal — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  h1 { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.02em; font-weight: 400; }
+  .lede { font-size: 17px; color: var(--text-secondary); max-width: 62ch; margin-bottom: 8px; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .ask { display: flex; gap: 12px; flex-wrap: wrap; }
+  input[type="text"] { flex: 1; min-width: 260px; font-family: var(--font-mono); font-size: 14px;
+    padding: 12px; border: var(--hairline); background: #fff; }
+  input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  .card { border: var(--hairline); background: #fff; padding: 16px; margin-top: 16px; position: relative; }
+  .card .q { font-weight: 600; margin-bottom: 8px; padding-right: 90px; }
+  .lvl { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--text); }
+  .lvl-high { background: var(--accent); }
+  .lvl-medium { background: #fff; }
+  .lvl-low { background: var(--text); color: var(--bg); }
+  .answer { padding: 10px 12px; margin: 10px 0; background: var(--hover); font-size: 14px; }
+  .esc { padding: 10px 12px; margin: 10px 0; background: var(--accent); font-size: 14px; font-weight: 600; }
+  .reasons { margin: 6px 0 0; }
+  .reasons li { list-style: none; font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 3px; }
+  .reasons li::before { content: "· "; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
+  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; text-align: left;
+    border-bottom: 2px solid var(--text); padding: 6px 8px; }
+  td { border-bottom: var(--hairline); padding: 6px 8px; font-family: var(--font-mono); vertical-align: top; }
+  tr:hover td { background: var(--hover); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  .examples button { margin: 4px 6px 0 0; font-size: 11px; padding: 6px 10px; border: var(--hairline); background: #fff; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+    <div class="rule"></div>
+    <h1>ask legal</h1>
+    <p class="lede">Guidance-base Q&amp;A with teeth: every answer carries a confidence level and written
+      reasons, low confidence escalates instead of guessing, and every question lands in an
+      append-only audit log. Open reimplementation of Anthropic's closed artifact.</p>
+    <p class="lede" style="font-size:13px">KB: Meridian Software Co. (fictional) · 5 approved guidance entries ·
+      freshness window 365d · thresholds high ≥ 9, medium ≥ 5.</p>
+  </header>
+
+  <section>
+    <h2>Ask a question</h2>
+    <div class="ask">
+      <input type="text" id="q" placeholder="e.g. Which NDA template do I use for a new analytics vendor?" />
+      <button id="ask">Ask</button>
+      <button id="exportLog" class="ghost">Export audit log</button>
+    </div>
+    <div class="examples">
+      <button data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
+      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → downgrade</button>
+      <button data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
+    </div>
+    <div id="answer"></div>
+  </section>
+
+  <section>
+    <h2>Audit log — every question, append-only</h2>
+    <div style="overflow-x:auto"><table id="logTable">
+      <thead><tr><th>id</th><th>ts</th><th>asked by</th><th>question</th><th>matched</th><th>conf.</th><th>escalated</th><th>route</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic retrieval + gating — an optional LLM may only rephrase approved answers (schema in spec.md),
+    never generate new legal content. All data fictional. Not legal advice; guidance must be approved by your legal team.
+    <code>anthropic counterpart: Ask legal (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { answerQuestion, createAuditLog, exportAuditLog } from "../core/core.js";
+  import EXAMPLE from "./example.js";
+
+  const $ = (id) => document.getElementById(id);
+  const log = createAuditLog();
+  const opts = { asOf: EXAMPLE.asOf, askedBy: "demo@example.test", thresholds: EXAMPLE.thresholds, routing: EXAMPLE.routing };
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+  function ask() {
+    const question = $("q").value.trim();
+    if (!question) return;
+    const r = answerQuestion(EXAMPLE.knowledgeBase, question, opts, log);
+    $("answer").innerHTML =
+      `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
+      (r.answered
+        ? `<div class="answer">${esc(r.answer)}<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
+        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
+      `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    renderLog();
+  }
+
+  function renderLog() {
+    const tb = $("logTable").querySelector("tbody");
+    tb.innerHTML = log.map((e) =>
+      `<tr><td>${e.auditId}</td><td>${e.ts}</td><td>${esc(e.askedBy)}</td><td>${esc(e.question)}</td>` +
+      `<td>${e.matched.join(", ") || "—"}</td><td>${e.confidenceLevel}</td>` +
+      `<td>${e.escalated ? "YES" : ""}</td><td>${e.route ?? "—"}</td></tr>`).join("");
+  }
+
+  $("ask").onclick = ask;
+  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+  document.querySelectorAll(".examples button").forEach((b) => (b.onclick = () => { $("q").value = b.dataset.q; ask(); }));
+  $("exportLog").onclick = () => {
+    const blob = new Blob([exportAuditLog(log)], { type: "application/x-ndjson" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "ask-legal-audit.jsonl"; a.click();
+  };
+
+  // prefilled worked example
+  $("q").value = "Which NDA template do I use for a new analytics vendor?";
+  ask();
+</script>
+</body>
+</html>

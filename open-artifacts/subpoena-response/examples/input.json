@@ -1,0 +1,45 @@
+{
+  "matter": {
+    "name": "Drummond v. Halvorsen Freight Co. (fictional)",
+    "client": "Halvorsen Freight Co.",
+    "role": "non-party responding to subpoena",
+    "issuing_authority": "Superior Court of Maricopa County (fictionalized caption)",
+    "opposing": "Counsel for plaintiff L. Drummond"
+  },
+  "today": "2026-11-13",
+  "subpoena": {
+    "served_date": "2026-11-02",
+    "service_method": "mail",
+    "caption": "Drummond v. Halvorsen Freight Co., No. CV-2026-01142 (fictional)"
+  },
+  "deadline_rule": {
+    "days": 14,
+    "day_type": "calendar",
+    "mail_extension_days": 3,
+    "holidays": ["2026-11-26", "2026-11-27"]
+  },
+  "responsive_scope": {
+    "date_range": { "start": "2016-01-01", "end": "2026-11-01" },
+    "custodians": [
+      { "name": "R. Okonkwo", "role": "VP Operations" },
+      { "name": "T. Marsh", "role": "Dispatcher, Phoenix yard" },
+      { "name": "S. Feld", "role": "Safety coordinator" },
+      { "name": "J. Alvarado-Ruiz", "role": "Fleet maintenance lead" },
+      { "name": "M. Pretorius", "role": "Night-shift supervisor" },
+      { "name": "D. Whitcombe", "role": "HR business partner" },
+      { "name": "K. Nakamura", "role": "Accounts payable clerk" },
+      { "name": "B. Vess", "role": "Regional sales manager" },
+      { "name": "P. Ionescu", "role": "IT administrator" },
+      { "name": "E. Brandt", "role": "Former dispatcher (departed 2024)" }
+    ],
+    "data_types": [
+      { "type": "email", "systems": ["Exchange Online"], "notes": "All 10 custodians." },
+      { "type": "telemetry logs", "systems": ["FleetTrack SaaS"], "notes": "GPS + speed events; volume ~2.1M rows/yr." },
+      { "type": "personal text messages", "systems": ["carrier records for 4 drivers"], "notes": "Requires third-party subpoenas to carriers." },
+      { "type": "maintenance records", "systems": ["ShopFloor DB", "paper files"] }
+    ]
+  },
+  "privilege_review": { "state": "reviewing", "reviewer": "A. Castellanos, assoc." },
+  "objections_selected": ["overbroad_time", "overbroad_custodians", "undue_burden", "pii_privacy", "equally_available"],
+  "legal_hold": true
+}

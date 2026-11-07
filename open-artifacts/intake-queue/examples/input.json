@@ -1,0 +1,76 @@
+{
+  "asOf": "2026-11-07",
+  "settings": { "dedupeThreshold": 0.85, "conflictThreshold": 0.8, "criticalDays": 14, "soonDays": 30, "staleAgeDays": 365 },
+  "roster": [
+    { "name": "Northwind Logistics, Inc.", "role": "client", "matter": "LIT-2026-014" },
+    { "name": "Brightpath Solar LLC", "role": "adverse", "matter": "LIT-2025-003" },
+    { "name": "Meridian Foods Corp.", "role": "adverse", "matter": "LIT-2026-030" },
+    { "name": "Harbor Bakehouse Co.", "role": "client", "matter": "LIT-2026-014" }
+  ],
+  "submissions": [
+    {
+      "id": "INT-1041",
+      "submittedAt": "2026-11-06",
+      "client": { "name": "Ridgeline Dental Group PC" },
+      "opposing": { "name": "Sable Insurance Company" },
+      "matterType": "insurance coverage dispute",
+      "description": "Insurer denied claims for storm damage to the practice (fictional).",
+      "deadline": "2026-11-13",
+      "occurredOn": "2026-04-18"
+    },
+    {
+      "id": "INT-1042",
+      "submittedAt": "2026-11-06",
+      "client": { "name": "M. Iwata (fictional)" },
+      "opposing": { "name": "Brightpath Solar" },
+      "matterType": "property damage",
+      "description": "Panel installation damaged the roof (fictional).",
+      "deadline": "2026-12-20"
+    },
+    {
+      "id": "INT-1043",
+      "submittedAt": "2026-11-07",
+      "client": { "name": "Foxglove Rentals LLC" },
+      "opposing": { "name": "C. Moreau (fictional)" },
+      "matterType": "eviction filing",
+      "description": "Landlord wants to file an unlawful detainer (fictional).",
+      "deadline": "2026-12-01"
+    },
+    {
+      "id": "INT-1044",
+      "submittedAt": "2026-11-07",
+      "client": { "name": "Harbor Bakehouse Co." },
+      "opposing": { "name": "Delgado Trucking LLC" },
+      "matterType": "contract dispute",
+      "description": "Second submission of the same dispute by a different staff member (fictional).",
+      "deadline": "2027-02-01"
+    },
+    {
+      "id": "INT-1045",
+      "submittedAt": "2026-11-07",
+      "client": { "name": "Tilly Andersen (fictional)" },
+      "opposing": { "name": "Coastal View Apartments" },
+      "matterType": "security deposit return",
+      "description": "Deposit not returned after move-out (fictional).",
+      "occurredOn": "2024-05-30"
+    },
+    {
+      "id": "INT-1046",
+      "submittedAt": "2026-11-07",
+      "client": { "name": "Northwind Logistics" },
+      "opposing": { "name": "Palmer Freight Solutions" },
+      "matterType": "freight contract dispute",
+      "description": "Prospective client is already a firm client on another matter (fictional).",
+      "deadline": "2027-01-15"
+    },
+    {
+      "id": "INT-1047",
+      "submittedAt": "2026-11-07",
+      "client": { "name": "Harbor Bakehouse Company" },
+      "opposing": { "name": "Delgado Trucking, L.L.C." },
+      "matterType": "contract dispute",
+      "description": "Duplicate web-form submission of INT-1044 (fictional).",
+      "deadline": "2027-02-01"
+    }
+  ]
+}

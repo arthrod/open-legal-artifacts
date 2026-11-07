@@ -1,0 +1,12 @@
+{
+  "organization": "Vestra Dynamics Corp. (fictional)",
+  "records": [
+    { "id": "AI-01", "name": "NDA fallback drafter", "purpose": "Drafts fallback positions for NDAs for attorney review", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Legal" },
+    { "id": "AI-02", "name": "Talent screen", "purpose": "CV screening and candidate ranking for engineering roles", "dataSensitivity": "personal", "humanOversight": "notify", "autonomy": "act-with-review", "department": "People", "existingControls": ["DPA signed"] },
+    { "id": "AI-03", "name": "Community trust index", "purpose": "Social scoring of marketplace users for general trustworthiness", "dataSensitivity": "personal", "humanOversight": "none", "autonomy": "autonomous", "department": "Marketplace" },
+    { "id": "AI-04", "name": "Client intake helper", "purpose": "Customer-facing assistant chatbot answering intake questions", "dataSensitivity": "confidential", "humanOversight": "human-decides", "autonomy": "assist", "department": "Sales" },
+    { "id": "AI-05", "name": "Climatesco claims triage", "purpose": "Insurance eligibility pre-checks for warranty claims", "dataSensitivity": "personal", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Warranty", "existingControls": ["model card v3", "eval log"] },
+    { "id": "AI-06", "name": "Shop-floor safety vision", "purpose": "Biometric identification for shift access at the Nampo plant", "dataSensitivity": "special-category", "humanOversight": "human-decides", "autonomy": "act-with-review", "department": "Facilities", "existingControls": ["GDPR mapping v1"] },
+    { "id": "AI-07", "name": "Deal-room summarizer", "purpose": "Summarizes diligence data rooms for the deal team", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Corp Dev" }
+  ]
+}

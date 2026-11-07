@@ -1,0 +1,194 @@
+{
+  "asOf": "2026-11-07",
+  "items": [
+    {
+      "id": "INT-1041",
+      "submittedAt": "2026-11-06",
+      "client": "Ridgeline Dental Group PC",
+      "opposing": "Sable Insurance Company",
+      "matterType": "insurance coverage dispute",
+      "description": "Insurer denied claims for storm damage to the practice (fictional).",
+      "deadline": "2026-11-13",
+      "duplicateOf": null,
+      "conflicts": [],
+      "urgency": {
+        "level": "urgent",
+        "reasons": [
+          "deadline 2026-11-13 in 6 days (≤ 14)"
+        ]
+      },
+      "state": "assigned",
+      "assignedTo": "staff-kim (fictional)",
+      "flags": []
+    },
+    {
+      "id": "INT-1042",
+      "submittedAt": "2026-11-06",
+      "client": "M. Iwata (fictional)",
+      "opposing": "Brightpath Solar",
+      "matterType": "property damage",
+      "description": "Panel installation damaged the roof (fictional).",
+      "deadline": "2026-12-20",
+      "duplicateOf": null,
+      "conflicts": [
+        {
+          "rosterName": "Brightpath Solar LLC",
+          "role": "adverse",
+          "matter": "LIT-2025-003",
+          "matchedSide": "opposing",
+          "score": 1
+        }
+      ],
+      "urgency": {
+        "level": "routine",
+        "reasons": []
+      },
+      "state": "conflict-review",
+      "assignedTo": null,
+      "flags": [
+        "possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1"
+      ]
+    },
+    {
+      "id": "INT-1043",
+      "submittedAt": "2026-11-07",
+      "client": "Foxglove Rentals LLC",
+      "opposing": "C. Moreau (fictional)",
+      "matterType": "eviction filing",
+      "description": "Landlord wants to file an unlawful detainer (fictional).",
+      "deadline": "2026-12-01",
+      "duplicateOf": null,
+      "conflicts": [],
+      "urgency": {
+        "level": "deadline-soon",
+        "reasons": [
+          "deadline 2026-12-01 in 24 days (≤ 30)"
+        ]
+      },
+      "state": "assignable",
+      "assignedTo": null,
+      "flags": []
+    },
+    {
+      "id": "INT-1044",
+      "submittedAt": "2026-11-07",
+      "client": "Harbor Bakehouse Co.",
+      "opposing": "Delgado Trucking LLC",
+      "matterType": "contract dispute",
+      "description": "Second submission of the same dispute by a different staff member (fictional).",
+      "deadline": "2027-02-01",
+      "duplicateOf": null,
+      "conflicts": [
+        {
+          "rosterName": "Harbor Bakehouse Co.",
+          "role": "client",
+          "matter": "LIT-2026-014",
+          "matchedSide": "client",
+          "score": 1
+        }
+      ],
+      "urgency": {
+        "level": "routine",
+        "reasons": []
+      },
+      "state": "conflict-review",
+      "assignedTo": null,
+      "flags": [
+        "possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1"
+      ]
+    },
+    {
+      "id": "INT-1045",
+      "submittedAt": "2026-11-07",
+      "client": "Tilly Andersen (fictional)",
+      "opposing": "Coastal View Apartments",
+      "matterType": "security deposit return",
+      "description": "Deposit not returned after move-out (fictional).",
+      "deadline": null,
+      "duplicateOf": null,
+      "conflicts": [],
+      "urgency": {
+        "level": "urgent",
+        "reasons": [
+          "matter is 891 days old (> 365) — check limitations"
+        ]
+      },
+      "state": "urgent",
+      "assignedTo": null,
+      "flags": []
+    },
+    {
+      "id": "INT-1046",
+      "submittedAt": "2026-11-07",
+      "client": "Northwind Logistics",
+      "opposing": "Palmer Freight Solutions",
+      "matterType": "freight contract dispute",
+      "description": "Prospective client is already a firm client on another matter (fictional).",
+      "deadline": "2027-01-15",
+      "duplicateOf": null,
+      "conflicts": [
+        {
+          "rosterName": "Northwind Logistics, Inc.",
+          "role": "client",
+          "matter": "LIT-2026-014",
+          "matchedSide": "client",
+          "score": 1
+        }
+      ],
+      "urgency": {
+        "level": "routine",
+        "reasons": []
+      },
+      "state": "conflict-review",
+      "assignedTo": null,
+      "flags": [
+        "possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
+      ]
+    },
+    {
+      "id": "INT-1047",
+      "submittedAt": "2026-11-07",
+      "client": "Harbor Bakehouse Company",
+      "opposing": "Delgado Trucking, L.L.C.",
+      "matterType": "contract dispute",
+      "description": "Duplicate web-form submission of INT-1044 (fictional).",
+      "deadline": "2027-02-01",
+      "duplicateOf": "INT-1044",
+      "conflicts": [
+        {
+          "rosterName": "Harbor Bakehouse Co.",
+          "role": "client",
+          "matter": "LIT-2026-014",
+          "matchedSide": "client",
+          "score": 1
+        }
+      ],
+      "urgency": {
+        "level": "routine",
+        "reasons": []
+      },
+      "state": "duplicate",
+      "assignedTo": null,
+      "flags": [
+        "same parties as INT-1044 (client 1, opposing 1)",
+        "possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "byState": {
+      "urgent": 2,
+      "conflict-review": 3,
+      "assignable": 1,
+      "duplicate": 1
+    },
+    "conflicts": 4,
+    "duplicates": 1,
+    "urgent": 2
+  },
+  "settings": {
+    "dedupeThreshold": 0.85,
+    "conflictThreshold": 0.8
+  }
+}

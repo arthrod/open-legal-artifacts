@@ -1,0 +1,8 @@
+{
+  "name": "cite-check",
+  "tagline": "Deterministic quote verification against source documents — every flag carries a verbatim anchor with char offsets and a validated pinpoint.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Cite check (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,81 @@
+{
+  "asOf": "2026-11-07",
+  "settings": { "staleDays": 30, "matchLimit": 3 },
+  "volunteers": [
+    { "id": "V-01", "name": "D. Whitfield (fictional)", "skills": ["housing", "tenant-defense", "spanish"] },
+    { "id": "V-02", "name": "M. Sandoval (fictional)", "skills": ["housing", "benefits", "spanish"] },
+    { "id": "V-03", "name": "K. Osei (fictional)", "skills": ["family", "spanish"] },
+    { "id": "V-04", "name": "R. Aronov (fictional)", "skills": ["housing", "tenant-defense", "benefits", "spanish"] },
+    { "id": "V-05", "name": "T. Ibarra (fictional)", "skills": ["consumer", "benefits"] },
+    { "id": "V-06", "name": "F. Duquette (fictional)", "skills": ["family", "immigration"] }
+  ],
+  "cases": [
+    {
+      "id": "PB-2026-010",
+      "client": "C. Moreau (fictional)",
+      "problem": "eviction defense",
+      "state": "active",
+      "openedDate": "2026-10-20",
+      "lastActivityDate": "2026-10-28",
+      "requiredSkills": ["housing", "tenant-defense"],
+      "optionalSkills": ["spanish"],
+      "volunteerId": "V-01",
+      "hours": 8
+    },
+    {
+      "id": "PB-2026-011",
+      "client": "J. Baptiste (fictional)",
+      "problem": "custody modification",
+      "state": "ready",
+      "openedDate": "2026-11-02",
+      "lastActivityDate": "2026-11-03",
+      "requiredSkills": ["family"],
+      "optionalSkills": ["spanish", "immigration"]
+    },
+    {
+      "id": "PB-2026-012",
+      "client": "S. Nakamura (fictional)",
+      "problem": "benefits denial appeal",
+      "state": "triage",
+      "openedDate": "2026-08-14",
+      "lastActivityDate": "2026-09-20",
+      "requiredSkills": ["benefits"],
+      "optionalSkills": ["consumer"]
+    },
+    {
+      "id": "PB-2026-006",
+      "client": "A. Ferro (fictional)",
+      "problem": "wage theft consultation",
+      "state": "closed",
+      "openedDate": "2026-05-02",
+      "lastActivityDate": "2026-06-30",
+      "requiredSkills": ["consumer"],
+      "volunteerId": "V-05",
+      "hours": 6.5,
+      "outcome": "advice-only",
+      "closedDate": "2026-06-30"
+    },
+    {
+      "id": "PB-2025-044",
+      "client": "P. Vargas (fictional)",
+      "problem": "eviction defense",
+      "state": "closed",
+      "openedDate": "2025-09-10",
+      "lastActivityDate": "2026-03-12",
+      "requiredSkills": ["housing"],
+      "volunteerId": "V-04",
+      "hours": 41,
+      "outcome": "favorable-settlement",
+      "closedDate": "2026-03-12"
+    },
+    {
+      "id": "PB-2026-013",
+      "client": "L. Osei-Bonsu (fictional)",
+      "problem": "family law TRO",
+      "state": "placed",
+      "openedDate": "2026-11-05",
+      "lastActivityDate": "2026-11-06",
+      "requiredSkills": ["family"]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "scenario": "Personal-injury intake (fictional firm: Bertram & Ozawa LLP)",
+  "latencyTargetSeconds": 900,
+  "flows": [
+    {
+      "id": "guided-form",
+      "name": "Guided web form (Meridian Intake, fictional)",
+      "kind": "software",
+      "dimensions": {
+        "completeness": 100,
+        "non_redundancy": 100,
+        "fallback_quality": 66.67,
+        "speed": 100,
+        "retention": 82
+      },
+      "composite": 90.63,
+      "metrics": {
+        "steps": 3,
+        "field_asks": 10,
+        "duplicates": 0,
+        "extra_field_asks": 0,
+        "covered_fields": [
+          "full_name",
+          "date_of_birth",
+          "contact_email",
+          "contact_phone",
+          "incident_date",
+          "incident_location",
+          "incident_description",
+          "injuries_claimed",
+          "insurance_carrier",
+          "prior_counsel"
+        ],
+        "missing_fields": [],
+        "total_latency_seconds": 750,
+        "abandonment_rate": 0.18
+      },
+      "warnings": [],
+      "rank": 1
+    },
+    {
+      "id": "paper-intake",
+      "name": "Human paper intake (legacy process)",
+      "kind": "human",
+      "dimensions": {
+        "completeness": 100,
+        "non_redundancy": 71.43,
+        "fallback_quality": 66.67,
+        "speed": 1.01,
+        "retention": null
+      },
+      "composite": 67.97,
+      "metrics": {
+        "steps": 3,
+        "field_asks": 14,
+        "duplicates": 4,
+        "extra_field_asks": 0,
+        "covered_fields": [
+          "full_name",
+          "contact_phone",
+          "incident_date",
+          "incident_description",
+          "date_of_birth",
+          "contact_email",
+          "incident_location",
+          "injuries_claimed",
+          "insurance_carrier",
+          "prior_counsel"
+        ],
+        "missing_fields": [],
+        "total_latency_seconds": 89100,
+        "abandonment_rate": null
+      },
+      "warnings": [],
+      "rank": 2
+    }
+  ],
+  "dimensionOrder": [
+    "completeness",
+    "non_redundancy",
+    "fallback_quality",
+    "speed",
+    "retention",
+    "composite"
+  ],
+  "warnings": []
+}

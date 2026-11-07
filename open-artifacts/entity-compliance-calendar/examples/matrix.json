@@ -1,0 +1,394 @@
+{
+  "asOf": "2026-11-07",
+  "grid": [
+    [
+      {
+        "entity": "E-1",
+        "obligation": "de-franchise",
+        "applies": true,
+        "dueOn": "2027-03-15",
+        "period": 2027,
+        "status": "scheduled",
+        "ruleNote": "annual, formation anniversary (03-15)"
+      },
+      {
+        "entity": "E-1",
+        "obligation": "ca-sos-biennial",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-1",
+        "obligation": "ny-annual-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-1",
+        "obligation": "tx-initial-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-1",
+        "obligation": "de-registered-agent",
+        "applies": true,
+        "dueOn": "2027-06-01",
+        "period": 2027,
+        "status": "scheduled",
+        "ruleNote": "annual, fixed 6/1"
+      }
+    ],
+    [
+      {
+        "entity": "E-2",
+        "obligation": "de-franchise",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-2",
+        "obligation": "ca-sos-biennial",
+        "applies": true,
+        "dueOn": "2025-06-01",
+        "period": 2025,
+        "status": "delinquent",
+        "ruleNote": "biennial, formation anniversary (06-01), even-cycle from formation year"
+      },
+      {
+        "entity": "E-2",
+        "obligation": "ny-annual-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-CA",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-2",
+        "obligation": "tx-initial-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-CA",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-2",
+        "obligation": "de-registered-agent",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      }
+    ],
+    [
+      {
+        "entity": "E-3",
+        "obligation": "de-franchise",
+        "applies": false,
+        "skipReason": "entity type \"llc\" not in [corp]",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-3",
+        "obligation": "ca-sos-biennial",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-NY",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-3",
+        "obligation": "ny-annual-report",
+        "applies": true,
+        "dueOn": "2021-04-15",
+        "period": 2021,
+        "status": "delinquent",
+        "ruleNote": "biennial, fixed 4/15"
+      },
+      {
+        "entity": "E-3",
+        "obligation": "tx-initial-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-NY",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-3",
+        "obligation": "de-registered-agent",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-NY",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      }
+    ],
+    [
+      {
+        "entity": "E-4",
+        "obligation": "de-franchise",
+        "applies": false,
+        "skipReason": "entity type \"llc\" not in [corp]",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-4",
+        "obligation": "ca-sos-biennial",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-TX",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-4",
+        "obligation": "ny-annual-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-TX",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-4",
+        "obligation": "tx-initial-report",
+        "applies": true,
+        "dueOn": "2026-08-30",
+        "period": "once",
+        "status": "satisfied",
+        "ruleNote": "event obligation satisfied (filing recorded)"
+      },
+      {
+        "entity": "E-4",
+        "obligation": "de-registered-agent",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-TX",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      }
+    ],
+    [
+      {
+        "entity": "E-5",
+        "obligation": "de-franchise",
+        "applies": false,
+        "skipReason": "entity status \"dissolved\" — tracking paused",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-5",
+        "obligation": "ca-sos-biennial",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-5",
+        "obligation": "ny-annual-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-5",
+        "obligation": "tx-initial-report",
+        "applies": false,
+        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      },
+      {
+        "entity": "E-5",
+        "obligation": "de-registered-agent",
+        "applies": false,
+        "skipReason": "entity status \"dissolved\" — tracking paused",
+        "dueOn": null,
+        "period": null,
+        "status": "n/a",
+        "ruleNote": ""
+      }
+    ]
+  ],
+  "entities": [
+    {
+      "id": "E-1",
+      "name": "Northwind Robotics, Inc.",
+      "jurisdiction": "US-DE",
+      "type": "corp",
+      "formedOn": "2020-03-15",
+      "status": "active"
+    },
+    {
+      "id": "E-2",
+      "name": "Northwind Robotics California, Inc.",
+      "jurisdiction": "US-CA",
+      "type": "corp",
+      "formedOn": "2021-06-01",
+      "status": "active"
+    },
+    {
+      "id": "E-3",
+      "name": "Northwind Robotics NY LLC",
+      "jurisdiction": "US-NY",
+      "type": "llc",
+      "formedOn": "2019-07-01",
+      "status": "active"
+    },
+    {
+      "id": "E-4",
+      "name": "Northwind Robotics Texas LLC",
+      "jurisdiction": "US-TX",
+      "type": "llc",
+      "formedOn": "2026-06-01",
+      "status": "active"
+    },
+    {
+      "id": "E-5",
+      "name": "Gale Force Labs, Inc. (dormant sub)",
+      "jurisdiction": "US-DE",
+      "type": "corp",
+      "formedOn": "2018-09-10",
+      "status": "dissolved"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "de-franchise",
+      "name": "DE franchise tax",
+      "jurisdiction": "US-DE",
+      "entityTypes": [
+        "corp"
+      ],
+      "recurring": "annual",
+      "anchor": "formationAnniversary",
+      "statuteCite": "fictional 8 Del. C. § 391-analog"
+    },
+    {
+      "id": "ca-sos-biennial",
+      "name": "CA statement of information",
+      "jurisdiction": "US-CA",
+      "entityTypes": [
+        "corp",
+        "llc"
+      ],
+      "recurring": "biennial",
+      "anchor": "formationAnniversary",
+      "statuteCite": "fictional Cal. Corp. Code § 6210-analog"
+    },
+    {
+      "id": "ny-annual-report",
+      "name": "NY biennial statement",
+      "jurisdiction": "US-NY",
+      "entityTypes": [
+        "corp",
+        "llc"
+      ],
+      "recurring": "biennial",
+      "anchor": "calendarFixed",
+      "dueMonth": 4,
+      "dueDay": 15,
+      "statuteCite": "fictional NY LLC Law § 301-analog"
+    },
+    {
+      "id": "tx-initial-report",
+      "name": "TX initial information report",
+      "jurisdiction": "US-TX",
+      "entityTypes": [
+        "corp",
+        "llc"
+      ],
+      "recurring": "event",
+      "anchor": "formation",
+      "dueWithinDays": 90,
+      "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog"
+    },
+    {
+      "id": "de-registered-agent",
+      "name": "DE registered agent renewal",
+      "jurisdiction": "US-DE",
+      "entityTypes": [
+        "corp",
+        "llc"
+      ],
+      "recurring": "annual",
+      "anchor": "calendarFixed",
+      "dueMonth": 6,
+      "dueDay": 1,
+      "statuteCite": "fictional 8 Del. C. § 132-analog"
+    }
+  ],
+  "delinquent": [
+    {
+      "entityId": "E-3",
+      "entityName": "Northwind Robotics NY LLC",
+      "obligationId": "ny-annual-report",
+      "obligationName": "NY biennial statement",
+      "dueOn": "2021-04-15",
+      "overdueDays": 2032
+    },
+    {
+      "entityId": "E-2",
+      "entityName": "Northwind Robotics California, Inc.",
+      "obligationId": "ca-sos-biennial",
+      "obligationName": "CA statement of information",
+      "dueOn": "2025-06-01",
+      "overdueDays": 524
+    }
+  ],
+  "counts": {
+    "cells": 25,
+    "delinquent": 2,
+    "due-soon": 0,
+    "scheduled": 2,
+    "satisfied": 1,
+    "n/a": 20
+  }
+}

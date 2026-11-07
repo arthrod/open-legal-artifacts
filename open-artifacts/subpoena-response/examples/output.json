@@ -1,0 +1,166 @@
+{
+  "matter": {
+    "name": "Drummond v. Halvorsen Freight Co. (fictional)",
+    "client": "Halvorsen Freight Co.",
+    "role": "non-party responding to subpoena",
+    "issuing_authority": "Superior Court of Maricopa County (fictionalized caption)",
+    "opposing": "Counsel for plaintiff L. Drummond"
+  },
+  "deadline": {
+    "served_date": "2026-11-02",
+    "service_method": "mail",
+    "extension_days": 3,
+    "total_days": 17,
+    "day_type": "calendar",
+    "deadline": "2026-11-19",
+    "skipped_noncourt_days": []
+  },
+  "deadline_math": {
+    "days_remaining": 6,
+    "status": "on_track"
+  },
+  "scope": {
+    "date_range": {
+      "start": "2016-01-01",
+      "end": "2026-11-01",
+      "span_days": 3957,
+      "span_years": 10.8
+    },
+    "custodians": [
+      {
+        "name": "R. Okonkwo",
+        "role": "VP Operations"
+      },
+      {
+        "name": "T. Marsh",
+        "role": "Dispatcher, Phoenix yard"
+      },
+      {
+        "name": "S. Feld",
+        "role": "Safety coordinator"
+      },
+      {
+        "name": "J. Alvarado-Ruiz",
+        "role": "Fleet maintenance lead"
+      },
+      {
+        "name": "M. Pretorius",
+        "role": "Night-shift supervisor"
+      },
+      {
+        "name": "D. Whitcombe",
+        "role": "HR business partner"
+      },
+      {
+        "name": "K. Nakamura",
+        "role": "Accounts payable clerk"
+      },
+      {
+        "name": "B. Vess",
+        "role": "Regional sales manager"
+      },
+      {
+        "name": "P. Ionescu",
+        "role": "IT administrator"
+      },
+      {
+        "name": "E. Brandt",
+        "role": "Former dispatcher (departed 2024)"
+      }
+    ],
+    "custodian_count": 10,
+    "data_types": [
+      {
+        "type": "email",
+        "systems": [
+          "Exchange Online"
+        ],
+        "notes": "All 10 custodians."
+      },
+      {
+        "type": "telemetry logs",
+        "systems": [
+          "FleetTrack SaaS"
+        ],
+        "notes": "GPS + speed events; volume ~2.1M rows/yr."
+      },
+      {
+        "type": "personal text messages",
+        "systems": [
+          "carrier records for 4 drivers"
+        ],
+        "notes": "Requires third-party subpoenas to carriers."
+      },
+      {
+        "type": "maintenance records",
+        "systems": [
+          "ShopFloor DB",
+          "paper files"
+        ],
+        "notes": ""
+      }
+    ],
+    "flags": [
+      {
+        "kind": "overbroad_time",
+        "detail": "Date range spans 10.8 years (> 5-year threshold)."
+      },
+      {
+        "kind": "overbroad_custodians",
+        "detail": "10 custodians named (> 8 threshold)."
+      },
+      {
+        "kind": "pii_privacy",
+        "detail": "Personal-device/message data types requested: personal text messages."
+      }
+    ],
+    "suggested_objections": [
+      "overbroad_time",
+      "overbroad_custodians",
+      "pii_privacy",
+      "privilege"
+    ]
+  },
+  "privilege": {
+    "state": "reviewing",
+    "progress": 40
+  },
+  "objections": [
+    {
+      "id": "overbroad_time",
+      "label": "Overbroad time period",
+      "description": "The requested date range exceeds any reasonable connection to the claims.",
+      "typical_support": "Compare the range to the events at issue; propose a narrower window."
+    },
+    {
+      "id": "overbroad_custodians",
+      "label": "Overbroad custodians",
+      "description": "More custodians are named than the facts plausibly implicate.",
+      "typical_support": "Identify custodians with documented involvement; offer the core set first."
+    },
+    {
+      "id": "undue_burden",
+      "label": "Unduly burdensome / disproportionate",
+      "description": "Cost and effort are disproportionate to the needs of the case.",
+      "typical_support": "Document collection estimates (hours, systems, vendor quotes)."
+    },
+    {
+      "id": "pii_privacy",
+      "label": "Personal / sensitive data",
+      "description": "Requests reach employee, patient, or customer personal data.",
+      "typical_support": "Offer redaction or a privacy-protective production protocol."
+    },
+    {
+      "id": "equally_available",
+      "label": "Equally available from another source",
+      "description": "The same material is available from a party or public source at less burden.",
+      "typical_support": "Identify the alternative source specifically."
+    }
+  ],
+  "legal_hold": true,
+  "warnings": [
+    "overbroad_time: Date range spans 10.8 years (> 5-year threshold).",
+    "overbroad_custodians: 10 custodians named (> 8 threshold).",
+    "pii_privacy: Personal-device/message data types requested: personal text messages."
+  ]
+}

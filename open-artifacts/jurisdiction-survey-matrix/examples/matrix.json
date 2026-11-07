@@ -1,0 +1,249 @@
+{
+  "topic": "Data breach notification — individual notice (fictional survey for Cascade Logistics, Inc.)",
+  "asOf": "2026-11-07",
+  "policy": {
+    "maxAgeDays": 180
+  },
+  "jurisdictions": [
+    "US-CA",
+    "US-IL",
+    "US-NY",
+    "US-TX",
+    "EU",
+    "UK",
+    "BR"
+  ],
+  "questions": [
+    {
+      "id": "deadline",
+      "text": "Deadline to notify individuals after a breach of personal data?"
+    },
+    {
+      "id": "threshold",
+      "text": "What risk threshold triggers individual notice?"
+    },
+    {
+      "id": "ag-report",
+      "text": "Separate regulator/AG report required, and when?"
+    },
+    {
+      "id": "penalty",
+      "text": "Maximum penalty for late individual notice?"
+    }
+  ],
+  "grid": [
+    [
+      {
+        "status": "verified",
+        "reason": "verified 98d ago by R. Castellan",
+        "ageDays": 98,
+        "answer": "In the most expedient time possible and without unreasonable delay (fictionalized).",
+        "citation": "Fictional CalCiv § 1798.82(a)-analog",
+        "verifiedDate": "2026-08-01",
+        "verifiedBy": "R. Castellan"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 98d ago by R. Castellan",
+        "ageDays": 98,
+        "answer": "Reasonable likelihood of material damage to a resident (fictionalized).",
+        "citation": "Fictional CalCiv § 1798.82(a)-analog",
+        "verifiedDate": "2026-08-01",
+        "verifiedBy": "R. Castellan"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 98d ago by R. Castellan",
+        "ageDays": 98,
+        "answer": "AG copy required when > 500 California residents affected (fictionalized).",
+        "citation": "Fictional CalCiv § 1798.82(f)-analog",
+        "verifiedDate": "2026-08-01",
+        "verifiedBy": "R. Castellan"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 98d ago by R. Castellan",
+        "ageDays": 98,
+        "answer": "Civil penalties up to $200 per resident, capped (fictionalized).",
+        "citation": "Fictional CalCiv § 1798.155-analog",
+        "verifiedDate": "2026-08-01",
+        "verifiedBy": "R. Castellan"
+      }
+    ],
+    [
+      {
+        "status": "stale",
+        "reason": "verified 266d ago (> 180d policy window) — re-verification required before relying",
+        "ageDays": 266,
+        "answer": "Notification within 30 days of discovery (fictionalized).",
+        "citation": "Fictional 815 ILCS 530/10-analog",
+        "verifiedDate": "2026-02-14",
+        "verifiedBy": "M. Delacroix"
+      },
+      {
+        "status": "stale",
+        "reason": "verified 266d ago (> 180d policy window) — re-verification required before relying",
+        "ageDays": 266,
+        "answer": "Personal information was, or is reasonably believed to have been, acquired (fictionalized).",
+        "citation": "Fictional 815 ILCS 530/5-analog",
+        "verifiedDate": "2026-02-14",
+        "verifiedBy": "M. Delacroix"
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no answer provided",
+        "ageDays": null
+      }
+    ],
+    [
+      {
+        "status": "stale",
+        "reason": "verified 291d ago (> 180d policy window) — re-verification required before relying",
+        "ageDays": 291,
+        "answer": "Most expedient time possible and without unreasonable delay; statutory 30-day outer marker in current practice (fictionalized).",
+        "citation": "Fictional GBL § 899-aa(4)-analog",
+        "verifiedDate": "2026-01-20",
+        "verifiedBy": "M. Delacroix"
+      },
+      {
+        "status": "stale",
+        "reason": "verified 291d ago (> 180d policy window) — re-verification required before relying",
+        "ageDays": 291,
+        "answer": "Private information acquired or accessed (fictionalized).",
+        "citation": "Fictional GBL § 899-aa(1)(b)-analog",
+        "verifiedDate": "2026-01-20",
+        "verifiedBy": "M. Delacroix"
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      }
+    ],
+    [
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      }
+    ],
+    [
+      {
+        "status": "verified",
+        "reason": "verified 8d ago by A. Fern",
+        "ageDays": 8,
+        "answer": "Without undue delay to individuals when high risk (fictionalized GDPR-analog).",
+        "citation": "Fictional GDPR-art-34-analog",
+        "verifiedDate": "2026-10-30",
+        "verifiedBy": "A. Fern"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 8d ago by A. Fern",
+        "ageDays": 8,
+        "answer": "High risk to rights and freedoms (fictionalized).",
+        "citation": "Fictional GDPR-art-34(1)-analog",
+        "verifiedDate": "2026-10-30",
+        "verifiedBy": "A. Fern"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 8d ago by A. Fern",
+        "ageDays": 8,
+        "answer": "Supervisory authority within 72 hours of awareness (fictionalized).",
+        "citation": "Fictional GDPR-art-33-analog",
+        "verifiedDate": "2026-10-30",
+        "verifiedBy": "A. Fern"
+      },
+      {
+        "status": "verified",
+        "reason": "verified 8d ago by A. Fern",
+        "ageDays": 8,
+        "answer": "Up to 4% of global annual turnover for core obligations (fictionalized).",
+        "citation": "Fictional GDPR-art-83(5)-analog",
+        "verifiedDate": "2026-10-30",
+        "verifiedBy": "A. Fern"
+      }
+    ],
+    [
+      {
+        "status": "stale",
+        "reason": "verified 606d ago (> 180d policy window) — re-verification required before relying",
+        "ageDays": 606,
+        "answer": "Without undue delay (fictionalized UK GDPR-analog).",
+        "citation": "Fictional UK-GDPR-art-34-analog",
+        "verifiedDate": "2025-03-11",
+        "verifiedBy": "H. Whitlock"
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      }
+    ],
+    [
+      {
+        "status": "unverified",
+        "reason": "answer present but no source citation — unverifiable claims are never surfaced",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      },
+      {
+        "status": "unverified",
+        "reason": "no research recorded for this jurisdiction × question",
+        "ageDays": null
+      }
+    ]
+  ],
+  "coverage": {
+    "total": 28,
+    "verified": 8,
+    "stale": 5,
+    "unverified": 15,
+    "pctVerified": 29
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "discovery-response-log",
+  "tagline": "Discovery responses with auditable deadlines, objection grounds as data, privilege-safe flags, and meet-and-confer versioning.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Discovery response log (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

@@ -1,0 +1,366 @@
+{
+  "rubricVersion": "1.0.0",
+  "org": {
+    "name": "Northlake Logistics (fictional)",
+    "sector": "freight brokerage",
+    "headquarters": "Columbus, Ohio (fictionalized)",
+    "assessment_date": "2026-10-12",
+    "assessor": "in-house counsel + IT lead"
+  },
+  "pillars": [
+    {
+      "id": "inventory",
+      "name": "AI Inventory",
+      "weight": 0.2,
+      "score": 1,
+      "maturity": {
+        "id": "ad_hoc",
+        "label": "Ad hoc"
+      },
+      "questions": [
+        {
+          "id": "inv-1",
+          "text": "Does the company maintain a current inventory of AI systems in use (built and third-party)?",
+          "level": 2,
+          "levelLabel": "2 — Defined but partial",
+          "evidence": "Spreadsheet of AI tools started in Q1 2026; 9 tools listed, last refreshed 2026-06.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-1",
+            "ISO/IEC 42001 cl. 8.1 (operational planning)"
+          ],
+          "remediation": "Stand up a lightweight AI-use registry with named owners and review cadence."
+        },
+        {
+          "id": "inv-2",
+          "text": "Is each inventory entry assigned a business owner accountable for the system?",
+          "level": 1,
+          "levelLabel": "1 — Ad hoc / informal",
+          "evidence": "Owners noted for 4 of 9 tools; rest unmapped.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-2",
+            "ISO/IEC 42001 cl. 5.3 (roles)"
+          ],
+          "remediation": "Add an owner field to the registry; no orphan systems."
+        },
+        {
+          "id": "inv-3",
+          "text": "Are data flows into and out of each AI system documented (inputs, outputs, retention)?",
+          "level": 0,
+          "levelLabel": "0 — Not done",
+          "evidence": "No data-flow documentation exists for any tool.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-1",
+            "ISO/IEC 42001 cl. 8.1"
+          ],
+          "remediation": "Attach a one-page data-flow note per system."
+        }
+      ]
+    },
+    {
+      "id": "risk_mgmt",
+      "name": "Risk Management",
+      "weight": 0.25,
+      "score": 0.33,
+      "maturity": {
+        "id": "absent",
+        "label": "Absent"
+      },
+      "questions": [
+        {
+          "id": "risk-1",
+          "text": "Is a documented AI risk assessment completed before a new AI system goes live?",
+          "level": 1,
+          "levelLabel": "1 — Ad hoc / informal",
+          "evidence": "Informal security review for the pricing model only, by email thread 2026-03.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-3 / MAP",
+            "ISO/IEC 42001 cl. 6.1 (risk)"
+          ],
+          "remediation": "Adopt a pre-deployment risk template with sign-off."
+        },
+        {
+          "id": "risk-2",
+          "text": "Are risks re-assessed on a set schedule or upon material change, not just at launch?",
+          "level": 0,
+          "levelLabel": "0 — Not done",
+          "evidence": "No re-assessment after the March launch.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF MEASURE-1",
+            "ISO/IEC 42001 cl. 9.2 (internal audit)"
+          ],
+          "remediation": "Add quarterly or change-triggered re-assessment."
+        },
+        {
+          "id": "risk-3",
+          "text": "Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?",
+          "level": 0,
+          "levelLabel": "0 — Not done",
+          "evidence": "AI screening of driver applicants in pilot — no heightened review.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-3",
+            "ISO/IEC 42001 cl. 8.2"
+          ],
+          "remediation": "Define a high-risk use list with mandatory review."
+        }
+      ]
+    },
+    {
+      "id": "vendor_mgmt",
+      "name": "Vendor Management",
+      "weight": 0.2,
+      "score": 1.5,
+      "maturity": {
+        "id": "developing",
+        "label": "Developing"
+      },
+      "questions": [
+        {
+          "id": "ven-1",
+          "text": "Are AI vendor tools reviewed (security, data use, model changes) before purchase?",
+          "level": 2,
+          "levelLabel": "2 — Defined but partial",
+          "evidence": "Standard SaaS security questionnaire covers 3 of 6 AI vendors; skips model-change notices.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-4 (suppliers)"
+          ],
+          "remediation": "Add AI vendors to procurement review with data-use questions."
+        },
+        {
+          "id": "ven-2",
+          "text": "Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?",
+          "level": 1,
+          "levelLabel": "1 — Ad hoc / informal",
+          "evidence": "One DPA mentions no-training-on-our-data; others silent.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-4"
+          ],
+          "remediation": "Adopt AI clause checklist for renewals and new deals."
+        }
+      ]
+    },
+    {
+      "id": "incident_response",
+      "name": "Incident Response",
+      "weight": 0.2,
+      "score": 0.33,
+      "maturity": {
+        "id": "absent",
+        "label": "Absent"
+      },
+      "questions": [
+        {
+          "id": "ir-1",
+          "text": "Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?",
+          "level": 0,
+          "levelLabel": "0 — Not done",
+          "evidence": "No AI-specific incident path; general IT helpdesk only.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-5 / MEASURE-3",
+            "ISO/IEC 42001 cl. 8.3"
+          ],
+          "remediation": "Extend the security IR plan with an AI intake path."
+        },
+        {
+          "id": "ir-2",
+          "text": "Are AI incidents triaged with severity levels and a named responder?",
+          "level": 0,
+          "levelLabel": "0 — Not done",
+          "evidence": "No severity levels defined for AI issues.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF MEASURE-3"
+          ],
+          "remediation": "Define severity rubric and on-call owner."
+        },
+        {
+          "id": "ir-3",
+          "text": "Are post-incident reviews fed back into policy or system changes?",
+          "level": 1,
+          "levelLabel": "1 — Ad hoc / informal",
+          "evidence": "After the misrouting outage (2026-05) fixes were made but nothing written down.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF MANAGE-4 / GOVERN-5",
+            "ISO/IEC 42001 cl. 10.2"
+          ],
+          "remediation": "Add a lessons-learned step with tracked actions."
+        }
+      ]
+    },
+    {
+      "id": "training",
+      "name": "Training & Culture",
+      "weight": 0.15,
+      "score": 1.5,
+      "maturity": {
+        "id": "developing",
+        "label": "Developing"
+      },
+      "questions": [
+        {
+          "id": "trn-1",
+          "text": "Do employees receive training on approved vs. prohibited AI use for their role?",
+          "level": 1,
+          "levelLabel": "1 — Ad hoc / informal",
+          "evidence": "One all-hands slide deck on ChatGPT policy from 2025; no role-based content.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-2",
+            "ISO/IEC 42001 cl. 7.2 (competence)"
+          ],
+          "remediation": "Ship a role-based AI use training module."
+        },
+        {
+          "id": "trn-2",
+          "text": "Is there an escalation path employees actually know for AI questions and concerns?",
+          "level": 2,
+          "levelLabel": "2 — Defined but partial",
+          "evidence": "Legal inbox published in handbook; usage unclear.",
+          "answered": true,
+          "frameworkRefs": [
+            "NIST AI RMF GOVERN-2 / GOVERN-5"
+          ],
+          "remediation": "Publish one named contact and channel; test awareness."
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "score": 0.87,
+    "maturity": {
+      "id": "ad_hoc",
+      "label": "Ad hoc"
+    }
+  },
+  "gaps": [
+    {
+      "questionId": "inv-2",
+      "pillar": "inventory",
+      "text": "Is each inventory entry assigned a business owner accountable for the system?",
+      "level": 1,
+      "evidence": "Owners noted for 4 of 9 tools; rest unmapped.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-2",
+        "ISO/IEC 42001 cl. 5.3 (roles)"
+      ],
+      "remediation": "Add an owner field to the registry; no orphan systems."
+    },
+    {
+      "questionId": "inv-3",
+      "pillar": "inventory",
+      "text": "Are data flows into and out of each AI system documented (inputs, outputs, retention)?",
+      "level": 0,
+      "evidence": "No data-flow documentation exists for any tool.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-1",
+        "ISO/IEC 42001 cl. 8.1"
+      ],
+      "remediation": "Attach a one-page data-flow note per system."
+    },
+    {
+      "questionId": "risk-1",
+      "pillar": "risk_mgmt",
+      "text": "Is a documented AI risk assessment completed before a new AI system goes live?",
+      "level": 1,
+      "evidence": "Informal security review for the pricing model only, by email thread 2026-03.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-3 / MAP",
+        "ISO/IEC 42001 cl. 6.1 (risk)"
+      ],
+      "remediation": "Adopt a pre-deployment risk template with sign-off."
+    },
+    {
+      "questionId": "risk-2",
+      "pillar": "risk_mgmt",
+      "text": "Are risks re-assessed on a set schedule or upon material change, not just at launch?",
+      "level": 0,
+      "evidence": "No re-assessment after the March launch.",
+      "frameworkRefs": [
+        "NIST AI RMF MEASURE-1",
+        "ISO/IEC 42001 cl. 9.2 (internal audit)"
+      ],
+      "remediation": "Add quarterly or change-triggered re-assessment."
+    },
+    {
+      "questionId": "risk-3",
+      "pillar": "risk_mgmt",
+      "text": "Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?",
+      "level": 0,
+      "evidence": "AI screening of driver applicants in pilot — no heightened review.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-3",
+        "ISO/IEC 42001 cl. 8.2"
+      ],
+      "remediation": "Define a high-risk use list with mandatory review."
+    },
+    {
+      "questionId": "ven-2",
+      "pillar": "vendor_mgmt",
+      "text": "Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?",
+      "level": 1,
+      "evidence": "One DPA mentions no-training-on-our-data; others silent.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-4"
+      ],
+      "remediation": "Adopt AI clause checklist for renewals and new deals."
+    },
+    {
+      "questionId": "ir-1",
+      "pillar": "incident_response",
+      "text": "Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?",
+      "level": 0,
+      "evidence": "No AI-specific incident path; general IT helpdesk only.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-5 / MEASURE-3",
+        "ISO/IEC 42001 cl. 8.3"
+      ],
+      "remediation": "Extend the security IR plan with an AI intake path."
+    },
+    {
+      "questionId": "ir-2",
+      "pillar": "incident_response",
+      "text": "Are AI incidents triaged with severity levels and a named responder?",
+      "level": 0,
+      "evidence": "No severity levels defined for AI issues.",
+      "frameworkRefs": [
+        "NIST AI RMF MEASURE-3"
+      ],
+      "remediation": "Define severity rubric and on-call owner."
+    },
+    {
+      "questionId": "ir-3",
+      "pillar": "incident_response",
+      "text": "Are post-incident reviews fed back into policy or system changes?",
+      "level": 1,
+      "evidence": "After the misrouting outage (2026-05) fixes were made but nothing written down.",
+      "frameworkRefs": [
+        "NIST AI RMF MANAGE-4 / GOVERN-5",
+        "ISO/IEC 42001 cl. 10.2"
+      ],
+      "remediation": "Add a lessons-learned step with tracked actions."
+    },
+    {
+      "questionId": "trn-1",
+      "pillar": "training",
+      "text": "Do employees receive training on approved vs. prohibited AI use for their role?",
+      "level": 1,
+      "evidence": "One all-hands slide deck on ChatGPT policy from 2025; no role-based content.",
+      "frameworkRefs": [
+        "NIST AI RMF GOVERN-2",
+        "ISO/IEC 42001 cl. 7.2 (competence)"
+      ],
+      "remediation": "Ship a role-based AI use training module."
+    }
+  ],
+  "unanswered": [],
+  "warnings": []
+}

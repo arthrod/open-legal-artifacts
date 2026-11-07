@@ -1,0 +1,179 @@
+{
+  "asOf": "2026-11-07",
+  "results": [
+    {
+      "claimId": "CLM-101",
+      "claimType": "personal_injury",
+      "jurisdiction": "CA",
+      "status": "filed_timely",
+      "accrualDate": "2025-04-02",
+      "deadline": "2027-04-02",
+      "tollDays": 0,
+      "tollingApplied": [],
+      "flags": [],
+      "conflicts": [],
+      "filingDate": "2027-03-15",
+      "savedByDays": 18,
+      "daysRemainingAsOf": null,
+      "basis": [
+        {
+          "ruleId": "CA-SOL-PI",
+          "text": "Discovery-rule accrual: uses discoveryDate when provided (2025-04-02), else injuryDate."
+        },
+        {
+          "ruleId": "CA-SOL-PI",
+          "text": "2 years from accrual 2025-04-02 => 2027-04-02"
+        },
+        {
+          "ruleId": "MARGIN",
+          "text": "Filed 2027-03-15: saved by 18 days."
+        }
+      ],
+      "gate": {
+        "required": true,
+        "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+      }
+    },
+    {
+      "claimId": "CLM-102",
+      "claimType": "breach_of_contract_written",
+      "jurisdiction": "NY",
+      "status": "deadline_upcoming",
+      "accrualDate": "2022-06-01",
+      "deadline": "2029-01-29",
+      "tollDays": 242,
+      "tollingApplied": [
+        {
+          "type": "bankruptcy_stay",
+          "days": 242,
+          "ruleId": "NY-TOL-3",
+          "note": "Stay tolls limitations (illustrative)."
+        }
+      ],
+      "flags": [],
+      "conflicts": [],
+      "filingDate": null,
+      "savedByDays": null,
+      "daysRemainingAsOf": 814,
+      "basis": [
+        {
+          "ruleId": "NY-SOL-CW",
+          "text": "Accrual at injury: uses injuryDate (2022-06-01)."
+        },
+        {
+          "ruleId": "NY-SOL-CW",
+          "text": "6 years from accrual 2022-06-01 + 242 tolling days => 2029-01-29"
+        }
+      ],
+      "gate": {
+        "required": true,
+        "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+      }
+    },
+    {
+      "claimId": "CLM-103",
+      "claimType": "fraud",
+      "jurisdiction": "TX",
+      "status": "deadline_passed_unfiled",
+      "accrualDate": "2021-01-20",
+      "deadline": "2025-01-20",
+      "tollDays": 0,
+      "tollingApplied": [],
+      "flags": [],
+      "conflicts": [
+        {
+          "code": "discovery_precedes_injury",
+          "text": "discoveryDate 2021-01-20 precedes injuryDate 2021-02-15 — check the dates; both retained, accrual picks discovery (earlier)."
+        }
+      ],
+      "filingDate": null,
+      "savedByDays": null,
+      "daysRemainingAsOf": -656,
+      "basis": [
+        {
+          "ruleId": "TX-SOL-F",
+          "text": "Discovery-rule accrual: uses discoveryDate when provided (2021-01-20), else injuryDate."
+        },
+        {
+          "ruleId": "TX-SOL-F",
+          "text": "4 years from accrual 2021-01-20 => 2025-01-20"
+        }
+      ],
+      "gate": {
+        "required": true,
+        "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+      }
+    },
+    {
+      "claimId": "CLM-104",
+      "claimType": "personal_injury",
+      "jurisdiction": "CA",
+      "status": "deadline_upcoming",
+      "accrualDate": "2024-11-05",
+      "deadline": "2028-10-11",
+      "tollDays": 706,
+      "tollingApplied": [
+        {
+          "type": "minority",
+          "days": 706,
+          "ruleId": "CA-TOL-1",
+          "note": "Clock paused during minority (illustrative)."
+        }
+      ],
+      "flags": [],
+      "conflicts": [],
+      "filingDate": null,
+      "savedByDays": null,
+      "daysRemainingAsOf": 704,
+      "basis": [
+        {
+          "ruleId": "CA-SOL-PI",
+          "text": "Discovery-rule accrual: uses discoveryDate when provided (2024-11-05), else injuryDate."
+        },
+        {
+          "ruleId": "CA-SOL-PI",
+          "text": "2 years from accrual 2024-11-05 + 706 tolling days => 2028-10-11"
+        }
+      ],
+      "gate": {
+        "required": true,
+        "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+      }
+    },
+    {
+      "claimId": "CLM-105",
+      "claimType": "property_damage",
+      "jurisdiction": "ZZ",
+      "status": "data_needed",
+      "accrualDate": null,
+      "deadline": null,
+      "tollDays": 0,
+      "tollingApplied": [],
+      "flags": [
+        "unknown jurisdiction \"ZZ\" — no ruleset loaded"
+      ],
+      "conflicts": [],
+      "filingDate": null,
+      "savedByDays": null,
+      "daysRemainingAsOf": null,
+      "basis": [],
+      "gate": {
+        "required": true,
+        "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+      }
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "filed_timely": 1,
+    "filed_late": 0,
+    "deadline_upcoming": 2,
+    "deadline_passed_unfiled": 1,
+    "data_needed": 1,
+    "conflicts": 1
+  },
+  "gate": {
+    "required": true,
+    "message": "Deadlines computed from illustrative example rulesets; limitations law is full of exceptions and accrual disputes. Verify every deadline with counsel before relying on it."
+  }
+}

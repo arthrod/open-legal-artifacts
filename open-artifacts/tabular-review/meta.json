@@ -1,0 +1,8 @@
+{
+  "name": "tabular-review",
+  "tagline": "A documents × questions matrix whose core verifies, never answers — a cell is answered only when its quote locates in the document, and anchors survive export.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Tabular review (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

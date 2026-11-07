@@ -1,0 +1,21 @@
+notice_id,notice_caption,check_id,requirement,status,detail,ruleCite
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"California (example defaults — verify locally)",
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",notice-type,"Notice type recognized under this ruleset",pass,"pay-or-quit (California (example defaults — verify locally))",CCP §§ 1161(2), 1161.3 (example defaults)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",period,"Notice period ≥ 3 days",pass,"notice states 3 days; rule requires 3",CCP §§ 1161(2), 1161.3 (example defaults)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",elapsed,"≥ 3 days between service and filing",fail,"only 2 days elapsed (2026-10-01 → 2026-10-03)",CCP §§ 1161(2), 1161.3 (example defaults)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present on the notice",CCP § 1161(2) (example)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:payment-person,"Contents: Name, telephone, and street address of person to pay",pass,"attested present on the notice",CCP § 1161(2) (example)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:payment-methods,"Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",fail,"attested ABSENT from the notice",CCP § 1161(2) (example)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:nonrent-fees-excluded,"Contents: States notice is void if non-rent fees are included",pass,"attested present on the notice",CCP § 1161.3 (example)
+E-1031,"Kimura v. Bridge Street Apartments (fictional)",service,"Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",pass,"method ""post-and-mail"" is authorized",CCP § 1162 (example)
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"New York (example defaults — verify locally)",
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",notice-type,"Notice type recognized under this ruleset",pass,"rent-demand (New York (example defaults — verify locally))",RPAPL § 733 (example defaults)
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",period,"Notice period ≥ 14 days",pass,"notice states 14 days; rule requires 14",RPAPL § 733 (example defaults)
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present on the notice",RPAPL § 733(1) (example)
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",content:rent-periods,"Contents: Rent periods the demand covers",unverified,"not attested — review the notice document and record true/false for ""rent-periods""; never assumed",RPAPL § 733(1) (example)
+E-1032,"Abernathy v. Foxglove Rentals (fictional)",service,"Service by an authorized method (personal, substituted, conspicuous-place, mail)",pass,"method ""conspicuous-place"" is authorized",RPAPL § 733(2) (example)
+E-1033,"Sorenson v. Delta Flats HOA (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"Ohio (example defaults — verify locally)",
+E-1033,"Sorenson v. Delta Flats HOA (fictional)",notice-type,"Notice type recognized under this ruleset",pass,"notice-to-leave (Ohio (example defaults — verify locally))",ORC 1923.04 (example defaults)
+E-1033,"Sorenson v. Delta Flats HOA (fictional)",period,"Notice period ≥ 3 days",pass,"notice states 3 days; rule requires 3",ORC 1923.04 (example defaults)
+E-1033,"Sorenson v. Delta Flats HOA (fictional)",content:statutory-language,"Contents: Statutory leave-premises language (""You are being asked to leave the premises…"")",fail,"attested ABSENT from the notice",ORC 1923.04 (example)
+E-1033,"Sorenson v. Delta Flats HOA (fictional)",service,"Service by an authorized method (personal-delivery, mail)",fail,"method ""certified-carrier-pigeon"" is NOT in the authorized list",ORC 1923.04 (example)

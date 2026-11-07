@@ -1,0 +1,8 @@
+{
+  "name": "renewal-calendar",
+  "tagline": "Last day to give notice on each contract — ambiguous dates flagged, unresolvable ones never guessed, ICS export.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Renewal calendar (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

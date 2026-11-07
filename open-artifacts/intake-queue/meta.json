@@ -1,0 +1,8 @@
+{
+  "name": "intake-queue",
+  "tagline": "New-matter intake queue: same-party dedupe, roster conflict matching, deadline/age urgency triage, assign states, CSV export",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Client intake queue (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

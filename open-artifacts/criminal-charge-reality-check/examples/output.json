@@ -1,0 +1,130 @@
+{
+  "jurisdiction": "NY",
+  "charge": "Criminal possession of stolen property, 4th degree (fictional)",
+  "chargeClass": "felony_class_D",
+  "filedOn": "2026-11-02",
+  "ruleset": {
+    "id": "NY",
+    "name": "New York (example ruleset)",
+    "version": "2026-11-example"
+  },
+  "timeline": [
+    {
+      "stage": "arraignment",
+      "dayOffset": {
+        "min": 0,
+        "typical": 1,
+        "max": 5
+      },
+      "window": {
+        "min": "2026-11-02",
+        "typical": "2026-11-03",
+        "max": "2026-11-07"
+      }
+    },
+    {
+      "stage": "discovery",
+      "dayOffset": {
+        "min": 30,
+        "typical": 45,
+        "max": 90
+      },
+      "window": {
+        "min": "2026-12-02",
+        "typical": "2026-12-17",
+        "max": "2027-01-31"
+      }
+    },
+    {
+      "stage": "motions",
+      "dayOffset": {
+        "min": 60,
+        "typical": 120,
+        "max": 180
+      },
+      "window": {
+        "min": "2027-01-01",
+        "typical": "2027-03-02",
+        "max": "2027-05-01"
+      }
+    },
+    {
+      "stage": "trial",
+      "dayOffset": {
+        "min": 240,
+        "typical": 330,
+        "max": 420
+      },
+      "window": {
+        "min": "2027-06-30",
+        "typical": "2027-09-28",
+        "max": "2027-12-27"
+      }
+    }
+  ],
+  "sentencingRange": {
+    "minMonths": 0,
+    "maxMonths": 84,
+    "ruleId": "NY-SR-D"
+  },
+  "outcomeBands": {
+    "bandSource": "illustrative",
+    "dismissal": [
+      6,
+      18
+    ],
+    "plea_conviction": [
+      65,
+      82
+    ],
+    "trial_conviction": [
+      7,
+      15
+    ],
+    "acquittal": [
+      1,
+      5
+    ]
+  },
+  "factors": [
+    {
+      "id": "NY-F1",
+      "label": "Detention status",
+      "direction": "worsens",
+      "note": "Pretrial detention correlates with higher plea rates and faster timelines in published research.",
+      "applies": true,
+      "basis": "client.detained = true"
+    },
+    {
+      "id": "NY-F2",
+      "label": "Prior convictions",
+      "direction": "worsens",
+      "note": "Prior record typically raises plea terms and lowers dismissal likelihood.",
+      "applies": true,
+      "basis": "client.priorConvictions = 1"
+    },
+    {
+      "id": "NY-F3",
+      "label": "Counsel at arraignment",
+      "direction": "improves",
+      "note": "Early representation correlates with better bail and discovery outcomes.",
+      "applies": true,
+      "basis": "client.counselAtArraignment = true"
+    },
+    {
+      "id": "NY-F4",
+      "label": "Weak or circumstantial evidence",
+      "direction": "improves",
+      "note": "Proof problems raise dismissal and suppression prospects.",
+      "applies": false,
+      "basis": ""
+    }
+  ],
+  "disclaimer": {
+    "statisticalHeuristics": true,
+    "prediction": false,
+    "legalAdvice": false,
+    "text": "STRONG DISCLAIMER: these are STATISTICAL HEURISTICS from illustrative example data — not a prediction of this case's outcome, not legal advice, and no substitute for a defense attorney. Bands describe typical ranges for comparable fictional cohorts; individual outcomes vary enormously. Nothing here should be communicated to a client as a likelihood for their case."
+  },
+  "errors": []
+}

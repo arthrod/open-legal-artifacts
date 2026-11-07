@@ -1,0 +1,8 @@
+{
+  "name": "patent-claim-comparison",
+  "tagline": "Limitation-by-limitation claim charts with span anchors and explicit 'no teaching found' rows — never guessed.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Patent claim comparison (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

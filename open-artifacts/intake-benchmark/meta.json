@@ -1,0 +1,8 @@
+{
+  "name": "intake-benchmark",
+  "tagline": "Score any two law-firm intake flows — software or human — on one explicit rubric.",
+  "category": "partner-built",
+  "anthropic_counterpart": "Harvey Intake — Harvey (Claude for Legal partner gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

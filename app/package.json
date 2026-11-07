@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "catalog": "node tools/gen-catalog.mjs",
+    "build": "npm run catalog && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node .smoke/smoke.ts",
     "test:cores": "cd ../open-artifacts/cite-check && npx tsx --test core/*.test.ts && cd ../playbook-deviation-board && npx tsx --test core/*.test.ts && cd ../fact-chronology && npx tsx --test core/*.test.ts && cd ../tabular-review && npx tsx --test core/*.test.ts"

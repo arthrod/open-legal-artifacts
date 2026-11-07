@@ -1,0 +1,8 @@
+{
+  "name": "outside-counsel-spend",
+  "tagline": "A spend audit whose core is the findings ledger — every rate exception, budget breach, and write-off cited by entry, rule, and dollar impact.",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Outside counsel spend (Claude for Legal artifacts gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

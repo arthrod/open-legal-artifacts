@@ -1,0 +1,8 @@
+{
+  "name": "privilege-log-builder",
+  "tagline": "Document metadata in, draft FRE 26(b)(5)-style privilege log out — heuristic inference flagged for attorney review.",
+  "category": "original-idea",
+  "anthropic_counterpart": null,
+  "status": "shipped",
+  "demo": "demo/index.html"
+}

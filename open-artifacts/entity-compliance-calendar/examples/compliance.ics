@@ -1,0 +1,93 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//open-legal-artifacts//entity-compliance-calendar//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:E-1-de-franchise-20270315@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270315
+SUMMARY:DE franchise tax — Northwind Robotics\, Inc. (US-DE)
+DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE franchise tax\nStatute 
+ 
+ (fictional): fictional 8 Del. C. § 391-analog\nRule: annual, formati
+ on 
+ anniversary (03-15)\nStatus: scheduled\nRules-as-data defaults; ve
+ rify a
+ gainst current statute. Not legal advice.
+RRULE:FREQ=YEARLY
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:Filing window — DE franchise tax (Northwind Robotics\, Inc.)
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:E-1-de-registered-agent-20270601@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270601
+SUMMARY:DE registered agent renewal — Northwind Robotics\, Inc. (US-DE)
+DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE registered agent renewa
+ 
+ l\nStatute (fictional): fictional 8 Del. C. § 132-analog\nRule: annu
+ al,
+  fixed 6/1\nStatus: scheduled\nRules-as-data defaults; verify agai
+ nst cu
+ rrent statute. Not legal advice.
+RRULE:FREQ=YEARLY
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:Filing window — DE registered agent renewal (Northwind Robo
+ 
+ tics\, Inc.)
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:E-2-ca-sos-biennial-20250601@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20250601
+SUMMARY:[DELINQUENT] CA statement of information — Northwind Robotics C
+ alifornia\, Inc. (US-CA)
+DESCRIPTION:Northwind Robotics California, Inc. [E-2] — CA statement of
+ 
+  information\nStatute (fictional): fictional Cal. Corp. Code § 6210-
+ ana
+ log\nRule: biennial, formation anniversary (06-01), even-cycle fro
+ m form
+ ation year\nSTATUS: DELINQUENT — cure immediately (fictional 
+ data)\nRu
+ les-as-data defaults; verify against current statute. Not le
+ gal advice.
+RRULE:FREQ=YEARLY;INTERVAL=2
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:Filing window — CA statement of information (Northwind Robo
+ 
+ tics California\, Inc.)
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:E-3-ny-annual-report-20210415@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20210415
+SUMMARY:[DELINQUENT] NY biennial statement — Northwind Robotics NY LLC 
+ (US-NY)
+DESCRIPTION:Northwind Robotics NY LLC [E-3] — NY biennial statement\nSt
+ 
+ atute (fictional): fictional NY LLC Law § 301-analog\nRule: biennial
+ , f
+ ixed 4/15\nSTATUS: DELINQUENT — cure immediately (fictional data
+ )\nRul
+ es-as-data defaults; verify against current statute. Not legal 
+ advice.
+RRULE:FREQ=YEARLY;INTERVAL=2
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:Filing window — NY biennial statement (Northwind Robotics N
+ 
+ Y LLC)
+END:VALARM
+END:VEVENT
+END:VCALENDAR

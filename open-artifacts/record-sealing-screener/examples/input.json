@@ -1,0 +1,74 @@
+{
+  "jurisdiction": "DC",
+  "asOf": "2026-11-07",
+  "cases": [
+    {
+      "id": "C-2021-114",
+      "caseNumber": "2021-CF-001142",
+      "offense": "Possession of a controlled substance (fictional)",
+      "offenseCategory": "drug_possession",
+      "offenseClass": "misdemeanor",
+      "disposition": "conviction",
+      "offenseDate": "2015-04-02",
+      "dispositionDate": "2015-09-10",
+      "sentenceCompletedDate": "2016-03-01",
+      "finePaid": true,
+      "subsequentConvictions": [],
+      "pendingCase": false
+    },
+    {
+      "id": "C-2022-037",
+      "caseNumber": "2022-CF-000371",
+      "offense": "Theft II (fictional client matter)",
+      "offenseCategory": "theft",
+      "offenseClass": "misdemeanor",
+      "disposition": "conviction",
+      "offenseDate": "2021-07-19",
+      "dispositionDate": "2022-02-08",
+      "sentenceCompletedDate": "2022-11-30",
+      "finePaid": true,
+      "subsequentConvictions": [],
+      "pendingCase": false
+    },
+    {
+      "id": "C-2023-005",
+      "caseNumber": "2023-CF-000058",
+      "offense": "Assault (fictional)",
+      "offenseCategory": "assault",
+      "offenseClass": "misdemeanor",
+      "disposition": "acquittal",
+      "offenseDate": "2023-01-11",
+      "dispositionDate": "2024-06-20",
+      "finePaid": null,
+      "subsequentConvictions": [],
+      "pendingCase": false
+    },
+    {
+      "id": "C-2024-089",
+      "caseNumber": "2024-CF-000894",
+      "offense": "Burglary I (fictional)",
+      "offenseCategory": "violent_felony",
+      "offenseClass": "felony_class_B",
+      "disposition": "conviction",
+      "offenseDate": "2019-10-05",
+      "dispositionDate": "2020-04-14",
+      "sentenceCompletedDate": "2021-02-27",
+      "finePaid": true,
+      "subsequentConvictions": [],
+      "pendingCase": false
+    },
+    {
+      "id": "C-2026-201",
+      "caseNumber": "2026-CF-002019",
+      "offense": "Trespass (fictional, record incomplete)",
+      "offenseCategory": "trespass",
+      "offenseClass": "misdemeanor",
+      "disposition": "unknown",
+      "offenseDate": "2026-03-02",
+      "dispositionDate": null,
+      "sentenceCompletedDate": null,
+      "subsequentConvictions": [],
+      "pendingCase": true
+    }
+  ]
+}

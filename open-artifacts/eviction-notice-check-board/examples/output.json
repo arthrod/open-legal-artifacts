@@ -1,0 +1,187 @@
+[
+  {
+    "id": "E-1031",
+    "caption": "Kimura v. Bridge Street Apartments (fictional)",
+    "jurisdiction": "california-example",
+    "noticeType": "pay-or-quit",
+    "checks": [
+      {
+        "id": "jurisdiction",
+        "requirement": "Jurisdiction ruleset loaded",
+        "status": "pass",
+        "detail": "California (example defaults — verify locally)",
+        "ruleCite": null
+      },
+      {
+        "id": "notice-type",
+        "requirement": "Notice type recognized under this ruleset",
+        "status": "pass",
+        "detail": "pay-or-quit (California (example defaults — verify locally))",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "period",
+        "requirement": "Notice period ≥ 3 days",
+        "status": "pass",
+        "detail": "notice states 3 days; rule requires 3",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "elapsed",
+        "requirement": "≥ 3 days between service and filing",
+        "status": "fail",
+        "detail": "only 2 days elapsed (2026-10-01 → 2026-10-03)",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "content:amount-due",
+        "requirement": "Contents: Amount of rent due",
+        "status": "pass",
+        "detail": "attested present on the notice",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:payment-person",
+        "requirement": "Contents: Name, telephone, and street address of person to pay",
+        "status": "pass",
+        "detail": "attested present on the notice",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:payment-methods",
+        "requirement": "Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",
+        "status": "fail",
+        "detail": "attested ABSENT from the notice",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:nonrent-fees-excluded",
+        "requirement": "Contents: States notice is void if non-rent fees are included",
+        "status": "pass",
+        "detail": "attested present on the notice",
+        "ruleCite": "CCP § 1161.3 (example)"
+      },
+      {
+        "id": "service",
+        "requirement": "Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",
+        "status": "pass",
+        "detail": "method \"post-and-mail\" is authorized",
+        "ruleCite": "CCP § 1162 (example)"
+      }
+    ],
+    "summary": {
+      "pass": 7,
+      "fail": 2,
+      "unverified": 0,
+      "verdict": "fail"
+    },
+    "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+  },
+  {
+    "id": "E-1032",
+    "caption": "Abernathy v. Foxglove Rentals (fictional)",
+    "jurisdiction": "new-york-example",
+    "noticeType": "rent-demand",
+    "checks": [
+      {
+        "id": "jurisdiction",
+        "requirement": "Jurisdiction ruleset loaded",
+        "status": "pass",
+        "detail": "New York (example defaults — verify locally)",
+        "ruleCite": null
+      },
+      {
+        "id": "notice-type",
+        "requirement": "Notice type recognized under this ruleset",
+        "status": "pass",
+        "detail": "rent-demand (New York (example defaults — verify locally))",
+        "ruleCite": "RPAPL § 733 (example defaults)"
+      },
+      {
+        "id": "period",
+        "requirement": "Notice period ≥ 14 days",
+        "status": "pass",
+        "detail": "notice states 14 days; rule requires 14",
+        "ruleCite": "RPAPL § 733 (example defaults)"
+      },
+      {
+        "id": "content:amount-due",
+        "requirement": "Contents: Amount of rent due",
+        "status": "pass",
+        "detail": "attested present on the notice",
+        "ruleCite": "RPAPL § 733(1) (example)"
+      },
+      {
+        "id": "content:rent-periods",
+        "requirement": "Contents: Rent periods the demand covers",
+        "status": "unverified",
+        "detail": "not attested — review the notice document and record true/false for \"rent-periods\"; never assumed",
+        "ruleCite": "RPAPL § 733(1) (example)"
+      },
+      {
+        "id": "service",
+        "requirement": "Service by an authorized method (personal, substituted, conspicuous-place, mail)",
+        "status": "pass",
+        "detail": "method \"conspicuous-place\" is authorized",
+        "ruleCite": "RPAPL § 733(2) (example)"
+      }
+    ],
+    "summary": {
+      "pass": 5,
+      "fail": 0,
+      "unverified": 1,
+      "verdict": "unverified"
+    },
+    "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+  },
+  {
+    "id": "E-1033",
+    "caption": "Sorenson v. Delta Flats HOA (fictional)",
+    "jurisdiction": "ohio-example",
+    "noticeType": "notice-to-leave",
+    "checks": [
+      {
+        "id": "jurisdiction",
+        "requirement": "Jurisdiction ruleset loaded",
+        "status": "pass",
+        "detail": "Ohio (example defaults — verify locally)",
+        "ruleCite": null
+      },
+      {
+        "id": "notice-type",
+        "requirement": "Notice type recognized under this ruleset",
+        "status": "pass",
+        "detail": "notice-to-leave (Ohio (example defaults — verify locally))",
+        "ruleCite": "ORC 1923.04 (example defaults)"
+      },
+      {
+        "id": "period",
+        "requirement": "Notice period ≥ 3 days",
+        "status": "pass",
+        "detail": "notice states 3 days; rule requires 3",
+        "ruleCite": "ORC 1923.04 (example defaults)"
+      },
+      {
+        "id": "content:statutory-language",
+        "requirement": "Contents: Statutory leave-premises language (\"You are being asked to leave the premises…\")",
+        "status": "fail",
+        "detail": "attested ABSENT from the notice",
+        "ruleCite": "ORC 1923.04 (example)"
+      },
+      {
+        "id": "service",
+        "requirement": "Service by an authorized method (personal-delivery, mail)",
+        "status": "fail",
+        "detail": "method \"certified-carrier-pigeon\" is NOT in the authorized list",
+        "ruleCite": "ORC 1923.04 (example)"
+      }
+    ],
+    "summary": {
+      "pass": 3,
+      "fail": 2,
+      "unverified": 0,
+      "verdict": "fail"
+    },
+    "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+  }
+]

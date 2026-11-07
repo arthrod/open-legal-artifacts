@@ -1,0 +1,95 @@
+{
+  "case_type": "employment_based",
+  "case_label": "Employment-based adjustment",
+  "today": "2026-11-07",
+  "checklist": [
+    {
+      "id": "government_id",
+      "label": "Passport / government photo ID",
+      "required": true,
+      "note": "",
+      "status": "present",
+      "detail": "Valid through 2028-03-14."
+    },
+    {
+      "id": "i140_notice",
+      "label": "I-140 receipt or approval notice",
+      "required": true,
+      "note": "",
+      "status": "present",
+      "detail": "On file; no expiry tracked."
+    },
+    {
+      "id": "employment_letter",
+      "label": "Employer verification letter (current terms)",
+      "required": true,
+      "note": "",
+      "status": "present",
+      "detail": "On file; no expiry tracked."
+    },
+    {
+      "id": "pay_stubs",
+      "label": "Recent pay stubs",
+      "required": true,
+      "note": "",
+      "status": "present",
+      "detail": "On file; no expiry tracked."
+    },
+    {
+      "id": "i693_medical",
+      "label": "I-693 medical exam (sealed)",
+      "required": true,
+      "note": "Expiry-sensitive document.",
+      "status": "expiring_soon",
+      "detail": "Valid but expires in 84 day(s) (2027-01-30)."
+    },
+    {
+      "id": "tax_returns",
+      "label": "Recent tax transcripts",
+      "required": false,
+      "note": "",
+      "status": "missing",
+      "detail": "Not reported in file."
+    }
+  ],
+  "readiness": {
+    "score": 100,
+    "ready_count": 5,
+    "required_count": 5,
+    "not_ready": []
+  },
+  "key_dates": [
+    {
+      "label": "I-485 interview (fictional)",
+      "date": "2026-11-18",
+      "days_until": 11,
+      "urgent": true
+    },
+    {
+      "label": "EAD renewal deadline (fictional)",
+      "date": "2026-12-01",
+      "days_until": 24,
+      "urgent": false
+    }
+  ],
+  "referral": {
+    "flag": true,
+    "reasons": [
+      {
+        "id": "prior_denial",
+        "label": "Prior denial of this or a related benefit."
+      }
+    ]
+  },
+  "summary": [
+    "Case type: Employment-based adjustment. Checklist checked against 2026-11-07.",
+    "5 of 5 required documents are on file and valid — readiness 100%.",
+    "I-485 interview (fictional): 2026-11-18 — 11 day(s) from now (URGENT).",
+    "EAD renewal deadline (fictional): 2026-12-01 — 24 day(s) from now.",
+    "This case should be referred to an accredited attorney or accredited representative before anything is filed.",
+    "This checklist is not legal advice."
+  ],
+  "warnings": [
+    "URGENT: I-485 interview (fictional) on 2026-11-18 — 11 day(s) away."
+  ]
+}

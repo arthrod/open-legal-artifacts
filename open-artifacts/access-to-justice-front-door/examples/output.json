@@ -1,0 +1,187 @@
+[
+  {
+    "description": "My landlord taped a notice to quit on my door and I'm three weeks behind on rent after my hours got cut.",
+    "status": "classified",
+    "primaryIssue": "housing-eviction",
+    "primaryLabel": "Eviction / loss of housing",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "notice to quit",
+      "landlord",
+      "behind on rent"
+    ],
+    "referrals": [
+      {
+        "issue": "housing-eviction",
+        "label": "Eviction / loss of housing",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-housing",
+        "serviceDescription": "Eviction defense and housing stability help through your local legal aid housing unit.",
+        "whereToGo": "Your nearest legal aid office or court self-help center; bring any court papers you received."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "There is black mold in the bathroom and no heat since October; the landlord ignores my repair requests.",
+    "status": "classified",
+    "primaryIssue": "housing-conditions",
+    "primaryLabel": "Repairs / unhealthy housing conditions",
+    "confidence": 0.714,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "mold",
+      "no heat"
+    ],
+    "referrals": [
+      {
+        "issue": "housing-conditions",
+        "label": "Repairs / unhealthy housing conditions",
+        "confidence": 0.714,
+        "legalAidCategory": "legal-aid-housing",
+        "serviceDescription": "Housing conditions enforcement help through your local legal aid housing unit.",
+        "whereToGo": "Your nearest legal aid office; bring photos, repair requests, and correspondence with the landlord."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "They denied my food stamps and said I have an overpayment I don't understand.",
+    "status": "classified",
+    "primaryIssue": "benefits-denial",
+    "primaryLabel": "Public benefits denied or cut off",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "food stamps",
+      "denied",
+      "overpayment"
+    ],
+    "referrals": [
+      {
+        "issue": "benefits-denial",
+        "label": "Public benefits denied or cut off",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-benefits",
+        "serviceDescription": "Benefits appeals help (fair hearings) through your local legal aid public benefits unit.",
+        "whereToGo": "Your nearest legal aid office; bring the denial or overpayment notice and any deadlines listed on it."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "A debt collector is suing me over an old credit card and threatened wage garnishment.",
+    "status": "classified",
+    "primaryIssue": "consumer-debt",
+    "primaryLabel": "Debt collection / credit",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "debt collector",
+      "wage garnishment"
+    ],
+    "referrals": [
+      {
+        "issue": "consumer-debt",
+        "label": "Debt collection / credit",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-consumer",
+        "serviceDescription": "Consumer debt defense help through your local legal aid consumer unit.",
+        "whereToGo": "Your nearest legal aid office; bring the collection letters or lawsuit papers."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "My partner hit me and I'm scared; I think I need a restraining order.",
+    "status": "classified",
+    "primaryIssue": "domestic-violence",
+    "primaryLabel": "Domestic violence / safety",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "restraining order",
+      "hit me"
+    ],
+    "referrals": [
+      {
+        "issue": "domestic-violence",
+        "label": "Domestic violence / safety",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-dv",
+        "serviceDescription": "Safety planning and protective-order help through a domestic violence advocacy program.",
+        "whereToGo": "A DV advocacy hotline or legal aid DV unit; if you are in immediate danger call emergency services first."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "I wasn't paid for six weeks of overtime at my last job.",
+    "status": "classified",
+    "primaryIssue": "employment-wage",
+    "primaryLabel": "Wage theft / job problems",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "overtime"
+    ],
+    "referrals": [
+      {
+        "issue": "employment-wage",
+        "label": "Wage theft / job problems",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-employment",
+        "serviceDescription": "Wage claim and employment help through your local legal aid workers’ rights unit.",
+        "whereToGo": "Your nearest legal aid office; bring pay stubs, schedules, and any termination notice."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "I want to get my criminal record expunged so background checks stop killing my applications.",
+    "status": "classified",
+    "primaryIssue": "record-clearance",
+    "primaryLabel": "Record sealing / expungement",
+    "confidence": 1,
+    "multiIssue": false,
+    "matchedKeywords": [
+      "criminal record",
+      "background check"
+    ],
+    "referrals": [
+      {
+        "issue": "record-clearance",
+        "label": "Record sealing / expungement",
+        "confidence": 1,
+        "legalAidCategory": "legal-aid-record-clearance",
+        "serviceDescription": "Record sealing/expungement screening through a legal aid reentry clinic.",
+        "whereToGo": "Your nearest legal aid reentry clinic; bring your RAP sheet if you have one."
+      }
+    ],
+    "otherCandidates": [],
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
+  },
+  {
+    "description": "My neighbor's tree fell into my yard and now the HOA is fining me over the fence.",
+    "status": "escalate",
+    "reason": "no-keyword-match",
+    "escalate": "We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.",
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
+    "candidates": []
+  },
+  {
+    "description": "The city reassessed my property taxes and I think the formula is wrong.",
+    "status": "escalate",
+    "reason": "no-keyword-match",
+    "escalate": "We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.",
+    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
+    "candidates": []
+  }
+]

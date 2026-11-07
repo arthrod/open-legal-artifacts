@@ -1,0 +1,8 @@
+{
+  "name": "litigation-portfolio",
+  "tagline": "Deterministic matter portfolio: SOL math from editable rules-as-data, exposure banding, dashboard + CSV",
+  "category": "anthropic-built",
+  "anthropic_counterpart": "Litigation portfolio tracker (Claude for Legal gallery)",
+  "status": "shipped",
+  "demo": "demo/index.html"
+}
