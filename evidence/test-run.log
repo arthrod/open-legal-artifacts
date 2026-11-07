@@ -1,0 +1,35 @@
+# Full test run — 2026-11-07T20:10:25Z — node v24.20.0
+access-to-justice-front-door: pass=16 fail=0
+ai-governance-benchmark: pass=13 fail=0
+ai-use-case-inventory: pass=13 fail=0
+ask-legal: pass=11 fail=0
+criminal-charge-reality-check: pass=13 fail=0
+discovery-response-log: pass=14 fail=0
+docket-watch-wall: pass=10 fail=0
+entity-compliance-calendar: pass=13 fail=0
+eviction-notice-check-board: pass=18 fail=0
+immigration-papers-reader: pass=16 fail=0
+intake-benchmark: pass=14 fail=0
+intake-queue: pass=18 fail=0
+jurisdiction-survey-matrix: pass=10 fail=0
+limitations-radar: pass=19 fail=0
+litigation-portfolio: pass=17 fail=0
+matter-board: pass=11 fail=0
+obligations-checker: pass=16 fail=0
+outside-counsel-spend: pass=14 fail=0
+patent-claim-comparison: pass=12 fail=0
+privilege-log-builder: pass=14 fail=0
+pro-bono-case-board: pass=17 fail=0
+record-clearance: pass=17 fail=0
+record-sealing-screener: pass=16 fail=0
+regulatory-horizon-scan: pass=12 fail=0
+renewal-calendar: pass=12 fail=0
+rent-ledger-reviewer: pass=18 fail=0
+sell-side-qa-log: pass=16 fail=0
+subpoena-response: pass=18 fail=0
+venture-term-sheet-benchmark: pass=10 fail=0
+JS TOTAL: pass=418 fail=0
+cite-check (tsx): ℹ tests 12 ℹ pass 12 ℹ fail 0 
+fact-chronology (tsx): ℹ tests 11 ℹ pass 11 ℹ fail 0 
+playbook-deviation-board (tsx): ℹ tests 12 ℹ pass 12 ℹ fail 0 
+tabular-review (tsx): ℹ tests 11 ℹ pass 11 ℹ fail 0 

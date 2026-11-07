@@ -46,42 +46,42 @@ Status legend: **shipped** (in this repo today) · **phase-2** (backlog) · **ex
 | # | Gallery artifact | Our counterpart | Status | What's better |
 |---|---|---|---|---|
 | 1 | Tabular review | `open-artifacts/tabular-review` | **shipped** | Cell-level provenance that survives export (CSV/PDF anchors), re-run diffing when a contract version changes, user-owned question templates |
-| 2 | Regulatory horizon scan | `open-artifacts/` (TBD) | phase-2 | Open regulatory feeds (Federal Register, EUR-Lex) with diffing + dedupe; transparent, versioned impact-scoring rubric you can audit |
-| 3 | Ask legal | `open-artifacts/` (TBD) | phase-2 | Guidance base in open formats under your control, per-topic escalation SLAs, confidence gating, full question audit log |
-| 4 | Jurisdiction survey matrix | `open-artifacts/` (TBD) | phase-2 | Authoritative open-law sources per cell (CourtListener, state codes, EUR-Lex), verification dates, "unverified" cells never guessed |
+| 2 | Regulatory horizon scan | [`open-artifacts/regulatory-horizon-scan/`](open-artifacts/regulatory-horizon-scan/) | **shipped** | Open regulatory feeds (Federal Register, EUR-Lex) with diffing + dedupe; transparent, versioned impact-scoring rubric you can audit |
+| 3 | Ask legal | [`open-artifacts/ask-legal/`](open-artifacts/ask-legal/) | **shipped** | Guidance base in open formats under your control, per-topic escalation SLAs, confidence gating, full question audit log |
+| 4 | Jurisdiction survey matrix | [`open-artifacts/jurisdiction-survey-matrix/`](open-artifacts/jurisdiction-survey-matrix/) | **shipped** | Authoritative open-law sources per cell (CourtListener, state codes, EUR-Lex), verification dates, "unverified" cells never guessed |
 | 5 | Cite check | `open-artifacts/cite-check` | **shipped** | Deterministic quote-diff + citation parsing core (eyecite); LLM only judges proposition support; every flag carries quote evidence |
 | 6 | Playbook deviation board | [`artifacts/contracts-playbook/`](artifacts/contracts-playbook/README.md) | **shipped** | Playbook as versioned data with family lineage + clause-level diffs, source-quote verification, redaction before model calls, free model (`gpt-5-nano`), self-hostable |
-| 7 | Matter board | `open-artifacts/` (TBD) | phase-2 | Change-detection instead of snapshot staleness; export to open formats |
+| 7 | Matter board | [`open-artifacts/matter-board/`](open-artifacts/matter-board/) | **shipped** | Change-detection instead of snapshot staleness; export to open formats |
 | 8 | New client intake | [`artifacts/client-intake/`](artifacts/client-intake/README.md) | **shipped** | Full source available; demo mode fails closed (no storage without `ADMIN_TOKEN`); conflict-party list generated at finalize; no connector lock-in |
-| 9 | Renewal calendar | `open-artifacts/` (TBD) | phase-2 | Deadline store with ICS export + notifications; human confirmation of each extracted date |
+| 9 | Renewal calendar | [`open-artifacts/renewal-calendar/`](open-artifacts/renewal-calendar/) | **shipped** | Deadline store with ICS export + notifications; human confirmation of each extracted date |
 | 10 | Fact chronology | `open-artifacts/fact-chronology` | **shipped** | Per-fact evidence graph (supporting vs contradicting spans), date normalization for ambiguous documents, lockable verified entries |
-| 11 | Discovery response log | `open-artifacts/` (TBD) | phase-2 | Privilege-safe routing, versioned drafts per meet-and-confer round, objection library with jurisdiction-aware grounds |
-| 12 | Patent claim comparison | `open-artifacts/` (TBD) | phase-2 | Structured claim-limitation parsing, pinpoint disclosure spans, explicit "no teaching found" rows |
-| 13 | Docket watch wall | `open-artifacts/` (TBD) | phase-2 | CourtListener RECAP API as the open backbone — no product lock-in; scheduled diffing with per-judge filters |
-| 14 | AI use-case inventory | `open-artifacts/` (TBD) | phase-2 | Register as versioned structured data; risk tiers mapped to NIST AI RMF / EU AI Act, rubric published |
-| 15 | Sell-side Q&A log | `open-artifacts/` (TBD) | phase-2 | Buyer-isolated access control, approval workflow, disclosure-schedule consistency checks |
-| 16 | Outside counsel spend | `open-artifacts/` (TBD) | phase-2 | LEDES parsing as deterministic code; billing guidelines as structured data; per-firm exception reports |
-| 17 | Entity compliance calendar | `open-artifacts/` (TBD) | phase-2 | Deadline rules as a maintained, versioned dataset with statutory cites and effective dates |
-| 18 | Litigation portfolio | `open-artifacts/` (TBD) | phase-2 | Self-hosted (reserve data stays yours), scenario roll-ups, consistency checks |
-| 19 | Eviction notice check board | `open-artifacts/` (TBD) | phase-2 | Codified per-jurisdiction rulesets open to inspection; plain-language output for non-lawyer advocates |
-| 20 | Pro bono case board | `open-artifacts/` (TBD) | phase-2 | Multi-tenant for small nonprofits, offline-friendly, malpractice-aware deadline warnings |
-| 21 | Access-to-justice front door | `open-artifacts/` (TBD) | phase-2 | Self-hostable at nonprofit cost (open-weight models), published guidance library that compounds across orgs; see [`artifacts/prompting-for-attorneys/`](artifacts/prompting-for-attorneys/README.md) for the shipped education layer |
+| 11 | Discovery response log | [`open-artifacts/discovery-response-log/`](open-artifacts/discovery-response-log/) | **shipped** | Privilege-safe routing, versioned drafts per meet-and-confer round, objection library with jurisdiction-aware grounds |
+| 12 | Patent claim comparison | [`open-artifacts/patent-claim-comparison/`](open-artifacts/patent-claim-comparison/) | **shipped** | Structured claim-limitation parsing, pinpoint disclosure spans, explicit "no teaching found" rows |
+| 13 | Docket watch wall | [`open-artifacts/docket-watch-wall/`](open-artifacts/docket-watch-wall/) | **shipped** | CourtListener RECAP API as the open backbone — no product lock-in; scheduled diffing with per-judge filters |
+| 14 | AI use-case inventory | [`open-artifacts/ai-use-case-inventory/`](open-artifacts/ai-use-case-inventory/) | **shipped** | Register as versioned structured data; risk tiers mapped to NIST AI RMF / EU AI Act, rubric published |
+| 15 | Sell-side Q&A log | [`open-artifacts/sell-side-qa-log/`](open-artifacts/sell-side-qa-log/) | **shipped** | Buyer-isolated access control, approval workflow, disclosure-schedule consistency checks |
+| 16 | Outside counsel spend | [`open-artifacts/outside-counsel-spend/`](open-artifacts/outside-counsel-spend/) | **shipped** | LEDES parsing as deterministic code; billing guidelines as structured data; per-firm exception reports |
+| 17 | Entity compliance calendar | [`open-artifacts/entity-compliance-calendar/`](open-artifacts/entity-compliance-calendar/) | **shipped** | Deadline rules as a maintained, versioned dataset with statutory cites and effective dates |
+| 18 | Litigation portfolio | [`open-artifacts/litigation-portfolio/`](open-artifacts/litigation-portfolio/) | **shipped** | Self-hosted (reserve data stays yours), scenario roll-ups, consistency checks |
+| 19 | Eviction notice check board | [`open-artifacts/eviction-notice-check-board/`](open-artifacts/eviction-notice-check-board/) | **shipped** | Codified per-jurisdiction rulesets open to inspection; plain-language output for non-lawyer advocates |
+| 20 | Pro bono case board | [`open-artifacts/pro-bono-case-board/`](open-artifacts/pro-bono-case-board/) | **shipped** | Multi-tenant for small nonprofits, offline-friendly, malpractice-aware deadline warnings |
+| 21 | Access-to-justice front door | [`open-artifacts/access-to-justice-front-door/`](open-artifacts/access-to-justice-front-door/) | **shipped** | Self-hostable at nonprofit cost (open-weight models), published guidance library that compounds across orgs; see [`artifacts/prompting-for-attorneys/`](artifacts/prompting-for-attorneys/README.md) for the shipped education layer |
 | 22 | Intake queue | [`artifacts/client-intake/`](artifacts/client-intake/README.md) | **shipped** (partial) | Screens intakes and builds the conflict-party list today (letter drafting not included); full source, fail-closed reads |
 
 ### Partner-built (10)
 
 | # | Gallery artifact | Builder | Our counterpart | Status | What's better |
 |---|---|---|---|---|---|
-| 23 | Obligations checker | Foley & Lardner | `open-artifacts/` (TBD) | phase-2 | Obligation graph with owner + date feeding calendars; amendment-aware re-extraction; verified quote per obligation |
-| 24 | AI governance benchmark | Goodwin | `open-artifacts/` (TBD) | phase-2 | Question bank built on published frameworks (NIST AI RMF, ISO/IEC 42001, EU AI Act), not a firm's proprietary questionnaire |
-| 25 | Harvey Intake | Harvey | `open-artifacts/` (TBD) | phase-2 | Guidance RAG in open formats (Markdown + embeddings under org control); intervention points where Legal overrides |
-| 26 | Subpoena response | PwC | `open-artifacts/` (TBD) | phase-2 | Per-jurisdiction objections/precedent library you own; every adopted objection traced to precedent |
-| 27 | Venture term sheet benchmark | Wilson Sonsini | `open-artifacts/` (TBD) | phase-2 | Open benchmark corpus (anonymized, dated) instead of one firm's deal base; NVCA model docs as baseline |
-| 28 | Immigration papers reader | Mobile Pathways | `open-artifacts/` (TBD) | phase-2 | Deterministic form-type detection; per-form extraction templates; bilingual output with explicit uncertainty markers |
-| 29 | Record sealing screener | Rising for Justice | `open-artifacts/` (TBD) | phase-2 | D.C. eligibility rules as versioned data files with statutory cites; rule chain shown for every determination |
-| 30 | Rent ledger reviewer | Rising for Justice | `open-artifacts/` (TBD) | phase-2 | Recalculation as pure, publishable code with D.C. rules as versioned parameters — auditable arithmetic |
-| 31 | Record clearance | The Access Project | `open-artifacts/` (TBD) | phase-2 | Per-state ruleset repo with local maintainers (Clear My Record model); deterministic eligibility engine |
-| 32 | Criminal charge reality check | Zealous | `open-artifacts/` (TBD) | phase-2 | Statutory ranges as deterministic NY Penal Law lookup; outcome data with published methodology and per-point cites |
+| 23 | Obligations checker | Foley & Lardner | [`open-artifacts/obligations-checker/`](open-artifacts/obligations-checker/) | **shipped** | Obligation graph with owner + date feeding calendars; amendment-aware re-extraction; verified quote per obligation |
+| 24 | AI governance benchmark | Goodwin | [`open-artifacts/ai-governance-benchmark/`](open-artifacts/ai-governance-benchmark/) | **shipped** | Question bank built on published frameworks (NIST AI RMF, ISO/IEC 42001, EU AI Act), not a firm's proprietary questionnaire |
+| 25 | Harvey Intake | Harvey | [`open-artifacts/intake-benchmark/`](open-artifacts/intake-benchmark/) | **shipped** | Guidance RAG in open formats (Markdown + embeddings under org control); intervention points where Legal overrides |
+| 26 | Subpoena response | PwC | [`open-artifacts/subpoena-response/`](open-artifacts/subpoena-response/) | **shipped** | Per-jurisdiction objections/precedent library you own; every adopted objection traced to precedent |
+| 27 | Venture term sheet benchmark | Wilson Sonsini | [`open-artifacts/venture-term-sheet-benchmark/`](open-artifacts/venture-term-sheet-benchmark/) | **shipped** | Open benchmark corpus (anonymized, dated) instead of one firm's deal base; NVCA model docs as baseline |
+| 28 | Immigration papers reader | Mobile Pathways | [`open-artifacts/immigration-papers-reader/`](open-artifacts/immigration-papers-reader/) | **shipped** | Deterministic form-type detection; per-form extraction templates; bilingual output with explicit uncertainty markers |
+| 29 | Record sealing screener | Rising for Justice | [`open-artifacts/record-sealing-screener/`](open-artifacts/record-sealing-screener/) | **shipped** | D.C. eligibility rules as versioned data files with statutory cites; rule chain shown for every determination |
+| 30 | Rent ledger reviewer | Rising for Justice | [`open-artifacts/rent-ledger-reviewer/`](open-artifacts/rent-ledger-reviewer/) | **shipped** | Recalculation as pure, publishable code with D.C. rules as versioned parameters — auditable arithmetic |
+| 31 | Record clearance | The Access Project | [`open-artifacts/record-clearance/`](open-artifacts/record-clearance/) | **shipped** | Per-state ruleset repo with local maintainers (Clear My Record model); deterministic eligibility engine |
+| 32 | Criminal charge reality check | Zealous | [`open-artifacts/criminal-charge-reality-check/`](open-artifacts/criminal-charge-reality-check/) | **shipped** | Statutory ranges as deterministic NY Penal Law lookup; outcome data with published methodology and per-point cites |
 
 Anthropic also ships an Apache-2.0 reference repo — [anthropics/claude-for-legal](https://github.com/anthropics/claude-for-legal)
 (agents, skills, MCP connectors behind much of the same ground) — which we link rather than
@@ -93,9 +93,10 @@ fork: [catalog/anthropic.md](catalog/anthropic.md).
   in `open-artifacts/`: cite-check, playbook-deviation-board (extends the shipped playbook
   artifact), fact-chronology, tabular-review — each with a spec (`spec.md`), a deterministic
   core where possible, tests, and recorded outputs.
-- **Phase 2:** the remaining rows above, in the order law-over-model comes cheapest first
-  (rules-as-data artifacts: eviction check, rent ledger, record sealing/clearance, entity
-  compliance calendar).
+- **All 32 gallery counterparts + 2 original ideas are shipped** (v0.2–v0.3, 2026-11-07). Next:
+  deepen the rules-as-data layers (more jurisdictions per artifact), wire live open-data feeds
+  (CourtListener RECAP, Federal Register), and extend the in-app interactive demos beyond the
+  current set. Evidence: `evidence/` (test-run.log, browser-verify.log, inspection reports).
 
 Detailed notes on the shared elicitation engine and Val Town portability live in
 [`docs/`](docs/):

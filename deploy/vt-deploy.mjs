@@ -77,14 +77,14 @@ function inlineModuleImports(html, base) {
       (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `from data:text/javascript;base64,${readFileSync(path).toString("base64")}`;
+        return `from "data:text/javascript;base64,${readFileSync(path).toString("base64")}";`
       },
     ).replace(
       /import\s+["'](\.\.?\/[^"']+)["']/g,
       (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `import data:text/javascript;base64,${readFileSync(path).toString("base64")}`;
+        return `import "data:text/javascript;base64,${readFileSync(path).toString("base64")}";`
       },
     );
     return `<script type="module">${inlined}</script>`;
