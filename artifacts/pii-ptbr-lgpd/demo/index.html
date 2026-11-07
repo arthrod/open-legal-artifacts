@@ -13,7 +13,7 @@
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 18px 0; }
   .sim-note { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em; color: var(--text-secondary); border: var(--hairline); display: inline-block; padding: 5px 10px; margin-top: 14px; }
   .sim-note a { text-decoration: underline; text-underline-offset: 2px; }
-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px 0 0; }
+  main { display: grid; grid-template-columns: 1fr; gap: 32px; padding: 32px 0 0; }
   @media (max-width: var(--bp-mobile)) { main { grid-template-columns: 1fr; } }
   textarea { width: 100%; min-height: 380px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
   textarea[readonly] { background: var(--hover); }
@@ -25,8 +25,9 @@
   th, td { border: var(--hairline); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
   th { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
   td.v, td.o { font-family: var(--font-mono); font-size: 11px; }
-  td.v { max-width: 320px; overflow-wrap: break-word; word-break: keep-all; }
-  table { grid-column: 1 / -1; }
+  td.v { max-width: 420px; overflow-wrap: break-word; word-break: keep-all; }
+  .tbl-wide { overflow-x: auto; }
+  .tbl-wide table { width: 100%; min-width: 560px; }
   .note { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 22px 0 4px; }
   .sec:first-child { margin-top: 0; }
@@ -114,12 +115,13 @@ function render(text) {
   h += `<div class="hl">${highlighted(text, entities)}</div>`;
 
   h += `<div class="sec">Entidades (offsets em caracteres)</div>`;
+  h += `<div class="sec">Entidades (offsets em caracteres)</div>`;
   h += entities.length
-    ? `<table><tr><th>Tipo</th><th>Valor</th><th>Offset</th><th>Regra</th><th>Conf.</th></tr>` +
+    ? `<div class="tbl-wide"><table><tr><th>Tipo</th><th>Valor</th><th>Offset</th><th>Regra</th><th>Conf.</th></tr>` +
       entities.map((e) =>
         `<tr><td>${esc(e.type)}</td><td class="v">${esc(e.value)}</td><td class="o">${e.start}–${e.end}</td>` +
         `<td class="o">${esc(e.rule)}${e.note ? `<br><span class="note">${esc(e.note)}</span>` : ''}</td>` +
-        `<td class="o">${e.confidence.toFixed(2)}</td></tr>`).join('') + `</table>`
+        `<td class="o">${e.confidence.toFixed(2)}</td></tr>`).join('') + `</table></div>`
     : `<p class="empty">nenhuma entidade detectada</p>`;
 
   h += `<div class="sec">Categorias LGPD presentes</div>`;

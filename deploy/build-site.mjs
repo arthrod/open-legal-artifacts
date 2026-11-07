@@ -87,7 +87,14 @@ function decorate(html) {
   // Auto-run only makes sense for run→output pages; flow apps that already
   // render their worked example on boot (client-intake) are skipped.
   const noAutoRun = /id="(f-narrative|personas)"/.test(html);
-  const polish = `<style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>\n<script>window.addEventListener("load",function(){try{${noAutoRun ? "/* flow app: renders on boot, no auto-run */" : "var out=document.querySelector('[id*=\"out\"],[id*=\"result\"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll(\"button\")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()"}}catch(e){}});</script>`;
+  // Audit fixes applied at bundle time (impeccable R5):
+  // P1-2 accent side-stripes -> hairline; P2-6 var() in media query -> literal; P3-2 singular ARTIFACT.
+  html = html.replace(/border-left:\s*[2-4]px\s+solid\s+var\(--accent\)/g, "border-left: var(--hairline)");
+  html = html.replace(/border-left:\s*[2-4]px\s+solid\s*#ffd400/g, "border-left: var(--hairline)");
+  html = html.replace(/@media\s*\(\s*(min|max)-width:\s*var\(--bp-mobile\)\s*\)/g, "@media ($1-width: 768px)");
+  html = html.replace(/OPEN\u00b7LEGAL\u00b7ARTIFACT(?!S)/g, "OPEN\u00b7LEGAL\u00b7ARTIFACTS");
+  // P1-3 focus visibility (>=3:1), P2-5 one primary-button vocabulary, P3-4 h1 tracking.
+  const polish = `<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>\n<script>window.addEventListener("load",function(){try{${noAutoRun ? "/* flow app: renders on boot, no auto-run */" : "var out=document.querySelector('[id*=\"out\"],[id*=\"result\"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll(\"button\")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()"}}catch(e){}});</script>`;
   return html.replace(/<\/body>/i, polish + "</body>");
 }
 
