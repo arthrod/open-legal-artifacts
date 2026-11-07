@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Playbook deviation board — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
+  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
+  .counts div:last-child { border-right: none; }
+  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  .board { display: flex; gap: 1px; background: var(--border); border: var(--hairline); overflow-x: auto; }
+  .col { min-width: 230px; flex: 1; background: var(--bg); }
+  .col > h3 { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 10px 12px; background: #fff; border-bottom: 2px solid var(--text); }
+  .col > h3 span { color: var(--text-secondary); }
+  .card { background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .card:hover { background: var(--hover); }
+  .card.deal_breaker { box-shadow: inset 4px 0 0 var(--text); background: #fffbe6; }
+  .card .nm { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+  .card .meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+  .pill { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill.compliant { background: var(--text); color: var(--bg); }
+  .pill.deal_breaker { background: var(--text); color: var(--bg); }
+  .pill.deviates { background: var(--accent); }
+  .ev { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+  .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
+  .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">open-legal-artifacts · deterministic core · rules-as-data</div>
+    <h1>Playbook deviation board</h1>
+    <div class="rule"></div>
+    <p class="lede">A clause board classified by <b>pure code against playbook-as-data</b>: same playbook +
+      contract always yields the same board. Every classified row quotes the clause span that drove the decision,
+      numbers in standards must match verbatim, and fallback tiers route to approvers (tier ≥ escalation threshold
+      goes to the escalation owner). The playbook below is parsed in your browser by the core's own
+      dependency-free YAML parser. Open reimplementation of Anthropic's closed artifact.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics mutual-NDA playbook v3 ×
+      a Northwind draft — 8 clauses, including a perpetual-term deal-breaker and an uncapped-confidentiality carve-out.</p>
+  </header>
+
+  <section>
+    <h2>Summary</h2>
+    <div class="counts" id="counts"></div>
+    <div class="row-btns">
+      <button id="mdBtn">Export board.md</button>
+      <button id="jsonBtn" class="ghost">Export output.json</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Board</h2>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section>
+    <h2>Non-compliant clauses — quoted evidence</h2>
+    <div id="evidence"></div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic classification — playbook rules, thresholds, and escalation policy are rules-as-data
+    (YAML the firm owns); no LLM in the classification path. All example data fictional. Not legal advice.
+    <code>anthropic counterpart: Playbook deviation board (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { parseYaml, buildBoard, renderBoard } from "../core/core.js";
+  import { playbookYaml, contract } from "./example.js";
+
+  const playbook = parseYaml(playbookYaml);
+  const board = buildBoard({ playbook, contract });
+  const s = board.summary;
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  document.getElementById("counts").innerHTML =
+    `<div><b>${board.rows.length}</b><span>clauses</span></div>` +
+    `<div><b>${s.compliant}</b><span>compliant</span></div>` +
+    `<div><b>${s.deviates}</b><span>deviate</span></div>` +
+    `<div><b>${s.dealBreaker}</b><span>deal-breaker</span></div>` +
+    `<div><b>${s.unclassified}</b><span>unclassified</span></div>` +
+    `<div><b>${esc(playbook.playbookId)}</b><span>playbook</span></div>`;
+
+  const COLUMNS = ["compliant", "deviates", "deal_breaker", "unclassified"];
+  const TIER = (t) => (t === "preferred" ? "preferred" : t === null ? "—" : `tier ${t}`);
+  document.getElementById("board").innerHTML = COLUMNS.map((cls) => {
+    const rows = board.rows.filter((r) => r.classification === cls);
+    return `<div class="col"><h3>${cls} <span>(${rows.length})</span></h3>` +
+      rows.map((r) =>
+        `<div class="card ${cls}"><div class="nm"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</div>` +
+        `<div class="meta">rule ${esc(r.ruleId ?? "—")} · ${TIER(r.matchedTier)} · sim ${r.similarity.toFixed(2)}</div>` +
+        (r.routedTo ? `<div class="meta">→ ${esc(r.routedTo)}</div>` : "") + `</div>`
+      ).join("") + `</div>`;
+  }).join("");
+
+  document.getElementById("evidence").innerHTML = board.rows
+    .filter((r) => r.classification !== "compliant")
+    .map((r) =>
+      `<div class="ev"><b><code>${esc(r.clauseId)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
+      `${r.matchedTier !== null ? ` (${TIER(r.matchedTier)})` : ""}${r.routedTo ? ` → <b>${esc(r.routedTo)}</b>` : ""}` +
+      `<blockquote>${esc((r.clauseQuote ? r.clauseQuote.text : r.clauseText).replace(/\n/g, " "))}</blockquote>` +
+      `<div style="margin-top:6px">${esc(r.reason)}.</div></div>`
+    )
+    .join("");
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
+  document.getElementById("mdBtn").onclick = () => download("board.md", renderBoard(board), "text/markdown");
+  document.getElementById("jsonBtn").onclick = () => download("board-output.json", JSON.stringify(board, null, 2) + "\n", "application/json");
+</script>
+</body>
+</html>

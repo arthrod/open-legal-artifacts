@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Record Sealing Screener — open legal artifact</title>
+<link rel="stylesheet" href="./tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
+  p.lede { max-width: 62ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 260px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+    background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
+  button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+    border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: #333; }
+  .cols { display: grid; gap: 24px; margin-top: 32px; }
+  @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
+  .case { border: var(--hairline); background: #fff; padding: 18px 18px 14px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
+  .case h3 { margin: 0 0 6px; font-size: 15px; }
+  .badge { font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; padding: 3px 8px; display: inline-block; }
+  .badge.potentially_eligible { background: var(--accent); }
+  .badge.ineligible, .badge.insufficient_data { background: var(--text); color: var(--bg); }
+  .badge.needs_more_time { background: var(--border); }
+  .case ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+  .case code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+  .gate { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+  .err { color: #8a1f1f; font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  .summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Open legal artifact · deterministic core · rules-as-data</div>
+  <h1>Record sealing screener</h1>
+  <div class="rule"></div>
+  <p class="lede">Case facts in, eligibility determinations out — every flag cites the rule that produced it.
+  Three example US jurisdictions ship as editable data; the engine never guesses
+  (unknown dispositions come back <strong>insufficient_data</strong>) and every report ends at the
+  <strong>verify-with-counsel</strong> gate. Illustrative rules only, fictional data.</p>
+
+  <div class="cols">
+    <div>
+      <div class="kicker">Case facts (JSON)</div>
+      <textarea id="input" spellcheck="false"></textarea>
+      <p><button id="run">Run screen</button></p>
+      <div class="err" id="err"></div>
+    </div>
+    <div>
+      <div class="kicker">Determinations</div>
+      <div id="out"><p class="lede">Press “Run screen”.</p></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { screenRecord, renderReport } from "../core/core.js";
+
+const EXAMPLE = {
+  jurisdiction: "DC",
+  asOf: "2026-11-07",
+  cases: [
+    { id: "C-2021-114", caseNumber: "2021-CF-001142", offense: "Possession of a controlled substance (fictional)",
+      offenseCategory: "drug_possession", offenseClass: "misdemeanor", disposition: "conviction",
+      offenseDate: "2015-04-02", dispositionDate: "2015-09-10", sentenceCompletedDate: "2016-03-01",
+      finePaid: true, subsequentConvictions: [], pendingCase: false },
+    { id: "C-2022-037", caseNumber: "2022-CF-000371", offense: "Theft II (fictional)",
+      offenseCategory: "theft", offenseClass: "misdemeanor", disposition: "conviction",
+      offenseDate: "2021-07-19", dispositionDate: "2022-02-08", sentenceCompletedDate: "2022-11-30",
+      finePaid: true, subsequentConvictions: [], pendingCase: false },
+    { id: "C-2023-005", caseNumber: "2023-CF-000058", offense: "Assault (fictional)",
+      offenseCategory: "assault", offenseClass: "misdemeanor", disposition: "acquittal",
+      offenseDate: "2023-01-11", dispositionDate: "2024-06-20", subsequentConvictions: [], pendingCase: false },
+    { id: "C-2024-089", caseNumber: "2024-CF-000894", offense: "Burglary I (fictional)",
+      offenseCategory: "violent_felony", offenseClass: "felony_class_B", disposition: "conviction",
+      offenseDate: "2019-10-05", dispositionDate: "2020-04-14", sentenceCompletedDate: "2021-02-27",
+      finePaid: true, subsequentConvictions: [], pendingCase: false },
+    { id: "C-2026-201", caseNumber: "2026-CF-002019", offense: "Trespass (fictional, record incomplete)",
+      offenseCategory: "trespass", offenseClass: "misdemeanor", disposition: "unknown",
+      offenseDate: "2026-03-02", pendingCase: true },
+  ],
+};
+
+const $input = document.getElementById("input");
+const $out = document.getElementById("out");
+const $err = document.getElementById("err");
+$input.value = JSON.stringify(EXAMPLE, null, 2);
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+document.getElementById("run").addEventListener("click", () => {
+  $err.textContent = "";
+  try {
+    const report = screenRecord(JSON.parse($input.value));
+    const s = report.summary;
+    let html = `<div class="summary">${s.total} cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data</div>`;
+    for (const r of report.results) {
+      html += `<div class="case"><h3>${esc(r.caseId)} ${r.caseNumber ? "(" + esc(r.caseNumber) + ")" : ""} <span class="badge ${esc(r.determination)}">${esc(r.determination)}</span></h3>`;
+      if (r.offense) html += `<div style="font-size:13px;color:var(--text-secondary)">${esc(r.offense)}</div>`;
+      if (r.eligibleOnDate) html += `<div style="font-size:13px;margin-top:4px">Earliest eligibility: <strong>${esc(r.eligibleOnDate)}</strong></div>`;
+      if (r.motion) html += `<div style="font-size:13px;margin-top:4px">Motion: ${esc(r.motion)}</div>`;
+      const items = [
+        ...(r.disqualifiers || []).map((d) => `<li>⚠ ${esc(d.description)} <code>${esc(d.ruleId)}</code></li>`),
+        ...(r.missingData || []).map((m) => `<li>missing: ${esc(m)}</li>`),
+      ];
+      if (items.length) html += `<ul>${items.join("")}</ul>`;
+      html += `</div>`;
+    }
+    html += `<div class="gate">⚠️ ${esc(report.gate.message)}</div>`;
+    $out.innerHTML = html;
+  } catch (e) {
+    $err.textContent = "Input error: " + e.message;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Limitations Radar — open legal artifact</title>
+<link rel="stylesheet" href="./tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
+  p.lede { max-width: 62ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 320px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+    background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
+  button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+    border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: #333; }
+  .cols { display: grid; gap: 24px; margin-top: 32px; }
+  @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
+  .claim { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
+  .claim h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; }
+  .badge.deadline_upcoming { background: var(--accent); }
+  .badge.filed_timely { background: var(--hover); border: var(--hairline); }
+  .badge.filed_late, .badge.deadline_passed_unfiled, .badge.data_needed { background: var(--text); color: var(--bg); }
+  .big { font-family: var(--font-mono); font-size: 20px; margin: 6px 0 2px; }
+  .sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .conflict { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); padding: 8px 12px; font-size: 12.5px; margin-top: 8px; }
+  .gate { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+  .err { color: #8a1f1f; font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Open legal artifact · original idea · deterministic core</div>
+  <h1>Limitations radar</h1>
+  <div class="rule"></div>
+  <p class="lede">Claims JSON in (claim type, jurisdiction, injury/discovery dates, tolling events) →
+  statute-of-limitations deadlines computed from <strong>rules-as-data</strong> (claim-type periods per example
+  jurisdictions, discovery-rule accrual, recognized statutory tolling), saved-by margins vs the filing date,
+  conflict flags when discovery precedes injury, and a calendar-alert ICS export. Unknown jurisdiction or claim
+  type? Flagged — never guessed.</p>
+
+  <div class="cols">
+    <div>
+      <div class="kicker">Claims (JSON)</div>
+      <textarea id="input" spellcheck="false"></textarea>
+      <p><button id="run">Run radar</button></p>
+      <div class="err" id="err"></div>
+    </div>
+    <div>
+      <div class="kicker">Deadlines</div>
+      <div id="out"><p class="lede">Press “Run radar”.</p></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { runRadar, toICS } from "../core/core.js";
+
+const EXAMPLE = {
+  asOf: "2026-11-07",
+  claims: [
+    { id: "CLM-101", claimType: "personal_injury", jurisdiction: "CA",
+      injuryDate: "2025-03-10", discoveryDate: "2025-04-02", tollingEvents: [], filingDate: "2027-03-15" },
+    { id: "CLM-102", claimType: "breach_of_contract_written", jurisdiction: "NY",
+      injuryDate: "2022-06-01", discoveryDate: null,
+      tollingEvents: [{ type: "bankruptcy_stay", startDate: "2022-09-01", endDate: "2023-05-01" }], filingDate: null },
+    { id: "CLM-103", claimType: "fraud", jurisdiction: "TX",
+      injuryDate: "2021-02-15", discoveryDate: "2021-01-20", tollingEvents: [], filingDate: null },
+    { id: "CLM-104", claimType: "personal_injury", jurisdiction: "CA",
+      injuryDate: "2024-11-01", discoveryDate: "2024-11-05",
+      tollingEvents: [{ type: "minority", startDate: "2024-12-01", stillOngoing: true }], filingDate: null },
+    { id: "CLM-105", claimType: "property_damage", jurisdiction: "ZZ",
+      injuryDate: "2025-01-01", discoveryDate: "2025-01-01", tollingEvents: [], filingDate: null },
+  ],
+};
+
+const $input = document.getElementById("input");
+const $out = document.getElementById("out");
+const $err = document.getElementById("err");
+$input.value = JSON.stringify(EXAMPLE, null, 2);
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+document.getElementById("run").addEventListener("click", () => {
+  $err.textContent = "";
+  try {
+    const r = runRadar(JSON.parse($input.value));
+    let html = "";
+    for (const c of r.results) {
+      html += `<div class="claim"><h3>${esc(c.claimId)} · ${esc(c.claimType ?? "?")} (${esc(c.jurisdiction ?? "?")}) <span class="badge ${esc(c.status)}">${esc(c.status)}</span></h3>`;
+      if (c.deadline) {
+        html += `<div class="big">${esc(c.deadline)}</div>`;
+        html += `<div class="sub">accrual ${esc(c.accrualDate)}${c.tollDays ? ` + ${c.tollDays} tolling days` : ""} · ${c.basis.map((b) => `<code>${esc(b.ruleId)}</code>`).join(" ")}</div>`;
+        if (c.savedByDays != null) html += `<div class="sub">${c.savedByDays >= 0 ? `Filed ${esc(c.filingDate)} — <strong>saved by ${c.savedByDays} days</strong>` : `Filed ${esc(c.filingDate)} — <strong>past deadline by ${Math.abs(c.savedByDays)} days</strong>`}</div>`;
+        else if (c.daysRemainingAsOf != null) html += `<div class="sub">${c.daysRemainingAsOf >= 0 ? `${c.daysRemainingAsOf} days remaining as of ${esc(r.asOf)}` : `expired ${Math.abs(c.daysRemainingAsOf)} days ago`}</div>`;
+      }
+      for (const f of c.flags) html += `<div class="conflict">Flag: ${esc(f)}</div>`;
+      for (const x of c.conflicts) html += `<div class="conflict">⚠️ <strong>${esc(x.code)}</strong>: ${esc(x.text)}</div>`;
+      html += `</div>`;
+    }
+    html += `<p style="font-size:12px;font-family:var(--font-mono)"><a href="#" id="dl">Download calendar alerts (.ics)</a></p>`;
+    html += `<div class="gate">⚠️ ${esc(r.gate.message)}</div>`;
+    $out.innerHTML = html;
+    document.getElementById("dl").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      const blob = new Blob([toICS(r)], { type: "text/calendar" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "limitations-deadlines.ics"; a.click();
+    });
+  } catch (e) {
+    $err.textContent = "Input error: " + e.message;
+  }
+});
+</script>
+</body>
+</html>

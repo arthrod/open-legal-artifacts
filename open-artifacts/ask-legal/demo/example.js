@@ -1,0 +1,67 @@
+export default {
+  "asOf": "2026-11-07",
+  "company": "Meridian Software Co. (fictional)",
+  "thresholds": { "high": 9, "medium": 5, "freshnessDays": 365 },
+  "routing": {
+    "privacy": "privacy-counsel",
+    "employment": "people-legal",
+    "contracts": "commercial-legal",
+    "expenses": "finance-ops",
+    "default": "legal-intake"
+  },
+  "knowledgeBase": [
+    {
+      "id": "kb-001",
+      "question": "Which NDA template should I use for a prospective vendor?",
+      "answer": "Use the Mutual NDA (Form L-102) for all prospective vendors; do not sign the vendor's own paper. Exceptions (shorter term, no residuals clause) route to Commercial Legal.",
+      "tags": ["nda", "vendor", "contracts"],
+      "jurisdiction": "US",
+      "updated": "2026-09-15",
+      "approvedBy": "A. Fern, Deputy GC (fictional)"
+    },
+    {
+      "id": "kb-002",
+      "question": "Which NDA template should I use for an individual consultant?",
+      "answer": "Use the Consultant NDA (Form L-104) with the IP assignment rider attached. Independent-contractor status must be confirmed by People Legal before signature.",
+      "tags": ["nda", "consultant", "contracts", "employment"],
+      "jurisdiction": "US",
+      "updated": "2026-09-20",
+      "approvedBy": "A. Fern, Deputy GC (fictional)"
+    },
+    {
+      "id": "kb-003",
+      "question": "Can I expense client entertainment over $500?",
+      "answer": "Entertainment above $500 requires pre-approval from Finance and the responsible partner, logged in the matter file before the event, not after.",
+      "tags": ["expenses", "finance"],
+      "jurisdiction": "US",
+      "updated": "2026-06-02",
+      "approvedBy": "Finance Committee (fictional)"
+    },
+    {
+      "id": "kb-004",
+      "question": "How do I report a suspected data privacy incident?",
+      "answer": "Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides on regulator notification under the incident runbook.",
+      "tags": ["privacy", "security", "incident"],
+      "jurisdiction": "US",
+      "updated": "2026-10-30",
+      "approvedBy": "R. Castellan, Privacy Counsel (fictional)"
+    },
+    {
+      "id": "kb-005",
+      "question": "How long do we retain website visitor data?",
+      "answer": "26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).",
+      "tags": ["privacy", "data-retention"],
+      "jurisdiction": "US",
+      "updated": "2024-03-01",
+      "approvedBy": "Privacy Team (fictional)"
+    }
+  ],
+  "questions": [
+    { "askedBy": "j.moreau@example.test", "question": "Which NDA template do I use for a new analytics vendor?" },
+    { "askedBy": "s.okafor@example.test", "question": "Can I expense client entertainment over $500 for the Halberd dinner?" },
+    { "askedBy": "j.moreau@example.test", "question": "How long do we retain website visitor data under the privacy policy?" },
+    { "askedBy": "t.nguyen@example.test", "question": "Do we need a license to launch a satellite for the marketing team?" },
+    { "askedBy": "s.okafor@example.test", "question": "A reporter is asking about the outage — what do I say about the data privacy incident?" }
+  ]
+}
+

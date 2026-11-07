@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Outside counsel spend — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
+  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 110px; }
+  .counts div:last-child { border-right: none; background: var(--accent); }
+  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  td.amt { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+  tr.flag td { background: #fffbe6; }
+  .pill { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill.over_rate, .pill.over, .pill.no_rate_card, .pill.high_write_off { background: var(--text); color: var(--bg); }
+  .pill.unknown_level, .pill.unbudgeted { background: var(--accent); }
+  .bar { position: relative; background: var(--hover); height: 8px; width: 160px; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--text); }
+  .bar i.over { background: var(--accent); outline: 1px solid var(--text); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  button.chip { background: transparent; color: var(--text); padding: 6px 12px; font-size: 12px; }
+  button.chip.active { background: var(--text); color: var(--bg); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">open-legal-artifacts · deterministic core · rules-as-data</div>
+    <h1>Outside counsel spend</h1>
+    <div class="rule"></div>
+    <p class="lede">A spend audit whose core is the <b>findings ledger</b>: every hourly entry checked
+      against the negotiated rate card for that firm × matter × date, budget variance net of write-offs,
+      and over-threshold write-offs flagged — each finding citing the entry, the rule, and the dollar impact.
+      Open reimplementation of Anthropic's closed dashboard artifact.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, three matters,
+      Aug–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
+  </header>
+
+  <section>
+    <h2>Audit summary</h2>
+    <div class="counts" id="counts"></div>
+  </section>
+
+  <section>
+    <h2>Rate-card exceptions</h2>
+    <div class="scroll"><table id="rates"></table></div>
+  </section>
+
+  <section>
+    <h2>Budget variance (net of write-offs)</h2>
+    <div class="scroll"><table id="budgets"></table></div>
+  </section>
+
+  <section>
+    <h2>Write-off flags</h2>
+    <div class="scroll"><table id="writeoffs"></table></div>
+  </section>
+
+  <section>
+    <h2>Period rollups</h2>
+    <div class="row" id="periodChips" style="margin: 0 0 12px"></div>
+    <div class="scroll"><table id="periods"></table></div>
+    <div class="row">
+      <button id="jsonBtn">Export audit JSON</button>
+      <button id="csvBtn" class="ghost">Export findings CSV</button>
+    </div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic audit — an optional LLM may structure LEDES/invoice exports into ledger JSON (schema in spec.md),
+    but rate compliance, budget variance, and flags are pure code. All example data fictional. Not legal or billing advice.
+    <code>anthropic counterpart: Outside counsel spend (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { runSpendAudit, auditToCsv, auditToJson } from "../core/core.js";
+  import EXAMPLE from "./example.js";
+
+  const audit = runSpendAudit(EXAMPLE);
+  const firm = (f) => EXAMPLE.meta.firmNames[f] ?? f;
+  const matter = (m) => EXAMPLE.meta.matterNames[m] ?? m;
+  const usd = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" }));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const table = (id, header, rows) => {
+    document.getElementById(id).innerHTML =
+      `<tr>${header.map((h) => `<th>${h}</th>`).join("")}</tr>` +
+      rows.map((r) => (r.cls ? `<tr class="${r.cls}">` : "<tr>") + r.cells.map((c) => `<td${c.cls ? ` class="${c.cls}"` : ""}>${c.v}</td>`).join("") + "</tr>").join("");
+  };
+
+  const s = audit.summary;
+  document.getElementById("counts").innerHTML =
+    `<div><b>${s.entries}</b><span>entries</span></div>` +
+    `<div><b>${usd(s.netSpend)}</b><span>net spend</span></div>` +
+    `<div><b>${s.rateExceptions}</b><span>rate exceptions</span></div>` +
+    `<div><b>${s.overBudget}</b><span>over budget</span></div>` +
+    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>`;
+
+  table("rates", ["Entry", "Matter × Firm", "Timekeeper (level)", "Period", "Billed", "Expected", "Impact", "Status"], [
+    ...audit.rateFindings.map((f) => ({
+      cls: "flag",
+      cells: [
+        { v: `<code>${esc(f.entryId)}</code>`, cls: "mono" },
+        { v: `${esc(matter(f.matterId))} × ${esc(firm(f.firmId))}` },
+        { v: `${esc(f.timekeeper ?? "?")} (${esc(f.level ?? "?")})` },
+        { v: esc(f.period), cls: "mono" },
+        { v: `${usd(f.billedRate)}/h`, cls: "amt" },
+        { v: f.expectedRate === null ? "—" : `${usd(f.expectedRate)}/h`, cls: "amt" },
+        { v: f.amountImpact === null ? "—" : usd(f.amountImpact), cls: "amt" },
+        { v: `<span class="pill ${f.status}">${f.status}</span>` },
+      ],
+    })),
+    ...(audit.rateFindings.length ? [] : [{ cells: [{ v: "no rate exceptions" }] }]),
+  ]);
+
+  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "", "Status"], [
+    ...audit.budgetVariances.map((b) => ({
+      cls: b.status === "over" ? "flag" : "",
+      cells: [
+        { v: `${esc(matter(b.matterId))} × ${esc(firm(b.firmId))}` },
+        { v: usd(b.gross), cls: "amt" },
+        { v: usd(b.writeOffs), cls: "amt" },
+        { v: usd(b.net), cls: "amt" },
+        { v: b.approved === null ? "—" : usd(b.approved), cls: "amt" },
+        { v: b.variance === null ? "—" : `${usd(b.variance)}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}`, cls: "amt" },
+        { v: b.approved === null ? "" : `<div class="bar"><i class="${b.status === "over" ? "over" : ""}" style="width:${Math.min(100, Math.round((b.net / b.approved) * 100))}%"></i></div>` },
+        { v: `<span class="pill ${b.status}">${b.status}</span>` },
+      ],
+    })),
+  ]);
+
+  table("writeoffs", ["Entry", "Matter × Firm", "Period", "Bill", "Write-off", "Pct", "Flag"], [
+    ...audit.writeOffFlags.map((w) => ({
+      cls: "flag",
+      cells: [
+        { v: `<code>${esc(w.entryId)}</code>`, cls: "mono" },
+        { v: `${esc(matter(w.matterId))} × ${esc(firm(w.firmId))}` },
+        { v: esc(w.period), cls: "mono" },
+        { v: usd(w.amount), cls: "amt" },
+        { v: usd(w.writeOff), cls: "amt" },
+        { v: `${w.writeOffPct}%`, cls: "amt" },
+        { v: `<span class="pill ${w.flag}">${w.flag}</span>` },
+      ],
+    })),
+    ...(audit.writeOffFlags.length ? [] : [{ cells: [{ v: "no write-offs above threshold" }] }]),
+  ]);
+
+  // period rollups with interactive period filter
+  const periods = ["all", ...audit.periodRollups.map((p) => p.period)];
+  const chips = document.getElementById("periodChips");
+  chips.innerHTML = periods.map((p, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-p="${p}">${p}</button>`).join("");
+  function renderPeriods(filter) {
+    const rows = audit.periodRollups.filter((p) => filter === "all" || p.period === filter);
+    table("periods", ["Period", "Entries", "Fees", "Disbursements", "Write-offs", "Net", "By firm (net)"], [
+      ...rows.map((p) => ({
+        cells: [
+          { v: esc(p.period), cls: "mono" },
+          { v: p.entries, cls: "amt" },
+          { v: usd(p.fees), cls: "amt" },
+          { v: usd(p.disbursements), cls: "amt" },
+          { v: usd(p.writeOffs), cls: "amt" },
+          { v: usd(p.net), cls: "amt" },
+          { v: Object.entries(p.byFirm).map(([f, v]) => `${esc(firm(f))}: ${usd(v)}`).join("<br>") },
+        ],
+      })),
+      ...(filter === "all"
+        ? [{
+            cells: [
+              { v: "total", cls: "mono" },
+              { v: rows.reduce((a, p) => a + p.entries, 0), cls: "amt" },
+              { v: usd(rows.reduce((a, p) => a + p.fees, 0)), cls: "amt" },
+              { v: usd(rows.reduce((a, p) => a + p.disbursements, 0)), cls: "amt" },
+              { v: usd(rows.reduce((a, p) => a + p.writeOffs, 0)), cls: "amt" },
+              { v: usd(rows.reduce((a, p) => a + p.net, 0)), cls: "amt" },
+              { v: "" },
+            ],
+          }]
+        : []),
+    ]);
+  }
+  renderPeriods("all");
+  chips.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-p]");
+    if (!btn) return;
+    chips.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderPeriods(btn.dataset.p);
+  });
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
+  document.getElementById("jsonBtn").onclick = () => download("spend-audit.json", auditToJson(audit), "application/json");
+  document.getElementById("csvBtn").onclick = () => download("spend-findings.csv", auditToCsv(audit), "text/csv");
+</script>
+</body>
+</html>

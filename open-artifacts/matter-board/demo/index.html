@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Matter board — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+  h1 { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.02em; font-weight: 400; }
+  .lede { font-size: 17px; color: var(--text-secondary); max-width: 62ch; margin-bottom: 8px; }
+  section { margin-top: 48px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .board { display: flex; gap: 1px; background: var(--border); border: var(--hairline); overflow-x: auto; }
+  .col { min-width: 210px; flex: 1; background: var(--bg); }
+  .col > h3 { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 10px 12px; background: #fff; border-bottom: 2px solid var(--text); }
+  .col > h3 span { color: var(--text-secondary); }
+  .card { background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--border); position: relative; }
+  .card:hover { background: var(--hover); }
+  .card.critical { box-shadow: inset 4px 0 0 var(--text); }
+  .card .nm { font-weight: 600; font-size: 13px; }
+  .card .meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+  .card .dl { font-family: var(--font-mono); font-size: 11px; margin-top: 4px; }
+  .dl.soon { background: var(--accent); display: inline-block; padding: 0 4px; }
+  .dl.overdue { background: var(--text); color: var(--bg); display: inline-block; padding: 0 4px; }
+  .changelog li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
+  .changelog .ts { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); }
+  .sev { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); margin-left: 6px; }
+  .sev.critical { background: var(--text); color: var(--bg); }
+  .sev.major { background: var(--accent); }
+  .from { text-decoration: line-through; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+  .to { font-family: var(--font-mono); font-size: 12px; background: var(--accent); padding: 0 3px; }
+  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
+  .counts div { padding: 12px 20px; border-right: var(--hairline); }
+  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); cursor: pointer; }
+  button:hover { background: var(--accent); color: var(--text); }
+  button.ghost { background: transparent; color: var(--text); }
+  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+    <div class="rule"></div>
+    <h1>Matter board</h1>
+    <p class="lede">A matter board where <b>change detection is the core</b>: diff two snapshots and every field
+      change is flagged with a timestamp, a severity, and the source of the timestamp. Open reimplementation
+      of Anthropic's closed artifact — a board that ages is a board that lies; this one shows exactly what moved.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): week-44 → week-45 practice-management snapshots,
+      4–5 matters, 14-day deadline window.</p>
+  </header>
+
+  <section>
+    <h2>What changed since the last snapshot</h2>
+    <div class="counts" id="counts"></div>
+    <ul class="changelog" id="changelog"></ul>
+    <div class="row">
+      <button id="jsonBtn">Export diff JSON</button>
+      <button id="csvBtn" class="ghost">Export diff CSV</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Board (current snapshot)</h2>
+    <div class="board" id="board"></div>
+  </section>
+
+  <footer class="disclaimer">
+    Deterministic diff — an optional LLM may structure emails/engagement letters into snapshots (schema in spec.md),
+    but change detection, severity, and timestamps are pure code. All example data fictional. Not legal advice.
+    <code>anthropic counterpart: Matter board (closed)</code>
+  </footer>
+</div>
+
+<script type="module">
+  import { diffSnapshots, buildBoard, diffToCsv, diffToJson } from "../core/core.js";
+  import EXAMPLE from "./example.js";
+
+  const diff = diffSnapshots(EXAMPLE.previous, EXAMPLE.current);
+  const board = buildBoard(EXAMPLE.current, EXAMPLE.asOf, { soonDays: 14 });
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const flagOf = (id) => board.flagged.find((f) => f.id === id);
+  const changedIds = new Set(diff.changed.filter((c) => c.severity === "critical").map((c) => c.id));
+
+  document.getElementById("counts").innerHTML =
+    `<div><b>${diff.counts.changed}</b><span>field changes</span></div>` +
+    `<div><b>${diff.counts.critical}</b><span>critical</span></div>` +
+    `<div><b>${diff.counts.added}</b><span>matters added</span></div>` +
+    `<div><b>${diff.counts.removed}</b><span>matters removed</span></div>`;
+
+  document.getElementById("changelog").innerHTML = [
+    ...diff.changed.map((c) =>
+      `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
+      `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
+      `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
+    ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
+    ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
+  ].join("");
+
+  document.getElementById("board").innerHTML = board.stages.map((s) =>
+    `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
+    s.matters.map((m) => {
+      const fl = flagOf(String(m.id));
+      const dl = m.nextDeadline
+        ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
+      return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
+        `<div class="nm">${esc(m.name)}</div>` +
+        `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
+        `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
+    }).join("") + "</div>").join("");
+
+  function download(name, content, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
+  document.getElementById("jsonBtn").onclick = () => download("matter-diff.json", diffToJson(diff), "application/json");
+  document.getElementById("csvBtn").onclick = () => download("matter-diff.csv", diffToCsv(diff), "text/csv");
+</script>
+</body>
+</html>

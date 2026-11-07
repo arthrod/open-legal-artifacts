@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Record Clearance Tracker — open legal artifact</title>
+<link rel="stylesheet" href="./tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+  h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
+  p.lede { max-width: 62ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 300px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+    background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
+  button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+    border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
+  button:hover { background: #333; }
+  .cols { display: grid; gap: 24px; margin-top: 32px; }
+  @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
+  .item { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
+  .item h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; }
+  .badge.ready_to_file { background: var(--accent); }
+  .badge.blocked, .badge.data_needed { background: var(--text); color: var(--bg); }
+  .badge.waiting { background: var(--border); }
+  .badge.filed { background: var(--hover); border: var(--hairline); }
+  ul.ck { list-style: none; margin: 10px 0 0; padding: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+  ul.ck li::before { content: "☐"; margin-right: 8px; }
+  ul.ck li.met::before { content: "☒"; }
+  ul.ck li.unknown::before { content: "？"; }
+  .meta { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
+  .ref { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
+  .gate { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+  .err { color: #8a1f1f; font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Open legal artifact · deterministic core · rules-as-data</div>
+  <h1>Record clearance tracker</h1>
+  <div class="rule"></div>
+  <p class="lede">Relief types live in editable per-jurisdiction rules-as-data. The engine turns a
+  client record into a prerequisites checklist (met / not met / <strong>unknown — never guessed</strong>),
+  computes earliest and last filing dates with plain date math, tracks matters already
+  filed, and raises referral flags for counsel-dependent relief. Example jurisdictions: CA, IL, NY.</p>
+
+  <div class="cols">
+    <div>
+      <div class="kicker">Client record (JSON)</div>
+      <textarea id="input" spellcheck="false"></textarea>
+      <p><button id="run">Run tracker</button></p>
+      <div class="err" id="err"></div>
+    </div>
+    <div>
+      <div class="kicker">Clearance tracker</div>
+      <div id="out"><p class="lede">Press “Run tracker”.</p></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { trackClearance } from "../core/core.js";
+
+const EXAMPLE = {
+  jurisdiction: "CA",
+  asOf: "2026-11-07",
+  client: { id: "CL-0417", name: "Dana Whitfield (fictional)", probationStatus: "completed",
+            finesPaid: true, pendingCases: false, rapSheetObtained: true },
+  convictions: [
+    { id: "V1", offense: "Forgery (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
+      dispositionDate: "2018-05-04", sentenceCompletedDate: "2020-08-21", probationTerminatedDate: "2020-08-21" },
+    { id: "V2", offense: "Shoplifting (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
+      dispositionDate: "2016-11-17", sentenceCompletedDate: "2017-02-10", probationTerminatedDate: "2017-06-30" },
+  ],
+  filings: [ { reliefTypeId: "CA-dismissal-petition", convictionId: "V2", date: "2026-09-15", status: "filed" } ],
+};
+
+const $input = document.getElementById("input");
+const $out = document.getElementById("out");
+const $err = document.getElementById("err");
+$input.value = JSON.stringify(EXAMPLE, null, 2);
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+document.getElementById("run").addEventListener("click", () => {
+  $err.textContent = "";
+  try {
+    const r = trackClearance(JSON.parse($input.value));
+    if (r.errors?.length) { $err.textContent = r.errors.join(" "); return; }
+    let html = "";
+    for (const it of r.items) {
+      html += `<div class="item"><h3>${esc(it.reliefName)} · ${esc(it.offense)} <span class="badge ${esc(it.status)}">${esc(it.status)}</span></h3>`;
+      html += `<div class="meta">${esc(it.convictionId)} · earliest filing <strong>${esc(it.earliestFilingDate ?? "unknown")}</strong>${it.lastFilingDate ? " · last " + esc(it.lastFilingDate) : ""} · <code>${esc(it.ruleId)}</code></div>`;
+      html += `<ul class="ck">` + it.checklist.map((k) =>
+        `<li class="${esc(k.status)}">${k.status === "met" ? "" : k.status === "unknown" ? "unknown · " : "not met · "}${esc(k.label)} — ${esc(k.detail)}</li>`).join("") + `</ul>`;
+      if (it.filing) html += `<div class="meta">Filed ${esc(it.filing.date)} — status <strong>${esc(it.filing.status)}</strong></div>`;
+      html += `</div>`;
+    }
+    for (const ref of r.referrals) {
+      html += `<div class="ref">Referral · <strong>${esc(ref.reliefTypeId)}</strong> for ${esc(ref.convictionId)}: ${esc(ref.note)}</div>`;
+    }
+    html += `<div class="gate">⚠️ ${esc(r.gate.message)}</div>`;
+    $out.innerHTML = html;
+  } catch (e) {
+    $err.textContent = "Input error: " + e.message;
+  }
+});
+</script>
+</body>
+</html>

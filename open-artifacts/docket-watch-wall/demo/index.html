@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docket watch wall — open legal artifacts</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); }
+  .wrap { max-width:var(--max-width); margin:0 auto; padding:48px var(--pad-x-mobile) 96px; }
+  h1 { font-size:28px; font-weight:700; letter-spacing:-0.02em; margin:0 0 8px; }
+  .tagline { color:var(--text-secondary); font-size:15px; margin:0 0 24px; }
+  .rule { height:2px; width:56px; background:var(--accent); border:0; margin:0 0 32px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.14em; color:var(--text-secondary); margin:40px 0 12px; font-family:var(--font-mono); font-weight:400; }
+  textarea { width:100%; box-sizing:border-box; min-height:240px; font-family:var(--font-mono); font-size:12px; line-height:1.6; border:1px solid var(--border); border-radius:0; background:#fff; padding:14px; color:var(--text); resize:vertical; }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
+  button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
+  button:hover { background:#333; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--border); }
+  .muted { color:var(--text-secondary); font-size:12px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
+  .col-card { border:1px solid var(--border); background:#fff; padding:0; }
+  .col-head { font-family:var(--font-mono); font-size:12px; padding:10px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+  .entry { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+  .entry:last-child { border-bottom:0; }
+  .meta { font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); }
+  .tag { font-family:var(--font-mono); font-size:10.5px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
+  .tag.urgent { background:var(--accent); }
+  .tag.important { border:1px solid var(--border); }
+  .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
+  .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
+  .pill b { font-weight:400; background:var(--accent); padding:0 4px; margin-left:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Docket watch wall</h1>
+  <p class="tagline">Judge / party / practice-area watchers · seen-store diffing · escalation flags as rules-as-data · offline (CourtListener RECAP is a spec'd hook, not a hidden API). Fictional data.</p>
+  <hr class="rule">
+
+  <h2>Feed (JSON)</h2>
+  <textarea id="feed" spellcheck="false"></textarea>
+  <div class="row">
+    <button id="run">Review wall</button>
+    <button class="ghost" id="mark">Mark all seen (update store)</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="cols" id="wall"></div>
+
+  <p class="muted">Deterministic core · <code>open-artifacts/docket-watch-wall/core/core.js</code> · no network calls · not legal advice.</p>
+</div>
+
+<script type="module">
+import { processFeed, stampSeenStore } from '../core/core.js';
+
+const watchers = [
+  { id: 'w1', name: 'Judge Whitfield — commercial', judge: 'whitfield', practiceArea: 'commercial-litigation' },
+  { id: 'w2', name: 'Bluecrest Logistics — party', party: 'bluecrest' },
+  { id: 'w3', name: 'Employment docket', practiceArea: 'employment' },
+];
+const feed = [
+  { id: 'E-102', date: '2026-04-01', description: 'Joint stipulation extending expert disclosures',
+    case: { name: 'Meridian Foods v. Bluecrest Logistics', judge: 'Hon. A. Whitfield', parties: ['Meridian Foods, Inc.', 'Bluecrest Logistics LLC'], practiceArea: 'commercial-litigation', court: 'N.D. Ill. (fictional)' } },
+  { id: 'E-103', date: '2026-04-02', description: 'Motion for sanctions for discovery misconduct filed by plaintiffs',
+    case: { name: 'Meridian Foods v. Bluecrest Logistics', judge: 'Hon. A. Whitfield', parties: ['Meridian Foods, Inc.', 'Bluecrest Logistics LLC'], practiceArea: 'commercial-litigation', court: 'N.D. Ill. (fictional)' } },
+  { id: 'E-104', date: '2026-04-02', description: 'Order to show cause re: failure to appear at mediation',
+    case: { name: 'Orr v. Talos Systems', judge: 'Hon. M. Delgado', parties: ['Dana Orr', 'Talos Systems, Inc.'], practiceArea: 'employment', court: 'C.D. Cal. (fictional)' } },
+  { id: 'E-105', date: '2026-04-03', description: 'Notice of deposition of PMK scheduled',
+    case: { name: 'Orr v. Talos Systems', judge: 'Hon. M. Delgado', parties: ['Dana Orr', 'Talos Systems, Inc.'], practiceArea: 'employment', court: 'C.D. Cal. (fictional)' } },
+];
+
+const $ = (id) => document.getElementById(id);
+let seen = { ids: [], updatedAt: null, count: 0 };
+$('feed').value = JSON.stringify(feed, null, 2);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function run() {
+  let entries;
+  try { entries = JSON.parse($('feed').value); } catch (e) { $('status').textContent = 'bad JSON: ' + e.message; return; }
+  const r = processFeed(entries, watchers, seen);
+  $('stats').innerHTML = `
+    <span class="pill">feed<b>${r.stats.entriesInFeed}</b></span>
+    <span class="pill">new (per watcher)<b>${r.stats.newEntries}</b></span>
+    <span class="pill">escalated<b>${r.stats.escalated}</b></span>
+    <span class="pill">seen-store<b>${seen.count}</b></span>`;
+  $('wall').innerHTML = r.wall.map((col) => `
+    <div class="col-card">
+      <div class="col-head"><span>${esc(col.watcher.name)}</span><span>${col.newEntries.length} new</span></div>
+      ${col.newEntries.length ? col.newEntries.map((e) => `
+        <div class="entry">
+          <div>${esc(e.description)}${escalateTags(e)}</div>
+          <div class="meta">${esc(e.date)} · ${esc(e.case.name)} · ${esc(e.case.court)}</div>
+        </div>`).join('') : '<div class="entry muted">no new matching entries</div>'}
+    </div>`).join('');
+  window.__next = r.nextSeenStore;
+  $('status').textContent = `${r.stats.newEntries} new across ${r.stats.watchers} watchers · ${r.stats.escalated} escalated`;
+}
+
+// client-side re-application of the core rules for tags (same data as core)
+import { escalate } from '../core/core.js';
+function escalateTags(e) {
+  return escalate(e).map((x) => `<span class="tag ${x.level}">${esc(x.label)}</span>`).join('');
+}
+
+$('run').addEventListener('click', run);
+$('mark').addEventListener('click', () => {
+  seen = stampSeenStore(window.__next || { ids: [], updatedAt: null, count: 0 }, new Date().toISOString());
+  $('status').textContent = `seen-store updated: ${seen.count} ids @ ${seen.updatedAt}`;
+  run();
+});
+run();
+</script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eviction notice check board — open artifact</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
+  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
+  .lede { color: var(--text-secondary); max-width: 64ch; line-height: 1.6; margin: 0 0 8px; }
+  .disclaimer { color: var(--text-secondary); font-size: 0.8rem; border-left: 3px solid var(--accent); padding-left: 12px; margin: 16px 0 32px; max-width: 72ch; }
+  h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
+  .panel { border: var(--hairline); background: #fff; padding: 20px; }
+  label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin: 14px 0 4px; }
+  select, input[type=number], input[type=date] { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: var(--bg); padding: 8px; width: 100%; box-sizing: border-box; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .contents label { text-transform: none; font-size: 12px; line-height: 1.4; }
+  .contents .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .contents select { width: auto; }
+  button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 20px; }
+  button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
+  .verdict { font-family: var(--font-mono); font-size: 1.1rem; padding: 10px 14px; display: inline-block; border: 2px solid var(--text); margin-bottom: 16px; }
+  .verdict.fail { background: var(--accent); }
+  .verdict.unverified { border-style: dashed; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+  td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+  tr:hover td { background: var(--hover); }
+  .st { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border: 1px solid var(--text); white-space: nowrap; }
+  .st.fail { background: var(--accent); }
+  .st.unverified { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
+  .cite { color: var(--text-secondary); font-size: 11px; }
+  .err { border: 2px solid var(--text); background: var(--accent); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Eviction notice check board</h1>
+  <div class="rule"></div>
+  <p class="lede">Check an eviction notice's facts against jurisdiction rules-as-data. Every requirement gets PASS / FAIL / UNVERIFIED with the rule cited. Anything not positively attested stays UNVERIFIED — the checker never guesses.</p>
+  <p class="disclaimer">The five bundled jurisdiction rulesets are editable example data with US defaults (CA, TX, NY, WA, OH). Notice law varies by state, city, and lease, and changes often — verify every cited rule against current law. Not legal advice.</p>
+
+  <h2>Notice facts</h2>
+  <div class="panel">
+    <div class="grid">
+      <div>
+        <label for="jur">Jurisdiction</label>
+        <select id="jur"></select>
+        <label for="type">Notice type</label>
+        <select id="type"></select>
+        <label for="days">Stated notice period (days)</label>
+        <input type="number" id="days" min="0" max="365" />
+        <label for="tenancy">Tenancy length (years, optional)</label>
+        <input type="number" id="tenancy" min="0" max="50" step="0.5" />
+      </div>
+      <div>
+        <label for="service">Service method</label>
+        <select id="service"></select>
+        <label for="sd">Service date (optional)</label>
+        <input type="date" id="sd" />
+        <label for="fd">Filing/summons date (optional)</label>
+        <input type="date" id="fd" />
+      </div>
+    </div>
+    <div class="contents" id="contents">
+      <label>Required contents — attest what you see on the notice (leave unverified if unsure)</label>
+    </div>
+    <button id="run">Check notice</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <h2>Check board</h2>
+  <div id="board"></div>
+</div>
+
+<script type="module">
+import { checkNotice, JURISDICTIONS } from '../core/core.js';
+
+const $ = (id) => document.getElementById(id);
+const jurs = Object.keys(JURISDICTIONS);
+$('jur').innerHTML = jurs.map((j) => `<option value="${j}">${JURISDICTIONS[j].name}</option>`).join('');
+
+function fillTypes() {
+  const jur = JURISDICTIONS[$('jur').value];
+  const types = Object.keys(jur.noticeTypes);
+  $('type').innerHTML = types.map((t) => `<option value="${t}">${t}</option>`).join('');
+  fillContents();
+}
+function fillContents() {
+  const rule = JURISDICTIONS[$('jur').value].noticeTypes[$('type').value];
+  $('contents').querySelectorAll('.row').forEach((r) => r.remove());
+  for (const c of rule.contents) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <select data-content="${c.id}">
+        <option value="">unverified</option>
+        <option value="true">present</option>
+        <option value="false">absent</option>
+      </select>
+      <span style="font-size:12px;flex:1">${c.label} <span class="cite">(${c.cite})</span></span>`;
+    $('contents').appendChild(row);
+  }
+  $('service').innerHTML = ['<option value="">— not recorded —</option>', ...rule.service.methods]
+    .map((m) => `<option value="${m}">${m}</option>`).join('');
+}
+$('jur').addEventListener('change', fillTypes);
+$('type').addEventListener('change', fillContents);
+fillTypes();
+
+// Prefill with the worked example E-1031 (fictional)
+$('jur').value = 'california-example'; fillTypes();
+$('days').value = '3';
+$('sd').value = '2026-10-01'; $('fd').value = '2026-10-03';
+$('service').value = 'post-and-mail';
+document.querySelector('select[data-content="amount-due"]').value = 'true';
+document.querySelector('select[data-content="payment-person"]').value = 'true';
+document.querySelector('select[data-content="payment-methods"]').value = 'false';
+document.querySelector('select[data-content="nonrent-fees-excluded"]').value = 'true';
+
+function esc(s) { return String(s).replace(/</g, '&lt;'); }
+
+$('run').addEventListener('click', () => {
+  const errEl = $('err'); errEl.style.display = 'none';
+  const contents = {};
+  document.querySelectorAll('select[data-content]').forEach((s) => {
+    if (s.value !== '') contents[s.dataset.content] = s.value === 'true';
+  });
+  const notice = {
+    jurisdiction: $('jur').value,
+    noticeType: $('type').value,
+    statedPeriodDays: $('days').value === '' ? undefined : Number($('days').value),
+    tenancyYears: $('tenancy').value === '' ? undefined : Number($('tenancy').value),
+    serviceMethod: $('service').value || undefined,
+    serviceDate: $('sd').value || undefined,
+    filedDate: $('fd').value || undefined,
+    contents,
+  };
+  let b;
+  try { b = checkNotice(notice); } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; return;
+  }
+  const order = { fail: 0, unverified: 1, pass: 2 };
+  const rows = [...b.checks].sort((a, c) => order[a.status] - order[c.status])
+    .map((c) => `<tr>
+      <td><span class="st ${c.status}">${c.status.toUpperCase()}</span></td>
+      <td>${esc(c.requirement)}<br /><span class="detail" style="font-size:12px;color:var(--text-secondary)">${esc(c.detail)}</span></td>
+      <td><span class="cite">${c.ruleCite ? esc(c.ruleCite) : '—'}</span></td>
+    </tr>`).join('');
+  $('board').innerHTML = `
+    <div class="verdict ${b.summary.verdict}">VERDICT: ${b.summary.verdict.toUpperCase()} — pass ${b.summary.pass} · fail ${b.summary.fail} · unverified ${b.summary.unverified}</div>
+    <table><thead><tr><th>Status</th><th>Requirement</th><th>Rule cited</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="cite" style="margin-top:12px">${esc(b.disclaimer)}</p>`;
+});
+$('run').click();
+</script>
+</body>
+</html>
