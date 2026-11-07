@@ -147,7 +147,8 @@ a {
   th, td { border: var(--hairline); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
   th { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
   td.v, td.o { font-family: var(--font-mono); font-size: 11px; }
-  td.v { max-width: 220px; overflow-wrap: anywhere; }
+  td.v { max-width: 320px; overflow-wrap: break-word; word-break: keep-all; }
+  table { grid-column: 1 / -1; }
   .note { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 22px 0 4px; }
   .sec:first-child { margin-top: 0; }
