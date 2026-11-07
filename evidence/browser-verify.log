@@ -6,3 +6,10 @@
 /a/pii-ptbr-lgpd: load=true interactive=false bodyLen=3555
 /a/prompting-for-attorneys: load=false interactive=true bodyLen=313
 url: https://arthrod--4075ab70dae211f1929a1607ee4eb77e.web.val.run/course/ | bodyLen: 2382 | lessons: true | title: Prompting for Attorneys — Arthur Souza Rodrigues
+{"visibleStep":["s-confirm"],"bodyLen":1669}
+limitations-radar out: "CLM-101 · personal_injury (CA) filed_tim"
+client-intake: {"step":"s-review","bodyLen":1601}
+contracts-playbook: {"step":"-","bodyLen":16299}
+pii-ptbr-lgpd: {"step":"-","bodyLen":3569}
+limitations-radar: {"step":"-","bodyLen":1710}
+course: {"back":true,"lessons":true}

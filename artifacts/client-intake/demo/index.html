@@ -474,8 +474,12 @@ function loadWorkedExample() {
     asOf: state.asOf,
     refRand: EXAMPLE_RAND,
   });
-  renderSaved(record);
-  show('saved');
+  // Boot the worked example at the REVIEW step — the guided flow's most
+  // representative screen (editable proposed questions with accepted drafts).
+  // The firm record (stage 5) stays one click away via the flow buttons.
+  renderQuestions();
+  renderReview();
+  show('review');
   state.asOf = today; // a fresh interactive run uses today's clock
 }
 

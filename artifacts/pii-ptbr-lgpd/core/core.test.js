@@ -163,7 +163,7 @@ describe('outputs: offsets, redaction, LGPD summary', () => {
     assert.ok(keys.includes('origem'));
     assert.ok(!keys.includes('pj'));
     const saude = cats.find((c) => c.key === 'saude');
-    assert.equal(saude.article, 'Art. 5º, II, "f"');
+    assert.equal(saude.article, 'Art. 5º, II, "e"');
   });
 
   test('lgpdCategories: CNPJ-only text gets the pessoa-jurídica note, no sensitive groups', () => {

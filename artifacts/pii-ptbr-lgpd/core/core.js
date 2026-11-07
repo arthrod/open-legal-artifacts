@@ -40,7 +40,7 @@ const SURNAMES = [
 /** Street-type tokens that start a BR address span. */
 const STREET_TYPES = ['Avenida', 'Av\\.', 'Rua', 'Travessa', 'Alameda', 'Estrada', 'Rodovia', 'Praça', 'Beco'];
 
-/** LGPD Art. 5º, II, "f" — health mentions (longest first so long phrases win). */
+/** LGPD Art. 5º, II, "e" — health mentions (longest first so long phrases win). */
 const HEALTH_PHRASES = [
   'diabetes tipo 2', 'hipertensão arterial', 'transtorno depressivo',
   'transtorno de ansiedade', 'tratamento oncológico', 'portador de deficiência',
@@ -77,7 +77,7 @@ export const LGPD_GROUPS = Object.freeze([
   }),
   Object.freeze({
     key: 'saude',
-    article: 'Art. 5º, II, "f"',
+    article: 'Art. 5º, II, "e"',
     label: 'Dados sensíveis — saúde',
     types: Object.freeze(['SAUDE']),
   }),

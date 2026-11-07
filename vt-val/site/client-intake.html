@@ -587,8 +587,12 @@ function loadWorkedExample() {
     asOf: state.asOf,
     refRand: EXAMPLE_RAND,
   });
-  renderSaved(record);
-  show('saved');
+  // Boot the worked example at the REVIEW step — the guided flow's most
+  // representative screen (editable proposed questions with accepted drafts).
+  // The firm record (stage 5) stays one click away via the flow buttons.
+  renderQuestions();
+  renderReview();
+  show('review');
   state.asOf = today; // a fresh interactive run uses today's clock
 }
 
@@ -597,5 +601,5 @@ renderRail();
 loadWorkedExample();
 </script>
 <style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>
-<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');var filled=out&&out.innerText.trim().length>40;if(filled)return;var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(x.textContent)});if(b)b.click()}catch(e){}});</script></body>
+<script>window.addEventListener("load",function(){try{/* flow app: renders on boot, no auto-run */}catch(e){}});</script></body>
 </html>

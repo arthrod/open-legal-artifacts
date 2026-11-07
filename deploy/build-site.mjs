@@ -84,7 +84,10 @@ function decorate(html) {
   }
   // Normalize artifact-page H1s to one scale (inspector R3-03) and auto-run
   // prefilled demos so no page opens on a "Press Run" placeholder (R3-01).
-  const polish = `<style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>\n<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');var filled=out&&out.innerText.trim().length>40;if(filled)return;var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(x.textContent)});if(b)b.click()}catch(e){}});</script>`;
+  // Auto-run only makes sense for run→output pages; flow apps that already
+  // render their worked example on boot (client-intake) are skipped.
+  const noAutoRun = /id="(f-narrative|personas)"/.test(html);
+  const polish = `<style>h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:.01em!important;}</style>\n<script>window.addEventListener("load",function(){try{${noAutoRun ? "/* flow app: renders on boot, no auto-run */" : "var out=document.querySelector('[id*=\"out\"],[id*=\"result\"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll(\"button\")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()"}}catch(e){}});</script>`;
   return html.replace(/<\/body>/i, polish + "</body>");
 }
 
