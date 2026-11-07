@@ -38,23 +38,22 @@ Anthropic's [Claude for Legal artifacts gallery](https://claude.com/resources/ar
 Our goal: an open counterpart for **every one of them** — source-available, self-hostable,
 with deterministic cores where determinism is possible and rules-as-data where law is the logic.
 
-Status legend: **shipped** (in this repo today) · **phase-1** (next up, see the
-[plan](#roadmap)) · **phase-2** (backlog) · **external-link** (better home elsewhere).
+Status legend: **shipped** (in this repo today) · **phase-2** (backlog) · **external-link** (better home elsewhere).
 
 ### Anthropic-built (22)
 
 | # | Gallery artifact | Our counterpart | Status | What's better |
 |---|---|---|---|---|
-| 1 | Tabular review | `open-artifacts/tabular-review` | phase-1 | Cell-level provenance that survives export (CSV/PDF anchors), re-run diffing when a contract version changes, user-owned question templates |
+| 1 | Tabular review | `open-artifacts/tabular-review` | **shipped** | Cell-level provenance that survives export (CSV/PDF anchors), re-run diffing when a contract version changes, user-owned question templates |
 | 2 | Regulatory horizon scan | `open-artifacts/` (TBD) | phase-2 | Open regulatory feeds (Federal Register, EUR-Lex) with diffing + dedupe; transparent, versioned impact-scoring rubric you can audit |
 | 3 | Ask legal | `open-artifacts/` (TBD) | phase-2 | Guidance base in open formats under your control, per-topic escalation SLAs, confidence gating, full question audit log |
 | 4 | Jurisdiction survey matrix | `open-artifacts/` (TBD) | phase-2 | Authoritative open-law sources per cell (CourtListener, state codes, EUR-Lex), verification dates, "unverified" cells never guessed |
-| 5 | Cite check | `open-artifacts/cite-check` | phase-1 | Deterministic quote-diff + citation parsing core (eyecite); LLM only judges proposition support; every flag carries quote evidence |
+| 5 | Cite check | `open-artifacts/cite-check` | **shipped** | Deterministic quote-diff + citation parsing core (eyecite); LLM only judges proposition support; every flag carries quote evidence |
 | 6 | Playbook deviation board | [`artifacts/contracts-playbook/`](artifacts/contracts-playbook/README.md) | **shipped** | Playbook as versioned data with family lineage + clause-level diffs, source-quote verification, redaction before model calls, free model (`gpt-5-nano`), self-hostable |
 | 7 | Matter board | `open-artifacts/` (TBD) | phase-2 | Change-detection instead of snapshot staleness; export to open formats |
 | 8 | New client intake | [`artifacts/client-intake/`](artifacts/client-intake/README.md) | **shipped** | Full source available; demo mode fails closed (no storage without `ADMIN_TOKEN`); conflict-party list generated at finalize; no connector lock-in |
 | 9 | Renewal calendar | `open-artifacts/` (TBD) | phase-2 | Deadline store with ICS export + notifications; human confirmation of each extracted date |
-| 10 | Fact chronology | `open-artifacts/fact-chronology` | phase-1 | Per-fact evidence graph (supporting vs contradicting spans), date normalization for ambiguous documents, lockable verified entries |
+| 10 | Fact chronology | `open-artifacts/fact-chronology` | **shipped** | Per-fact evidence graph (supporting vs contradicting spans), date normalization for ambiguous documents, lockable verified entries |
 | 11 | Discovery response log | `open-artifacts/` (TBD) | phase-2 | Privilege-safe routing, versioned drafts per meet-and-confer round, objection library with jurisdiction-aware grounds |
 | 12 | Patent claim comparison | `open-artifacts/` (TBD) | phase-2 | Structured claim-limitation parsing, pinpoint disclosure spans, explicit "no teaching found" rows |
 | 13 | Docket watch wall | `open-artifacts/` (TBD) | phase-2 | CourtListener RECAP API as the open backbone — no product lock-in; scheduled diffing with per-judge filters |
@@ -89,10 +88,10 @@ fork: [catalog/anthropic.md](catalog/anthropic.md).
 
 ## Roadmap
 
-- **Shipped:** client-intake, contracts-playbook, prompting-for-attorneys, pii-ptbr-lgpd.
-- **Phase 1** (`open-artifacts/`): cite-check, playbook-deviation-board (extends the shipped
-  playbook artifact), fact-chronology, tabular-review — each with a spec (`spec.md`), a
-  deterministic core where possible, and recorded outputs.
+- **Shipped:** client-intake, contracts-playbook, prompting-for-attorneys, pii-ptbr-lgpd; and
+  in `open-artifacts/`: cite-check, playbook-deviation-board (extends the shipped playbook
+  artifact), fact-chronology, tabular-review — each with a spec (`spec.md`), a deterministic
+  core where possible, tests, and recorded outputs.
 - **Phase 2:** the remaining rows above, in the order law-over-model comes cheapest first
   (rules-as-data artifacts: eviction check, rent ledger, record sealing/clearance, entity
   compliance calendar).
