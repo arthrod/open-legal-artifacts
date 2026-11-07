@@ -33,3 +33,8 @@ cite-check (tsx): ℹ tests 12 ℹ pass 12 ℹ fail 0
 fact-chronology (tsx): ℹ tests 11 ℹ pass 11 ℹ fail 0 
 playbook-deviation-board (tsx): ℹ tests 12 ℹ pass 12 ℹ fail 0 
 tabular-review (tsx): ℹ tests 11 ℹ pass 11 ℹ fail 0 
+
+# Originals' demo cores — 2026-11-07T20:50:54Z
+client-intake: # tests 18 # pass 18 # fail 0 
+contracts-playbook: # tests 17 # pass 17 # fail 0 
+pii-ptbr-lgpd: # tests 23 # pass 23 # fail 0 
