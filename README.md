@@ -2,6 +2,9 @@
 
 > Open legal artifacts: every legal AI artifact, open and better.
 
+**Playground: <https://arthrod.github.io/open-legal-artifacts/>** ·
+Repo: <https://github.com/arthrod/open-legal-artifacts>
+
 An open playground of legal-AI artifacts by [Arthur Souza Rodrigues](https://arthur.law) —
 law-firm intake, contracts playbooks, prompting education for attorneys, and pt-BR/LGPD
 PII detection — plus a public commitment map: for every legal artifact in Anthropic's
