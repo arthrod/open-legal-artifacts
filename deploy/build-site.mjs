@@ -14,7 +14,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = join(ROOT, "vt-val", "site");
 mkdirSync(SITE, { recursive: true });
 
-const MIME = { css: "text/css", js: "text/javascript", mjs: "text/javascript", woff2: "font/woff2", woff: "font/woff" };
+const MIME = { css: "text/css", js: "text/javascript", mjs: "text/javascript" }; // fonts NEVER data-URI'd: single-file pages would carry +32-64KB and blow the VT 80KB cap
 
 function resolveRef(base, ref) {
   // root-relative refs ("/assets/x.js") resolve against the site root (base)
@@ -75,7 +75,7 @@ function bundle(htmlPath) {
 // Bundle-time chrome for artifact pages: site back-link + disclaimer footer.
 function decorate(html) {
   if (!html.includes("ola-backlink")) {
-    const bar = `<a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">\u2190 Open Legal Artifacts</a>`;
+    const bar = `<a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">\u2190 Open Legal Artifacts</a>`;
     html = html.replace(/<body([^>]*)>/i, (m) => m + bar);
   }
   if (!html.includes("<footer") && !/not legal advice/i.test(html)) {
@@ -111,12 +111,13 @@ for (const OA of demoRoots) {
     if (!statSync(join(OA, entry)).isDirectory() || !existsSync(demo) || seen.has(entry)) continue;
     seen.add(entry);
     let html = decorate(bundle(demo));
-    if (html.length > 78_000) {
+    // Single-file deploy: system-font fallback only. Strip ALL @font-face blocks
+    // (Manrope variable + Departure Mono) — var stacks fall back to system-ui/ui-monospace.
+    const pre = html.length;
+    html = html.replace(/@font-face\s*\{[^}]*\}/g, "");
+    if (pre !== html.length || html.length > 78_000) {
       oversized++;
-      // over the VT 80KB/file cap: drop the ~30KB base64 Departure Mono woff2;
-      // --font-mono falls back to JetBrains Mono / ui-monospace
-      html = html.replace(/@font-face\s*\{[^}]*Departure Mono[^}]*\}/g, "");
-      console.warn(`  ⚠ ${entry}: ${(html.length / 1024).toFixed(1)} KB → font stripped (${(html.length / 1024).toFixed(1)} KB)`);
+      console.warn(`  ⚠ ${entry}: ${(pre / 1024).toFixed(1)} KB → font stripped (${(html.length / 1024).toFixed(1)} KB)`);
     }
     writeFileSync(join(SITE, `${entry}.html`), html);
     n++;

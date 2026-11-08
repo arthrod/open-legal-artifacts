@@ -1,35 +1,35 @@
-# Full test run — 2026-11-08T04:00:30Z — node v24.20.0
+# Full test run — 2026-11-08T09:25:48Z — node v24.20.0
 access-to-justice-front-door: pass=29 fail=0
 ai-governance-benchmark: pass=25 fail=0
 ai-use-case-inventory: pass=31 fail=0
-ask-legal: pass=24 fail=0
+ask-legal: pass=28 fail=0
 criminal-charge-reality-check: pass=26 fail=0
 discovery-response-log: pass=30 fail=0
 docket-watch-wall: pass=17 fail=0
 entity-compliance-calendar: pass=22 fail=0
 eviction-notice-check-board: pass=40 fail=0
 immigration-papers-reader: pass=34 fail=0
-intake-benchmark: pass=32 fail=0
-intake-queue: pass=32 fail=0
-jurisdiction-survey-matrix: pass=16 fail=0
+intake-benchmark: pass=34 fail=0
+intake-queue: pass=36 fail=0
+jurisdiction-survey-matrix: pass=24 fail=0
 limitations-radar: pass=19 fail=0
 litigation-portfolio: pass=26 fail=0
 matter-board: pass=23 fail=0
-obligations-checker: pass=30 fail=0
+obligations-checker: pass=35 fail=0
 outside-counsel-spend: pass=27 fail=0
 patent-claim-comparison: pass=23 fail=0
 privilege-log-builder: pass=14 fail=0
 pro-bono-case-board: pass=27 fail=0
 record-clearance: pass=27 fail=0
 record-sealing-screener: pass=26 fail=0
-regulatory-horizon-scan: pass=26 fail=0
+regulatory-horizon-scan: pass=30 fail=0
 renewal-calendar: pass=23 fail=0
 rent-ledger-reviewer: pass=33 fail=0
 sell-side-qa-log: pass=32 fail=0
 subpoena-response: pass=41 fail=0
-venture-term-sheet-benchmark: pass=20 fail=0
-cite-check (tsx): pass=33 fail=0
+venture-term-sheet-benchmark: pass=25 fail=0
+_shared: pass=64 fail=0 (hardening/fuzzyname/icsutil/persist/docio)
+cite-check (tsx): pass=38 fail=0
 fact-chronology (tsx): pass=22 fail=0
-playbook-deviation-board (tsx): pass=31 fail=0
-tabular-review (tsx): pass=29 fail=0
-TOTAL: 890 pass / 0 fail
+playbook-deviation-board (tsx): pass=35 fail=0
+tabular-review (tsx): pass=35 fail=0
