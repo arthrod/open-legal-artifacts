@@ -1,0 +1,2286 @@
+diff --git a/open-artifacts/regulatory-horizon-scan/README.md b/open-artifacts/regulatory-horizon-scan/README.md
+index 8b28003..32789f1 100644
+--- a/open-artifacts/regulatory-horizon-scan/README.md
++++ b/open-artifacts/regulatory-horizon-scan/README.md
+@@ -7,37 +7,58 @@ when a rule changes**.
+ 
+ ## What it does
+ 
+-- **Dedupe** a JSON feed of regulatory items (multiple sources, one rule).
++- **Dedupe + merge** a JSON feed of regulatory items (multiple sources, one
++  rule): duplicates fill missing fields on the kept item (richest wins) and
++  `mergedFrom` records every drop.
+ - **Classify** each item by topic (keyword taxonomy in the rubric) and
+   normalized jurisdiction (US states, US-FED, EU, …).
+ - **Score** impact 0–100 via a rules-as-data rubric — every point comes with
+-  factor, rule, and reason. Rubric versions are diffable.
+-- **Timeline** by effective date, ranked by score.
+-- **Diff** two feed snapshots (field-level changes: status, effective date, …).
+-- **Export CSV.**
++  factor, rule, and reason. Rubric versions are diffable. A `commentWindow`
++  factor rewards open comment deadlines (≤30d in the default rubric).
++- **Deterministic guardrails** — `itemType` ANPR/RFI is capped below "high"
++  (pre-rule exploratory); non-`primary` provenance caps the band at "medium"
++  with a trace-to-primary flag. Scores are never silently altered.
++- **Coverage check (Step 0)** — profile jurisdictions/topics with zero feed
++  items are reported with severity.
++- **Timeline** by `actionBy = min(effectiveDate, commentDeadline)` — upcoming,
++  past, and undated sections; comment-deadline milestones included; nothing
++  dropped.
++- **Diff** two feed snapshots (field-level changes: status, dates, itemType,
++  provenance, …).
++- **Export** CSV (breakdown + flags per row) and a Markdown digest
++  (`toMarkdown`) with a "Bottom line", coverage gaps, and per-item breakdowns.
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 12 tests (node:test)
+-node examples/run.js   # regenerates examples/scan.json, scan.csv, report.md
++node --test core/core.test.js  # 24 tests (node:test)
++node examples/run.js          # regenerates examples/scan.json, scan.csv, digest.md, report.md
+ ```
+ 
+ Open `demo/index.html` for the interactive demo (prefilled worked example;
+-no build step, no dependencies).
++editable rubric weights, coverage-gap chips, timeline sections, diff view,
++CSV + digest export; no build step, no dependencies — relative imports are
++inlined by `deploy/build-site.mjs` at bundle time).
+ 
+ ## What's better than the closed counterpart
+ 
+ 1. **Auditable scoring.** Anthropic's impact ranking is opaque. Here the rubric
+    is versioned data (`examples/input.json`), each score carries a full
+    breakdown, and `diffRubrics` shows exactly what changed between versions.
+-2. **Diff view.** The closed artifact snapshots; this core diffs — added,
++2. **Deterministic provenance & stage discipline.** The counterpart's
++   source-tier and ANPR/RFI policies are LLM prose; here they are tested code:
++   non-primary sources are band-capped with a trace-to-primary flag, ANPR/RFI
++   items never reach "high", and comment deadlines score and appear as
++   timeline milestones.
++3. **Coverage check.** Profile jurisdictions/topics absent from the feed are
++   surfaced with severity before ranking (Step 0).
++4. **Diff view.** The closed artifact snapshots; this core diffs — added,
+    removed, and per-field changes between feed snapshots.
+-3. **No hidden clock.** All time math anchors to a caller-supplied `asOf`, so
++5. **No hidden clock.** All time math anchors to a caller-supplied `asOf`, so
+    scans are reproducible byte-for-byte.
+-4. **LLM never scores.** The deterministic core does dedupe/classify/score/
+-   diff/export; a model (optional) only structures raw regulator text into
+-   feed items (prompt schema in `spec.md`).
++6. **LLM never scores.** The deterministic core does dedupe/merge/classify/
++   score/diff/export; a model (optional) only structures raw regulator text
++   into feed items (prompt schema in `spec.md`).
+ 
+ ## Layout
+ 
+@@ -45,6 +66,7 @@ no build step, no dependencies).
+ - `core/core.js` — dependency-free ES module (browser + Node)
+ - `core/core.test.js` — node:test suite
+ - `examples/` — fictional worked example + runner + generated outputs
++  (`scan.json`, `scan.csv`, `digest.md`, `report.md`)
+ - `demo/index.html` — standalone demo using the shared design tokens
+ 
+ ## Disclaimer
+diff --git a/open-artifacts/regulatory-horizon-scan/core/core.js b/open-artifacts/regulatory-horizon-scan/core/core.js
+index 5408892..9053b4c 100644
+--- a/open-artifacts/regulatory-horizon-scan/core/core.js
++++ b/open-artifacts/regulatory-horizon-scan/core/core.js
+@@ -87,38 +87,67 @@ const US_STATE_NAMES = new Map([
+ 
+ /* ---------- dedupe ---------- */
+ 
++/** Fields merged from a duplicate into the kept item (richest wins: a missing
++ * value is filled from the duplicate; existing values are never overwritten). */
++const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadline", "itemType", "provenance", "summary", "source", "link"];
++
+ /**
+  * Dedupe feed items. Two items are duplicates when they share an id, or when
+  * their normalized titles are near-identical AND jurisdictions match.
+- * First occurrence wins (feed order = trust order); drops are reported.
++ * First occurrence wins (feed order = trust order), but the kept item is
++ * enriched: any MERGE_FIELD missing on the kept item is filled from the
++ * duplicate (richest source wins), and `mergedFrom` records the dropped ids.
+  * @param {Array<any>} items
+- * @returns {{ unique: any[], duplicates: Array<{keptId: string, droppedId: string, reason: string}> }}
++ * @returns {{ unique: any[], duplicates: Array<{keptId: string, droppedId: string, reason: string, mergedFields: string[]}> }}
+  */
+ export function dedupeItems(items) {
+   const unique = [];
+   const duplicates = [];
+   /** @type {Map<string, string>} normTitle|juris -> kept id */
+   const seen = new Map();
++  /** @type {Map<string, any>} kept id -> kept item (mutated on merge) */
++  const kept = new Map();
+   const seenIds = new Set();
++  const mergeInto = (keptId, dup, reason) => {
++    const target = kept.get(keptId);
++    const mergedFields = [];
++    if (target) {
++      for (const f of MERGE_FIELDS) {
++        if (isEmpty(target[f]) && !isEmpty(dup[f])) {
++          target[f] = dup[f];
++          mergedFields.push(f);
++        }
++      }
++      if (!target.mergedFrom) target.mergedFrom = [];
++      target.mergedFrom.push(String(dup.id ?? ""));
++    }
++    duplicates.push({ keptId, droppedId: String(dup.id ?? ""), reason, mergedFields });
++  };
+   for (const it of items ?? []) {
+     const id = String(it.id ?? "");
+     const juris = normalizeJurisdiction(it.jurisdiction);
+     const key = `${normalizeTitle(it.title)}|${juris}`;
+     if (seenIds.has(id)) {
+-      duplicates.push({ keptId: id, droppedId: id, reason: "duplicate id" });
++      mergeInto(id, it, "duplicate id");
+       continue;
+     }
+     if (seen.has(key)) {
+-      duplicates.push({ keptId: seen.get(key), droppedId: id, reason: "same normalized title + jurisdiction" });
++      mergeInto(seen.get(key), it, "same normalized title + jurisdiction");
+       continue;
+     }
+     seenIds.add(id);
+     seen.set(key, id);
+-    unique.push({ ...it, jurisdiction: juris });
++    const copy = { ...it, jurisdiction: juris };
++    kept.set(id, copy);
++    unique.push(copy);
+   }
+   return { unique, duplicates };
+ }
+ 
++function isEmpty(v) {
++  return v === null || v === undefined || v === "";
++}
++
+ /* ---------- classification ---------- */
+ 
+ /**
+@@ -218,7 +247,33 @@ export function scoreItem(item, rubric, profile, asOfIso) {
+   }
+   breakdown.push({ factor: "proximity", rule: pRule, points: pPts, note: pNote });
+ 
+-  // Factor 4 — rulemaking status
++  // Factor 4 — open comment window (optional: skipped when the rubric omits it)
++  const cwf = rubric.factors.find((f) => f.id === "commentWindow");
++  if (cwf) {
++    const dl = parseDate(item.commentDeadline ?? null);
++    const cd = daysUntil(dl, asOf);
++    let cPts = cwf.points.other ?? 0;
++    let cRule = "no comment deadline";
++    let cNote = String(item.commentDeadline ?? "none");
++    if (cd !== null) {
++      if (cd < 0) {
++        cPts = 0;
++        cRule = "comment window closed";
++      } else {
++        const cth = (cwf.thresholds ?? []).find((t) => cd <= t.withinDays);
++        if (cth) {
++          cPts = cth.points;
++          cRule = `comment window open, closes in ${cd}d (<= ${cth.withinDays}d threshold)`;
++        } else {
++          cRule = `comment window closes in ${cd}d (beyond all thresholds)`;
++        }
++      }
++      cNote = `${item.commentDeadline} (${cd >= 0 ? "+" : ""}${cd}d)`;
++    }
++    breakdown.push({ factor: "commentWindow", rule: cRule, points: cPts, note: cNote });
++  }
++
++  // Factor 5 — rulemaking status
+   const sf = rubric.factors.find((f) => f.id === "status");
+   const st = String(item.status ?? "").toLowerCase();
+   const sPts = sf.points[st] ?? sf.points.other ?? 0;
+@@ -230,8 +285,31 @@ export function scoreItem(item, rubric, profile, asOfIso) {
+   });
+ 
+   const score = Math.min(rubric.maxScore ?? 100, breakdown.reduce((a, b) => a + b.points, 0));
+-  const band = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
+-  return { score, band, breakdown };
++  let band = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
++
++  // Deterministic band caps (score is never altered — only the band, with a flag)
++  const flags = [];
++  const provenance = normalizeProvenance(item.provenance);
++  if (provenance !== "primary" && band === "high") {
++    band = "medium";
++    flags.push(`provenance=${provenance}: trace to primary before relying on this item`);
++  }
++  const itemType = String(item.itemType ?? "").toLowerCase();
++  if ((itemType === "anpr" || itemType === "rfi") && band === "high") {
++    band = "medium";
++    flags.push(`itemType=${itemType} is pre-rule exploratory (ANPR/RFI) — band capped below high`);
++  }
++  return { score, band, breakdown, flags, provenance, itemType: itemType || null };
++}
++
++const PROVENANCE_TIERS = new Set(["primary", "secondary", "manual", "unknown"]);
++
++/** Normalize a provenance tier; anything missing or unrecognized is "unknown".
++ * @param {any} p
++ * @returns {string} */
++export function normalizeProvenance(p) {
++  const s = String(p ?? "").trim().toLowerCase();
++  return PROVENANCE_TIERS.has(s) ? s : "unknown";
+ }
+ 
+ /* ---------- full scan ---------- */
+@@ -248,18 +326,88 @@ export function scanFeed(items, rubric, profile, asOfIso) {
+   const scored = unique.map((it) => {
+     const cls = classifyItem(it, rubric);
+     const sc = scoreItem(it, rubric, profile, asOfIso);
+-    return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, scoring: sc };
++    const actionBy = [it.effectiveDate, it.commentDeadline].filter(Boolean).sort()[0] ?? null;
++    return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, actionBy, scoring: sc };
+   });
+   scored.sort((a, b) => b.scoring.score - a.scoring.score || String(a.title).localeCompare(String(b.title)));
+-  const timeline = [...scored]
+-    .filter((it) => it.effectiveDate)
+-    .sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+-  return { rubricVersion: rubric.version, asOf: asOfIso, generatedBy: "regulatory-horizon-scan core", items: scored, duplicates, timeline };
++  return {
++    rubricVersion: rubric.version,
++    asOf: asOfIso,
++    generatedBy: "regulatory-horizon-scan core",
++    items: scored,
++    duplicates,
++    timeline: buildTimeline(scored, asOfIso),
++    coverageGaps: coverageGaps(unique, profile, rubric),
++  };
++}
++
++/**
++ * Build the action timeline as milestones. Each dated item contributes one
++ * milestone per date kind (effective / comment-deadline); items with no dates
++ * at all are kept in `undated` — nothing is silently dropped.
++ * `upcoming` = milestone date >= asOf; `past` = before asOf. Both sorted by
++ * date, then score descending, then title.
++ * @param {Array<any>} scored
++ * @param {string} asOfIso
++ */
++export function buildTimeline(scored, asOfIso) {
++  const asOf = parseDate(asOfIso);
++  /** @type {Array<any>} */ const upcoming = [];
++  /** @type {Array<any>} */ const past = [];
++  /** @type {Array<any>} */ const undated = [];
++  for (const it of scored ?? []) {
++    const eff = parseDate(it.effectiveDate ?? null);
++    const cdl = parseDate(it.commentDeadline ?? null);
++    if (!eff && !cdl) {
++      undated.push({ itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band });
++      continue;
++    }
++    for (const [kind, dt] of [["effective", eff], ["comment-deadline", cdl]]) {
++      if (!dt) continue;
++      const ms = { date: fmtDate(dt), kind, itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band };
++      (asOf && dt.getTime() < asOf.getTime() ? past : upcoming).push(ms);
++    }
++  }
++  const byDate = (a, b) => String(a.date).localeCompare(String(b.date)) || b.score - a.score || String(a.title).localeCompare(String(b.title));
++  upcoming.sort(byDate);
++  past.sort(byDate);
++  return { upcoming, past, undated };
++}
++
++/**
++ * Step 0 coverage check: which profile jurisdictions and topics have zero
++ * items in the feed? Jurisdiction gaps are severity "high" (blind spot in a
++ * jurisdiction you operate in), core-topic gaps "medium", related-topic
++ * gaps "low".
++ * @param {Array<any>} items — feed items (raw; classified internally)
++ * @param {any} profile
++ * @param {any} rubric — optional; enables topic-gap checks
++ * @returns {Array<{kind: string, value: string, severity: string, note: string}>}
++ */
++export function coverageGaps(items, profile, rubric) {
++  const list = items ?? [];
++  /** @type {Array<{kind: string, value: string, severity: string, note: string}>} */
++  const gaps = [];
++  const feedJuris = new Set(list.map((i) => normalizeJurisdiction(i.jurisdiction)));
++  for (const j of profile?.jurisdictions ?? []) {
++    const code = normalizeJurisdiction(j);
++    if (!feedJuris.has(code)) gaps.push({ kind: "jurisdiction", value: code, severity: "high", note: `profile jurisdiction has zero feed items` });
++  }
++  if (rubric) {
++    const feedTopics = new Set(list.map((i) => classifyItem(i, rubric).topic));
++    for (const t of profile?.coreTopics ?? []) {
++      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "medium", note: `core topic has zero feed items` });
++    }
++    for (const t of profile?.relatedTopics ?? []) {
++      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "low", note: `related topic has zero feed items` });
++    }
++  }
++  return gaps;
+ }
+ 
+ /* ---------- diffing ---------- */
+ 
+-const DIFF_FIELDS = ["title", "jurisdiction", "status", "effectiveDate", "publishedDate", "summary", "link"];
++const DIFF_FIELDS = ["title", "jurisdiction", "status", "effectiveDate", "commentDeadline", "itemType", "provenance", "publishedDate", "summary", "link"];
+ 
+ /**
+  * Diff two feed snapshots by item id. Detects added/removed items and
+@@ -357,8 +505,76 @@ export function toCsv(scan) {
+     it.effectiveDate ?? "",
+     it.scoring.score,
+     it.scoring.band,
+-    it.scoring.breakdown.map((b) => `${b.factor}:${b.points} (${b.rule})`).join(" | "),
++    [
++      ...it.scoring.breakdown.map((b) => `${b.factor}:${b.points} (${b.rule})`),
++      ...(it.scoring.flags ?? []).map((f) => `flag: ${f}`),
++    ].join(" | "),
+     it.link ?? "",
+   ]);
+   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+ }
++
++/**
++ * Export a scan result as a Markdown digest: "Bottom line" (action-item count
++ * + earliest action date), coverage gaps, and a per-band, per-item breakdown
++ * where every point carries `factor +N (rule)`. Deterministic: same scan in,
++ * same bytes out.
++ * @param {any} scan — output of scanFeed
++ * @returns {string}
++ */
++export function toMarkdown(scan) {
++  const items = scan.items ?? [];
++  const action = items.filter((it) => it.scoring.band === "high");
++  const actionDates = action.flatMap((it) => [it.effectiveDate, it.commentDeadline].filter(Boolean)).sort();
++  const lines = [];
++  lines.push("# Regulatory horizon scan digest", "");
++  const earliest = actionDates[0];
++  const earliestLabel = earliest
++    ? `; earliest action date ${earliest} (${earliestKind(items, earliest)})`
++    : "; no dated actions";
++  lines.push(
++    `**Bottom line:** ${action.length} action item${action.length === 1 ? "" : "s"} (band=high)${earliestLabel}. As of ${scan.asOf}, rubric \`${scan.rubricVersion}\`.`,
++    ""
++  );
++  lines.push("## Coverage gaps", "");
++  const gaps = scan.coverageGaps ?? [];
++  lines.push(
++    ...(gaps.length
++      ? gaps.map((g) => `- **[${g.severity}]** ${g.kind} ${g.value} — ${g.note}`)
++      : ["- None — every profile jurisdiction and topic has at least one feed item."]),
++    ""
++  );
++  let rank = 0;
++  for (const band of ["high", "medium", "low"]) {
++    const tier = items.filter((it) => it.scoring.band === band);
++    if (!tier.length) continue;
++    lines.push(`## ${band[0].toUpperCase()}${band.slice(1)} band (${tier.length} item${tier.length === 1 ? "" : "s"})`, "");
++    for (const it of tier) {
++      rank += 1;
++      const capped = (it.scoring.flags ?? []).length ? " (band capped)" : "";
++      lines.push(`### ${rank}. ${it.title} — score ${it.scoring.score}${capped}`, "");
++      const meta = [
++        `\`${it.id}\``, it.jurisdiction, it.topic, `status ${it.status}`,
++        ...(it.itemType && it.itemType !== "rule" ? [String(it.itemType).toUpperCase()] : []),
++        `effective ${it.effectiveDate ?? "—"}`, `comments close ${it.commentDeadline ?? "—"}`,
++        `provenance ${it.scoring.provenance ?? "unknown"}`,
++      ];
++      lines.push(meta.join(" · "));
++      for (const b of it.scoring.breakdown) lines.push(`- ${b.factor} +${b.points} (${b.rule})`);
++      for (const f of it.scoring.flags ?? []) lines.push(`- flag: ${f}`);
++      lines.push("");
++    }
++  }
++  lines.push("_All data fictional. Not legal advice._", "");
++  return lines.join("\n");
++}
++
++function earliestKind(items, date) {
++  for (const it of items) {
++    if (it.commentDeadline === date) return `comment window closes — ${it.title}`;
++  }
++  for (const it of items) {
++    if (it.effectiveDate === date) return `effective — ${it.title}`;
++  }
++  return date;
++}
+diff --git a/open-artifacts/regulatory-horizon-scan/core/core.test.js b/open-artifacts/regulatory-horizon-scan/core/core.test.js
+index 9053cd2..9e7e29e 100644
+--- a/open-artifacts/regulatory-horizon-scan/core/core.test.js
++++ b/open-artifacts/regulatory-horizon-scan/core/core.test.js
+@@ -1,9 +1,11 @@
+-/** Tests for regulatory-horizon-scan core. Run: node --test core/ */
++/** Tests for regulatory-horizon-scan core. Run: node --test core/core.test.js */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
+ import {
+   normalizeTitle, parseDate, normalizeJurisdiction, dedupeItems,
+   classifyItem, scoreItem, scanFeed, diffFeeds, diffRubrics, toCsv,
++  coverageGaps, toMarkdown,
+ } from "./core.js";
+ 
+ const RUBRIC = {
+@@ -13,6 +15,7 @@ const RUBRIC = {
+     { id: "jurisdiction", label: "Operating jurisdiction", points: { exact: 30, adjacent: 15, other: 0 } },
+     { id: "topic", label: "Topic relevance", points: { core: 25, related: 12, other: 0 } },
+     { id: "proximity", label: "Time to effective date", points: { other: 0 }, thresholds: [{ withinDays: 90, points: 25 }, { withinDays: 180, points: 15 }, { withinDays: 365, points: 8 }] },
++    { id: "commentWindow", label: "Open comment window", points: { other: 0 }, thresholds: [{ withinDays: 30, points: 15 }] },
+     { id: "status", label: "Rulemaking status", points: { effective: 20, final: 15, proposed: 8, rumored: 0, other: 0 } },
+   ],
+   topicTaxonomy: {
+@@ -32,6 +35,7 @@ const ITEM = {
+   effectiveDate: "2027-01-01",
+   summary: "Requires opt-in consent for minors' data processing.",
+   link: "https://example.gov/ca-ccpa-amend",
++  provenance: "primary",
+ };
+ 
+ test("normalizeTitle collapses punctuation, case, and apostrophes", () => {
+@@ -79,16 +83,17 @@ test("classifyItem matches taxonomy keywords and falls back to other", () => {
+ 
+ test("scoreItem produces transparent breakdown and correct band", () => {
+   const s = scoreItem(ITEM, RUBRIC, PROFILE, AS_OF);
+-  // jurisdiction US-CA (30) + privacy core (25) + 55d proximity (25) + final (15) = 95
++  // jurisdiction US-CA (30) + privacy core (25) + 55d proximity (25) + no comment window (0) + final (15) = 95
+   assert.equal(s.score, 95);
+   assert.equal(s.band, "high");
+-  assert.equal(s.breakdown.length, 4);
++  assert.equal(s.breakdown.length, 5);
+   assert.ok(s.breakdown.every((b) => typeof b.points === "number" && b.rule.length > 0));
++  assert.deepEqual(s.flags, []);
+ });
+ 
+ test("scoreItem: unknown status and missing date score low but never guess", () => {
+   const s = scoreItem({ ...ITEM, status: "rumored", effectiveDate: null }, RUBRIC, PROFILE, AS_OF);
+-  assert.equal(s.score, 55); // 30 + 25 + 0 + 0
++  assert.equal(s.score, 55); // 30 + 25 + 0 + 0 + 0
+   const b = s.breakdown.find((x) => x.factor === "proximity");
+   assert.equal(b.points, 0);
+   assert.match(b.rule, /no parseable effective date/);
+@@ -99,17 +104,229 @@ test("scoreItem: already-effective rules get no proximity points", () => {
+   assert.equal(s.scoring ?? s ? s.breakdown.find((x) => x.factor === "proximity").points : 0, 0);
+ });
+ 
+-test("scanFeed sorts by score then title, builds timeline by effective date", () => {
++/* ---------- improvement 1: commentWindow factor + itemType (ANPR/RFI) cap ---------- */
++
++test("commentWindow: open comment deadline within 30d earns threshold points", () => {
++  const s = scoreItem({ ...ITEM, status: "rumored", effectiveDate: null, commentDeadline: "2026-11-27" }, RUBRIC, PROFILE, AS_OF);
++  const cw = s.breakdown.find((b) => b.factor === "commentWindow");
++  assert.equal(cw.points, 15);
++  assert.match(cw.rule, /closes in 20d/);
++  assert.equal(s.score, 70); // 30 + 25 + 0 + 15 + 0
++});
++
++test("commentWindow: closed windows and beyond-threshold deadlines earn nothing", () => {
++  const closed = scoreItem({ ...ITEM, commentDeadline: "2026-10-01" }, RUBRIC, PROFILE, AS_OF);
++  assert.equal(closed.breakdown.find((b) => b.factor === "commentWindow").points, 0);
++  assert.match(closed.breakdown.find((b) => b.factor === "commentWindow").rule, /closed/);
++  const far = scoreItem({ ...ITEM, commentDeadline: "2027-06-01" }, RUBRIC, PROFILE, AS_OF);
++  assert.equal(far.breakdown.find((b) => b.factor === "commentWindow").points, 0);
++  assert.match(far.breakdown.find((b) => b.factor === "commentWindow").rule, /beyond all thresholds/);
++});
++
++test("itemType ANPR/RFI is capped below high band with an explanatory flag", () => {
++  for (const itemType of ["ANPR", "rfi"]) {
++    const s = scoreItem({ ...ITEM, itemType }, RUBRIC, PROFILE, AS_OF);
++    assert.equal(s.score, 95); // score unchanged — only the band is capped
++    assert.equal(s.band, "medium");
++    assert.equal(s.flags.length, 1);
++    assert.match(s.flags[0], /ANPR\/RFI/);
++  }
++});
++
++/* ---------- improvement 2: provenance tiers ---------- */
++
++test("provenance: non-primary sources cap band at medium with a trace-to-primary flag", () => {
++  const s = scoreItem({ ...ITEM, provenance: "secondary" }, RUBRIC, PROFILE, AS_OF);
++  assert.equal(s.score, 95);
++  assert.equal(s.band, "medium");
++  assert.match(s.flags.join(" "), /trace to primary/);
++});
++
++test("provenance: primary is never capped; missing or invalid provenance is treated as unknown and capped", () => {
++  assert.equal(scoreItem(ITEM, RUBRIC, PROFILE, AS_OF).flags.length, 0);
++  const missing = scoreItem({ ...ITEM, provenance: undefined }, RUBRIC, PROFILE, AS_OF);
++  assert.equal(missing.band, "medium");
++  assert.equal(missing.provenance, "unknown");
++  const invalid = scoreItem({ ...ITEM, provenance: "some-blog" }, RUBRIC, PROFILE, AS_OF);
++  assert.equal(invalid.band, "medium");
++  assert.equal(invalid.provenance, "unknown");
++  assert.match(invalid.flags.join(" "), /provenance=unknown/);
++});
++
++/* ---------- improvement 3: merge-dedupe (richest wins) ---------- */
++
++test("dedupeItems merges richest fields: kept item without link gains the duplicate's link", () => {
++  const { unique, duplicates } = dedupeItems([
++    { ...ITEM, link: undefined },
++    { ...ITEM, id: "ca-ccpa-amend-dup", link: "https://example.org/b/ca-ccpa", source: "Aggregator B" },
++  ]);
++  assert.equal(unique.length, 1);
++  assert.equal(unique[0].link, "https://example.org/b/ca-ccpa");
++  assert.deepEqual(unique[0].mergedFrom, ["ca-ccpa-amend-dup"]);
++  assert.ok(duplicates[0].mergedFields.includes("link"));
++});
++
++test("dedupeItems merge fills missing dates but never overwrites existing values", () => {
++  const { unique } = dedupeItems([
++    { ...ITEM, effectiveDate: null, publishedDate: null, commentDeadline: undefined },
++    { ...ITEM, id: "dup-2", effectiveDate: "2027-03-01", publishedDate: "2026-10-01", commentDeadline: "2026-12-01" },
++  ]);
++  assert.equal(unique[0].effectiveDate, "2027-03-01");
++  assert.equal(unique[0].publishedDate, "2026-10-01");
++  assert.equal(unique[0].commentDeadline, "2026-12-01");
++  // existing values win: kept title/link/status are never replaced
++  assert.equal(unique[0].title, ITEM.title);
++  assert.equal(unique[0].status, ITEM.status);
++});
++
++/* ---------- improvement 4: coverage gaps (Step 0) ---------- */
++
++test("coverageGaps reports profile jurisdictions and topics with zero feed items, with severity", () => {
++  const gaps = coverageGaps([ITEM], { jurisdictions: ["US-FED", "EU"], coreTopics: ["ai"], relatedTopics: ["employment"] }, RUBRIC);
++  const j = gaps.find((g) => g.kind === "jurisdiction" && g.value === "US-FED");
++  assert.ok(j && j.severity === "high");
++  const e = gaps.find((g) => g.kind === "jurisdiction" && g.value === "EU");
++  assert.ok(e && e.severity === "high");
++  const t = gaps.find((g) => g.kind === "topic" && g.value === "ai");
++  assert.ok(t && t.severity === "medium"); // core topic gap
++  const r = gaps.find((g) => g.kind === "topic" && g.value === "employment");
++  assert.ok(r && r.severity === "low"); // related topic gap
++  // US-CA is covered by ITEM; privacy is covered — neither reported
++  assert.ok(!gaps.some((g) => g.value === "US-CA"));
++  assert.ok(!gaps.some((g) => g.value === "privacy"));
++});
++
++test("coverageGaps returns no gaps when every profile jurisdiction and topic is covered", () => {
++  const gaps = coverageGaps(
++    [ITEM, { ...ITEM, id: "x", jurisdiction: "US-FED", title: "Artificial intelligence reporting act" }],
++    { jurisdictions: ["US-FED", "US-CA"], coreTopics: ["privacy", "ai"] },
++    RUBRIC
++  );
++  assert.deepEqual(gaps, []);
++});
++
++/* ---------- improvement 6: timeline completeness ---------- */
++
++test("scanFeed timeline keeps undated and past items in sections and includes comment-deadline milestones", () => {
++  const scan = scanFeed([
++    ITEM,
++    { ...ITEM, id: "past-rule", title: "Past wage disclosure rule", status: "effective", effectiveDate: "2026-09-17" },
++    { ...ITEM, id: "undated-rule", title: "Undated rumored privacy bill", effectiveDate: null },
++    { ...ITEM, id: "anpr-rule", title: "Agency ANPR on artificial intelligence", itemType: "ANPR", effectiveDate: null, commentDeadline: "2026-11-20", status: "proposed" },
++  ], RUBRIC, PROFILE, AS_OF);
++  // milestones carry kind + date, sorted ascending, split upcoming/past at asOf
++  assert.ok(scan.timeline.upcoming.every((m, i, a) => i === 0 || a[i - 1].date <= m.date));
++  assert.ok(scan.timeline.past.every((m) => m.date < AS_OF));
++  const cw = scan.timeline.upcoming.find((m) => m.itemId === "anpr-rule");
++  assert.equal(cw.kind, "comment-deadline");
++  assert.equal(cw.date, "2026-11-20");
++  // undated items are kept, not dropped
++  assert.ok(scan.timeline.undated.some((u) => u.itemId === "undated-rule"));
++  // actionBy = min(effectiveDate, commentDeadline); null when both absent
++  assert.equal(scan.items.find((i) => i.id === "anpr-rule").actionBy, "2026-11-20");
++  assert.equal(scan.items.find((i) => i.id === "undated-rule").actionBy, null);
++  assert.equal(scan.items.find((i) => i.id === "ca-ccpa-amend").actionBy, "2027-01-01");
++});
++
++test("scanFeed sorts by score then title and includes coverage gaps in the scan result", () => {
+   const scan = scanFeed([ITEM, { ...ITEM, id: "eu-ai-act", title: "EU AI Act GPAI obligations", jurisdiction: "EU", status: "proposed", effectiveDate: "2026-12-01", summary: "AI obligations" }], RUBRIC, PROFILE, AS_OF);
+   assert.equal(scan.items[0].id, "ca-ccpa-amend");
+   assert.equal(scan.rubricVersion, "2026.11");
+-  assert.ok(scan.timeline.every((it, i, a) => i === 0 || String(a[i - 1].effectiveDate) <= String(it.effectiveDate)));
++  assert.equal(scan.timeline.upcoming[0].itemId, "eu-ai-act");
++  // profile jurisdiction US-FED has zero feed items (exact-match coverage check)
++  assert.ok(scan.coverageGaps.some((g) => g.kind === "jurisdiction" && g.value === "US-FED"));
++  assert.ok(!scan.coverageGaps.some((g) => g.value === "US-CA" || g.value === "EU"));
++});
++
++/* ---------- improvement 5: toMarkdown digest ---------- */
++
++const EXAMPLE_INPUT = JSON.parse(readFileSync(new URL("../examples/input.json", import.meta.url), "utf8"));
++
++test("toMarkdown emits a digest with bottom line, coverage gaps, and per-item breakdown (exact snapshot)", () => {
++  const scan = scanFeed(EXAMPLE_INPUT.currentFeed, EXAMPLE_INPUT.rubric, EXAMPLE_INPUT.profile, EXAMPLE_INPUT.asOf);
++  const md = toMarkdown(scan);
++  assert.equal(md, EXPECTED_DIGEST);
+ });
+ 
+-test("diffFeeds detects added, removed, and field changes", () => {
+-  const prev = [ITEM, { id: "old-rule", title: "Old rule", jurisdiction: "US-FED" }];
++const EXPECTED_DIGEST = `# Regulatory horizon scan digest
++
++**Bottom line:** 3 action items (band=high); earliest action date 2026-11-25 (comment window closes — Texas Biometric Retention Schedule). As of 2026-11-07, rubric \`2026.11\`.
++
++## Coverage gaps
++
++- **[high]** jurisdiction UK — profile jurisdiction has zero feed items
++- **[low]** topic security — related topic has zero feed items
++
++## High band (3 items)
++
++### 1. CCPA Amendment: Children's Data Opt-In — score 95
++
++\`ca-ccpa-amend\` · US-CA · privacy · status final · effective 2027-01-01 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +25 (effective in 55d (<= 90d threshold))
++- commentWindow +0 (no comment deadline)
++- status +15 (status="final")
++
++### 2. Texas Biometric Retention Schedule — score 93
++
++\`tx-biometric-retention\` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
++- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
++- topic +25 (core topic)
++- proximity +15 (effective in 145d (<= 180d threshold))
++- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
++- status +8 (status="proposed")
++
++### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
++
++\`us-fcc-ai-disclosure\` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +15 (effective in 100d (<= 180d threshold))
++- commentWindow +0 (no comment deadline)
++- status +15 (status="final")
++
++## Medium band (2 items)
++
++### 4. SEC ANPR: Artificial Intelligence Model Risk — score 78 (band capped)
++
++\`us-sec-ai-anpr\` · US-FED · ai · status proposed · ANPR · effective — · comments close 2026-12-01 · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +0 (no parseable effective date)
++- commentWindow +15 (comment window open, closes in 24d (<= 30d threshold))
++- status +8 (status="proposed")
++- flag: itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high
++
++### 5. NY Wage Transparency for Remote Roles — score 62
++
++\`ny-pay-transparency\` · US-NY · employment · status effective · effective 2026-09-17 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +12 (related topic)
++- proximity +0 (already effective)
++- commentWindow +0 (no comment deadline)
++- status +20 (status="effective")
++
++## Low band (1 item)
++
++### 6. EU Umbrella Data Regulation 2026 — score 8
++
++\`eu-umbrella-2026\` · EU · other · status proposed · effective 2028-03-01 · comments close — · provenance primary
++- jurisdiction +0 (no profile jurisdiction match)
++- topic +0 (topic outside profile)
++- proximity +0 (effective in 480d (beyond all thresholds))
++- commentWindow +0 (no comment deadline)
++- status +8 (status="proposed")
++
++_All data fictional. Not legal advice._
++`;
++
++/* ---------- diffing ---------- */
++
++test("diffFeeds detects added, removed, and field changes (incl. commentDeadline)", () => {
++  const prev = [{ ...ITEM, commentDeadline: "2026-11-20" }, { id: "old-rule", title: "Old rule", jurisdiction: "US-FED" }];
+   const curr = [
+-    { ...ITEM, status: "effective", effectiveDate: "2026-12-15" },
++    { ...ITEM, status: "effective", effectiveDate: "2026-12-15", commentDeadline: "2026-12-15" },
+     { id: "new-rule", title: "New rule", jurisdiction: "US-FED" },
+   ];
+   const d = diffFeeds(prev, curr);
+@@ -117,8 +334,10 @@ test("diffFeeds detects added, removed, and field changes", () => {
+   assert.equal(d.removed.length, 1);
+   const status = d.changed.find((c) => c.field === "status");
+   const eff = d.changed.find((c) => c.field === "effectiveDate");
++  const cdl = d.changed.find((c) => c.field === "commentDeadline");
+   assert.deepEqual(status, { id: "ca-ccpa-amend", field: "status", from: "final", to: "effective" });
+   assert.deepEqual(eff, { id: "ca-ccpa-amend", field: "effectiveDate", from: "2027-01-01", to: "2026-12-15" });
++  assert.deepEqual(cdl, { id: "ca-ccpa-amend", field: "commentDeadline", from: "2026-11-20", to: "2026-12-15" });
+ });
+ 
+ test("diffRubrics reports weight and taxonomy changes with paths", () => {
+@@ -132,6 +351,8 @@ test("diffRubrics reports weight and taxonomy changes with paths", () => {
+   assert.ok(d.some((x) => x.path === "topicTaxonomy.privacy"));
+ });
+ 
++/* ---------- export ---------- */
++
+ test("toCsv emits header + one row per item with escaped fields", () => {
+   const scan = scanFeed([ITEM], RUBRIC, PROFILE, AS_OF);
+   const csv = toCsv(scan);
+@@ -141,3 +362,8 @@ test("toCsv emits header + one row per item with escaped fields", () => {
+   assert.match(lines[1], /1,"?ca-ccpa-amend/);
+   assert.match(lines[1], /95,high/);
+ });
++
++test("toCsv carries band-cap flags into the scoringRules cell (audit trail)", () => {
++  const scan = scanFeed([{ ...ITEM, provenance: "secondary" }], RUBRIC, PROFILE, AS_OF);
++  assert.match(toCsv(scan), /trace to primary/);
++});
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/example.js b/open-artifacts/regulatory-horizon-scan/demo/example.js
+index 06b3b43..ded46db 100644
+--- a/open-artifacts/regulatory-horizon-scan/demo/example.js
++++ b/open-artifacts/regulatory-horizon-scan/demo/example.js
+@@ -2,9 +2,9 @@ export default {
+   "asOf": "2026-11-07",
+   "profile": {
+     "company": "Northwind Robotics, Inc. (fictional)",
+-    "jurisdictions": ["US-FED", "US-CA", "US-NY"],
++    "jurisdictions": ["US-FED", "US-CA", "US-NY", "UK"],
+     "coreTopics": ["privacy", "ai"],
+-    "relatedTopics": ["employment"]
++    "relatedTopics": ["employment", "security"]
+   },
+   "rubric": {
+     "version": "2026.11",
+@@ -18,11 +18,15 @@ export default {
+           { "withinDays": 180, "points": 15 },
+           { "withinDays": 365, "points": 8 }
+         ] },
++      { "id": "commentWindow", "label": "Open comment window", "points": { "other": 0 },
++        "thresholds": [
++          { "withinDays": 30, "points": 15 }
++        ] },
+       { "id": "status", "label": "Rulemaking status", "points": { "effective": 20, "final": 15, "proposed": 8, "rumored": 0, "other": 0 } }
+     ],
+     "topicTaxonomy": {
+       "privacy": ["privacy", "data protection", "ccpa", "gdpr", "data broker", "biometric"],
+-      "ai": ["artificial intelligence", " ai act", "automated decision", "generative ai", "foundation model"],
++      "ai": ["artificial intelligence", " ai act", "ai-generated", "automated decision", "generative ai", "foundation model"],
+       "employment": ["employment", "workplace", "wage", "pay transparency"],
+       "security": ["cybersecurity", "breach notification", "incident reporting"]
+     }
+@@ -33,10 +37,13 @@ export default {
+       "title": "CCPA Amendment: Children's Data Opt-In",
+       "jurisdiction": "California",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": "2027-06-30",
++      "commentDeadline": "2026-09-30",
+       "publishedDate": "2026-08-12",
+       "summary": "Requires opt-in consent before processing minors' personal information; drafted under the CCPA (California Consumer Privacy Act, fictional amendment).",
+       "source": "CA Privacy Agency tracker",
++      "provenance": "primary",
+       "link": "https://example.gov/ca-ccpa-amend"
+     },
+     {
+@@ -44,10 +51,13 @@ export default {
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+       "jurisdiction": "US-FED",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": null,
++      "commentDeadline": "2026-10-15",
+       "publishedDate": "2026-09-02",
+       "summary": "Proposed disclosure banner for AI-generated voice in commercial outreach calls.",
+       "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/fcc-ai-voice"
+     },
+     {
+@@ -55,10 +65,13 @@ export default {
+       "title": "NY Wage Transparency for Remote Roles",
+       "jurisdiction": "New York",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2026-09-17",
++      "commentDeadline": null,
+       "publishedDate": "2026-03-03",
+       "summary": "Salary ranges must be posted for remote roles performed from New York.",
+       "source": "NY DOL bulletin (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/ny-pay-transparency"
+     },
+     {
+@@ -66,10 +79,13 @@ export default {
+       "title": "EU Umbrella Data Regulation 2026",
+       "jurisdiction": "EU",
+       "status": "rumored",
++      "itemType": "rule",
+       "effectiveDate": null,
++      "commentDeadline": null,
+       "publishedDate": null,
+       "summary": "Press-reported draft covering cross-border data flows; no official text published.",
+       "source": "Trade press",
++      "provenance": "secondary",
+       "link": null
+     }
+   ],
+@@ -79,10 +95,13 @@ export default {
+       "title": "CCPA Amendment: Children's Data Opt-In",
+       "jurisdiction": "California",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-01-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-08-12",
+       "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
+       "source": "CA Privacy Agency tracker",
++      "provenance": "primary",
+       "link": "https://example.gov/ca-ccpa-amend"
+     },
+     {
+@@ -90,10 +109,13 @@ export default {
+       "title": "CCPA amendment: childrens data opt in",
+       "jurisdiction": "CA",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-01-01",
++      "commentDeadline": null,
+       "publishedDate": null,
+       "summary": "Same rule, surfaced by a second aggregator feed.",
+       "source": "Aggregator B",
++      "provenance": "secondary",
+       "link": "https://example.org/b/ca-ccpa"
+     },
+     {
+@@ -101,10 +123,13 @@ export default {
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+       "jurisdiction": "US-FED",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-02-15",
++      "commentDeadline": null,
+       "publishedDate": "2026-09-02",
+       "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+       "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/fcc-ai-voice"
+     },
+     {
+@@ -112,10 +137,13 @@ export default {
+       "jurisdiction": "New York",
+       "title": "NY Wage Transparency for Remote Roles",
+       "status": "effective",
++      "itemType": "rule",
+       "effectiveDate": "2026-09-17",
++      "commentDeadline": null,
+       "publishedDate": "2026-03-03",
+       "summary": "Salary ranges must be posted for remote roles performed from New York.",
+       "source": "NY DOL bulletin (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/ny-pay-transparency"
+     },
+     {
+@@ -123,10 +151,13 @@ export default {
+       "title": "EU Umbrella Data Regulation 2026",
+       "jurisdiction": "EU",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": "2028-03-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-10-28",
+       "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
+       "source": "EUR-Lex-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.eu/umbrella-2026"
+     },
+     {
+@@ -134,12 +165,29 @@ export default {
+       "title": "Texas Biometric Retention Schedule",
+       "jurisdiction": "Texas",
+       "status": "proposed",
++      "itemType": "NPRM",
+       "effectiveDate": "2027-04-01",
++      "commentDeadline": "2026-11-25",
+       "publishedDate": "2026-10-30",
+       "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+       "source": "Texas register feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/tx-biometric"
++    },
++    {
++      "id": "us-sec-ai-anpr",
++      "title": "SEC ANPR: Artificial Intelligence Model Risk",
++      "jurisdiction": "US-FED",
++      "status": "proposed",
++      "itemType": "ANPR",
++      "effectiveDate": null,
++      "commentDeadline": "2026-12-01",
++      "publishedDate": "2026-10-20",
++      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
++      "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
++      "link": "https://example.gov/sec-ai-anpr"
+     }
+   ]
+ }
+-
++;
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/index.html b/open-artifacts/regulatory-horizon-scan/demo/index.html
+index f640f18..42e29c1 100644
+--- a/open-artifacts/regulatory-horizon-scan/demo/index.html
++++ b/open-artifacts/regulatory-horizon-scan/demo/index.html
+@@ -36,9 +36,20 @@
+   .chip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: var(--hairline);
+     padding: 2px 8px; margin: 2px 4px 2px 0; background: #fff; }
+   .chip.dup { background: var(--flag-tint); border-color: var(--text); color: var(--bad); border-color: var(--bad);}
++  .chip.gap-high { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
++  .chip.gap-medium { color: var(--warn); border-color: var(--warn); }
++  .chip.gap-low { color: var(--text-secondary); }
++  .flag { font-family: var(--font-mono); font-size: 10px; color: var(--bad); }
++  .weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px 24px; margin-top: 8px; }
++  .weights fieldset { border: var(--hairline); padding: 8px 12px 10px; margin: 0; }
++  .weights legend { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 4px; }
++  .wrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
++  .wrow label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
++  .wrow input { width: 64px; font-family: var(--font-mono); font-size: 12px; padding: 3px 6px; border: var(--hairline); background: #fff; }
+   .diff li { list-style: none; padding: 6px 0; border-bottom: var(--hairline); font-size: 13px; }
+   .from { text-decoration: line-through; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+   .to { font-family: var(--font-mono); font-size: 12px; background: var(--flag-tint); padding: 0 3px; color: var(--warn); border-color: var(--warn);}
++  .tl-label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-top: 14px; }
+   .ok { color: var(--text-secondary); font-size: 13px; }
+   .err { color: #b00020; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
+   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+@@ -52,10 +63,11 @@
+     <div class="rule"></div>
+     <h1>Regulatory horizon scan</h1>
+     <p class="lede">Feed of regulatory items in, deduped + classified + impact-ranked scan out —
+-      scored by a transparent, versioned rubric you can audit and diff. Open reimplementation of
++      scored by a transparent, versioned rubric you can audit, re-weight, and diff. Open reimplementation of
+       Anthropic's closed artifact; the scoring is <b>never</b> a black box.</p>
+     <p class="lede" style="font-size:13px">Every point of every score carries a factor, a rule, and a reason.
+-      When a rule changes between snapshots, you see the field-by-field diff.</p>
++      Comment windows and ANPR/RFI nuance are first-class; non-primary sources are flagged and capped;
++      undated items are kept on the timeline, never dropped.</p>
+   </header>
+ 
+   <section>
+@@ -65,21 +77,32 @@
+       <button id="run">Run scan</button>
+       <button id="diffBtn" class="ghost">Diff vs previous snapshot</button>
+       <button id="csvBtn" class="ghost">Export CSV</button>
++      <button id="mdBtn" class="ghost">Download digest (.md)</button>
+     </div>
+     <p class="err" id="err" hidden></p>
+   </section>
+ 
++  <section>
++    <h2>Rubric weights (rules-as-data — edit and re-run)</h2>
++    <div id="weights" class="weights"></div>
++    <div class="row">
++      <button id="rerun" class="ghost">Apply weights &amp; re-run</button>
++      <button id="resetW" class="ghost">Reset to rubric defaults</button>
++    </div>
++  </section>
++
+   <section>
+     <h2>Ranked scan</h2>
++    <div id="gaps"></div>
+     <div id="dedupe" class="ok"></div>
+     <div style="overflow-x:auto"><table id="scanTable">
+-      <thead><tr><th>#</th><th>Rule</th><th>Juris</th><th>Topic</th><th>Status</th><th>Effective</th><th>Score</th><th>Why this score</th></tr></thead>
++      <thead><tr><th>#</th><th>Rule</th><th>Juris</th><th>Topic</th><th>Type</th><th>Status</th><th>Effective</th><th>Comments close</th><th>Score</th><th>Why this score</th></tr></thead>
+       <tbody></tbody>
+     </table></div>
+   </section>
+ 
+   <section>
+-    <h2>Timeline by effective date</h2>
++    <h2>Timeline — actionBy = earliest of effective date / comment deadline</h2>
+     <ul id="timeline" class="diff"></ul>
+   </section>
+ 
+@@ -96,23 +119,71 @@
+ </div>
+ 
+ <script type="module">
+-  import { scanFeed, diffFeeds, toCsv } from "../core/core.js";
++  import { scanFeed, diffFeeds, toCsv, toMarkdown } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+-  const RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile, AS_OF = EXAMPLE.asOf;
++  const DEFAULT_RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile, AS_OF = EXAMPLE.asOf;
++  let rubric = structuredClone(DEFAULT_RUBRIC);
+   const $ = (id) => document.getElementById(id);
+ 
+   $("input").value = JSON.stringify({ asOf: AS_OF, currentFeed: EXAMPLE.currentFeed }, null, 2);
+   let lastScan = null;
+ 
+-  $("run").onclick = () => {
++  /* ---- rubric weight editor (every factor point is an editable number) ---- */
++  function buildWeights() {
++    const host = $("weights");
++    host.innerHTML = "";
++    for (const f of rubric.factors) {
++      const fs = document.createElement("fieldset");
++      const legend = document.createElement("legend");
++      legend.textContent = f.id;
++      fs.appendChild(legend);
++      for (const [k, v] of Object.entries(f.points ?? {})) {
++        fs.appendChild(wrow(`${f.id}:${k}`, v));
++      }
++      (f.thresholds ?? []).forEach((t, i) => {
++        fs.appendChild(wrow(`${f.id}:≤${t.withinDays}d`, t.points, `thr-${i}`));
++      });
++      host.appendChild(fs);
++    }
++  }
++  function wrow(label, value, thr) {
++    const div = document.createElement("div");
++    div.className = "wrow";
++    const lab = document.createElement("label");
++    lab.textContent = label;
++    const inp = document.createElement("input");
++    inp.type = "number"; inp.value = value; inp.step = "1";
++    inp.dataset.factor = label.split(":")[0]; inp.dataset.key = label.split(":")[1];
++    if (thr !== undefined) inp.dataset.thr = thr;
++    div.append(lab, inp);
++    return div;
++  }
++  function readWeights() {
++    const next = structuredClone(DEFAULT_RUBRIC);
++    for (const inp of $("weights").querySelectorAll("input")) {
++      const f = next.factors.find((x) => x.id === inp.dataset.factor);
++      if (!f) continue;
++      const n = Number(inp.value);
++      if (!Number.isFinite(n)) continue;
++      if (inp.dataset.thr !== undefined) f.thresholds[+inp.dataset.thr].points = n;
++      else f.points[inp.dataset.key] = n;
++    }
++    return next;
++  }
++  $("rerun").onclick = () => { rubric = readWeights(); run(); };
++  $("resetW").onclick = () => { rubric = structuredClone(DEFAULT_RUBRIC); buildWeights(); run(); };
++
++  /* ---- scan ---- */
++  function run() {
+     $("err").hidden = true;
+     try {
+       const feed = JSON.parse($("input").value).currentFeed;
+-      lastScan = scanFeed(feed, RUBRIC, PROFILE, AS_OF);
++      lastScan = scanFeed(feed, rubric, PROFILE, AS_OF);
+       renderScan(lastScan);
+     } catch (e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; }
+-  };
++  }
++  $("run").onclick = run;
+ 
+   function renderScan(scan) {
+     const tb = $("scanTable").querySelector("tbody");
+@@ -122,22 +193,33 @@
+       tr.className = "band-" + it.scoring.band;
+       const why = document.createElement("details");
+       why.innerHTML = `<summary>breakdown</summary><ul class="breakdown">` +
+-        it.scoring.breakdown.map((b) => `<li><b>${b.factor} +${b.points}</b> — ${b.rule} <i>(${b.note})</i></li>`).join("") +
++        it.scoring.breakdown.map((b) => `<li><b>${b.factor} +${b.points}</b> — ${b.rule} <i>(${esc(b.note)})</i></li>`).join("") +
++        (it.scoring.flags ?? []).map((f) => `<li class="flag">flag: ${esc(f)}</li>`).join("") +
+         `</ul>`;
++      const flags = (it.scoring.flags ?? []).map((f) => `<br><span class="flag">capped</span>`).join("");
+       tr.innerHTML = `<td class="score">${i + 1}</td><td>${esc(it.title)}</td><td><span class="chip">${it.jurisdiction}</span></td>` +
+-        `<td>${it.topic}</td><td>${it.status}</td><td class="score">${it.effectiveDate ?? "—"}</td>` +
+-        `<td class="score">${it.scoring.score}<br><small style="color:var(--text-secondary)">${it.scoring.band}</small></td>`;
++        `<td>${it.topic}</td><td>${esc((it.itemType ?? "—").toUpperCase())}</td><td>${esc(it.status)}</td>` +
++        `<td class="score">${it.effectiveDate ?? "—"}</td><td class="score">${it.commentDeadline ?? "—"}</td>` +
++        `<td class="score">${it.scoring.score}<br><small style="color:var(--text-secondary)">${it.scoring.band}</small>${flags}</td>`;
+       tr.appendChild(document.createElement("td")).appendChild(why);
+       tb.appendChild(tr);
+     });
+     $("dedupe").innerHTML = scan.duplicates.length
+-      ? "Deduped: " + scan.duplicates.map((d) => `<span class="chip dup">${d.droppedId} → ${d.keptId}</span>`).join("")
++      ? "Deduped: " + scan.duplicates.map((d) => `<span class="chip dup">${d.droppedId} → ${d.keptId}${d.mergedFields.length ? " (+" + d.mergedFields.join("/") + ")" : ""}</span>`).join("")
+       : "No duplicates in this feed.";
+-    $("timeline").innerHTML = scan.timeline
+-      .map((it) => `<li><span class="score">${it.effectiveDate}</span> · score ${it.scoring.score} · ${esc(it.title)} <span class="chip">${it.jurisdiction}</span></li>`)
+-      .join("") || '<li class="ok">No dated items.</li>';
++    const gaps = scan.coverageGaps ?? [];
++    $("gaps").innerHTML = gaps.length
++      ? "Coverage gaps: " + gaps.map((g) => `<span class="chip gap-${g.severity}">${g.severity} · ${g.kind} ${g.value}</span>`).join("")
++      : "Coverage: no gaps — every profile jurisdiction/topic has feed items.";
++    const ms = (m) => `<li><span class="score">${m.date}</span> · <span class="chip">${m.kind}</span> · score ${m.score} · ${esc(m.title)} <span class="chip">${m.jurisdiction}</span></li>`;
++    $("timeline").innerHTML =
++      `<div class="tl-label">Upcoming</div>` + (scan.timeline.upcoming.map(ms).join("") || '<li class="ok">No upcoming milestones.</li>') +
++      (scan.timeline.past.length ? `<div class="tl-label">Past</div>` + scan.timeline.past.map(ms).join("") : "") +
++      (scan.timeline.undated.length ? `<div class="tl-label">Undated (kept, not dropped)</div>` +
++        scan.timeline.undated.map((u) => `<li>score ${u.score} · ${esc(u.title)} <span class="chip">${u.jurisdiction}</span></li>`).join("") : "");
+   }
+ 
++  /* ---- diff ---- */
+   $("diffBtn").onclick = () => {
+     let feed;
+     try { feed = JSON.parse($("input").value).currentFeed; } catch (e) { return err(e); }
+@@ -149,16 +231,25 @@
+     $("diff").innerHTML = lines.join("") || '<li class="ok">No changes between snapshots.</li>';
+   };
+ 
++  /* ---- exports ---- */
+   $("csvBtn").onclick = () => {
+     if (!lastScan) return err(new Error("run the scan first"));
+-    const blob = new Blob([toCsv(lastScan)], { type: "text/csv" });
+-    const a = document.createElement("a");
+-    a.href = URL.createObjectURL(blob); a.download = "regulatory-horizon-scan.csv"; a.click();
++    download("regulatory-horizon-scan.csv", toCsv(lastScan), "text/csv");
+   };
++  $("mdBtn").onclick = () => {
++    if (!lastScan) return err(new Error("run the scan first"));
++    download("regulatory-horizon-scan-digest.md", toMarkdown(lastScan), "text/markdown");
++  };
++  function download(name, text, type) {
++    const blob = new Blob([text], { type });
++    const a = document.createElement("a");
++    a.href = URL.createObjectURL(blob); a.download = name; a.click();
++  }
+ 
+   function err(e) { $("err").hidden = false; $("err").textContent = "Error: " + e.message; }
+   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ 
++  buildWeights();
+   $("run").click(); // prefilled worked example renders on load
+ </script>
+ </body>
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/digest.md b/open-artifacts/regulatory-horizon-scan/examples/digest.md
+new file mode 100644
+index 0000000..a3f0595
+--- /dev/null
++++ b/open-artifacts/regulatory-horizon-scan/examples/digest.md
+@@ -0,0 +1,71 @@
++# Regulatory horizon scan digest
++
++**Bottom line:** 3 action items (band=high); earliest action date 2026-11-25 (comment window closes — Texas Biometric Retention Schedule). As of 2026-11-07, rubric `2026.11`.
++
++## Coverage gaps
++
++- **[high]** jurisdiction UK — profile jurisdiction has zero feed items
++- **[low]** topic security — related topic has zero feed items
++
++## High band (3 items)
++
++### 1. CCPA Amendment: Children's Data Opt-In — score 95
++
++`ca-ccpa-amend` · US-CA · privacy · status final · effective 2027-01-01 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +25 (effective in 55d (<= 90d threshold))
++- commentWindow +0 (no comment deadline)
++- status +15 (status="final")
++
++### 2. Texas Biometric Retention Schedule — score 93
++
++`tx-biometric-retention` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
++- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
++- topic +25 (core topic)
++- proximity +15 (effective in 145d (<= 180d threshold))
++- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
++- status +8 (status="proposed")
++
++### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
++
++`us-fcc-ai-disclosure` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +15 (effective in 100d (<= 180d threshold))
++- commentWindow +0 (no comment deadline)
++- status +15 (status="final")
++
++## Medium band (2 items)
++
++### 4. SEC ANPR: Artificial Intelligence Model Risk — score 78 (band capped)
++
++`us-sec-ai-anpr` · US-FED · ai · status proposed · ANPR · effective — · comments close 2026-12-01 · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +25 (core topic)
++- proximity +0 (no parseable effective date)
++- commentWindow +15 (comment window open, closes in 24d (<= 30d threshold))
++- status +8 (status="proposed")
++- flag: itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high
++
++### 5. NY Wage Transparency for Remote Roles — score 62
++
++`ny-pay-transparency` · US-NY · employment · status effective · effective 2026-09-17 · comments close — · provenance primary
++- jurisdiction +30 (exact profile jurisdiction match)
++- topic +12 (related topic)
++- proximity +0 (already effective)
++- commentWindow +0 (no comment deadline)
++- status +20 (status="effective")
++
++## Low band (1 item)
++
++### 6. EU Umbrella Data Regulation 2026 — score 8
++
++`eu-umbrella-2026` · EU · other · status proposed · effective 2028-03-01 · comments close — · provenance primary
++- jurisdiction +0 (no profile jurisdiction match)
++- topic +0 (topic outside profile)
++- proximity +0 (effective in 480d (beyond all thresholds))
++- commentWindow +0 (no comment deadline)
++- status +8 (status="proposed")
++
++_All data fictional. Not legal advice._
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/input.json b/open-artifacts/regulatory-horizon-scan/examples/input.json
+index 37e0fda..945400f 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/input.json
++++ b/open-artifacts/regulatory-horizon-scan/examples/input.json
+@@ -2,9 +2,9 @@
+   "asOf": "2026-11-07",
+   "profile": {
+     "company": "Northwind Robotics, Inc. (fictional)",
+-    "jurisdictions": ["US-FED", "US-CA", "US-NY"],
++    "jurisdictions": ["US-FED", "US-CA", "US-NY", "UK"],
+     "coreTopics": ["privacy", "ai"],
+-    "relatedTopics": ["employment"]
++    "relatedTopics": ["employment", "security"]
+   },
+   "rubric": {
+     "version": "2026.11",
+@@ -18,11 +18,15 @@
+           { "withinDays": 180, "points": 15 },
+           { "withinDays": 365, "points": 8 }
+         ] },
++      { "id": "commentWindow", "label": "Open comment window", "points": { "other": 0 },
++        "thresholds": [
++          { "withinDays": 30, "points": 15 }
++        ] },
+       { "id": "status", "label": "Rulemaking status", "points": { "effective": 20, "final": 15, "proposed": 8, "rumored": 0, "other": 0 } }
+     ],
+     "topicTaxonomy": {
+       "privacy": ["privacy", "data protection", "ccpa", "gdpr", "data broker", "biometric"],
+-      "ai": ["artificial intelligence", " ai act", "automated decision", "generative ai", "foundation model"],
++      "ai": ["artificial intelligence", " ai act", "ai-generated", "automated decision", "generative ai", "foundation model"],
+       "employment": ["employment", "workplace", "wage", "pay transparency"],
+       "security": ["cybersecurity", "breach notification", "incident reporting"]
+     }
+@@ -33,10 +37,13 @@
+       "title": "CCPA Amendment: Children's Data Opt-In",
+       "jurisdiction": "California",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": "2027-06-30",
++      "commentDeadline": "2026-09-30",
+       "publishedDate": "2026-08-12",
+       "summary": "Requires opt-in consent before processing minors' personal information; drafted under the CCPA (California Consumer Privacy Act, fictional amendment).",
+       "source": "CA Privacy Agency tracker",
++      "provenance": "primary",
+       "link": "https://example.gov/ca-ccpa-amend"
+     },
+     {
+@@ -44,10 +51,13 @@
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+       "jurisdiction": "US-FED",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": null,
++      "commentDeadline": "2026-10-15",
+       "publishedDate": "2026-09-02",
+       "summary": "Proposed disclosure banner for AI-generated voice in commercial outreach calls.",
+       "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/fcc-ai-voice"
+     },
+     {
+@@ -55,10 +65,13 @@
+       "title": "NY Wage Transparency for Remote Roles",
+       "jurisdiction": "New York",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2026-09-17",
++      "commentDeadline": null,
+       "publishedDate": "2026-03-03",
+       "summary": "Salary ranges must be posted for remote roles performed from New York.",
+       "source": "NY DOL bulletin (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/ny-pay-transparency"
+     },
+     {
+@@ -66,10 +79,13 @@
+       "title": "EU Umbrella Data Regulation 2026",
+       "jurisdiction": "EU",
+       "status": "rumored",
++      "itemType": "rule",
+       "effectiveDate": null,
++      "commentDeadline": null,
+       "publishedDate": null,
+       "summary": "Press-reported draft covering cross-border data flows; no official text published.",
+       "source": "Trade press",
++      "provenance": "secondary",
+       "link": null
+     }
+   ],
+@@ -79,10 +95,13 @@
+       "title": "CCPA Amendment: Children's Data Opt-In",
+       "jurisdiction": "California",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-01-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-08-12",
+       "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
+       "source": "CA Privacy Agency tracker",
++      "provenance": "primary",
+       "link": "https://example.gov/ca-ccpa-amend"
+     },
+     {
+@@ -90,10 +109,13 @@
+       "title": "CCPA amendment: childrens data opt in",
+       "jurisdiction": "CA",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-01-01",
++      "commentDeadline": null,
+       "publishedDate": null,
+       "summary": "Same rule, surfaced by a second aggregator feed.",
+       "source": "Aggregator B",
++      "provenance": "secondary",
+       "link": "https://example.org/b/ca-ccpa"
+     },
+     {
+@@ -101,10 +123,13 @@
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+       "jurisdiction": "US-FED",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-02-15",
++      "commentDeadline": null,
+       "publishedDate": "2026-09-02",
+       "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+       "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/fcc-ai-voice"
+     },
+     {
+@@ -112,10 +137,13 @@
+       "jurisdiction": "New York",
+       "title": "NY Wage Transparency for Remote Roles",
+       "status": "effective",
++      "itemType": "rule",
+       "effectiveDate": "2026-09-17",
++      "commentDeadline": null,
+       "publishedDate": "2026-03-03",
+       "summary": "Salary ranges must be posted for remote roles performed from New York.",
+       "source": "NY DOL bulletin (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/ny-pay-transparency"
+     },
+     {
+@@ -123,10 +151,13 @@
+       "title": "EU Umbrella Data Regulation 2026",
+       "jurisdiction": "EU",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": "2028-03-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-10-28",
+       "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
+       "source": "EUR-Lex-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.eu/umbrella-2026"
+     },
+     {
+@@ -134,11 +165,28 @@
+       "title": "Texas Biometric Retention Schedule",
+       "jurisdiction": "Texas",
+       "status": "proposed",
++      "itemType": "NPRM",
+       "effectiveDate": "2027-04-01",
++      "commentDeadline": "2026-11-25",
+       "publishedDate": "2026-10-30",
+       "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+       "source": "Texas register feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/tx-biometric"
++    },
++    {
++      "id": "us-sec-ai-anpr",
++      "title": "SEC ANPR: Artificial Intelligence Model Risk",
++      "jurisdiction": "US-FED",
++      "status": "proposed",
++      "itemType": "ANPR",
++      "effectiveDate": null,
++      "commentDeadline": "2026-12-01",
++      "publishedDate": "2026-10-20",
++      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
++      "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
++      "link": "https://example.gov/sec-ai-anpr"
+     }
+   ]
+ }
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/report.md b/open-artifacts/regulatory-horizon-scan/examples/report.md
+index bd1ecc5..f19c576 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/report.md
++++ b/open-artifacts/regulatory-horizon-scan/examples/report.md
+@@ -1,50 +1,65 @@
+ # Regulatory horizon scan — worked example (as of 2026-11-07)
+ 
+-Company profile: **Northwind Robotics, Inc. (fictional)** · jurisdictions US-FED, US-CA, US-NY · rubric `2026.11`
++Company profile: **Northwind Robotics, Inc. (fictional)** · jurisdictions US-FED, US-CA, US-NY, UK · rubric `2026.11`
+ 
+ ## Ranked scan (deduped feed)
+ 
+-| # | Rule | Juris | Topic | Status | Effective | Score | Band |
+-|---|---|---|---|---|---|---|---|
+-| 1 | CCPA Amendment: Children's Data Opt-In | US-CA | privacy | final | 2027-01-01 | **95** | high |
+-| 2 | Texas Biometric Retention Schedule | US-TX | privacy | proposed | 2027-04-01 | **78** | high |
+-| 3 | NY Wage Transparency for Remote Roles | US-NY | employment | effective | 2026-09-17 | **62** | medium |
+-| 4 | FCC AI Voice Disclosure in Outreach Calls | US-FED | other | final | 2027-02-15 | **60** | medium |
+-| 5 | EU Umbrella Data Regulation 2026 | EU | other | proposed | 2028-03-01 | **8** | low |
++| # | Rule | Juris | Topic | Type | Status | Effective | Comments close | Score | Band |
++|---|---|---|---|---|---|---|---|---|---|
++| 1 | CCPA Amendment: Children's Data Opt-In | US-CA | privacy | rule | final | 2027-01-01 | — | **95** | high |
++| 2 | Texas Biometric Retention Schedule | US-TX | privacy | NPRM | proposed | 2027-04-01 | 2026-11-25 | **93** | high |
++| 3 | FCC AI Voice Disclosure in Outreach Calls | US-FED | ai | rule | final | 2027-02-15 | — | **85** | high |
++| 4 | SEC ANPR: Artificial Intelligence Model Risk | US-FED | ai | ANPR | proposed | — | 2026-12-01 | **78** | medium (capped) |
++| 5 | NY Wage Transparency for Remote Roles | US-NY | employment | rule | effective | 2026-09-17 | — | **62** | medium |
++| 6 | EU Umbrella Data Regulation 2026 | EU | other | rule | proposed | 2028-03-01 | — | **8** | low |
+ 
+-Deduped 1 duplicate entry: `ca-ccpa-amend-dup` → kept `ca-ccpa-amend` (same normalized title + jurisdiction)
++Deduped 1 duplicate entry: `ca-ccpa-amend-dup` → merged into `ca-ccpa-amend` (same normalized title + jurisdiction)
++
++## Coverage check (Step 0)
++
++- **[high]** jurisdiction UK — profile jurisdiction has zero feed items
++- **[low]** topic security — related topic has zero feed items
+ 
+ ## Score transparency (rubric breakdown for the top item)
+ 
+ - **jurisdiction** +30 — exact profile jurisdiction match _(US-CA)_
+ - **topic** +25 — core topic _(topic=privacy via "ccpa")_
+ - **proximity** +25 — effective in 55d (<= 90d threshold) _(2027-01-01 (+55d))_
++- **commentWindow** +0 — no comment deadline _(none)_
+ - **status** +15 — status="final" _(final)_
+ 
+-## Timeline (by effective date)
++## Timeline (upcoming milestones, then past and undated)
++
++- 2026-11-25 · comment-deadline · score 93 · Texas Biometric Retention Schedule (US-TX)
++- 2026-12-01 · comment-deadline · score 78 · SEC ANPR: Artificial Intelligence Model Risk (US-FED)
++- 2027-01-01 · effective · score 95 · CCPA Amendment: Children's Data Opt-In (US-CA)
++- 2027-02-15 · effective · score 85 · FCC AI Voice Disclosure in Outreach Calls (US-FED)
++- 2027-04-01 · effective · score 93 · Texas Biometric Retention Schedule (US-TX)
++- 2028-03-01 · effective · score 8 · EU Umbrella Data Regulation 2026 (EU)
+ 
+-- 2026-09-17 · score 62 · NY Wage Transparency for Remote Roles (US-NY)
+-- 2027-01-01 · score 95 · CCPA Amendment: Children's Data Opt-In (US-CA)
+-- 2027-02-15 · score 60 · FCC AI Voice Disclosure in Outreach Calls (US-FED)
+-- 2027-04-01 · score 78 · Texas Biometric Retention Schedule (US-TX)
+-- 2028-03-01 · score 8 · EU Umbrella Data Regulation 2026 (EU)
++_Past:_
++
++- 2026-09-17 · effective · score 62 · NY Wage Transparency for Remote Roles (US-NY)
+ 
+ ## Diff since previous snapshot
+ 
+-**Added:** ca-ccpa-amend-dup, tx-biometric-retention
++**Added:** ca-ccpa-amend-dup, tx-biometric-retention, us-sec-ai-anpr
+ 
+ **Removed:** none
+ 
+ **Changed:**
+ - `ca-ccpa-amend` status: `proposed` → `final`
+ - `ca-ccpa-amend` effectiveDate: `2027-06-30` → `2027-01-01`
++- `ca-ccpa-amend` commentDeadline: `2026-09-30` → `null`
+ - `ca-ccpa-amend` summary: `Requires opt-in consent before processing minors' personal information; drafted under the CCPA (California Consumer Privacy Act, fictional amendment).` → `Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.`
+ - `us-fcc-ai-disclosure` status: `proposed` → `final`
+ - `us-fcc-ai-disclosure` effectiveDate: `null` → `2027-02-15`
++- `us-fcc-ai-disclosure` commentDeadline: `2026-10-15` → `null`
+ - `us-fcc-ai-disclosure` summary: `Proposed disclosure banner for AI-generated voice in commercial outreach calls.` → `Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.`
+ - `ny-pay-transparency` status: `final` → `effective`
+ - `eu-umbrella-2026` status: `rumored` → `proposed`
+ - `eu-umbrella-2026` effectiveDate: `null` → `2028-03-01`
++- `eu-umbrella-2026` provenance: `secondary` → `primary`
+ - `eu-umbrella-2026` publishedDate: `null` → `2026-10-28`
+ - `eu-umbrella-2026` summary: `Press-reported draft covering cross-border data flows; no official text published.` → `Official proposal published: cross-border data-flow licensing with a 15-month runway.`
+ - `eu-umbrella-2026` link: `null` → `https://example.eu/umbrella-2026`
+@@ -54,4 +69,6 @@ Deduped 1 duplicate entry: `ca-ccpa-amend-dup` → kept `ca-ccpa-amend` (same no
+ - `version`: "2026.11" → "2026.11-r2"
+ - `factors.status.points.proposed`: 8 → 10
+ 
++The full digest export (`digest.md`) carries the bottom line, coverage gaps, and a per-item breakdown — see `toMarkdown(scan)`.
++
+ _All data fictional. Not legal advice._
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/run.js b/open-artifacts/regulatory-horizon-scan/examples/run.js
+index a51e0f9..c077b65 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/run.js
++++ b/open-artifacts/regulatory-horizon-scan/examples/run.js
+@@ -5,15 +5,16 @@
+ import { readFileSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { dirname, join } from "node:path";
+-import { scanFeed, diffFeeds, diffRubrics, toCsv } from "../core/core.js";
++import { scanFeed, diffFeeds, diffRubrics, toCsv, toMarkdown } from "../core/core.js";
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+ 
+-// 1. Full scan of the current feed (dedupe + classify + score + timeline)
++// 1. Full scan of the current feed (dedupe + classify + score + timeline + coverage check)
+ const scan = scanFeed(input.currentFeed, input.rubric, input.profile, input.asOf);
+ writeFileSync(join(here, "scan.json"), JSON.stringify(scan, null, 2) + "\n");
+ writeFileSync(join(here, "scan.csv"), toCsv(scan));
++writeFileSync(join(here, "digest.md"), toMarkdown(scan));
+ 
+ // 2. Diff view: what changed since the previous feed snapshot
+ const feedDiff = diffFeeds(input.previousFeed, input.currentFeed);
+@@ -31,28 +32,36 @@ const md = [
+   "",
+   "## Ranked scan (deduped feed)",
+   "",
+-  "| # | Rule | Juris | Topic | Status | Effective | Score | Band |",
+-  "|---|---|---|---|---|---|---|---|",
++  "| # | Rule | Juris | Topic | Type | Status | Effective | Comments close | Score | Band |",
++  "|---|---|---|---|---|---|---|---|---|---|",
+   ...scan.items.map(
+     (it, i) =>
+-      `| ${i + 1} | ${it.title} | ${it.jurisdiction} | ${it.topic} | ${it.status} | ${it.effectiveDate ?? "—"} | **${it.scoring.score}** | ${it.scoring.band} |`
++      `| ${i + 1} | ${it.title} | ${it.jurisdiction} | ${it.topic} | ${it.itemType ?? "—"} | ${it.status} | ${it.effectiveDate ?? "—"} | ${it.commentDeadline ?? "—"} | **${it.scoring.score}** | ${it.scoring.band}${(it.scoring.flags ?? []).length ? " (capped)" : ""} |`
+   ),
+   "",
+   scan.duplicates.length
+     ? `Deduped ${scan.duplicates.length} duplicate entr${scan.duplicates.length === 1 ? "y" : "ies"}: ${scan.duplicates
+-        .map((d) => `\`${d.droppedId}\` → kept \`${d.keptId}\` (${d.reason})`)
++        .map((d) => `\`${d.droppedId}\` → merged into \`${d.keptId}\` (${d.reason}${d.mergedFields.length ? `; took ${d.mergedFields.join("+")}` : ""})`)
+         .join("; ")}`
+     : "No duplicates found.",
+   "",
++  "## Coverage check (Step 0)",
++  "",
++  ...(scan.coverageGaps.length
++    ? scan.coverageGaps.map((g) => `- **[${g.severity}]** ${g.kind} ${g.value} — ${g.note}`)
++    : ["- No gaps: every profile jurisdiction and topic has at least one feed item."]),
++  "",
+   "## Score transparency (rubric breakdown for the top item)",
+   "",
+   ...scan.items[0].scoring.breakdown.flatMap((b) => [
+     `- **${b.factor}** +${b.points} — ${b.rule} _(${b.note})_`,
+   ]),
+   "",
+-  "## Timeline (by effective date)",
++  "## Timeline (upcoming milestones, then past and undated)",
+   "",
+-  ...scan.timeline.map((it) => `- ${it.effectiveDate} · score ${it.scoring.score} · ${it.title} (${it.jurisdiction})`),
++  ...scan.timeline.upcoming.map((m) => `- ${m.date} · ${m.kind} · score ${m.score} · ${m.title} (${m.jurisdiction})`),
++  ...(scan.timeline.past.length ? ["", "_Past:_", "", ...scan.timeline.past.map((m) => `- ${m.date} · ${m.kind} · score ${m.score} · ${m.title} (${m.jurisdiction})`)] : []),
++  ...(scan.timeline.undated.length ? ["", "_Undated (kept, not dropped):_", "", ...scan.timeline.undated.map((u) => `- score ${u.score} · ${u.title} (${u.jurisdiction})`)] : []),
+   "",
+   "## Diff since previous snapshot",
+   "",
+@@ -69,8 +78,10 @@ const md = [
+   "",
+   ...(rubricDiff.length ? rubricDiff.map((c) => `- \`${c.path}\`: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`) : ["- no changes"]),
+   "",
++  "The full digest export (`digest.md`) carries the bottom line, coverage gaps, and a per-item breakdown — see `toMarkdown(scan)`.",
++  "",
+   "_All data fictional. Not legal advice._",
+   "",
+ ].join("\n");
+ writeFileSync(join(here, "report.md"), md);
+-console.log("wrote scan.json, scan.csv, report.md —", scan.items.length, "unique items,", feedDiff.changed.length, "field changes,", rubricDiff.length, "rubric changes");
++console.log("wrote scan.json, scan.csv, digest.md, report.md —", scan.items.length, "unique items,", scan.coverageGaps.length, "coverage gaps,", feedDiff.changed.length, "field changes,", rubricDiff.length, "rubric changes");
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/scan.csv b/open-artifacts/regulatory-horizon-scan/examples/scan.csv
+index 0f6b26e..8839888 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/scan.csv
++++ b/open-artifacts/regulatory-horizon-scan/examples/scan.csv
+@@ -1,6 +1,7 @@
+ rank,id,title,jurisdiction,topic,status,effectiveDate,score,band,scoringRules,link
+-1,ca-ccpa-amend,CCPA Amendment: Children's Data Opt-In,US-CA,privacy,final,2027-01-01,95,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:25 (effective in 55d (<= 90d threshold)) | status:15 (status=""final"")",https://example.gov/ca-ccpa-amend
+-2,tx-biometric-retention,Texas Biometric Retention Schedule,US-TX,privacy,proposed,2027-04-01,78,high,"jurisdiction:30 (US state rule, but US-FED in profile (federal overlay applies nationwide)) | topic:25 (core topic) | proximity:15 (effective in 145d (<= 180d threshold)) | status:8 (status=""proposed"")",https://example.gov/tx-biometric
+-3,ny-pay-transparency,NY Wage Transparency for Remote Roles,US-NY,employment,effective,2026-09-17,62,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:12 (related topic) | proximity:0 (already effective) | status:20 (status=""effective"")",https://example.gov/ny-pay-transparency
+-4,us-fcc-ai-disclosure,FCC AI Voice Disclosure in Outreach Calls,US-FED,other,final,2027-02-15,60,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:0 (topic outside profile) | proximity:15 (effective in 100d (<= 180d threshold)) | status:15 (status=""final"")",https://example.gov/fcc-ai-voice
+-5,eu-umbrella-2026,EU Umbrella Data Regulation 2026,EU,other,proposed,2028-03-01,8,low,"jurisdiction:0 (no profile jurisdiction match) | topic:0 (topic outside profile) | proximity:0 (effective in 480d (beyond all thresholds)) | status:8 (status=""proposed"")",https://example.eu/umbrella-2026
++1,ca-ccpa-amend,CCPA Amendment: Children's Data Opt-In,US-CA,privacy,final,2027-01-01,95,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:25 (effective in 55d (<= 90d threshold)) | commentWindow:0 (no comment deadline) | status:15 (status=""final"")",https://example.gov/ca-ccpa-amend
++2,tx-biometric-retention,Texas Biometric Retention Schedule,US-TX,privacy,proposed,2027-04-01,93,high,"jurisdiction:30 (US state rule, but US-FED in profile (federal overlay applies nationwide)) | topic:25 (core topic) | proximity:15 (effective in 145d (<= 180d threshold)) | commentWindow:15 (comment window open, closes in 18d (<= 30d threshold)) | status:8 (status=""proposed"")",https://example.gov/tx-biometric
++3,us-fcc-ai-disclosure,FCC AI Voice Disclosure in Outreach Calls,US-FED,ai,final,2027-02-15,85,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:15 (effective in 100d (<= 180d threshold)) | commentWindow:0 (no comment deadline) | status:15 (status=""final"")",https://example.gov/fcc-ai-voice
++4,us-sec-ai-anpr,SEC ANPR: Artificial Intelligence Model Risk,US-FED,ai,proposed,,78,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:0 (no parseable effective date) | commentWindow:15 (comment window open, closes in 24d (<= 30d threshold)) | status:8 (status=""proposed"") | flag: itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high",https://example.gov/sec-ai-anpr
++5,ny-pay-transparency,NY Wage Transparency for Remote Roles,US-NY,employment,effective,2026-09-17,62,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:12 (related topic) | proximity:0 (already effective) | commentWindow:0 (no comment deadline) | status:20 (status=""effective"")",https://example.gov/ny-pay-transparency
++6,eu-umbrella-2026,EU Umbrella Data Regulation 2026,EU,other,proposed,2028-03-01,8,low,"jurisdiction:0 (no profile jurisdiction match) | topic:0 (topic outside profile) | proximity:0 (effective in 480d (beyond all thresholds)) | commentWindow:0 (no comment deadline) | status:8 (status=""proposed"")",https://example.eu/umbrella-2026
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/scan.json b/open-artifacts/regulatory-horizon-scan/examples/scan.json
+index fff7fab..8603585 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/scan.json
++++ b/open-artifacts/regulatory-horizon-scan/examples/scan.json
+@@ -8,12 +8,19 @@
+       "title": "CCPA Amendment: Children's Data Opt-In",
+       "jurisdiction": "US-CA",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-01-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-08-12",
+       "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
+       "source": "CA Privacy Agency tracker",
++      "provenance": "primary",
+       "link": "https://example.gov/ca-ccpa-amend",
++      "mergedFrom": [
++        "ca-ccpa-amend-dup"
++      ],
+       "topic": "privacy",
++      "actionBy": "2027-01-01",
+       "scoring": {
+         "score": 95,
+         "band": "high",
+@@ -36,13 +43,22 @@
+             "points": 25,
+             "note": "2027-01-01 (+55d)"
+           },
++          {
++            "factor": "commentWindow",
++            "rule": "no comment deadline",
++            "points": 0,
++            "note": "none"
++          },
+           {
+             "factor": "status",
+             "rule": "status=\"final\"",
+             "points": 15,
+             "note": "final"
+           }
+-        ]
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "rule"
+       }
+     },
+     {
+@@ -50,14 +66,18 @@
+       "title": "Texas Biometric Retention Schedule",
+       "jurisdiction": "US-TX",
+       "status": "proposed",
++      "itemType": "NPRM",
+       "effectiveDate": "2027-04-01",
++      "commentDeadline": "2026-11-25",
+       "publishedDate": "2026-10-30",
+       "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+       "source": "Texas register feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/tx-biometric",
+       "topic": "privacy",
++      "actionBy": "2026-11-25",
+       "scoring": {
+-        "score": 78,
++        "score": 93,
+         "band": "high",
+         "breakdown": [
+           {
+@@ -78,55 +98,22 @@
+             "points": 15,
+             "note": "2027-04-01 (+145d)"
+           },
++          {
++            "factor": "commentWindow",
++            "rule": "comment window open, closes in 18d (<= 30d threshold)",
++            "points": 15,
++            "note": "2026-11-25 (+18d)"
++          },
+           {
+             "factor": "status",
+             "rule": "status=\"proposed\"",
+             "points": 8,
+             "note": "proposed"
+           }
+-        ]
+-      }
+-    },
+-    {
+-      "id": "ny-pay-transparency",
+-      "jurisdiction": "US-NY",
+-      "title": "NY Wage Transparency for Remote Roles",
+-      "status": "effective",
+-      "effectiveDate": "2026-09-17",
+-      "publishedDate": "2026-03-03",
+-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
+-      "source": "NY DOL bulletin (fictional)",
+-      "link": "https://example.gov/ny-pay-transparency",
+-      "topic": "employment",
+-      "scoring": {
+-        "score": 62,
+-        "band": "medium",
+-        "breakdown": [
+-          {
+-            "factor": "jurisdiction",
+-            "rule": "exact profile jurisdiction match",
+-            "points": 30,
+-            "note": "US-NY"
+-          },
+-          {
+-            "factor": "topic",
+-            "rule": "related topic",
+-            "points": 12,
+-            "note": "topic=employment via \"wage\""
+-          },
+-          {
+-            "factor": "proximity",
+-            "rule": "already effective",
+-            "points": 0,
+-            "note": "2026-09-17 (-51d)"
+-          },
+-          {
+-            "factor": "status",
+-            "rule": "status=\"effective\"",
+-            "points": 20,
+-            "note": "effective"
+-          }
+-        ]
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "nprm"
+       }
+     },
+     {
+@@ -134,15 +121,19 @@
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+       "jurisdiction": "US-FED",
+       "status": "final",
++      "itemType": "rule",
+       "effectiveDate": "2027-02-15",
++      "commentDeadline": null,
+       "publishedDate": "2026-09-02",
+       "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+       "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/fcc-ai-voice",
+-      "topic": "other",
++      "topic": "ai",
++      "actionBy": "2027-02-15",
+       "scoring": {
+-        "score": 60,
+-        "band": "medium",
++        "score": 85,
++        "band": "high",
+         "breakdown": [
+           {
+             "factor": "jurisdiction",
+@@ -152,9 +143,9 @@
+           },
+           {
+             "factor": "topic",
+-            "rule": "topic outside profile",
+-            "points": 0,
+-            "note": "topic=other"
++            "rule": "core topic",
++            "points": 25,
++            "note": "topic=ai via \"ai-generated\""
+           },
+           {
+             "factor": "proximity",
+@@ -162,47 +153,66 @@
+             "points": 15,
+             "note": "2027-02-15 (+100d)"
+           },
++          {
++            "factor": "commentWindow",
++            "rule": "no comment deadline",
++            "points": 0,
++            "note": "none"
++          },
+           {
+             "factor": "status",
+             "rule": "status=\"final\"",
+             "points": 15,
+             "note": "final"
+           }
+-        ]
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "rule"
+       }
+     },
+     {
+-      "id": "eu-umbrella-2026",
+-      "title": "EU Umbrella Data Regulation 2026",
+-      "jurisdiction": "EU",
++      "id": "us-sec-ai-anpr",
++      "title": "SEC ANPR: Artificial Intelligence Model Risk",
++      "jurisdiction": "US-FED",
+       "status": "proposed",
+-      "effectiveDate": "2028-03-01",
+-      "publishedDate": "2026-10-28",
+-      "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
+-      "source": "EUR-Lex-like feed (fictional)",
+-      "link": "https://example.eu/umbrella-2026",
+-      "topic": "other",
++      "itemType": "ANPR",
++      "effectiveDate": null,
++      "commentDeadline": "2026-12-01",
++      "publishedDate": "2026-10-20",
++      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
++      "source": "Federal-register-like feed (fictional)",
++      "provenance": "primary",
++      "link": "https://example.gov/sec-ai-anpr",
++      "topic": "ai",
++      "actionBy": "2026-12-01",
+       "scoring": {
+-        "score": 8,
+-        "band": "low",
++        "score": 78,
++        "band": "medium",
+         "breakdown": [
+           {
+             "factor": "jurisdiction",
+-            "rule": "no profile jurisdiction match",
+-            "points": 0,
+-            "note": "EU"
++            "rule": "exact profile jurisdiction match",
++            "points": 30,
++            "note": "US-FED"
+           },
+           {
+             "factor": "topic",
+-            "rule": "topic outside profile",
+-            "points": 0,
+-            "note": "topic=other"
++            "rule": "core topic",
++            "points": 25,
++            "note": "topic=ai via \"artificial intelligence\""
+           },
+           {
+             "factor": "proximity",
+-            "rule": "effective in 480d (beyond all thresholds)",
++            "rule": "no parseable effective date",
+             "points": 0,
+-            "note": "2028-03-01 (+480d)"
++            "note": "none"
++          },
++          {
++            "factor": "commentWindow",
++            "rule": "comment window open, closes in 24d (<= 30d threshold)",
++            "points": 15,
++            "note": "2026-12-01 (+24d)"
+           },
+           {
+             "factor": "status",
+@@ -210,29 +220,29 @@
+             "points": 8,
+             "note": "proposed"
+           }
+-        ]
++        ],
++        "flags": [
++          "itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high"
++        ],
++        "provenance": "primary",
++        "itemType": "anpr"
+       }
+-    }
+-  ],
+-  "duplicates": [
+-    {
+-      "keptId": "ca-ccpa-amend",
+-      "droppedId": "ca-ccpa-amend-dup",
+-      "reason": "same normalized title + jurisdiction"
+-    }
+-  ],
+-  "timeline": [
++    },
+     {
+       "id": "ny-pay-transparency",
+       "jurisdiction": "US-NY",
+       "title": "NY Wage Transparency for Remote Roles",
+       "status": "effective",
++      "itemType": "rule",
+       "effectiveDate": "2026-09-17",
++      "commentDeadline": null,
+       "publishedDate": "2026-03-03",
+       "summary": "Salary ranges must be posted for remote roles performed from New York.",
+       "source": "NY DOL bulletin (fictional)",
++      "provenance": "primary",
+       "link": "https://example.gov/ny-pay-transparency",
+       "topic": "employment",
++      "actionBy": "2026-09-17",
+       "scoring": {
+         "score": 62,
+         "band": "medium",
+@@ -256,138 +266,21 @@
+             "note": "2026-09-17 (-51d)"
+           },
+           {
+-            "factor": "status",
+-            "rule": "status=\"effective\"",
+-            "points": 20,
+-            "note": "effective"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "id": "ca-ccpa-amend",
+-      "title": "CCPA Amendment: Children's Data Opt-In",
+-      "jurisdiction": "US-CA",
+-      "status": "final",
+-      "effectiveDate": "2027-01-01",
+-      "publishedDate": "2026-08-12",
+-      "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
+-      "source": "CA Privacy Agency tracker",
+-      "link": "https://example.gov/ca-ccpa-amend",
+-      "topic": "privacy",
+-      "scoring": {
+-        "score": 95,
+-        "band": "high",
+-        "breakdown": [
+-          {
+-            "factor": "jurisdiction",
+-            "rule": "exact profile jurisdiction match",
+-            "points": 30,
+-            "note": "US-CA"
+-          },
+-          {
+-            "factor": "topic",
+-            "rule": "core topic",
+-            "points": 25,
+-            "note": "topic=privacy via \"ccpa\""
+-          },
+-          {
+-            "factor": "proximity",
+-            "rule": "effective in 55d (<= 90d threshold)",
+-            "points": 25,
+-            "note": "2027-01-01 (+55d)"
+-          },
+-          {
+-            "factor": "status",
+-            "rule": "status=\"final\"",
+-            "points": 15,
+-            "note": "final"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "id": "us-fcc-ai-disclosure",
+-      "title": "FCC AI Voice Disclosure in Outreach Calls",
+-      "jurisdiction": "US-FED",
+-      "status": "final",
+-      "effectiveDate": "2027-02-15",
+-      "publishedDate": "2026-09-02",
+-      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+-      "source": "Federal-register-like feed (fictional)",
+-      "link": "https://example.gov/fcc-ai-voice",
+-      "topic": "other",
+-      "scoring": {
+-        "score": 60,
+-        "band": "medium",
+-        "breakdown": [
+-          {
+-            "factor": "jurisdiction",
+-            "rule": "exact profile jurisdiction match",
+-            "points": 30,
+-            "note": "US-FED"
+-          },
+-          {
+-            "factor": "topic",
+-            "rule": "topic outside profile",
++            "factor": "commentWindow",
++            "rule": "no comment deadline",
+             "points": 0,
+-            "note": "topic=other"
+-          },
+-          {
+-            "factor": "proximity",
+-            "rule": "effective in 100d (<= 180d threshold)",
+-            "points": 15,
+-            "note": "2027-02-15 (+100d)"
+-          },
+-          {
+-            "factor": "status",
+-            "rule": "status=\"final\"",
+-            "points": 15,
+-            "note": "final"
+-          }
+-        ]
+-      }
+-    },
+-    {
+-      "id": "tx-biometric-retention",
+-      "title": "Texas Biometric Retention Schedule",
+-      "jurisdiction": "US-TX",
+-      "status": "proposed",
+-      "effectiveDate": "2027-04-01",
+-      "publishedDate": "2026-10-30",
+-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+-      "source": "Texas register feed (fictional)",
+-      "link": "https://example.gov/tx-biometric",
+-      "topic": "privacy",
+-      "scoring": {
+-        "score": 78,
+-        "band": "high",
+-        "breakdown": [
+-          {
+-            "factor": "jurisdiction",
+-            "rule": "US state rule, but US-FED in profile (federal overlay applies nationwide)",
+-            "points": 30,
+-            "note": "US-TX"
+-          },
+-          {
+-            "factor": "topic",
+-            "rule": "core topic",
+-            "points": 25,
+-            "note": "topic=privacy via \"biometric\""
+-          },
+-          {
+-            "factor": "proximity",
+-            "rule": "effective in 145d (<= 180d threshold)",
+-            "points": 15,
+-            "note": "2027-04-01 (+145d)"
++            "note": "none"
+           },
+           {
+             "factor": "status",
+-            "rule": "status=\"proposed\"",
+-            "points": 8,
+-            "note": "proposed"
++            "rule": "status=\"effective\"",
++            "points": 20,
++            "note": "effective"
+           }
+-        ]
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "rule"
+       }
+     },
+     {
+@@ -395,12 +288,16 @@
+       "title": "EU Umbrella Data Regulation 2026",
+       "jurisdiction": "EU",
+       "status": "proposed",
++      "itemType": "rule",
+       "effectiveDate": "2028-03-01",
++      "commentDeadline": null,
+       "publishedDate": "2026-10-28",
+       "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
+       "source": "EUR-Lex-like feed (fictional)",
++      "provenance": "primary",
+       "link": "https://example.eu/umbrella-2026",
+       "topic": "other",
++      "actionBy": "2028-03-01",
+       "scoring": {
+         "score": 8,
+         "band": "low",
+@@ -423,14 +320,115 @@
+             "points": 0,
+             "note": "2028-03-01 (+480d)"
+           },
++          {
++            "factor": "commentWindow",
++            "rule": "no comment deadline",
++            "points": 0,
++            "note": "none"
++          },
+           {
+             "factor": "status",
+             "rule": "status=\"proposed\"",
+             "points": 8,
+             "note": "proposed"
+           }
+-        ]
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "rule"
++      }
++    }
++  ],
++  "duplicates": [
++    {
++      "keptId": "ca-ccpa-amend",
++      "droppedId": "ca-ccpa-amend-dup",
++      "reason": "same normalized title + jurisdiction",
++      "mergedFields": []
++    }
++  ],
++  "timeline": {
++    "upcoming": [
++      {
++        "date": "2026-11-25",
++        "kind": "comment-deadline",
++        "itemId": "tx-biometric-retention",
++        "title": "Texas Biometric Retention Schedule",
++        "jurisdiction": "US-TX",
++        "score": 93,
++        "band": "high"
++      },
++      {
++        "date": "2026-12-01",
++        "kind": "comment-deadline",
++        "itemId": "us-sec-ai-anpr",
++        "title": "SEC ANPR: Artificial Intelligence Model Risk",
++        "jurisdiction": "US-FED",
++        "score": 78,
++        "band": "medium"
++      },
++      {
++        "date": "2027-01-01",
++        "kind": "effective",
++        "itemId": "ca-ccpa-amend",
++        "title": "CCPA Amendment: Children's Data Opt-In",
++        "jurisdiction": "US-CA",
++        "score": 95,
++        "band": "high"
++      },
++      {
++        "date": "2027-02-15",
++        "kind": "effective",
++        "itemId": "us-fcc-ai-disclosure",
++        "title": "FCC AI Voice Disclosure in Outreach Calls",
++        "jurisdiction": "US-FED",
++        "score": 85,
++        "band": "high"
++      },
++      {
++        "date": "2027-04-01",
++        "kind": "effective",
++        "itemId": "tx-biometric-retention",
++        "title": "Texas Biometric Retention Schedule",
++        "jurisdiction": "US-TX",
++        "score": 93,
++        "band": "high"
++      },
++      {
++        "date": "2028-03-01",
++        "kind": "effective",
++        "itemId": "eu-umbrella-2026",
++        "title": "EU Umbrella Data Regulation 2026",
++        "jurisdiction": "EU",
++        "score": 8,
++        "band": "low"
++      }
++    ],
++    "past": [
++      {
++        "date": "2026-09-17",
++        "kind": "effective",
++        "itemId": "ny-pay-transparency",
++        "title": "NY Wage Transparency for Remote Roles",
++        "jurisdiction": "US-NY",
++        "score": 62,
++        "band": "medium"
+       }
++    ],
++    "undated": []
++  },
++  "coverageGaps": [
++    {
++      "kind": "jurisdiction",
++      "value": "UK",
++      "severity": "high",
++      "note": "profile jurisdiction has zero feed items"
++    },
++    {
++      "kind": "topic",
++      "value": "security",
++      "severity": "low",
++      "note": "related topic has zero feed items"
+     }
+   ]
+ }
+diff --git a/open-artifacts/regulatory-horizon-scan/spec.md b/open-artifacts/regulatory-horizon-scan/spec.md
+index 5581b22..cb1cabe 100644
+--- a/open-artifacts/regulatory-horizon-scan/spec.md
++++ b/open-artifacts/regulatory-horizon-scan/spec.md
+@@ -10,32 +10,58 @@ sources."*
+ Takes a **feed of regulatory items as JSON** (from Federal Register API,
+ EUR-Lex, state legislature trackers, or manual entry), then deterministically:
+ 
+-1. **Dedupe** the feed (same rule surfacing from multiple sources).
++1. **Dedupe** the feed (same rule surfacing from multiple sources). Duplicates
++   are *merged*, not discarded: fields missing on the kept item are filled
++   from the duplicate (richest source wins) and `mergedFrom` records the drop.
+ 2. **Classify** each item by topic (via a versioned taxonomy) and jurisdiction
+    (normalized codes).
+ 3. **Score** each item for impact against a **transparent, versioned scoring
+-   rubric** (rules-as-data: every point is auditable and re-runnable).
+-4. **Timeline** — items sorted by effective date, ranked by score.
+-5. **Diff view** — when a rule changes between two feed snapshots (status,
+-   effective date, amended text), show exactly what changed, field by field;
+-   rubric version changes are diffed too.
+-6. **Export CSV.**
++   rubric** (rules-as-data: every point is auditable and re-runnable). The
++   rubric may include a `commentWindow` factor — an open comment deadline
++   within the threshold earns points; closed or absent windows earn none.
++   Two deterministic **band caps** (score is never altered, only the band,
++   with a flag): `itemType` ANPR/RFI items are capped below "high"
++   (pre-rule exploratory — never "always material"), and non-`primary`
++   provenance is capped at "medium" with a "trace to primary" flag.
++4. **Timeline** — milestones (effective date *and* comment deadline), split
++   into upcoming/past at `asOf`; undated items are kept in their own section,
++   never dropped. Each scan item carries
++   `actionBy = min(effectiveDate, commentDeadline)`.
++5. **Coverage check (Step 0)** — `coverageGaps` lists profile jurisdictions
++   (severity high), core topics (medium), and related topics (low) with zero
++   feed items.
++6. **Diff view** — when a rule changes between two feed snapshots (status,
++   effective date, comment deadline, itemType, provenance, amended text),
++   show exactly what changed, field by field; rubric version changes are
++   diffed too.
++7. **Export** — CSV (breakdown + flags serialized per row) and a Markdown
++   digest (`toMarkdown`) with a "Bottom line" (action-item count + earliest
++   action date), coverage gaps, and a per-band, per-item breakdown.
+ 
+ ## IO contract
+ 
+ ```js
+ import {
+-  dedupeItems, classifyItem, scoreItem, scanFeed,
+-  diffFeeds, diffRubrics, toCsv
++  dedupeItems, classifyItem, scoreItem, scanFeed, buildTimeline,
++  coverageGaps, diffFeeds, diffRubrics, toCsv, toMarkdown, normalizeProvenance
+ } from "./core/core.js";
+ 
+-scanFeed(items, rubric, profile, asOf) // => { rubricVersion, items: [...], duplicates: [...], timeline: [...] }
+-diffFeeds(previousItems, currentItems) // => { added, removed, changed }
++scanFeed(items, rubric, profile, asOf)   // => { rubricVersion, items, duplicates, timeline: {upcoming, past, undated}, coverageGaps }
++coverageGaps(items, profile, rubric?)    // => [{kind, value, severity, note}]
++diffFeeds(previousItems, currentItems)   // => { added, removed, changed }
+ diffRubrics(previousRubric, currentRubric)
+-toCsv(scan)                            // => CSV string
++toCsv(scan)                              // => CSV string
++toMarkdown(scan)                         // => digest Markdown string
+ ```
+ 
+-- `items`: `[{ id, title, jurisdiction, status, effectiveDate?, publishedDate?, summary?, source?, link? }]`
++- `items`: `[{ id, title, jurisdiction, status, itemType?, effectiveDate?, commentDeadline?, publishedDate?, summary?, source?, provenance?, link? }]`
++  - `itemType`: `rule | NPRM | ANPR | RFI | ...` — ANPR/RFI items get the
++    pre-rule band cap.
++  - `commentDeadline`: `YYYY-MM-DD | null` — feeds the `commentWindow`
++    factor and the timeline comment-deadline milestones.
++  - `provenance`: `primary | secondary | manual | unknown` — missing or
++    unrecognized values are treated as `unknown`; anything non-`primary`
++    caps the band at "medium" with a trace-to-primary flag.
+ - `rubric`: `{ version, factors: [...], topicTaxonomy: { topic: [keywords] } }` — see `examples/input.json`.
+ - `profile`: `{ jurisdictions: ["US-FED", "US-CA"], coreTopics: ["privacy", "ai"], relatedTopics: ["employment"] }`
+ - `asOf`: ISO date string. **No hidden clocks** — all time-dependent math is
+@@ -45,7 +71,7 @@ toCsv(scan)                            // => CSV string
+ 
+ | Layer | Who | Why |
+ |---|---|---|
+-| Dedup, classification, scoring, diffing, timeline, CSV | **code** | auditable, reproducible, cheap |
++| Dedup/merge, classification, scoring, band caps, coverage check, diffing, timeline, CSV/MD export | **code** | auditable, reproducible, cheap |
+ | Turning raw regulator HTML/PDF into the JSON feed items | optional LLM | extraction only; prompt below |
+ | Choosing rubric weights | **human** | policy judgment, versioned in data |
+ 
+@@ -59,10 +85,13 @@ toCsv(scan)                            // => CSV string
+     "title": "verbatim or near-verbatim rule title",
+     "jurisdiction": "ISO-ish code: US-FED | US-XX | EU | UK | ...",
+     "status": "proposed | final | effective | rumored",
++    "itemType": "rule | NPRM | ANPR | RFI",
+     "effectiveDate": "YYYY-MM-DD | null",
++    "commentDeadline": "YYYY-MM-DD | null",
+     "publishedDate": "YYYY-MM-DD | null",
+     "summary": "<=60 words, no legal conclusions",
+     "source": "source name",
++    "provenance": "primary | secondary | manual | unknown",
+     "link": "URL or null"
+   },
+   "rules": ["Never invent dates; omit rather than guess.", "Quote titles verbatim where possible."]
+@@ -77,11 +106,18 @@ its output is data the rubric can be re-run against.
+ - **Transparent, versioned scoring rubric** — Anthropic's impact ranking is
+   opaque; here every point of every score carries a factor name, a rule, and a
+   reason string (`scoreItem().breakdown`), and rubric versions are diffable.
++- **Deterministic provenance + stage discipline** — the counterpart states
++  source tiers and ANPR/RFI caution as LLM prose; here they are code:
++  non-primary sources are band-capped with a trace-to-primary flag, and
++  ANPR/RFI items are capped below "high". Comment deadlines score, appear as
++  timeline milestones, and land in the digest's bottom line.
++- **Coverage check (Step 0)** — profile jurisdictions/topics with zero feed
++  items are surfaced with severity before any ranking happens.
+ - **Diff view when a rule changes** — the closed artifact shows a snapshot;
+   this core diffs two snapshots (and two rubrics) field-by-field.
+ - **No hidden clock** — scans are reproducible against a supplied `asOf`.
+-- **Dependency-free core** — runs in browser and Node, exports CSV, no
+-  platform lock-in.
++- **Dependency-free core** — runs in browser and Node, exports CSV + a
++  Markdown digest, no platform lock-in.
+ 
+ ## Legal accuracy disclaimer
+ 

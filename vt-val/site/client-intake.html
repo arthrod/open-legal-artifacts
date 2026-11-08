@@ -124,10 +124,33 @@ a {
 
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.t-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  background: currentColor;
+  vertical-align: middle;
+  margin-right: 12px;
+}
 
 /* ----- Focus (top-level) ----- */
-  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* ----- Mobile (390px) ----- */
+img, svg, video, canvas { max-width: 100%; }
+textarea { max-width: 100%; }
+@media (max-width: 480px) {
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
 
 </style>
 <style>

@@ -1,0 +1,1146 @@
+diff --git a/open-artifacts/access-to-justice-front-door/README.md b/open-artifacts/access-to-justice-front-door/README.md
+index 0bee997..bf1a337 100644
+--- a/open-artifacts/access-to-justice-front-door/README.md
++++ b/open-artifacts/access-to-justice-front-door/README.md
+@@ -9,22 +9,31 @@ Referral information only — never legal advice.
+ 
+ - Demo: open `demo/index.html` (standalone; prefilled with the fictional
+   worked example).
+-- Tests: `node --test core/core.test.js` — 16 tests.
++- Tests: `node --test core/core.test.js` — 28 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+   `triage.md` from `examples/input.json` (9 descriptions: 7 classified,
+   2 escalated at build time).
++- Paraphrase golden set: `examples/paraphrases.json` — 20 fictional
++  descriptions (14 classified, 6 escalated on purpose) pinned by tests.
+ 
+ ## How it works
+ 
+-1. Single-word keywords match on word boundaries (rent ≠ present);
+-   phrases match verbatim; every hit adds its weight.
+-2. Confidence = the top issue's share of total matched weight.
+-3. Gate at 0.4: below it (or with zero matches) the matter is
+-   escalated to human review with candidates listed — never guessed.
+-4. Close second issue (gap < 0.15) serves both referrals, flagged as
++1. Single-word keywords and aliases match on word boundaries (rent ≠
++   present, ebt ≠ debt); phrases match verbatim; every hit adds its weight.
++2. `aliases` per issue are synonym phrasings as data ("kicked out",
++   "beats me", "cash assistance") — paraphrase coverage without an LLM.
++3. Confidence = the top issue's share of total matched weight.
++4. Gate at 0.4: below it the matter is escalated with a staff-review
++   packet (full candidates + matched fragments) and a clarifying
++   question; `triage(text, { pick })` resolves it deterministically.
++   Zero matches escalate too — never guessed.
++5. Close second issue (gap < 0.15) serves both referrals, flagged as
+    possible multi-issue.
+-5. Output contains referral info only, copied verbatim from the
+-   editable taxonomy — enforced by tests, not just policy.
++6. Urgency flag (emergency/urgent/routine) and plain-language dates
++   (info-only, no deadline math) travel with every result.
++7. Each referral carries approved, process-only guidance entries with
++   a source link, copied verbatim from the editable taxonomy.
++8. Output contains referral info only — enforced by tests, not just policy.
+ 
+ ## Better than the closed counterpart
+ 
+diff --git a/open-artifacts/access-to-justice-front-door/core/core.js b/open-artifacts/access-to-justice-front-door/core/core.js
+index 5f5ad9d..663d7c4 100644
+--- a/open-artifacts/access-to-justice-front-door/core/core.js
++++ b/open-artifacts/access-to-justice-front-door/core/core.js
+@@ -1,15 +1,18 @@
+ /**
+  * access-to-justice-front-door core — plain-language triage:
+  *   - classifies a person's problem description against an issue taxonomy
+- *     with a deterministic keyword/rule matcher
++ *     with a deterministic keyword/alias/rule matcher
+  *   - confidence-gated: below threshold (or no match) the matter is
+- *     ESCALATED TO A HUMAN instead of guessed
+- *   - referral mapping to legal-aid categories
++ *     ESCALATED TO A HUMAN instead of guessed; a low-confidence split
++ *     returns a clarifying question whose answer (`pick`) resolves it
++ *   - urgency flag + plain-language date capture (info-only)
++ *   - referral mapping to legal-aid categories with per-issue approved
++ *     guidance entries, each carrying a source link
+  *
+  * OUTPUT IS REFERRAL INFORMATION ONLY. The core never produces legal
+  * advice, strategy, or predicted outcomes: every user-facing string in
+- * the response is copied verbatim from the referral data. This is
+- * enforced by construction and pinned by tests.
++ * the response is copied verbatim from the referral/guidance data.
++ * This is enforced by construction and pinned by tests.
+  *
+  * NO LLM in the classifier; the taxonomy and referral map are editable
+  * rules-as-data. An optional LLM pass (spec.md) may *pre-normalize*
+@@ -18,10 +21,23 @@
+ 
+ // ------------------------------------------------------------- taxonomy
+ 
++/** Guidance source links (generic referral-process resources). */
++const SRC = {
++  lawhelp: { name: 'LawHelp.org — legal aid finder', url: 'https://www.lawhelp.org' },
++  hud: { name: 'U.S. HUD — housing resources', url: 'https://www.hud.gov' },
++  usaBenefits: { name: 'USA.gov — benefits page', url: 'https://www.usa.gov/benefits' },
++  dvHotline: { name: 'National Domestic Violence Hotline', url: 'https://www.thehotline.org' },
++  cfpb: { name: 'Consumer Financial Protection Bureau', url: 'https://www.consumerfinance.gov' },
++  dolWhd: { name: 'U.S. DOL Wage and Hour Division', url: 'https://www.dol.gov/agencies/whd' },
++};
++
+ /**
+  * Issue taxonomy + referral map (editable data).
+- * Keywords are matched case-insensitively; single words use word
+- * boundaries so "rent" does not fire inside "present".
++ * Keywords and aliases are matched case-insensitively; single words use
++ * word boundaries so "rent" does not fire inside "present". `aliases`
++ * are synonym phrasings ("kicked out", "beats me") matched with the
++ * same rules — the deterministic answer to dialect/paraphrase drift.
++ * `guidance` is process-only, one source link per entry.
+  */
+ export const TAXONOMY = {
+   'housing-eviction': {
+@@ -30,6 +46,13 @@ export const TAXONOMY = {
+       { k: 'evict', w: 3 }, { k: 'eviction', w: 3 }, { k: 'notice to quit', w: 3 },
+       { k: 'landlord', w: 2 }, { k: 'court papers', w: 2 }, { k: 'behind on rent', w: 3 }, { k: 'lockout', w: 3 },
+     ],
++    aliases: [
++      { k: 'kicked out', w: 3 }, { k: 'thrown out', w: 3 }, { k: 'threw me out', w: 3 }, { k: 'being put out', w: 3 },
++    ],
++    guidance: [
++      { point: 'Bring every notice, summons, or letter you have received to your first appointment; deadlines printed on court papers are time-sensitive.', source: SRC.lawhelp },
++      { point: 'Court self-help centers can explain what each paper means at no cost; intake staff can point you to the nearest one.', source: SRC.lawhelp },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-housing',
+       serviceDescription: 'Eviction defense and housing stability help through your local legal aid housing unit.',
+@@ -42,6 +65,13 @@ export const TAXONOMY = {
+       { k: 'mold', w: 2 }, { k: 'no heat', w: 3 }, { k: 'repairs', w: 2 }, { k: 'infestation', w: 2 },
+       { k: 'habitability', w: 3 }, { k: 'slumlord', w: 2 },
+     ],
++    aliases: [
++      { k: 'no hot water', w: 3 }, { k: 'roaches', w: 3 }, { k: 'rats', w: 3 },
++    ],
++    guidance: [
++      { point: 'Take photos of the problem and keep copies of repair requests; bring both to your appointment.', source: SRC.lawhelp },
++      { point: 'Many localities have a housing code enforcement office that inspects on request; intake staff can identify yours.', source: SRC.hud },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-housing',
+       serviceDescription: 'Housing conditions enforcement help through your local legal aid housing unit.',
+@@ -54,6 +84,13 @@ export const TAXONOMY = {
+       { k: 'food stamps', w: 3 }, { k: 'snap', w: 3 }, { k: 'benefits', w: 2 }, { k: 'denied', w: 2 },
+       { k: 'medicaid', w: 3 }, { k: 'welfare', w: 2 }, { k: 'overpayment', w: 2 },
+     ],
++    aliases: [
++      { k: 'cash assistance', w: 3 }, { k: 'ebt', w: 3 },
++    ],
++    guidance: [
++      { point: 'Appeal deadlines are printed on the denial or overpayment notice; bring the notice to intake staff right away.', source: SRC.usaBenefits },
++      { point: 'A fair hearing can often be requested by phone or mail; the notice itself explains how.', source: SRC.usaBenefits },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-benefits',
+       serviceDescription: 'Benefits appeals help (fair hearings) through your local legal aid public benefits unit.',
+@@ -66,6 +103,13 @@ export const TAXONOMY = {
+       { k: 'custody', w: 3 }, { k: 'visitation', w: 3 }, { k: 'child support', w: 3 },
+       { k: 'my kids', w: 2 }, { k: 'guardianship', w: 2 },
+     ],
++    aliases: [
++      { k: 'who gets the kids', w: 3 },
++    ],
++    guidance: [
++      { point: 'Bring existing court orders and any caseworker correspondence to your first appointment.', source: SRC.lawhelp },
++      { point: 'Family court self-help centers can explain which forms start a custody or support case.', source: SRC.lawhelp },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-family',
+       serviceDescription: 'Family law help (custody, visitation, support) through your local legal aid family unit.',
+@@ -78,6 +122,14 @@ export const TAXONOMY = {
+       { k: 'abuse', w: 3 }, { k: 'protective order', w: 3 }, { k: 'restraining order', w: 3 },
+       { k: 'unsafe at home', w: 3 }, { k: 'hit me', w: 3 }, { k: 'threatening', w: 2 },
+     ],
++    aliases: [
++      { k: 'beats me', w: 3 }, { k: 'hits me', w: 3 }, { k: 'choked me', w: 3 },
++      { k: 'scared of my partner', w: 3 }, { k: 'afraid of my partner', w: 3 },
++    ],
++    guidance: [
++      { point: 'If you are in immediate danger, call emergency services before anything else.', source: SRC.dvHotline },
++      { point: 'Safety planning with a trained advocate is free and confidential; advocates also help with protective-order paperwork.', source: SRC.dvHotline },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-dv',
+       serviceDescription: 'Safety planning and protective-order help through a domestic violence advocacy program.',
+@@ -90,6 +142,13 @@ export const TAXONOMY = {
+       { k: 'debt collector', w: 3 }, { k: 'sued for', w: 2 }, { k: 'collection', w: 2 },
+       { k: 'credit report', w: 2 }, { k: 'garnish', w: 3 }, { k: 'wage garnishment', w: 3 },
+     ],
++    aliases: [
++      { k: 'garnished', w: 3 }, { k: 'garnishment', w: 3 }, { k: 'collection agency', w: 3 },
++    ],
++    guidance: [
++      { point: 'Bring all collection letters, voicemails, and court papers to your appointment.', source: SRC.cfpb },
++      { point: 'Summons papers include a response deadline; bring them to intake staff the same week they arrive.', source: SRC.cfpb },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-consumer',
+       serviceDescription: 'Consumer debt defense help through your local legal aid consumer unit.',
+@@ -102,6 +161,13 @@ export const TAXONOMY = {
+       { k: 'not paid', w: 3 }, { k: 'wages', w: 2 }, { k: 'overtime', w: 2 }, { k: 'fired', w: 2 },
+       { k: 'unemployment', w: 2 }, { k: 'paycheck', w: 2 },
+     ],
++    aliases: [
++      { k: 'boss owes me', w: 3 }, { k: 'off the clock', w: 3 }, { k: 'unpaid', w: 2 },
++    ],
++    guidance: [
++      { point: 'Bring pay stubs, schedules, and any messages about hours or pay.', source: SRC.lawhelp },
++      { point: 'Wage claims are handled by a state or federal labor agency; intake staff can identify the right office for your situation.', source: SRC.dolWhd },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-employment',
+       serviceDescription: 'Wage claim and employment help through your local legal aid workers’ rights unit.',
+@@ -113,6 +179,13 @@ export const TAXONOMY = {
+     keywords: [
+       { k: 'expunge', w: 3 }, { k: 'criminal record', w: 3 }, { k: 'seal', w: 2 }, { k: 'background check', w: 2 },
+     ],
++    aliases: [
++      { k: 'clean up my record', w: 3 }, { k: 'clear my record', w: 3 },
++    ],
++    guidance: [
++      { point: 'Bring your RAP sheet if you have one; if not, intake staff can explain how to request a copy.', source: SRC.lawhelp },
++      { point: 'Eligibility for sealing depends on the case outcome and the state; a screener goes through it with you.', source: SRC.lawhelp },
++    ],
+     referral: {
+       legalAidCategory: 'legal-aid-record-clearance',
+       serviceDescription: 'Record sealing/expungement screening through a legal aid reentry clinic.',
+@@ -127,19 +200,70 @@ export const DISCLAIMER =
+ const ESCALATE_MESSAGE =
+   'We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.';
+ 
++// ------------------------------------------------- urgency + date signals
++
++/** Immediate-safety phrases → emergency (matched case-insensitively). */
++const EMERGENCY_PHRASES = [
++  'immediate danger', 'in danger', 'emergency', 'unsafe', 'hit me', 'beats me',
++  'threatening to kill', 'strangled', 'choked me', 'afraid for my life', 'scared for my life',
++];
++
++/** Time-pressure phrases → urgent. */
++const URGENT_PHRASES = [
++  'court date', 'deadline', 'hearing', 'tonight', 'tomorrow', 'right now',
++  'asap', 'this week', 'next week', 'by friday',
++];
++
++function assessUrgency(text) {
++  const lower = String(text).toLowerCase();
++  if (EMERGENCY_PHRASES.some((p) => lower.includes(p))) return 'emergency';
++  if (URGENT_PHRASES.some((p) => lower.includes(p))) return 'urgent';
++  return 'routine';
++}
++
++const MONTHS = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
++const DATE_PATTERNS = [
++  new RegExp(`\\b(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\b`, 'gi'), // March 3
++  new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:${MONTHS})\\b`, 'gi'),      // 3 March
++  /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g,                                    // 3/15, 3/15/2026
++];
++
++/**
++ * Capture plain-language dates from the description. INFO-ONLY: no year
++ * inference, no deadline math — the raw fragments are passed along for
++ * staff review, never interpreted.
++ */
++function extractDates(text) {
++  const found = [];
++  for (const re of DATE_PATTERNS) {
++    re.lastIndex = 0;
++    let m;
++    while ((m = re.exec(String(text ?? ''))) !== null) found.push({ raw: m[0], index: m.index });
++  }
++  const seen = new Set();
++  return found
++    .sort((a, b) => a.index - b.index)
++    .filter((d) => (seen.has(d.raw) ? false : seen.add(d.raw)))
++    .map((d) => d.raw);
++}
++
+ // ------------------------------------------------------------- matcher
+ 
+ function escapeRe(s) {
+   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-/** Deterministic keyword matcher: returns per-issue matched keywords + raw score. */
++/**
++ * Deterministic keyword + alias matcher: returns per-issue matched
++ * keywords/aliases + raw score. Aliases follow the same rules as
++ * keywords (word boundaries for single words, substring for phrases).
++ */
+ export function matchKeywords(text, taxonomy) {
+   const lower = String(text).toLowerCase();
+   const out = {};
+   for (const [issue, def] of Object.entries(taxonomy)) {
+     const hits = [];
+-    for (const { k, w } of def.keywords) {
++    for (const { k, w } of [...def.keywords, ...(def.aliases ?? [])]) {
+       const pattern = /\s/.test(k)
+         ? escapeRe(k)                          // phrases: substring match
+         : `\\b${escapeRe(k)}\\b`;              // single words: whole word only
+@@ -150,11 +274,27 @@ export function matchKeywords(text, taxonomy) {
+   return out;
+ }
+ 
++/** Copy a referral (incl. approved guidance) verbatim from taxonomy data. */
++function referralFor(issue, taxonomy, confidence) {
++  const def = taxonomy[issue];
++  return {
++    issue,
++    label: def.label,
++    confidence,
++    legalAidCategory: def.referral.legalAidCategory,
++    serviceDescription: def.referral.serviceDescription,
++    whereToGo: def.referral.whereToGo,
++    guidance: (def.guidance ?? []).map((g) => ({ point: g.point, source: { ...g.source } })),
++  };
++}
++
+ /**
+  * Triage a plain-language problem description.
+  *
+  * @param {string} text — the person's own words
+- * @param {Object} [opts] — { taxonomy?, minConfidence? (default 0.4), multiIssueGap? (default 0.15) }
++ * @param {Object} [opts] — { taxonomy?, minConfidence? (default 0.4),
++ *   multiIssueGap? (default 0.15), pick? (issue id chosen from a
++ *   clarifying question's options) }
+  * @returns {Object} triage result — referral info only, never advice
+  */
+ export function triage(text, opts = {}) {
+@@ -162,6 +302,9 @@ export function triage(text, opts = {}) {
+   const minConfidence = opts.minConfidence ?? 0.4;
+   const multiIssueGap = opts.multiIssueGap ?? 0.15;
+ 
++  const urgency = assessUrgency(text ?? '');
++  const dates = extractDates(text);
++
+   const matches = matchKeywords(text ?? '', taxonomy);
+   const total = Object.values(matches).reduce((s, m) => s + m.score, 0);
+   const ranked = Object.entries(matches)
+@@ -169,7 +312,34 @@ export function triage(text, opts = {}) {
+     .sort((a, b) => b.score - a.score || (a.issue < b.issue ? -1 : 1));
+ 
+   if (ranked.length === 0) {
+-    return { status: 'escalate', reason: 'no-keyword-match', escalate: ESCALATE_MESSAGE, disclaimer: DISCLAIMER, candidates: [] };
++    return { status: 'escalate', reason: 'no-keyword-match', escalate: ESCALATE_MESSAGE, disclaimer: DISCLAIMER, candidates: [], matchedFragments: [], urgency, dates };
++  }
++
++  // A clarifying-question answer resolves the split deterministically.
++  if (opts.pick !== undefined) {
++    const found = ranked.find((r) => r.issue === opts.pick);
++    if (!found) {
++      return {
++        status: 'escalate', reason: 'invalid-pick',
++        escalate: ESCALATE_MESSAGE, disclaimer: DISCLAIMER,
++        candidates: [], matchedFragments: [],
++        urgency, dates,
++      };
++    }
++    return {
++      status: 'classified',
++      primaryIssue: found.issue,
++      primaryLabel: taxonomy[found.issue].label,
++      confidence: found.confidence,
++      multiIssue: false,
++      matchedKeywords: found.matchedKeywords,
++      resolvedBy: 'clarifying-question',
++      referrals: [referralFor(found.issue, taxonomy, found.confidence)],
++      otherCandidates: ranked.filter((r) => r.issue !== found.issue).map((r) => ({ issue: r.issue, confidence: r.confidence })),
++      disclaimer: DISCLAIMER,
++      urgency,
++      dates,
++    };
+   }
+ 
+   const top = ranked[0];
+@@ -177,7 +347,13 @@ export function triage(text, opts = {}) {
+     return {
+       status: 'escalate', reason: 'low-confidence',
+       escalate: ESCALATE_MESSAGE, disclaimer: DISCLAIMER,
+-      candidates: ranked.map((r) => ({ issue: r.issue, confidence: r.confidence })),
++      candidates: ranked.map((r) => ({ issue: r.issue, label: taxonomy[r.issue].label, confidence: r.confidence, matchedKeywords: r.matchedKeywords })),
++      clarifyingQuestion: {
++        question: 'Which of these comes closest to your problem?',
++        options: ranked.map((r) => ({ id: r.issue, label: taxonomy[r.issue].label })),
++      },
++      matchedFragments: [...new Set(ranked.flatMap((r) => r.matchedKeywords))],
++      urgency, dates,
+     };
+   }
+ 
+@@ -191,35 +367,45 @@ export function triage(text, opts = {}) {
+     confidence: top.confidence,
+     multiIssue: multi,
+     matchedKeywords: top.matchedKeywords,
+-    referrals: served.map((r) => ({
+-      issue: r.issue,
+-      label: taxonomy[r.issue].label,
+-      confidence: r.confidence,
+-      legalAidCategory: taxonomy[r.issue].referral.legalAidCategory,
+-      serviceDescription: taxonomy[r.issue].referral.serviceDescription,
+-      whereToGo: taxonomy[r.issue].referral.whereToGo,
+-    })),
++    referrals: served.map((r) => referralFor(r.issue, taxonomy, r.confidence)),
+     otherCandidates: ranked.slice(2).map((r) => ({ issue: r.issue, confidence: r.confidence })),
+     disclaimer: DISCLAIMER,
++    urgency,
++    dates,
+   };
+ }
+ 
+ /** Deterministic Markdown rendering of a triage result (referral info only). */
+ export function renderTriage(result) {
+   const L = [];
++  const meta = [`urgency: ${result.urgency ?? 'routine'}`];
++  if (result.dates?.length) meta.push(`dates mentioned (info-only): ${result.dates.join(', ')}`);
+   if (result.status === 'escalate') {
+     L.push(`# Triage — ESCALATE (${result.reason})`, '', result.escalate, '');
+-    for (const c of result.candidates) L.push(`- possible: ${c.issue} (confidence ${c.confidence}) — not served automatically`);
++    L.push(meta.join(' · '), '');
++    for (const c of result.candidates) {
++      L.push(`- possible: ${c.label ?? c.issue} (${c.issue}, confidence ${c.confidence})${c.matchedKeywords?.length ? ` — matched: ${c.matchedKeywords.join(', ')}` : ''} — not served automatically`);
++    }
+     if (result.candidates.length) L.push('');
++    if (result.matchedFragments?.length) {
++      L.push(`**Staff review packet** — matched fragments: ${result.matchedFragments.join(', ')}`, '');
++    }
++    if (result.clarifyingQuestion) {
++      L.push(`**Clarifying question:** ${result.clarifyingQuestion.question}`);
++      for (const o of result.clarifyingQuestion.options) L.push(`- option \`${o.id}\`: ${o.label}`);
++      L.push('');
++    }
+   } else {
+-    L.push(`# Triage — ${result.primaryLabel}${result.multiIssue ? ' (possible multi-issue)' : ''}`, '');
++    L.push(`# Triage — ${result.primaryLabel}${result.multiIssue ? ' (possible multi-issue)' : ''}${result.resolvedBy === 'clarifying-question' ? ' (resolved by clarifying question)' : ''}`, '');
+     L.push(`Confidence: **${result.confidence}** (gate 0.4) · matched keywords: ${result.matchedKeywords.join(', ')}`, '');
++    L.push(meta.join(' · '), '');
+     for (const r of result.referrals) {
+       L.push(`## Referral — ${r.label}`);
+       L.push('');
+       L.push(`- Legal aid category: \`${r.legalAidCategory}\` (confidence ${r.confidence})`);
+       L.push(`- ${r.serviceDescription}`);
+       L.push(`- ${r.whereToGo}`);
++      for (const g of r.guidance ?? []) L.push(`- Guidance: ${g.point} (source: ${g.source.name} <${g.source.url}>)`);
+       L.push('');
+     }
+   }
+diff --git a/open-artifacts/access-to-justice-front-door/core/core.test.js b/open-artifacts/access-to-justice-front-door/core/core.test.js
+index c1ef090..9cbdea8 100644
+--- a/open-artifacts/access-to-justice-front-door/core/core.test.js
++++ b/open-artifacts/access-to-justice-front-door/core/core.test.js
+@@ -1,5 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
+ import { triage, matchKeywords, renderTriage, TAXONOMY } from './core.js';
+ 
+ test('clear eviction description classifies as housing-eviction with referral', () => {
+@@ -81,11 +82,21 @@ test('every served referral string comes verbatim from the taxonomy data', () =>
+     dataStrings.add(def.referral.serviceDescription);
+     dataStrings.add(def.referral.whereToGo);
+     dataStrings.add(def.referral.legalAidCategory);
++    for (const g of def.guidance ?? []) {
++      dataStrings.add(g.point);
++      dataStrings.add(g.source?.name);
++      dataStrings.add(g.source?.url);
++    }
+   }
+   for (const ref of r.referrals) {
+     assert.ok(dataStrings.has(ref.serviceDescription));
+     assert.ok(dataStrings.has(ref.whereToGo));
+     assert.ok(dataStrings.has(ref.legalAidCategory));
++    assert.ok(Array.isArray(ref.guidance) && ref.guidance.length >= 1, 'guidance served per referral');
++    for (const g of ref.guidance) {
++      assert.ok(dataStrings.has(g.point), 'guidance point verbatim from data');
++      assert.ok(dataStrings.has(g.source?.name) && dataStrings.has(g.source?.url), 'guidance source verbatim from data');
++    }
+   }
+ });
+ 
+@@ -133,3 +144,111 @@ test('renderTriage renders referrals for classified and escalation for unknown',
+   const esc = renderTriage(triage('completely unrelated words'));
+   assert.match(esc, /ESCALATE/);
+ });
++
++// ------------------------------------------------------- wave-2 improvements
++
++test('alias layer: paraphrases that escalated before now classify deterministically', () => {
++  const cases = [
++    ["I'm being kicked out of my apartment.", 'housing-eviction'],
++    ['They threw me out of my place last night.', 'housing-eviction'],
++    ['My husband beats me and I am scared to go home.', 'domestic-violence'],
++    ['My boss owes me for two weeks of work.', 'employment-wage'],
++    ['They cut off my cash assistance without telling me why.', 'benefits-denial'],
++    ['My check was garnished over an old hospital bill.', 'consumer-debt'],
++  ];
++  for (const [text, issue] of cases) {
++    const r = triage(text);
++    assert.equal(r.status, 'classified', text);
++    assert.equal(r.primaryIssue, issue, text);
++  }
++});
++
++test('aliases are rules-as-data and match like keywords', () => {
++  assert.ok(Array.isArray(TAXONOMY['housing-eviction'].aliases), 'aliases are a data field');
++  const m = matchKeywords('kicked out', TAXONOMY);
++  assert.ok(m['housing-eviction'].hits.length >= 1);
++});
++
++test('alias word boundaries: "ebt" does not fire inside "debt"', () => {
++  const m = matchKeywords('I have a lot of debt and nothing else matches', TAXONOMY);
++  assert.equal(m['benefits-denial'], undefined);
++});
++
++test('alias cross-match guard: wages + garnished stays consumer-debt, single referral', () => {
++  const r = triage('My wages were garnished.');
++  assert.equal(r.status, 'classified');
++  assert.equal(r.primaryIssue, 'consumer-debt');
++  assert.equal(r.multiIssue, false);
++});
++
++test('urgency flag: safety language → emergency; court date → urgent; plain → routine', () => {
++  assert.equal(triage('My partner hit me and I feel unsafe at home. I need a restraining order.').urgency, 'emergency');
++  assert.equal(triage('I have a court date on March 3 about my eviction notice.').urgency, 'urgent');
++  assert.equal(triage('My landlord ignores the mold.').urgency, 'routine');
++});
++
++test('date extraction captures plain-language dates, info-only, in text order', () => {
++  const r = triage('I have a court date on March 3 and a hearing on 3/15.');
++  assert.deepEqual(r.dates, ['March 3', '3/15']);
++  assert.deepEqual(triage('nothing about dates here, just mold').dates, []);
++});
++
++test('urgency and dates are also attached to escalations', () => {
++  const r = triage('I have a court deadline tomorrow about something unmatchable.');
++  assert.equal(r.status, 'escalate');
++  assert.equal(r.urgency, 'urgent');
++});
++
++test('low-confidence split returns a clarifying question with option ids; pick resolves it', () => {
++  const text = 'My landlord says my benefits paperwork is late and my wages got cut.';
++  const esc = triage(text);
++  assert.equal(esc.status, 'escalate');
++  assert.equal(esc.reason, 'low-confidence');
++  assert.ok(esc.clarifyingQuestion.options.length >= 3);
++  assert.ok(esc.clarifyingQuestion.options.every((o) => typeof o.id === 'string' && o.label));
++  const picked = triage(text, { pick: 'benefits-denial' });
++  assert.equal(picked.status, 'classified');
++  assert.equal(picked.primaryIssue, 'benefits-denial');
++  assert.equal(picked.resolvedBy, 'clarifying-question');
++  assert.equal(picked.multiIssue, false);
++});
++
++test('pick outside the candidate set never classifies', () => {
++  const r = triage('My landlord says my benefits paperwork is late.', { pick: 'family-custody' });
++  assert.equal(r.status, 'escalate');
++  assert.equal(r.reason, 'invalid-pick');
++});
++
++test('served guidance is process-only and carries a source on every entry', () => {
++  for (const def of Object.values(TAXONOMY)) {
++    assert.ok(Array.isArray(def.guidance) && def.guidance.length >= 1, 'every issue has guidance data');
++    for (const g of def.guidance) {
++      assert.ok(g.source && g.source.name && /^https:\/\//.test(g.source.url), 'source link required');
++    }
++  }
++  const r = triage('My landlord gave me an eviction notice.');
++  const flat = JSON.stringify(r).toLowerCase();
++  for (const banned of ['you should', 'you can claim', 'you will win', 'file a motion']) {
++    assert.ok(!flat.includes(banned), `guidance must not contain "${banned}"`);
++  }
++});
++
++test('escalation packet: full candidates with labels and matched fragments for staff review', () => {
++  const r = triage('My landlord says my benefits paperwork is late and my wages got cut.');
++  assert.ok(r.candidates.every((c) => c.label && Array.isArray(c.matchedKeywords) && c.matchedKeywords.length >= 1));
++  assert.ok(r.matchedFragments.length >= 3);
++  const md = renderTriage(r);
++  assert.match(md, /low-confidence/);
++  assert.match(md, /Public benefits denied or cut off/);
++  assert.match(md, /landlord/);
++});
++
++test('20-paraphrase golden set (examples/paraphrases.json) matches recorded outcomes', () => {
++  const golden = JSON.parse(readFileSync(new URL('../examples/paraphrases.json', import.meta.url), 'utf8'));
++  assert.equal(golden.cases.length, 20);
++  for (const { text, expect } of golden.cases) {
++    const r = triage(text);
++    assert.equal(r.status, expect.status, text);
++    if (expect.issue) assert.equal(r.primaryIssue, expect.issue, text);
++  }
++});
+diff --git a/open-artifacts/access-to-justice-front-door/demo/index.html b/open-artifacts/access-to-justice-front-door/demo/index.html
+index a51b29b..74e3231 100644
+--- a/open-artifacts/access-to-justice-front-door/demo/index.html
++++ b/open-artifacts/access-to-justice-front-door/demo/index.html
+@@ -24,6 +24,8 @@
+   .cat { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); padding: 2px 8px; display: inline-block; }
+   .kw { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+   .candidates li { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 4px 0; }
++  button.pick { border: 1px solid var(--text-secondary); background: transparent; color: var(--text); font-size: 12px; margin: 4px 6px 0 0; padding: 6px 12px; }
++  button.pick:hover { background: var(--accent); border-color: var(--accent); }
+   .foot { margin-top: 32px; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.6; }
+ </style>
+ </head>
+@@ -50,6 +52,25 @@ import { triage } from '../core/core.js';
+ 
+ const $ = (id) => document.getElementById(id);
+ function esc(s) { return String(s).replace(/</g, '&lt;'); }
++function metaLine(r) {
++  const parts = [`urgency: ${esc(r.urgency)}`];
++  if (r.dates && r.dates.length) parts.push(`dates mentioned (info-only): ${r.dates.map(esc).join(', ')}`);
++  return `<p class="kw">${parts.join(' · ')}</p>`;
++}
++function renderClassified(r) {
++  return `
++      <div class="verdict">Matched: ${esc(r.primaryLabel)} · confidence ${r.confidence}${r.multiIssue ? ' · possible multi-issue' : ''}${r.resolvedBy === 'clarifying-question' ? ' · resolved by clarifying question' : ''}</div>
++      <p class="kw">matched keywords: ${r.matchedKeywords.map(esc).join(', ')}</p>
++      ${metaLine(r)}
++      ${r.referrals.map((ref) => `
++        <div class="referral">
++          <div class="cat">${esc(ref.legalAidCategory)}</div>
++          <p><strong>${esc(ref.label)}</strong> — ${esc(ref.serviceDescription)}</p>
++          <p style="font-size:14px;color:var(--text-secondary)">${esc(ref.whereToGo)}</p>
++          ${(ref.guidance ?? []).map((g) => `<p style="font-size:14px;color:var(--text-secondary)">Guidance: ${esc(g.point)} <a href="${esc(g.source.url)}" target="_blank" rel="noopener">${esc(g.source.name)}</a></p>`).join('')}
++        </div>`).join('')}
++      <p class="kw">${esc(r.disclaimer)}</p>`;
++}
+ 
+ $('run').addEventListener('click', () => {
+   const r = triage($('desc').value);
+@@ -58,23 +79,27 @@ $('run').addEventListener('click', () => {
+       <div class="result">
+         <div class="verdict escalate">Escalated to a human — ${esc(r.reason)}</div>
+         <p>${esc(r.escalate)}</p>
++        ${metaLine(r)}
+         ${r.candidates.length ? `<p class="kw">Possibilities reviewed but not served automatically:</p>
+-        <ul class="candidates">${r.candidates.map((c) => `<li>${esc(c.issue)} — confidence ${c.confidence}</li>`).join('')}</ul>` : ''}
++        <ul class="candidates">${r.candidates.map((c) => `<li>${esc(c.label ?? c.issue)} (${esc(c.issue)}, confidence ${c.confidence})${c.matchedKeywords && c.matchedKeywords.length ? ' — matched: ' + c.matchedKeywords.map(esc).join(', ') : ''}</li>`).join('')}</ul>` : ''}
++        ${r.matchedFragments && r.matchedFragments.length ? `<p class="kw">Staff review packet — matched fragments: ${r.matchedFragments.map(esc).join(', ')}</p>` : ''}
++        ${r.clarifyingQuestion ? `<p class="kw">${esc(r.clarifyingQuestion.question)}</p>
++        <p>${r.clarifyingQuestion.options.map((o) => `<button class="pick" data-id="${esc(o.id)}">${esc(o.label)}</button>`).join(' ')}</p>` : ''}
+         <p class="kw">${esc(r.disclaimer)}</p>
+       </div>`;
++    for (const b of document.querySelectorAll('button.pick')) {
++      b.addEventListener('click', () => {
++        $('out').innerHTML = `<div class="result">
++          <div class="verdict">Resolved by clarifying question</div>
++          ${renderClassified(triage($('desc').value, { pick: b.dataset.id }))}
++        </div>`;
++      });
++    }
+     return;
+   }
+   $('out').innerHTML = `
+     <div class="result">
+-      <div class="verdict">Matched: ${esc(r.primaryLabel)} · confidence ${r.confidence}${r.multiIssue ? ' · possible multi-issue' : ''}</div>
+-      <p class="kw">matched keywords: ${r.matchedKeywords.map(esc).join(', ')}</p>
+-      ${r.referrals.map((ref) => `
+-        <div class="referral">
+-          <div class="cat">${esc(ref.legalAidCategory)}</div>
+-          <p><strong>${esc(ref.label)}</strong> — ${esc(ref.serviceDescription)}</p>
+-          <p style="font-size:14px;color:var(--text-secondary)">${esc(ref.whereToGo)}</p>
+-        </div>`).join('')}
+-      <p class="kw">${esc(r.disclaimer)}</p>
++      ${renderClassified(r)}
+     </div>`;
+ });
+ $('run').click();
+diff --git a/open-artifacts/access-to-justice-front-door/examples/output.json b/open-artifacts/access-to-justice-front-door/examples/output.json
+index 8590e60..dc544d8 100644
+--- a/open-artifacts/access-to-justice-front-door/examples/output.json
++++ b/open-artifacts/access-to-justice-front-door/examples/output.json
+@@ -18,11 +18,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-housing",
+         "serviceDescription": "Eviction defense and housing stability help through your local legal aid housing unit.",
+-        "whereToGo": "Your nearest legal aid office or court self-help center; bring any court papers you received."
++        "whereToGo": "Your nearest legal aid office or court self-help center; bring any court papers you received.",
++        "guidance": [
++          {
++            "point": "Bring every notice, summons, or letter you have received to your first appointment; deadlines printed on court papers are time-sensitive.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          },
++          {
++            "point": "Court self-help centers can explain what each paper means at no cost; intake staff can point you to the nearest one.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "There is black mold in the bathroom and no heat since October; the landlord ignores my repair requests.",
+@@ -42,11 +60,29 @@
+         "confidence": 0.714,
+         "legalAidCategory": "legal-aid-housing",
+         "serviceDescription": "Housing conditions enforcement help through your local legal aid housing unit.",
+-        "whereToGo": "Your nearest legal aid office; bring photos, repair requests, and correspondence with the landlord."
++        "whereToGo": "Your nearest legal aid office; bring photos, repair requests, and correspondence with the landlord.",
++        "guidance": [
++          {
++            "point": "Take photos of the problem and keep copies of repair requests; bring both to your appointment.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          },
++          {
++            "point": "Many localities have a housing code enforcement office that inspects on request; intake staff can identify yours.",
++            "source": {
++              "name": "U.S. HUD — housing resources",
++              "url": "https://www.hud.gov"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "They denied my food stamps and said I have an overpayment I don't understand.",
+@@ -67,11 +103,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-benefits",
+         "serviceDescription": "Benefits appeals help (fair hearings) through your local legal aid public benefits unit.",
+-        "whereToGo": "Your nearest legal aid office; bring the denial or overpayment notice and any deadlines listed on it."
++        "whereToGo": "Your nearest legal aid office; bring the denial or overpayment notice and any deadlines listed on it.",
++        "guidance": [
++          {
++            "point": "Appeal deadlines are printed on the denial or overpayment notice; bring the notice to intake staff right away.",
++            "source": {
++              "name": "USA.gov — benefits page",
++              "url": "https://www.usa.gov/benefits"
++            }
++          },
++          {
++            "point": "A fair hearing can often be requested by phone or mail; the notice itself explains how.",
++            "source": {
++              "name": "USA.gov — benefits page",
++              "url": "https://www.usa.gov/benefits"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "A debt collector is suing me over an old credit card and threatened wage garnishment.",
+@@ -82,7 +136,8 @@
+     "multiIssue": false,
+     "matchedKeywords": [
+       "debt collector",
+-      "wage garnishment"
++      "wage garnishment",
++      "garnishment"
+     ],
+     "referrals": [
+       {
+@@ -91,11 +146,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-consumer",
+         "serviceDescription": "Consumer debt defense help through your local legal aid consumer unit.",
+-        "whereToGo": "Your nearest legal aid office; bring the collection letters or lawsuit papers."
++        "whereToGo": "Your nearest legal aid office; bring the collection letters or lawsuit papers.",
++        "guidance": [
++          {
++            "point": "Bring all collection letters, voicemails, and court papers to your appointment.",
++            "source": {
++              "name": "Consumer Financial Protection Bureau",
++              "url": "https://www.consumerfinance.gov"
++            }
++          },
++          {
++            "point": "Summons papers include a response deadline; bring them to intake staff the same week they arrive.",
++            "source": {
++              "name": "Consumer Financial Protection Bureau",
++              "url": "https://www.consumerfinance.gov"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "My partner hit me and I'm scared; I think I need a restraining order.",
+@@ -115,11 +188,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-dv",
+         "serviceDescription": "Safety planning and protective-order help through a domestic violence advocacy program.",
+-        "whereToGo": "A DV advocacy hotline or legal aid DV unit; if you are in immediate danger call emergency services first."
++        "whereToGo": "A DV advocacy hotline or legal aid DV unit; if you are in immediate danger call emergency services first.",
++        "guidance": [
++          {
++            "point": "If you are in immediate danger, call emergency services before anything else.",
++            "source": {
++              "name": "National Domestic Violence Hotline",
++              "url": "https://www.thehotline.org"
++            }
++          },
++          {
++            "point": "Safety planning with a trained advocate is free and confidential; advocates also help with protective-order paperwork.",
++            "source": {
++              "name": "National Domestic Violence Hotline",
++              "url": "https://www.thehotline.org"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "emergency",
++    "dates": []
+   },
+   {
+     "description": "I wasn't paid for six weeks of overtime at my last job.",
+@@ -138,11 +229,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-employment",
+         "serviceDescription": "Wage claim and employment help through your local legal aid workers’ rights unit.",
+-        "whereToGo": "Your nearest legal aid office; bring pay stubs, schedules, and any termination notice."
++        "whereToGo": "Your nearest legal aid office; bring pay stubs, schedules, and any termination notice.",
++        "guidance": [
++          {
++            "point": "Bring pay stubs, schedules, and any messages about hours or pay.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          },
++          {
++            "point": "Wage claims are handled by a state or federal labor agency; intake staff can identify the right office for your situation.",
++            "source": {
++              "name": "U.S. DOL Wage and Hour Division",
++              "url": "https://www.dol.gov/agencies/whd"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "I want to get my criminal record expunged so background checks stop killing my applications.",
+@@ -162,11 +271,29 @@
+         "confidence": 1,
+         "legalAidCategory": "legal-aid-record-clearance",
+         "serviceDescription": "Record sealing/expungement screening through a legal aid reentry clinic.",
+-        "whereToGo": "Your nearest legal aid reentry clinic; bring your RAP sheet if you have one."
++        "whereToGo": "Your nearest legal aid reentry clinic; bring your RAP sheet if you have one.",
++        "guidance": [
++          {
++            "point": "Bring your RAP sheet if you have one; if not, intake staff can explain how to request a copy.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          },
++          {
++            "point": "Eligibility for sealing depends on the case outcome and the state; a screener goes through it with you.",
++            "source": {
++              "name": "LawHelp.org — legal aid finder",
++              "url": "https://www.lawhelp.org"
++            }
++          }
++        ]
+       }
+     ],
+     "otherCandidates": [],
+-    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney."
++    "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "My neighbor's tree fell into my yard and now the HOA is fining me over the fence.",
+@@ -174,7 +301,10 @@
+     "reason": "no-keyword-match",
+     "escalate": "We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.",
+     "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
+-    "candidates": []
++    "candidates": [],
++    "matchedFragments": [],
++    "urgency": "routine",
++    "dates": []
+   },
+   {
+     "description": "The city reassessed my property taxes and I think the formula is wrong.",
+@@ -182,6 +312,9 @@
+     "reason": "no-keyword-match",
+     "escalate": "We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.",
+     "disclaimer": "This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.",
+-    "candidates": []
++    "candidates": [],
++    "matchedFragments": [],
++    "urgency": "routine",
++    "dates": []
+   }
+ ]
+diff --git a/open-artifacts/access-to-justice-front-door/examples/paraphrases.json b/open-artifacts/access-to-justice-front-door/examples/paraphrases.json
+new file mode 100644
+index 0000000..6edbdd8
+--- /dev/null
++++ b/open-artifacts/access-to-justice-front-door/examples/paraphrases.json
+@@ -0,0 +1,25 @@
++{
++  "note": "20-paraphrase golden set. Status/issue pairs are the recorded deterministic output of the classifier; 'issue' is asserted only when status is classified. Descriptions are fictional.",
++  "cases": [
++    { "text": "I'm being kicked out of my apartment.", "expect": { "status": "classified", "issue": "housing-eviction" } },
++    { "text": "They threw me out of my place last night.", "expect": { "status": "classified", "issue": "housing-eviction" } },
++    { "text": "My husband beats me and I am scared to go home.", "expect": { "status": "classified", "issue": "domestic-violence" } },
++    { "text": "My boss owes me for two weeks of work.", "expect": { "status": "classified", "issue": "employment-wage" } },
++    { "text": "They cut off my cash assistance without telling me why.", "expect": { "status": "classified", "issue": "benefits-denial" } },
++    { "text": "My check was garnished over an old hospital bill.", "expect": { "status": "classified", "issue": "consumer-debt" } },
++    { "text": "My EBT card stopped working and I can't buy food.", "expect": { "status": "classified", "issue": "benefits-denial" } },
++    { "text": "There are roaches everywhere and the landlord won't fix anything.", "expect": { "status": "classified", "issue": "housing-conditions" } },
++    { "text": "I want to clean up my record so I can get a job.", "expect": { "status": "classified", "issue": "record-clearance" } },
++    { "text": "I wasn't paid for working off the clock.", "expect": { "status": "classified", "issue": "employment-wage" } },
++    { "text": "There has been no hot water for a week.", "expect": { "status": "classified", "issue": "housing-conditions" } },
++    { "text": "My landlord gave me papers and I have to be out by Friday.", "expect": { "status": "classified", "issue": "housing-eviction" } },
++    { "text": "I need a protective order against my ex.", "expect": { "status": "classified", "issue": "domestic-violence" } },
++    { "text": "Child support stopped coming and I don't know what to do.", "expect": { "status": "classified", "issue": "family-custody" } },
++    { "text": "My neighbor's tree fell into my yard and now the HOA is fining me over the fence.", "expect": { "status": "escalate" } },
++    { "text": "I want to sue my dentist in another state.", "expect": { "status": "escalate" } },
++    { "text": "The city reassessed my property taxes and I think the formula is wrong.", "expect": { "status": "escalate" } },
++    { "text": "Someone is impersonating me online.", "expect": { "status": "escalate" } },
++    { "text": "I need help with a patent for my invention.", "expect": { "status": "escalate" } },
++    { "text": "My HOA won't let me paint my house purple.", "expect": { "status": "escalate" } }
++  ]
++}
+diff --git a/open-artifacts/access-to-justice-front-door/examples/triage.md b/open-artifacts/access-to-justice-front-door/examples/triage.md
+index 26679f6..795bfc6 100644
+--- a/open-artifacts/access-to-justice-front-door/examples/triage.md
++++ b/open-artifacts/access-to-justice-front-door/examples/triage.md
+@@ -47,11 +47,15 @@
+ 
+ Confidence: **1** (gate 0.4) · matched keywords: notice to quit, landlord, behind on rent
+ 
++urgency: routine
++
+ ## Referral — Eviction / loss of housing
+ 
+ - Legal aid category: `legal-aid-housing` (confidence 1)
+ - Eviction defense and housing stability help through your local legal aid housing unit.
+ - Your nearest legal aid office or court self-help center; bring any court papers you received.
++- Guidance: Bring every notice, summons, or letter you have received to your first appointment; deadlines printed on court papers are time-sensitive. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
++- Guidance: Court self-help centers can explain what each paper means at no cost; intake staff can point you to the nearest one. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -61,11 +65,15 @@ Confidence: **1** (gate 0.4) · matched keywords: notice to quit, landlord, behi
+ 
+ Confidence: **0.714** (gate 0.4) · matched keywords: mold, no heat
+ 
++urgency: routine
++
+ ## Referral — Repairs / unhealthy housing conditions
+ 
+ - Legal aid category: `legal-aid-housing` (confidence 0.714)
+ - Housing conditions enforcement help through your local legal aid housing unit.
+ - Your nearest legal aid office; bring photos, repair requests, and correspondence with the landlord.
++- Guidance: Take photos of the problem and keep copies of repair requests; bring both to your appointment. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
++- Guidance: Many localities have a housing code enforcement office that inspects on request; intake staff can identify yours. (source: U.S. HUD — housing resources <https://www.hud.gov>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -75,11 +83,15 @@ Confidence: **0.714** (gate 0.4) · matched keywords: mold, no heat
+ 
+ Confidence: **1** (gate 0.4) · matched keywords: food stamps, denied, overpayment
+ 
++urgency: routine
++
+ ## Referral — Public benefits denied or cut off
+ 
+ - Legal aid category: `legal-aid-benefits` (confidence 1)
+ - Benefits appeals help (fair hearings) through your local legal aid public benefits unit.
+ - Your nearest legal aid office; bring the denial or overpayment notice and any deadlines listed on it.
++- Guidance: Appeal deadlines are printed on the denial or overpayment notice; bring the notice to intake staff right away. (source: USA.gov — benefits page <https://www.usa.gov/benefits>)
++- Guidance: A fair hearing can often be requested by phone or mail; the notice itself explains how. (source: USA.gov — benefits page <https://www.usa.gov/benefits>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -87,13 +99,17 @@ Confidence: **1** (gate 0.4) · matched keywords: food stamps, denied, overpayme
+ 
+ # Triage — Debt collection / credit
+ 
+-Confidence: **1** (gate 0.4) · matched keywords: debt collector, wage garnishment
++Confidence: **1** (gate 0.4) · matched keywords: debt collector, wage garnishment, garnishment
++
++urgency: routine
+ 
+ ## Referral — Debt collection / credit
+ 
+ - Legal aid category: `legal-aid-consumer` (confidence 1)
+ - Consumer debt defense help through your local legal aid consumer unit.
+ - Your nearest legal aid office; bring the collection letters or lawsuit papers.
++- Guidance: Bring all collection letters, voicemails, and court papers to your appointment. (source: Consumer Financial Protection Bureau <https://www.consumerfinance.gov>)
++- Guidance: Summons papers include a response deadline; bring them to intake staff the same week they arrive. (source: Consumer Financial Protection Bureau <https://www.consumerfinance.gov>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -103,11 +119,15 @@ Confidence: **1** (gate 0.4) · matched keywords: debt collector, wage garnishme
+ 
+ Confidence: **1** (gate 0.4) · matched keywords: restraining order, hit me
+ 
++urgency: emergency
++
+ ## Referral — Domestic violence / safety
+ 
+ - Legal aid category: `legal-aid-dv` (confidence 1)
+ - Safety planning and protective-order help through a domestic violence advocacy program.
+ - A DV advocacy hotline or legal aid DV unit; if you are in immediate danger call emergency services first.
++- Guidance: If you are in immediate danger, call emergency services before anything else. (source: National Domestic Violence Hotline <https://www.thehotline.org>)
++- Guidance: Safety planning with a trained advocate is free and confidential; advocates also help with protective-order paperwork. (source: National Domestic Violence Hotline <https://www.thehotline.org>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -117,11 +137,15 @@ Confidence: **1** (gate 0.4) · matched keywords: restraining order, hit me
+ 
+ Confidence: **1** (gate 0.4) · matched keywords: overtime
+ 
++urgency: routine
++
+ ## Referral — Wage theft / job problems
+ 
+ - Legal aid category: `legal-aid-employment` (confidence 1)
+ - Wage claim and employment help through your local legal aid workers’ rights unit.
+ - Your nearest legal aid office; bring pay stubs, schedules, and any termination notice.
++- Guidance: Bring pay stubs, schedules, and any messages about hours or pay. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
++- Guidance: Wage claims are handled by a state or federal labor agency; intake staff can identify the right office for your situation. (source: U.S. DOL Wage and Hour Division <https://www.dol.gov/agencies/whd>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -131,11 +155,15 @@ Confidence: **1** (gate 0.4) · matched keywords: overtime
+ 
+ Confidence: **1** (gate 0.4) · matched keywords: criminal record, background check
+ 
++urgency: routine
++
+ ## Referral — Record sealing / expungement
+ 
+ - Legal aid category: `legal-aid-record-clearance` (confidence 1)
+ - Record sealing/expungement screening through a legal aid reentry clinic.
+ - Your nearest legal aid reentry clinic; bring your RAP sheet if you have one.
++- Guidance: Bring your RAP sheet if you have one; if not, intake staff can explain how to request a copy. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
++- Guidance: Eligibility for sealing depends on the case outcome and the state; a screener goes through it with you. (source: LawHelp.org — legal aid finder <https://www.lawhelp.org>)
+ 
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+@@ -145,6 +173,8 @@ Confidence: **1** (gate 0.4) · matched keywords: criminal record, background ch
+ 
+ We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.
+ 
++urgency: routine
++
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+ 
+ ---
+@@ -153,4 +183,6 @@ We could not confidently classify this description. A staff member will review i
+ 
+ We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.
+ 
++urgency: routine
++
+ > This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.
+diff --git a/open-artifacts/access-to-justice-front-door/spec.md b/open-artifacts/access-to-justice-front-door/spec.md
+index 76653b7..2fdd45b 100644
+--- a/open-artifacts/access-to-justice-front-door/spec.md
++++ b/open-artifacts/access-to-justice-front-door/spec.md
+@@ -15,31 +15,46 @@ copied verbatim from the editable referral data. Tests enforce both.
+ | Capability | Owner |
+ |---|---|
+ | Keyword/rule matching against taxonomy (word-boundary singles, verbatim phrases) | core (deterministic) |
++| Alias/synonym layer (`aliases` per issue, e.g. "kicked out" → eviction) — dialect/paraphrase robustness without an LLM | core (deterministic) |
++| Urgency flag (`emergency`/`urgent`/`routine`) from safety/time-pressure phrase lists | core (deterministic) |
++| Plain-language date capture (`dates[]`, info-only — no year inference, no deadline math) | core (deterministic) |
+ | Confidence = winning issue's share of matched keyword weight | core (deterministic) |
+ | Confidence gate (default 0.4) → escalate to human, never guess | core (deterministic) |
++| Clarifying question on low-confidence splits; `triage(text, { pick })` resolves deterministically | core (deterministic) |
+ | Multi-issue detection (top gap < 0.15 → serve both referrals) | core (deterministic) |
+-| Referral mapping to legal-aid categories | rules-as-data (editable) |
++| Referral mapping + approved guidance entries (`guidance: [{ point, source }]`, process-only, one source link each) | rules-as-data (editable) |
++| Escalation packet: full candidates (label + matched keywords) + matched fragments for staff review | core (deterministic) |
+ | Pre-normalizing spelling/dialect of the description | optional LLM pass (prompt below) |
+ | Reviewing escalations, final routing | human intake staff |
+ 
+ ## Input / output contract
+ 
+-Input: `{ text: string, opts?: { taxonomy?, minConfidence?, multiIssueGap? } }`.
++Input: `{ text: string, opts?: { taxonomy?, minConfidence?, multiIssueGap?, pick? } }`.
++`pick` is the issue id chosen from a low-confidence result's
++`clarifyingQuestion.options`; it resolves the split deterministically and
++never introduces an issue the matcher did not surface.
+ 
+ Output (classified):
+ `{ status: 'classified', primaryIssue, primaryLabel, confidence,
+-multiIssue, matchedKeywords[], referrals[{issue,label,confidence,
+-legalAidCategory, serviceDescription, whereToGo}], otherCandidates[],
+-disclaimer }`.
++multiIssue, matchedKeywords[], resolvedBy?, referrals[{issue,label,confidence,
++legalAidCategory, serviceDescription, whereToGo, guidance[{point, source:
++{name, url}}]}], otherCandidates[], urgency, dates[], disclaimer }`.
+ 
+ Output (escalated): `{ status: 'escalate', reason:
+-'no-keyword-match'|'low-confidence', escalate, candidates[], disclaimer }`.
++'no-keyword-match'|'low-confidence'|'invalid-pick', escalate, candidates[{issue,
++label, confidence, matchedKeywords}], clarifyingQuestion?{question,
++options[{id, label}]}, matchedFragments[], urgency, dates[], disclaimer }`.
++
++`urgency` ∈ `emergency|urgent|routine` (phrase-list based);
++`dates[]` holds raw date fragments (e.g. "March 3", "3/15") in text
++order, info-only.
+ 
+ Refusal guarantees (tested):
+ - no match → escalate, no `primaryIssue` at all;
+ - below-gate → escalate, candidates listed but not served;
+-- no `advice`-shaped fields anywhere in the response;
+-- every served referral string exists verbatim in the taxonomy data.
++- a `pick` outside the matcher's candidates → escalate (`invalid-pick`), never classified;
++- no `advice`-shaped fields anywhere in the response, guidance entries stay process-only;
++- every served referral and guidance string exists verbatim in the taxonomy data.
+ 
+ ## Prompt schema for the optional LLM pass
+ 
+@@ -61,3 +76,6 @@ The classifier always runs on the normalized text and stays deterministic.
+ - Advice-free by construction and by test — the response schema has no
+   place for advice to leak into.
+ - Zero dependencies, works offline in a browser tab (kiosk-friendly).
++- Paraphrase robustness without an LLM: a 20-paraphrase golden set
++  (`examples/paraphrases.json`) is machine-verified by the test suite —
++  including 14 classified phrasings and 6 that still escalate on purpose.

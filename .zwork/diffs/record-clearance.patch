@@ -1,0 +1,1291 @@
+diff --git a/open-artifacts/record-clearance/README.md b/open-artifacts/record-clearance/README.md
+index 70d49d1..ff4ff37 100644
+--- a/open-artifacts/record-clearance/README.md
++++ b/open-artifacts/record-clearance/README.md
+@@ -1,11 +1,16 @@
+ # record-clearance
+ 
+ Record clearance / certificate-of-relief tracker. Client record JSON +
+-jurisdiction → relief types from **rules-as-data** (3 editable example US
+-states: CA, IL, NY), eligibility-prerequisites checklist (met / not met /
+-**unknown — never guessed**), filing-deadline date math (earliest and last
+-filing dates), status tracking for matters already filed, and referral
+-flags for counsel-dependent relief.
++jurisdiction → relief types from **rules-as-data** (full-tier example US
++states: CA, IL, NY — plus a **guidance tier** for TX: generic screen with a
++mandatory referral, never a bare error), eligibility-prerequisites checklist
++(met / not met / **unknown — never guessed**), filing-deadline date math
++(earliest and last filing dates), **filing guidance as data** (steps, forms,
++fee-waiver note) with an **authority link** (`[verify]`-tagged cite + URL) on
++every relief type, per-conviction fact overrides (probation/fines can differ
++by conviction), an LLM **intake boundary** (`validateIntake`: `uncertain`
++fields dropped + logged, ids assigned), status tracking for matters already
++filed, and referral flags for counsel-dependent relief.
+ 
+ Open reimplementation of The Access Project "Record clearance" (Claude for
+ Legal A2J gallery). The original is a closed single-state screen; here every
+@@ -15,26 +20,34 @@ id on every checklist line.
+ ## Run
+ 
+ ```bash
+-node --test 'core/*.test.js'   # 17 tests
++node --test 'core/*.test.js'   # 27 tests
+ node examples/run.js           # regenerates examples/output.json + report.md
++                                # and examples/intake-output.json + intake-report.md
+ ```
+ 
+-Open `demo/index.html` for the interactive demo (prefilled worked example:
+-2 fictional convictions × 3 CA relief types, one petition already filed).
++Open `demo/index.html` for the interactive demo: jurisdiction switcher
++(CA / IL / NY full rulesets + TX guidance tier, side-by-side input/output),
++prefilled worked example with 2 fictional convictions × 3 CA relief types,
++one petition already filed.
+ 
+ ## Layout
+ 
+ - `spec.md` — IO contract, deterministic/LLM split, prompt schema
+ - `core/core.js` — dependency-free ES module (browser + Node)
+ - `core/core.test.js` — node:test suite
+-- `examples/` — fictional client record → tracker outputs
++- `examples/` — fictional client record → tracker outputs; `intake.json` is
++  the LLM-shaped worked example for the `validateIntake` pipeline
+ - `demo/index.html` — standalone interactive demo (design tokens)
+ 
+ ## Better than the closed counterpart
+ 
+-- Jurisdictions and relief types are plain data — portable beyond one state.
++- Jurisdictions and relief types are plain data — portable beyond one state,
++  with a guidance tier so every jurisdiction gets an answer, not an error.
+ - Tri-state checklist: unknown facts become `data_needed`, never guesses.
+ - Earliest/last filing dates computed by inspectable anchor+years math.
++- Filing guidance (steps/forms/fee-waiver) and authority links live in the
++  same editable data — inspectable and replaceable, unlike closed guidance.
++- `validateIntake` publishes and tests the LLM boundary the spec defines.
+ - Filed/granted/denied statuses tracked instead of recomputed.
+ - Referral flags route counsel-dependent relief (certificates, pardons) to humans.
+ 
+diff --git a/open-artifacts/record-clearance/core/core.js b/open-artifacts/record-clearance/core/core.js
+index 9197e8e..a9c8a2e 100644
+--- a/open-artifacts/record-clearance/core/core.js
++++ b/open-artifacts/record-clearance/core/core.js
+@@ -56,7 +56,11 @@ export function yearsElapsed(from, to) {
+ /* ---------- rules-as-data (illustrative, editable) ---------- */
+ 
+ /**
+- * Relief-type rules per example jurisdiction. Each prerequisite has a
++ * Relief-type rules per example jurisdiction, in two tiers: `full` rulesets
++ * (default) carry prerequisites + filing math + filingGuidance + authority;
++ * `guidance` tier rulesets (e.g. TX) carry a generic screen, a guidanceNote,
++ * and a mandatory referral — an answer for every jurisdiction, never a bare
++ * error. Each prerequisite has a
+  * `kind` the engine knows how to evaluate deterministically:
+  *  - probationCompleted · finesPaid · noPendingCases · rapSheetObtained
+  *  - offenseNotIn { categories, classes }
+@@ -77,6 +81,17 @@ export const JURISDICTION_RULES = {
+         id: "CA-dismissal-petition",
+         name: "Dismissal petition (record clearance)",
+         ruleId: "CA-CR1",
++        authority: { cite: "Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify]", url: "https://selfhelp.courts.ca.gov/record-clearance" },
++        filingGuidance: {
++          steps: [
++            "Obtain a certified copy of the rap sheet (illustrative step — verify locally).",
++            "Complete the dismissal petition for each conviction and attach disposition documents.",
++            "File at the court of conviction and serve the prosecuting attorney.",
++            "Comply with any local notice-to-probation requirement before the hearing.",
++          ],
++          forms: ["Dismissal petition (illustrative form name — verify locally)", "Declaration in support (illustrative)"],
++          feeWaiverNote: "A fee-waiver application is available from the clerk on request (illustrative — verify locally).",
++        },
+         prerequisites: [
+           { id: "CA-CR1-a", kind: "probationCompleted", label: "Probation completed or terminated" },
+           { id: "CA-CR1-b", kind: "finesPaid", label: "All fines, fees, and restitution paid" },
+@@ -90,6 +105,17 @@ export const JURISDICTION_RULES = {
+         id: "CA-cert-rehab",
+         name: "Certificate of Rehabilitation",
+         ruleId: "CA-CR2",
++        authority: { cite: "Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify]", url: "https://selfhelp.courts.ca.gov/record-clearance" },
++        filingGuidance: {
++          steps: [
++            "Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).",
++            "Assemble the rehabilitation declaration and supporting letters.",
++            "File the petition in the county of residence and serve as the court directs.",
++            "Attend the hearing with counsel or the legal aid clinic.",
++          ],
++          forms: ["Certificate of Rehabilitation petition (illustrative — verify locally)", "Live-scan receipt (illustrative)"],
++          feeWaiverNote: "A fee-waiver request may accompany the petition (illustrative — verify locally).",
++        },
+         prerequisites: [
+           { id: "CA-CR2-a", kind: "probationCompleted", label: "Probation completed" },
+           { id: "CA-CR2-b", kind: "finesPaid", label: "All court-ordered payments satisfied" },
+@@ -104,6 +130,17 @@ export const JURISDICTION_RULES = {
+         id: "CA-governor-pardon",
+         name: "Governor's pardon (application)",
+         ruleId: "CA-CR3",
++        authority: { cite: "Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify]", url: "https://www.gov.ca.gov/" },
++        filingGuidance: {
++          steps: [
++            "Obtain the certified rap sheet and court records for every conviction (illustrative).",
++            "Prepare the application narrative and letters of support.",
++            "Submit through the governor's office portal or by mail (illustrative).",
++            "Coordinate with counsel before submission.",
++          ],
++          forms: ["Governor's pardon application (illustrative — verify locally)", "Letters of support (illustrative)"],
++          feeWaiverNote: "No filing fee is charged for pardon applications in this example ruleset (illustrative — verify).",
++        },
+         prerequisites: [
+           { id: "CA-CR3-a", kind: "noPendingCases", label: "No pending cases" },
+           { id: "CA-CR3-b", kind: "waitingPeriod", years: 10, anchor: "sentenceCompletedDate", label: "10 years since sentence completion" },
+@@ -123,6 +160,17 @@ export const JURISDICTION_RULES = {
+         id: "IL-expungement",
+         name: "Expungement petition",
+         ruleId: "IL-CR1",
++        authority: { cite: "20 ILCS 2630/5.2 (expungement) — illustrative [verify]", url: "https://www.illinoiscourts.gov/" },
++        filingGuidance: {
++          steps: [
++            "Obtain a certified disposition for each conviction (illustrative).",
++            "Verify eligibility against the exclusion list before drafting.",
++            "File the expungement petition with the circuit clerk and serve the State's Attorney.",
++            "Attend the hearing if the court requires it.",
++          ],
++          forms: ["Expungement petition (illustrative form name — verify locally)", "Notice to State's Attorney (illustrative)"],
++          feeWaiverNote: "A fee-waiver application may be filed with the petition (illustrative — verify locally).",
++        },
+         prerequisites: [
+           { id: "IL-CR1-a", kind: "noPendingCases", label: "No pending criminal cases" },
+           { id: "IL-CR1-b", kind: "finesPaid", label: "All fines paid" },
+@@ -136,6 +184,17 @@ export const JURISDICTION_RULES = {
+         id: "IL-sealing",
+         name: "Sealing petition",
+         ruleId: "IL-CR2",
++        authority: { cite: "20 ILCS 2630/5.5 (sealing) — illustrative [verify]", url: "https://www.illinoiscourts.gov/" },
++        filingGuidance: {
++          steps: [
++            "Obtain a certified rap sheet listing all convictions (illustrative).",
++            "Confirm the conviction-count cap before filing.",
++            "File the sealing petition with the circuit clerk and serve required parties.",
++            "Calendar the objection window and any hearing date.",
++          ],
++          forms: ["Sealing petition (illustrative form name — verify locally)", "Fingerprint card receipt (illustrative)"],
++          feeWaiverNote: "A fee-waiver application is available from the circuit clerk (illustrative — verify locally).",
++        },
+         prerequisites: [
+           { id: "IL-CR2-a", kind: "noPendingCases", label: "No pending cases" },
+           { id: "IL-CR2-b", kind: "convictionCountMax", max: 2, label: "At most 2 qualifying convictions" },
+@@ -156,6 +215,17 @@ export const JURISDICTION_RULES = {
+         id: "NY-sealing-160.58-style",
+         name: "Record sealing petition (illustrative)",
+         ruleId: "NY-CR1",
++        authority: { cite: "NY CPL § 160.58 (sealing) — illustrative [verify]", url: "https://www.nycourts.gov/" },
++        filingGuidance: {
++          steps: [
++            "Obtain certified dispositions and proof of sentence completion (illustrative).",
++            "Draft the relief-interest statement with counsel (discretionary relief).",
++            "File the sealing motion with the court and serve the prosecutor.",
++            "Attend the hearing if scheduled.",
++          ],
++          forms: ["Sealing motion + affidavit (illustrative — verify locally)", "Relief-interest statement (illustrative)"],
++          feeWaiverNote: "A poor-person order (fee waiver) may be requested with the motion (illustrative — verify).",
++        },
+         prerequisites: [
+           { id: "NY-CR1-a", kind: "noPendingCases", label: "No pending cases" },
+           { id: "NY-CR1-b", kind: "convictionCountMax", max: 2, label: "No more than 2 convictions overall (illustrative)" },
+@@ -169,6 +239,16 @@ export const JURISDICTION_RULES = {
+         id: "NY-cert-relief",
+         name: "Certificate of Relief from Disabilities",
+         ruleId: "NY-CR2",
++        authority: { cite: "NY Correct. Law § 700 (certificate of relief) — illustrative [verify]", url: "https://www.nycourts.gov/" },
++        filingGuidance: {
++          steps: [
++            "Confirm the sentence and probation conditions are fully satisfied (illustrative).",
++            "File the application with the court or probation department as locally required.",
++            "Serve the prosecutor and attend any scheduled appearance.",
++          ],
++          forms: ["Certificate of Relief application (illustrative — verify locally)"],
++          feeWaiverNote: "No filing fee in this example ruleset (illustrative — verify locally).",
++        },
+         prerequisites: [
+           { id: "NY-CR2-a", kind: "noPendingCases", label: "No pending cases" },
+           { id: "NY-CR2-b", kind: "probationCompleted", label: "Sentence/probation conditions satisfied" },
+@@ -178,6 +258,30 @@ export const JURISDICTION_RULES = {
+       },
+     ],
+   },
++  TX: {
++    id: "TX",
++    name: "Texas (guidance tier — example)",
++    version: "2026-11-example",
++    tier: "guidance",
++    guidanceNote:
++      "Guidance tier: no example relief rules loaded for this jurisdiction yet. " +
++      "The screen below performs generic checks only and makes no eligibility " +
++      "determination — every item carries a mandatory referral to counsel or a " +
++      "legal aid clinic.",
++    reliefTypes: [
++      {
++        id: "TX-generic-screen",
++        name: "Generic clearance screen (guidance tier)",
++        ruleId: "TX-G1",
++        authority: { cite: "Guidance tier — no jurisdiction rules loaded; verify with counsel [verify]", url: "https://www.lawhelp.org/" },
++        prerequisites: [
++          { id: "TX-G1-a", kind: "noPendingCases", label: "No pending criminal cases" },
++          { id: "TX-G1-b", kind: "rapSheetObtained", label: "Certified rap sheet obtained for screening" },
++        ],
++        referral: "Guidance tier: refer to counsel or a legal aid clinic for this jurisdiction's current clearance remedies.",
++      },
++    ],
++  },
+ };
+ 
+ /** Load a ruleset by id; null when unknown (never a fallback guess).
+@@ -211,15 +315,17 @@ export const GATE = {
+ export function evalPrereq(prereq, client, conviction, totalConvictions, asOf) {
+   switch (prereq.kind) {
+     case "probationCompleted": {
+-      const v = client?.probationStatus;
++      const own = conviction?.probationStatus;
++      const v = own ?? client?.probationStatus; // conviction-level fact overrides client-level
+       if (v == null) return { status: "unknown", detail: "client.probationStatus not provided" };
+       const met = v === "completed" || v === "terminated";
+-      return { status: met ? "met" : "not_met", detail: `probationStatus = ${v}` };
++      return { status: met ? "met" : "not_met", detail: `probationStatus = ${v}${own != null ? " (conviction-level override)" : ""}` };
+     }
+     case "finesPaid": {
+-      const v = client?.finesPaid;
++      const own = conviction?.finesPaid;
++      const v = own ?? client?.finesPaid; // conviction-level fact overrides client-level
+       if (v == null) return { status: "unknown", detail: "client.finesPaid not provided" };
+-      return { status: v ? "met" : "not_met", detail: `finesPaid = ${v}` };
++      return { status: v ? "met" : "not_met", detail: `finesPaid = ${v}${own != null ? " (conviction-level override)" : ""}` };
+     }
+     case "noPendingCases": {
+       const v = client?.pendingCases;
+@@ -273,6 +379,10 @@ export function evalPrereq(prereq, client, conviction, totalConvictions, asOf) {
+  * @returns {{earliestFilingDate:string|null, lastFilingDate:string|null, anchorMissing:boolean}}
+  */
+ export function filingDates(relief, conviction) {
++  if (!relief?.earliestFiling) {
++    // guidance-tier relief types carry no filing math — surfaced as unknown, never guessed
++    return { earliestFilingDate: null, lastFilingDate: null, anchorMissing: true };
++  }
+   const anchor = parseDate(conviction?.[relief.earliestFiling.anchor]);
+   if (!anchor) return { earliestFilingDate: null, lastFilingDate: null, anchorMissing: true };
+   const earliest = addYears(anchor, relief.earliestFiling.years);
+@@ -309,6 +419,8 @@ export function trackClearance(input) {
+     asOf: input?.asOf ?? null,
+     jurisdiction: input?.jurisdiction ?? null,
+     ruleset: rules ? { id: rules.id, name: rules.name, version: rules.version } : null,
++    coverageTier: rules ? (rules.tier ?? "full") : null,
++    ...(rules?.tier === "guidance" ? { guidanceNote: rules.guidanceNote } : {}),
+     items,
+     summary: { total: 0, ready_to_file: 0, waiting: 0, blocked: 0, data_needed: 0, filed: 0, granted: 0, denied: 0 },
+     referrals: [],
+@@ -326,6 +438,7 @@ export function trackClearance(input) {
+   const convictions = input.convictions ?? [];
+   const filings = input.filings ?? [];
+   for (const relief of rules.reliefTypes) {
++    const guidanceTier = rules.tier === "guidance"; // referral mandatory on every item, not just actionable ones
+     for (const c of convictions) {
+       const checklist = relief.prerequisites.map((p) => ({
+         id: p.id, label: p.label ?? p.kind, ruleId: relief.ruleId,
+@@ -354,13 +467,15 @@ export function trackClearance(input) {
+         ruleId: relief.ruleId,
+         checklist,
+         filing: filing ?? null,
++        filingGuidance: relief.filingGuidance ?? null,
++        authority: relief.authority ?? null,
+         earliestFilingDate: fd.earliestFilingDate,
+         lastFilingDate: fd.lastFilingDate,
+         status,
+         referral: relief.referral,
+       };
+       items.push(item);
+-      if (relief.referral && (status === "ready_to_file" || status === "waiting")) {
++      if (relief.referral && (guidanceTier || status === "ready_to_file" || status === "waiting")) {
+         report.referrals.push({ reliefTypeId: relief.id, convictionId: c.id, note: relief.referral });
+       }
+     }
+@@ -373,6 +488,69 @@ export function trackClearance(input) {
+   return report;
+ }
+ 
++/* ---------- intake normalization (LLM boundary) ---------- */
++
++/** Client keys accepted in the normalized ClearanceInput (spec prompt schema). */
++const CLIENT_KEYS = ["id", "name", "probationStatus", "finesPaid", "pendingCases", "rapSheetObtained"];
++/** Conviction keys accepted in the normalized ClearanceInput. */
++const CONVICTION_KEYS = ["id", "offense", "offenseCategory", "offenseClass", "dispositionDate",
++  "sentenceCompletedDate", "probationTerminatedDate", "probationStatus", "finesPaid"];
++
++/**
++ * Normalize LLM-structured intake (the spec's "Prompt schema for the LLM
++ * part") into a ClearanceInput. Fields listed in `uncertain` are dropped
++ * from the client AND from every conviction, and logged as issues — the
++ * engine then turns the gap into `unknown` checklist rows instead of
++ * trusting a guess. Unknown keys are normalized away; convictions missing
++ * an id get sequential ids (C1, C2, …) and are flagged.
++ * @param {Object} llm @returns {{input:Object, issues:string[]}}
++ */
++export function validateIntake(llm) {
++  const issues = [];
++  const raw = llm ?? {};
++  const pick = (obj, keys) =>
++    Object.fromEntries(keys.filter((k) => obj?.[k] !== undefined).map((k) => [k, obj[k]]));
++  const client = pick(raw.client, CLIENT_KEYS);
++  const convictions = (Array.isArray(raw.convictions) ? raw.convictions : []).map((c, i) => {
++    const norm = pick(c, CONVICTION_KEYS);
++    if (!norm.id) {
++      norm.id = `C${i + 1}`;
++      issues.push(`conviction ${i + 1} missing id — assigned "${norm.id}"`);
++    }
++    return norm;
++  });
++  for (const u of Array.isArray(raw.uncertain) ? raw.uncertain : []) {
++    if (!u || typeof u.field !== "string") continue;
++    const why = u.reason ? ` — ${u.reason}` : "";
++    if (!CLIENT_KEYS.includes(u.field) && !CONVICTION_KEYS.includes(u.field)) {
++      issues.push(`uncertain: unrecognized field "${u.field}" ignored${why}`);
++      continue;
++    }
++    if (u.field in client) {
++      delete client[u.field];
++      issues.push(`uncertain: client.${u.field} dropped${why}`);
++    }
++    for (const c of convictions) {
++      if (u.field in c) {
++        delete c[u.field];
++        issues.push(`uncertain: conviction ${c.id}.${u.field} dropped${why}`);
++      } else {
++        issues.push(`uncertain: conviction ${c.id}.${u.field} treated as unknown (client value not inherited)${why}`);
++      }
++    }
++  }
++  return {
++    input: {
++      jurisdiction: typeof raw.jurisdiction === "string" ? raw.jurisdiction : null,
++      asOf: typeof raw.asOf === "string" ? raw.asOf : null,
++      client,
++      convictions,
++      filings: Array.isArray(raw.filings) ? raw.filings : [],
++    },
++    issues,
++  };
++}
++
+ /** Markdown tracker report.
+  * @param {ReturnType<trackClearance>} report
+  * @returns {string} */
+@@ -382,6 +560,10 @@ export function renderReport(report) {
+   L.push("");
+   L.push(`As of **${report.asOf ?? "?"}** · ruleset ${report.ruleset ? `${report.ruleset.id} v${report.ruleset.version}` : "—"}`);
+   L.push("");
++  if (report.guidanceNote) {
++    L.push(`> 🧭 ${report.guidanceNote}`);
++    L.push("");
++  }
+   if (report.errors?.length) {
+     for (const e of report.errors) L.push(`- ⚠️ ${e}`);
+     L.push("");
+@@ -393,6 +575,12 @@ export function renderReport(report) {
+     for (const k of it.checklist) L.push(`- ${mark[k.status] ?? "[?]"} ${k.label} — ${k.detail} \`${k.ruleId}\``);
+     L.push(`- Earliest filing: **${it.earliestFilingDate ?? "unknown (missing anchor date)"}**` +
+       (it.lastFilingDate ? ` · last: **${it.lastFilingDate}**` : ""));
++    if (it.filingGuidance) {
++      L.push(`- Forms: ${it.filingGuidance.forms.join(" · ")}`);
++      it.filingGuidance.steps.forEach((s, n) => L.push(`  ${n + 1}. ${s}`));
++      L.push(`- Fee waiver: ${it.filingGuidance.feeWaiverNote}`);
++    }
++    if (it.authority) L.push(`- Authority: ${it.authority.cite} — ${it.authority.url}`);
+     if (it.filing) L.push(`- Filed ${it.filing.date} — status: **${it.filing.status}**`);
+     if (it.referral) L.push(`- Referral: ${it.referral}`);
+     L.push("");
+diff --git a/open-artifacts/record-clearance/core/core.test.js b/open-artifacts/record-clearance/core/core.test.js
+index f06a1ef..7bca1a2 100644
+--- a/open-artifacts/record-clearance/core/core.test.js
++++ b/open-artifacts/record-clearance/core/core.test.js
+@@ -1,11 +1,16 @@
+ /** Tests: record-clearance core. Run: node --test 'core/*.test.js' */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
++import { fileURLToPath } from "node:url";
++import { dirname, join } from "node:path";
+ import {
+   parseDate, fmtDate, addYears, yearsElapsed, getRuleset,
+-  evalPrereq, filingDates, trackClearance, renderReport, JURISDICTION_RULES,
++  evalPrereq, filingDates, trackClearance, renderReport, validateIntake, JURISDICTION_RULES,
+ } from "./core.js";
+ 
++const here = dirname(fileURLToPath(import.meta.url));
++
+ const AS_OF = "2026-11-07";
+ const clientOk = { probationStatus: "completed", finesPaid: true, pendingCases: false, rapSheetObtained: true };
+ const conv = (over = {}) => ({
+@@ -154,12 +159,16 @@ test("summary counts statuses across all conviction x relief pairs", () => {
+   assert.equal(r.summary.ready_to_file + r.summary.blocked + r.summary.waiting + r.summary.data_needed, 4);
+ });
+ 
+-test("rules-as-data: 3 example jurisdictions, each with relief types + rule ids", () => {
+-  assert.deepEqual(Object.keys(JURISDICTION_RULES).sort(), ["CA", "IL", "NY"]);
+-  for (const rs of Object.values(JURISDICTION_RULES)) {
++test("rules-as-data: full-tier jurisdictions + TX guidance tier, each with rule ids", () => {
++  const full = Object.entries(JURISDICTION_RULES).filter(([, rs]) => (rs.tier ?? "full") === "full");
++  assert.deepEqual(full.map(([id]) => id).sort(), ["CA", "IL", "NY"]);
++  for (const [, rs] of full) {
+     assert.ok(rs.reliefTypes.length >= 2);
+     for (const rt of rs.reliefTypes) assert.ok(rt.ruleId && rt.prerequisites.length >= 2);
+   }
++  const tx = JURISDICTION_RULES.TX;
++  assert.equal(tx.tier, "guidance");
++  assert.ok(tx.guidanceNote.length > 0);
+   assert.equal(getRuleset("NOPE"), null);
+ });
+ 
+@@ -174,3 +183,136 @@ test("markdown report includes checklist marks, filing dates, referrals, gate",
+   assert.match(md, /Referral/);
+   assert.match(md, /counsel/);
+ });
++
++/* ---------- filing guidance as data ---------- */
++
++test("filing guidance: ready_to_file item carries forms/steps/fee-waiver; report renders them", () => {
++  const r = trackClearance({
++    jurisdiction: "CA", asOf: AS_OF, client: clientOk,
++    convictions: [conv({ sentenceCompletedDate: "2010-01-01", probationTerminatedDate: "2011-01-01" })],
++  });
++  const item = r.items.find((i) => i.reliefTypeId === "CA-dismissal-petition" && i.status === "ready_to_file");
++  assert.ok(item.filingGuidance, "item carries filingGuidance");
++  assert.ok(Array.isArray(item.filingGuidance.forms) && item.filingGuidance.forms.length > 0);
++  assert.ok(Array.isArray(item.filingGuidance.steps) && item.filingGuidance.steps.length > 0);
++  assert.ok(typeof item.filingGuidance.feeWaiverNote === "string" && item.filingGuidance.feeWaiverNote.length > 0);
++  const md = renderReport(r);
++  assert.match(md, /fee waiver/i);
++  assert.match(md, /Forms:/);
++});
++
++test("filing guidance: every full-tier relief type defines filingGuidance and authority", () => {
++  for (const rs of Object.values(JURISDICTION_RULES)) {
++    if ((rs.tier ?? "full") !== "full") continue;
++    for (const rt of rs.reliefTypes) {
++      assert.ok(rt.filingGuidance?.forms?.length, `${rt.id} missing filingGuidance.forms`);
++      assert.ok(rt.filingGuidance?.steps?.length, `${rt.id} missing filingGuidance.steps`);
++      assert.ok(rt.filingGuidance?.feeWaiverNote, `${rt.id} missing feeWaiverNote`);
++    }
++  }
++});
++
++/* ---------- two-tier coverage ---------- */
++
++test("guidance tier: known-but-unloaded jurisdiction returns a guidance report, never a bare error", () => {
++  const r = trackClearance({ jurisdiction: "TX", asOf: AS_OF, client: clientOk, convictions: [conv()] });
++  assert.ok(!r.errors, "no errors for guidance-tier jurisdiction");
++  assert.equal(r.coverageTier, "guidance");
++  assert.ok(r.gate && r.gate.required);
++  assert.ok(r.guidanceNote.length > 0);
++  assert.ok(r.items.length > 0);
++  // mandatory referral: guidance tier refers every item regardless of status
++  for (const it of r.items) assert.ok(it.referral, "guidance-tier items carry a referral");
++  assert.ok(r.referrals.length >= r.items.length);
++  const md = renderReport(r);
++  assert.match(md, /guidance/i);
++});
++
++test("guidance tier: filing math tolerates relief types without an earliestFiling anchor", () => {
++  const r = trackClearance({ jurisdiction: "TX", asOf: AS_OF, client: clientOk, convictions: [conv()] });
++  for (const it of r.items) assert.equal(it.earliestFilingDate, null);
++});
++
++/* ---------- per-conviction facts ---------- */
++
++test("per-conviction facts override client-level probation/fines on mixed records", () => {
++  const r = trackClearance({
++    jurisdiction: "CA", asOf: AS_OF,
++    client: { ...clientOk, probationStatus: "completed" },
++    convictions: [
++      conv({ sentenceCompletedDate: "2010-01-01", probationTerminatedDate: "2011-01-01" }),
++      conv({ id: "V2", probationStatus: "revoked", sentenceCompletedDate: "2010-01-01", probationTerminatedDate: "2011-01-01" }),
++    ],
++  });
++  const pick = (cid) => r.items.find((i) => i.convictionId === cid && i.reliefTypeId === "CA-dismissal-petition");
++  assert.equal(pick("V1").status, "ready_to_file");
++  assert.equal(pick("V2").status, "blocked");
++  const v2row = pick("V2").checklist.find((k) => k.label.includes("Probation"));
++  assert.equal(v2row.status, "not_met");
++  assert.match(v2row.detail, /conviction-level/);
++});
++
++test("conviction-level finesPaid override surfaces in the checklist detail", () => {
++  const r = evalPrereq({ kind: "finesPaid" }, { finesPaid: true }, { finesPaid: false }, 1, null);
++  assert.equal(r.status, "not_met");
++  assert.match(r.detail, /conviction-level/);
++});
++
++/* ---------- validateIntake (LLM boundary) ---------- */
++
++test("validateIntake: uncertain fields dropped + logged as issues, never guessed", () => {
++  const { input, issues } = validateIntake({
++    jurisdiction: "IL", asOf: AS_OF,
++    client: { probationStatus: "completed", finesPaid: true, pendingCases: false, extraJunk: 1 },
++    convictions: [conv()],
++    uncertain: [{ field: "finesPaid", reason: "rap sheet shows balance, amount unclear" }],
++  });
++  assert.equal(input.client.finesPaid, undefined);
++  assert.equal(input.client.probationStatus, "completed");
++  assert.equal(input.client.extraJunk, undefined, "unknown keys normalized away");
++  assert.ok(issues.length >= 1);
++  assert.match(issues[0], /finesPaid/);
++  // feeding the normalized input through the engine turns the gap into `unknown`, not a guess
++  const r = trackClearance(input);
++  const item = r.items.find((i) => i.reliefTypeId === "IL-expungement");
++  assert.ok(item.checklist.some((k) => k.label.includes("fines") && k.status === "unknown"));
++});
++
++test("validateIntake: uncertain conviction-level field dropped per conviction; missing ids assigned", () => {
++  const { input, issues } = validateIntake({
++    client: { finesPaid: true },
++    convictions: [{ offense: "X", finesPaid: true }, { id: "V9", offense: "Y" }],
++    uncertain: [{ field: "finesPaid", reason: "unclear" }],
++  });
++  assert.equal(input.client.finesPaid, undefined);
++  assert.ok(input.convictions.every((c) => c.finesPaid === undefined));
++  assert.deepEqual(input.convictions.map((c) => c.id), ["C1", "V9"]);
++  assert.equal(issues.filter((i) => i.includes("finesPaid")).length, 3); // 1 client + 2 convictions
++  assert.match(issues.find((i) => i.includes("C1")), /missing id/);
++});
++
++/* ---------- authority links ---------- */
++
++test("authority: every item carries { cite, url } and the report renders them", () => {
++  const r = trackClearance({ jurisdiction: "CA", asOf: AS_OF, client: clientOk, convictions: [conv()] });
++  for (const it of r.items) {
++    assert.ok(it.authority && typeof it.authority.url === "string" && it.authority.url.startsWith("https://"));
++    assert.ok(it.authority.cite.length > 0);
++  }
++  const md = renderReport(r);
++  assert.match(md, /Authority:/);
++  assert.match(md, /\[verify\]/);
++});
++
++/* ---------- worked intake example (examples/intake.json) ---------- */
++
++test("examples/intake.json: validateIntake -> trackClearance pipeline runs clean", () => {
++  const intake = JSON.parse(readFileSync(join(here, "../examples/intake.json"), "utf8"));
++  const { input, issues } = validateIntake(intake);
++  assert.ok(issues.length >= 1);
++  const r = trackClearance(input);
++  assert.ok(!r.errors);
++  assert.ok(r.items.length > 0);
++  // the uncertain client-level fact must not leak through as a guess
++  assert.equal(input.client.finesPaid, undefined);
++});
+diff --git a/open-artifacts/record-clearance/demo/index.html b/open-artifacts/record-clearance/demo/index.html
+index b112425..b0f8f27 100644
+--- a/open-artifacts/record-clearance/demo/index.html
++++ b/open-artifacts/record-clearance/demo/index.html
+@@ -13,6 +13,10 @@
+   h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
+   p.lede { max-width: 62ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
++  select { font-family: var(--font-mono); font-size: 13px; background: #fff; color: var(--text);
++    border: var(--hairline); padding: 10px 12px; border-radius: var(--radius); cursor: pointer; }
++  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 32px; }
++  .tier { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; background: var(--hover); border: var(--hairline); border-radius: var(--radius); }
+   textarea { width: 100%; box-sizing: border-box; min-height: 300px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+     background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
+   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+@@ -32,6 +36,10 @@
+   ul.ck li.met::before { content: "☒"; }
+   ul.ck li.unknown::before { content: "？"; }
+   .meta { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
++  ol.steps { margin: 6px 0 0; padding-left: 22px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
++  .auth { font-size: 12.5px; margin-top: 6px; }
++  .auth a { color: var(--text); }
++  .gnote { border: var(--hairline); border-left: var(--tile-stripe) solid var(--accent); background: #fff; padding: 12px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+   .ref { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
+   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+@@ -46,7 +54,23 @@
+   <p class="lede">Relief types live in editable per-jurisdiction rules-as-data. The engine turns a
+   client record into a prerequisites checklist (met / not met / <strong>unknown — never guessed</strong>),
+   computes earliest and last filing dates with plain date math, tracks matters already
+-  filed, and raises referral flags for counsel-dependent relief. Example jurisdictions: CA, IL, NY.</p>
++  filed, and raises referral flags for counsel-dependent relief. Full-tier example
++  jurisdictions: CA, IL, NY — plus a <strong>guidance tier</strong> (TX): a generic screen with a
++  mandatory referral instead of a bare error. Every item carries filing guidance (forms,
++  steps, fee-waiver note) and an authority link (<code>[verify]</code>-tagged — illustrative).</p>
++
++  <div class="bar">
++    <div>
++      <label class="kicker" for="jur">Jurisdiction</label><br />
++      <select id="jur">
++        <option value="CA" selected>CA — full ruleset</option>
++        <option value="IL">IL — full ruleset</option>
++        <option value="NY">NY — full ruleset</option>
++        <option value="TX">TX — guidance tier</option>
++      </select>
++    </div>
++    <span class="tier" id="tier">coverage tier: full</span>
++  </div>
+ 
+   <div class="cols">
+     <div>
+@@ -65,38 +89,73 @@
+ <script type="module">
+ import { trackClearance } from "../core/core.js";
+ 
+-const EXAMPLE = {
+-  jurisdiction: "CA",
+-  asOf: "2026-11-07",
+-  client: { id: "CL-0417", name: "Dana Whitfield (fictional)", probationStatus: "completed",
+-            finesPaid: true, pendingCases: false, rapSheetObtained: true },
+-  convictions: [
+-    { id: "V1", offense: "Forgery (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
+-      dispositionDate: "2018-05-04", sentenceCompletedDate: "2020-08-21", probationTerminatedDate: "2020-08-21" },
+-    { id: "V2", offense: "Shoplifting (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
+-      dispositionDate: "2016-11-17", sentenceCompletedDate: "2017-02-10", probationTerminatedDate: "2017-06-30" },
+-  ],
+-  filings: [ { reliefTypeId: "CA-dismissal-petition", convictionId: "V2", date: "2026-09-15", status: "filed" } ],
++const CLIENT = { id: "CL-0417", name: "Dana Whitfield (fictional)", probationStatus: "completed",
++  finesPaid: true, pendingCases: false, rapSheetObtained: true };
++const EXAMPLES = {
++  CA: {
++    jurisdiction: "CA", asOf: "2026-11-07", client: CLIENT,
++    convictions: [
++      { id: "V1", offense: "Forgery (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
++        dispositionDate: "2018-05-04", sentenceCompletedDate: "2020-08-21", probationTerminatedDate: "2020-08-21" },
++      { id: "V2", offense: "Shoplifting (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
++        dispositionDate: "2016-11-17", sentenceCompletedDate: "2017-02-10", probationTerminatedDate: "2017-06-30" },
++    ],
++    filings: [ { reliefTypeId: "CA-dismissal-petition", convictionId: "V2", date: "2026-09-15", status: "filed" } ],
++  },
++  IL: {
++    jurisdiction: "IL", asOf: "2026-11-07", client: CLIENT,
++    convictions: [
++      { id: "V1", offense: "Theft (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
++        dispositionDate: "2018-02-02", sentenceCompletedDate: "2019-04-15", probationTerminatedDate: "2019-04-15" },
++    ],
++    filings: [],
++  },
++  NY: {
++    jurisdiction: "NY", asOf: "2026-11-07", client: { ...CLIENT, probationStatus: "terminated" },
++    convictions: [
++      { id: "V1", offense: "Fraud (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
++        dispositionDate: "2012-06-01", sentenceCompletedDate: "2014-09-30", probationTerminatedDate: "2016-03-01" },
++    ],
++    filings: [],
++  },
++  TX: {
++    jurisdiction: "TX", asOf: "2026-11-07", client: CLIENT,
++    convictions: [
++      { id: "V1", offense: "Burglary (fictional)", offenseCategory: "property", offenseClass: "felony_class_W",
++        dispositionDate: "2015-10-20", sentenceCompletedDate: "2018-01-05", probationTerminatedDate: "2018-01-05" },
++    ],
++    filings: [],
++  },
+ };
+ 
+ const $input = document.getElementById("input");
+ const $out = document.getElementById("out");
+ const $err = document.getElementById("err");
+-$input.value = JSON.stringify(EXAMPLE, null, 2);
++const $jur = document.getElementById("jur");
++const $tier = document.getElementById("tier");
++$input.value = JSON.stringify(EXAMPLES.CA, null, 2);
++$jur.addEventListener("change", () => { $input.value = JSON.stringify(EXAMPLES[$jur.value], null, 2); run(); });
+ 
+ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ 
+-document.getElementById("run").addEventListener("click", () => {
++function run() {
+   $err.textContent = "";
+   try {
+     const r = trackClearance(JSON.parse($input.value));
+-    if (r.errors?.length) { $err.textContent = r.errors.join(" "); return; }
++    $tier.textContent = `coverage tier: ${r.coverageTier ?? "—"}`;
++    if (r.errors?.length) { $err.textContent = r.errors.join(" "); $out.innerHTML = "<p class=\"lede\">No report.</p>"; return; }
+     let html = "";
++    if (r.guidanceNote) html += `<div class="gnote">🧭 ${esc(r.guidanceNote)}</div>`;
+     for (const it of r.items) {
+       html += `<div class="item"><h3>${esc(it.reliefName)} · ${esc(it.offense)} <span class="badge ${esc(it.status)}">${esc(it.status)}</span></h3>`;
+       html += `<div class="meta">${esc(it.convictionId)} · earliest filing <strong>${esc(it.earliestFilingDate ?? "unknown")}</strong>${it.lastFilingDate ? " · last " + esc(it.lastFilingDate) : ""} · <code>${esc(it.ruleId)}</code></div>`;
+       html += `<ul class="ck">` + it.checklist.map((k) =>
+         `<li class="${esc(k.status)}">${k.status === "met" ? "" : k.status === "unknown" ? "unknown · " : "not met · "}${esc(k.label)} — ${esc(k.detail)}</li>`).join("") + `</ul>`;
++      if (it.filingGuidance) {
++        html += `<ol class="steps">` + it.filingGuidance.steps.map((s) => `<li>${esc(s)}</li>`).join("") + `</ol>`;
++        html += `<div class="meta">Forms: ${esc(it.filingGuidance.forms.join(" · "))} · Fee waiver: ${esc(it.filingGuidance.feeWaiverNote)}</div>`;
++      }
++      if (it.authority) html += `<div class="auth">Authority: ${esc(it.authority.cite)} — <a href="${esc(it.authority.url)}" target="_blank" rel="noopener">${esc(it.authority.url)}</a></div>`;
+       if (it.filing) html += `<div class="meta">Filed ${esc(it.filing.date)} — status <strong>${esc(it.filing.status)}</strong></div>`;
+       html += `</div>`;
+     }
+@@ -108,7 +167,9 @@ document.getElementById("run").addEventListener("click", () => {
+   } catch (e) {
+     $err.textContent = "Input error: " + e.message;
+   }
+-});
++}
++
++document.getElementById("run").addEventListener("click", run);
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/record-clearance/examples/intake-output.json b/open-artifacts/record-clearance/examples/intake-output.json
+new file mode 100644
+index 0000000..824bd45
+--- /dev/null
++++ b/open-artifacts/record-clearance/examples/intake-output.json
+@@ -0,0 +1,147 @@
++{
++  "issues": [
++    "conviction 1 missing id — assigned \"C1\"",
++    "uncertain: client.finesPaid dropped — rap sheet shows a balance; amount and payoff status unclear",
++    "uncertain: conviction C1.finesPaid treated as unknown (client value not inherited) — rap sheet shows a balance; amount and payoff status unclear"
++  ],
++  "report": {
++    "asOf": "2026-11-07",
++    "jurisdiction": "IL",
++    "ruleset": {
++      "id": "IL",
++      "name": "Illinois (example ruleset)",
++      "version": "2026-11-example"
++    },
++    "coverageTier": "full",
++    "items": [
++      {
++        "convictionId": "C1",
++        "offense": "Possession of a controlled substance (fictional)",
++        "reliefTypeId": "IL-expungement",
++        "reliefName": "Expungement petition",
++        "ruleId": "IL-CR1",
++        "checklist": [
++          {
++            "id": "IL-CR1-a",
++            "label": "No pending criminal cases",
++            "ruleId": "IL-CR1",
++            "status": "met",
++            "detail": "pendingCases = false"
++          },
++          {
++            "id": "IL-CR1-b",
++            "label": "All fines paid",
++            "ruleId": "IL-CR1",
++            "status": "unknown",
++            "detail": "client.finesPaid not provided"
++          },
++          {
++            "id": "IL-CR1-c",
++            "label": "Offense eligible for expungement",
++            "ruleId": "IL-CR1",
++            "status": "met",
++            "detail": "category/class not in exclusion list"
++          },
++          {
++            "id": "IL-CR1-d",
++            "label": "3-year waiting period after sentence",
++            "ruleId": "IL-CR1",
++            "status": "met",
++            "detail": "3 years from 2020-07-01; satisfied 2023-07-01",
++            "date": "2023-07-01"
++          }
++        ],
++        "filing": null,
++        "filingGuidance": {
++          "steps": [
++            "Obtain a certified disposition for each conviction (illustrative).",
++            "Verify eligibility against the exclusion list before drafting.",
++            "File the expungement petition with the circuit clerk and serve the State's Attorney.",
++            "Attend the hearing if the court requires it."
++          ],
++          "forms": [
++            "Expungement petition (illustrative form name — verify locally)",
++            "Notice to State's Attorney (illustrative)"
++          ],
++          "feeWaiverNote": "A fee-waiver application may be filed with the petition (illustrative — verify locally)."
++        },
++        "authority": {
++          "cite": "20 ILCS 2630/5.2 (expungement) — illustrative [verify]",
++          "url": "https://www.illinoiscourts.gov/"
++        },
++        "earliestFilingDate": "2023-07-01",
++        "lastFilingDate": null,
++        "status": "data_needed",
++        "referral": null
++      },
++      {
++        "convictionId": "C1",
++        "offense": "Possession of a controlled substance (fictional)",
++        "reliefTypeId": "IL-sealing",
++        "reliefName": "Sealing petition",
++        "ruleId": "IL-CR2",
++        "checklist": [
++          {
++            "id": "IL-CR2-a",
++            "label": "No pending cases",
++            "ruleId": "IL-CR2",
++            "status": "met",
++            "detail": "pendingCases = false"
++          },
++          {
++            "id": "IL-CR2-b",
++            "label": "At most 2 qualifying convictions",
++            "ruleId": "IL-CR2",
++            "status": "met",
++            "detail": "1 conviction(s); cap 2"
++          },
++          {
++            "id": "IL-CR2-c",
++            "label": "3 years since sentence completion",
++            "ruleId": "IL-CR2",
++            "status": "met",
++            "detail": "3 years from 2020-07-01; satisfied 2023-07-01",
++            "date": "2023-07-01"
++          }
++        ],
++        "filing": null,
++        "filingGuidance": {
++          "steps": [
++            "Obtain a certified rap sheet listing all convictions (illustrative).",
++            "Confirm the conviction-count cap before filing.",
++            "File the sealing petition with the circuit clerk and serve required parties.",
++            "Calendar the objection window and any hearing date."
++          ],
++          "forms": [
++            "Sealing petition (illustrative form name — verify locally)",
++            "Fingerprint card receipt (illustrative)"
++          ],
++          "feeWaiverNote": "A fee-waiver application is available from the circuit clerk (illustrative — verify locally)."
++        },
++        "authority": {
++          "cite": "20 ILCS 2630/5.5 (sealing) — illustrative [verify]",
++          "url": "https://www.illinoiscourts.gov/"
++        },
++        "earliestFilingDate": "2023-07-01",
++        "lastFilingDate": null,
++        "status": "ready_to_file",
++        "referral": null
++      }
++    ],
++    "summary": {
++      "total": 2,
++      "ready_to_file": 1,
++      "waiting": 0,
++      "blocked": 0,
++      "data_needed": 1,
++      "filed": 0,
++      "granted": 0,
++      "denied": 0
++    },
++    "referrals": [],
++    "gate": {
++      "required": true,
++      "message": "Example rulesets only. Prerequisites marked unknown need court records before any determination; verify everything with counsel or a legal aid clinic before filing."
++    }
++  }
++}
+diff --git a/open-artifacts/record-clearance/examples/intake-report.md b/open-artifacts/record-clearance/examples/intake-report.md
+new file mode 100644
+index 0000000..7d73f4c
+--- /dev/null
++++ b/open-artifacts/record-clearance/examples/intake-report.md
+@@ -0,0 +1,35 @@
++# Record clearance tracker — Illinois (example ruleset)
++
++As of **2026-11-07** · ruleset IL v2026-11-example
++
++## Expungement petition — Possession of a controlled substance (fictional) (C1) · DATA_NEEDED
++
++- [x] No pending criminal cases — pendingCases = false `IL-CR1`
++- [?] All fines paid — client.finesPaid not provided `IL-CR1`
++- [x] Offense eligible for expungement — category/class not in exclusion list `IL-CR1`
++- [x] 3-year waiting period after sentence — 3 years from 2020-07-01; satisfied 2023-07-01 `IL-CR1`
++- Earliest filing: **2023-07-01**
++- Forms: Expungement petition (illustrative form name — verify locally) · Notice to State's Attorney (illustrative)
++  1. Obtain a certified disposition for each conviction (illustrative).
++  2. Verify eligibility against the exclusion list before drafting.
++  3. File the expungement petition with the circuit clerk and serve the State's Attorney.
++  4. Attend the hearing if the court requires it.
++- Fee waiver: A fee-waiver application may be filed with the petition (illustrative — verify locally).
++- Authority: 20 ILCS 2630/5.2 (expungement) — illustrative [verify] — https://www.illinoiscourts.gov/
++
++## Sealing petition — Possession of a controlled substance (fictional) (C1) · READY_TO_FILE
++
++- [x] No pending cases — pendingCases = false `IL-CR2`
++- [x] At most 2 qualifying convictions — 1 conviction(s); cap 2 `IL-CR2`
++- [x] 3 years since sentence completion — 3 years from 2020-07-01; satisfied 2023-07-01 `IL-CR2`
++- Earliest filing: **2023-07-01**
++- Forms: Sealing petition (illustrative form name — verify locally) · Fingerprint card receipt (illustrative)
++  1. Obtain a certified rap sheet listing all convictions (illustrative).
++  2. Confirm the conviction-count cap before filing.
++  3. File the sealing petition with the circuit clerk and serve required parties.
++  4. Calendar the objection window and any hearing date.
++- Fee waiver: A fee-waiver application is available from the circuit clerk (illustrative — verify locally).
++- Authority: 20 ILCS 2630/5.5 (sealing) — illustrative [verify] — https://www.illinoiscourts.gov/
++
++---
++> ⚠️ Example rulesets only. Prerequisites marked unknown need court records before any determination; verify everything with counsel or a legal aid clinic before filing.
+diff --git a/open-artifacts/record-clearance/examples/intake.json b/open-artifacts/record-clearance/examples/intake.json
+new file mode 100644
+index 0000000..62cec1d
+--- /dev/null
++++ b/open-artifacts/record-clearance/examples/intake.json
+@@ -0,0 +1,23 @@
++{
++  "jurisdiction": "IL",
++  "asOf": "2026-11-07",
++  "client": {
++    "probationStatus": "completed",
++    "finesPaid": true,
++    "pendingCases": false,
++    "rapSheetObtained": true
++  },
++  "convictions": [
++    {
++      "offense": "Possession of a controlled substance (fictional)",
++      "offenseCategory": "drug",
++      "offenseClass": "felony_class_W",
++      "dispositionDate": "2019-03-12",
++      "sentenceCompletedDate": "2020-07-01",
++      "probationTerminatedDate": "2020-07-01"
++    }
++  ],
++  "uncertain": [
++    { "field": "finesPaid", "reason": "rap sheet shows a balance; amount and payoff status unclear" }
++  ]
++}
+diff --git a/open-artifacts/record-clearance/examples/output.json b/open-artifacts/record-clearance/examples/output.json
+index 19dcba1..a9edb3a 100644
+--- a/open-artifacts/record-clearance/examples/output.json
++++ b/open-artifacts/record-clearance/examples/output.json
+@@ -6,6 +6,7 @@
+     "name": "California (example ruleset)",
+     "version": "2026-11-example"
+   },
++  "coverageTier": "full",
+   "items": [
+     {
+       "convictionId": "V1",
+@@ -44,6 +45,23 @@
+         }
+       ],
+       "filing": null,
++      "filingGuidance": {
++        "steps": [
++          "Obtain a certified copy of the rap sheet (illustrative step — verify locally).",
++          "Complete the dismissal petition for each conviction and attach disposition documents.",
++          "File at the court of conviction and serve the prosecuting attorney.",
++          "Comply with any local notice-to-probation requirement before the hearing."
++        ],
++        "forms": [
++          "Dismissal petition (illustrative form name — verify locally)",
++          "Declaration in support (illustrative)"
++        ],
++        "feeWaiverNote": "A fee-waiver application is available from the clerk on request (illustrative — verify locally)."
++      },
++      "authority": {
++        "cite": "Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify]",
++        "url": "https://selfhelp.courts.ca.gov/record-clearance"
++      },
+       "earliestFilingDate": "2020-08-21",
+       "lastFilingDate": null,
+       "status": "ready_to_file",
+@@ -91,6 +109,23 @@
+         "date": "2026-09-15",
+         "status": "filed"
+       },
++      "filingGuidance": {
++        "steps": [
++          "Obtain a certified copy of the rap sheet (illustrative step — verify locally).",
++          "Complete the dismissal petition for each conviction and attach disposition documents.",
++          "File at the court of conviction and serve the prosecuting attorney.",
++          "Comply with any local notice-to-probation requirement before the hearing."
++        ],
++        "forms": [
++          "Dismissal petition (illustrative form name — verify locally)",
++          "Declaration in support (illustrative)"
++        ],
++        "feeWaiverNote": "A fee-waiver application is available from the clerk on request (illustrative — verify locally)."
++      },
++      "authority": {
++        "cite": "Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify]",
++        "url": "https://selfhelp.courts.ca.gov/record-clearance"
++      },
+       "earliestFilingDate": "2017-06-30",
+       "lastFilingDate": null,
+       "status": "filed",
+@@ -141,6 +176,23 @@
+         }
+       ],
+       "filing": null,
++      "filingGuidance": {
++        "steps": [
++          "Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).",
++          "Assemble the rehabilitation declaration and supporting letters.",
++          "File the petition in the county of residence and serve as the court directs.",
++          "Attend the hearing with counsel or the legal aid clinic."
++        ],
++        "forms": [
++          "Certificate of Rehabilitation petition (illustrative — verify locally)",
++          "Live-scan receipt (illustrative)"
++        ],
++        "feeWaiverNote": "A fee-waiver request may accompany the petition (illustrative — verify locally)."
++      },
++      "authority": {
++        "cite": "Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify]",
++        "url": "https://selfhelp.courts.ca.gov/record-clearance"
++      },
+       "earliestFilingDate": "2027-08-21",
+       "lastFilingDate": null,
+       "status": "waiting",
+@@ -191,6 +243,23 @@
+         }
+       ],
+       "filing": null,
++      "filingGuidance": {
++        "steps": [
++          "Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).",
++          "Assemble the rehabilitation declaration and supporting letters.",
++          "File the petition in the county of residence and serve as the court directs.",
++          "Attend the hearing with counsel or the legal aid clinic."
++        ],
++        "forms": [
++          "Certificate of Rehabilitation petition (illustrative — verify locally)",
++          "Live-scan receipt (illustrative)"
++        ],
++        "feeWaiverNote": "A fee-waiver request may accompany the petition (illustrative — verify locally)."
++      },
++      "authority": {
++        "cite": "Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify]",
++        "url": "https://selfhelp.courts.ca.gov/record-clearance"
++      },
+       "earliestFilingDate": "2024-02-10",
+       "lastFilingDate": null,
+       "status": "ready_to_file",
+@@ -227,6 +296,23 @@
+         }
+       ],
+       "filing": null,
++      "filingGuidance": {
++        "steps": [
++          "Obtain the certified rap sheet and court records for every conviction (illustrative).",
++          "Prepare the application narrative and letters of support.",
++          "Submit through the governor's office portal or by mail (illustrative).",
++          "Coordinate with counsel before submission."
++        ],
++        "forms": [
++          "Governor's pardon application (illustrative — verify locally)",
++          "Letters of support (illustrative)"
++        ],
++        "feeWaiverNote": "No filing fee is charged for pardon applications in this example ruleset (illustrative — verify)."
++      },
++      "authority": {
++        "cite": "Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify]",
++        "url": "https://www.gov.ca.gov/"
++      },
+       "earliestFilingDate": "2030-08-21",
+       "lastFilingDate": null,
+       "status": "waiting",
+@@ -263,6 +349,23 @@
+         }
+       ],
+       "filing": null,
++      "filingGuidance": {
++        "steps": [
++          "Obtain the certified rap sheet and court records for every conviction (illustrative).",
++          "Prepare the application narrative and letters of support.",
++          "Submit through the governor's office portal or by mail (illustrative).",
++          "Coordinate with counsel before submission."
++        ],
++        "forms": [
++          "Governor's pardon application (illustrative — verify locally)",
++          "Letters of support (illustrative)"
++        ],
++        "feeWaiverNote": "No filing fee is charged for pardon applications in this example ruleset (illustrative — verify)."
++      },
++      "authority": {
++        "cite": "Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify]",
++        "url": "https://www.gov.ca.gov/"
++      },
+       "earliestFilingDate": "2027-02-10",
+       "lastFilingDate": null,
+       "status": "waiting",
+diff --git a/open-artifacts/record-clearance/examples/report.md b/open-artifacts/record-clearance/examples/report.md
+index 8e014df..2f6e55c 100644
+--- a/open-artifacts/record-clearance/examples/report.md
++++ b/open-artifacts/record-clearance/examples/report.md
+@@ -9,6 +9,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [x] No pending criminal cases — pendingCases = false `CA-CR1`
+ - [x] Offense not excluded from relief — category/class not in exclusion list `CA-CR1`
+ - Earliest filing: **2020-08-21**
++- Forms: Dismissal petition (illustrative form name — verify locally) · Declaration in support (illustrative)
++  1. Obtain a certified copy of the rap sheet (illustrative step — verify locally).
++  2. Complete the dismissal petition for each conviction and attach disposition documents.
++  3. File at the court of conviction and serve the prosecuting attorney.
++  4. Comply with any local notice-to-probation requirement before the hearing.
++- Fee waiver: A fee-waiver application is available from the clerk on request (illustrative — verify locally).
++- Authority: Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify] — https://selfhelp.courts.ca.gov/record-clearance
+ 
+ ## Dismissal petition (record clearance) — Shoplifting (fictional) (V2) · FILED
+ 
+@@ -17,6 +24,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [x] No pending criminal cases — pendingCases = false `CA-CR1`
+ - [x] Offense not excluded from relief — category/class not in exclusion list `CA-CR1`
+ - Earliest filing: **2017-06-30**
++- Forms: Dismissal petition (illustrative form name — verify locally) · Declaration in support (illustrative)
++  1. Obtain a certified copy of the rap sheet (illustrative step — verify locally).
++  2. Complete the dismissal petition for each conviction and attach disposition documents.
++  3. File at the court of conviction and serve the prosecuting attorney.
++  4. Comply with any local notice-to-probation requirement before the hearing.
++- Fee waiver: A fee-waiver application is available from the clerk on request (illustrative — verify locally).
++- Authority: Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify] — https://selfhelp.courts.ca.gov/record-clearance
+ - Filed 2026-09-15 — status: **filed**
+ 
+ ## Certificate of Rehabilitation — Forgery (fictional) (V1) · WAITING
+@@ -27,6 +41,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [x] Offense not categorically excluded — category/class not in exclusion list `CA-CR2`
+ - [ ] 7 years since completion of sentence — 7 years from 2020-08-21; satisfied 2027-08-21 `CA-CR2`
+ - Earliest filing: **2027-08-21**
++- Forms: Certificate of Rehabilitation petition (illustrative — verify locally) · Live-scan receipt (illustrative)
++  1. Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).
++  2. Assemble the rehabilitation declaration and supporting letters.
++  3. File the petition in the county of residence and serve as the court directs.
++  4. Attend the hearing with counsel or the legal aid clinic.
++- Fee waiver: A fee-waiver request may accompany the petition (illustrative — verify locally).
++- Authority: Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify] — https://selfhelp.courts.ca.gov/record-clearance
+ - Referral: Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic.
+ 
+ ## Certificate of Rehabilitation — Shoplifting (fictional) (V2) · READY_TO_FILE
+@@ -37,6 +58,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [x] Offense not categorically excluded — category/class not in exclusion list `CA-CR2`
+ - [x] 7 years since completion of sentence — 7 years from 2017-02-10; satisfied 2024-02-10 `CA-CR2`
+ - Earliest filing: **2024-02-10**
++- Forms: Certificate of Rehabilitation petition (illustrative — verify locally) · Live-scan receipt (illustrative)
++  1. Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).
++  2. Assemble the rehabilitation declaration and supporting letters.
++  3. File the petition in the county of residence and serve as the court directs.
++  4. Attend the hearing with counsel or the legal aid clinic.
++- Fee waiver: A fee-waiver request may accompany the petition (illustrative — verify locally).
++- Authority: Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify] — https://selfhelp.courts.ca.gov/record-clearance
+ - Referral: Certificate filings require live-scan and court appearance — refer to counsel or legal aid clinic.
+ 
+ ## Governor's pardon (application) — Forgery (fictional) (V1) · WAITING
+@@ -45,6 +73,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [ ] 10 years since sentence completion — 10 years from 2020-08-21; satisfied 2030-08-21 `CA-CR3`
+ - [x] Certified rap sheet obtained for the application — rapSheetObtained = true `CA-CR3`
+ - Earliest filing: **2030-08-21**
++- Forms: Governor's pardon application (illustrative — verify locally) · Letters of support (illustrative)
++  1. Obtain the certified rap sheet and court records for every conviction (illustrative).
++  2. Prepare the application narrative and letters of support.
++  3. Submit through the governor's office portal or by mail (illustrative).
++  4. Coordinate with counsel before submission.
++- Fee waiver: No filing fee is charged for pardon applications in this example ruleset (illustrative — verify).
++- Authority: Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify] — https://www.gov.ca.gov/
+ - Referral: Pardon applications route through the governor's office — refer to counsel.
+ 
+ ## Governor's pardon (application) — Shoplifting (fictional) (V2) · WAITING
+@@ -53,6 +88,13 @@ As of **2026-11-07** · ruleset CA v2026-11-example
+ - [ ] 10 years since sentence completion — 10 years from 2017-02-10; satisfied 2027-02-10 `CA-CR3`
+ - [x] Certified rap sheet obtained for the application — rapSheetObtained = true `CA-CR3`
+ - Earliest filing: **2027-02-10**
++- Forms: Governor's pardon application (illustrative — verify locally) · Letters of support (illustrative)
++  1. Obtain the certified rap sheet and court records for every conviction (illustrative).
++  2. Prepare the application narrative and letters of support.
++  3. Submit through the governor's office portal or by mail (illustrative).
++  4. Coordinate with counsel before submission.
++- Fee waiver: No filing fee is charged for pardon applications in this example ruleset (illustrative — verify).
++- Authority: Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify] — https://www.gov.ca.gov/
+ - Referral: Pardon applications route through the governor's office — refer to counsel.
+ 
+ ## Referral flags (4)
+diff --git a/open-artifacts/record-clearance/examples/run.js b/open-artifacts/record-clearance/examples/run.js
+index 8e7c2c0..fcfa408 100644
+--- a/open-artifacts/record-clearance/examples/run.js
++++ b/open-artifacts/record-clearance/examples/run.js
+@@ -1,19 +1,32 @@
+ /**
+  * Reproducible worked example: reads examples/input.json, runs the deterministic
+- * core, writes examples/output.json and examples/report.md.
++ * core, writes examples/output.json and examples/report.md. Also runs the LLM
++ * intake boundary: examples/intake.json → validateIntake → trackClearance,
++ * writing examples/intake-output.json and examples/intake-report.md.
+  * Run:  node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { dirname, join } from "node:path";
+-import { trackClearance, renderReport } from "../core/core.js";
++import { trackClearance, renderReport, validateIntake } from "../core/core.js";
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+ const report = trackClearance(input);
+ writeFileSync(join(here, "output.json"), JSON.stringify(report, null, 2) + "\n");
+ writeFileSync(join(here, "report.md"), renderReport(report));
++
++const intake = JSON.parse(readFileSync(join(here, "intake.json"), "utf8"));
++const { input: intakeInput, issues } = validateIntake(intake);
++const intakeReport = trackClearance(intakeInput);
++writeFileSync(join(here, "intake-output.json"), JSON.stringify({ issues, report: intakeReport }, null, 2) + "\n");
++writeFileSync(join(here, "intake-report.md"), renderReport(intakeReport));
++
+ console.log(
+   `tracked ${report.summary.total} conviction x relief pairs -> output.json, report.md ` +
+     `(${report.summary.ready_to_file} ready, ${report.summary.filed} filed, ${report.referrals.length} referrals)`,
+ );
++console.log(
++  `intake: validateIntake logged ${issues.length} issue(s) -> intake-output.json, intake-report.md ` +
++    `(${intakeReport.summary.data_needed} data_needed of ${intakeReport.summary.total})`,
++);
+diff --git a/open-artifacts/record-clearance/spec.md b/open-artifacts/record-clearance/spec.md
+index 2f57a03..0d53afa 100644
+--- a/open-artifacts/record-clearance/spec.md
++++ b/open-artifacts/record-clearance/spec.md
+@@ -14,12 +14,22 @@ rules-as-data.
+ | Filing-deadline date math (earliest date, optional filing-window close) | core (deterministic) |
+ | Status tracking (`filed` / `granted` / `denied` recorded filings override recomputation) | core (deterministic) |
+ | Referral flags for counsel-dependent relief | core (deterministic, from rules) |
+-| Relief types + prerequisites per jurisdiction | rules-as-data (3 example US states: CA, IL, NY) |
++| Filing guidance (steps, forms, fee-waiver note) + authority link per relief type | rules-as-data (deterministic) |
++| Normalizing LLM intake — `uncertain` fields dropped + logged, ids assigned (`validateIntake`) | core (deterministic) |
++| Relief types + prerequisites per jurisdiction | rules-as-data (full tier: CA, IL, NY · guidance tier: TX) |
+ | Reading a rap sheet into the client-record JSON | LLM or human (out of core) |
+ | Filing decisions | **counsel/legal-aid only** (gate on every report) |
+ 
+ The engine never guesses: a missing client fact or conviction date makes the
+ prerequisite `unknown` and the item `data_needed`, never an eligibility call.
++Conviction-level `probationStatus` / `finesPaid` override the client-level
++values, so mixed records (one conviction revoked, another completed) get
++correct per-conviction calls.
++
++Jurisdictions without loaded relief rules can be registered as a **guidance
++tier**: `trackClearance` returns a normal report (`coverageTier: "guidance"`,
++a `guidanceNote`, generic screen items with mandatory referrals) instead of
++a bare unknown-jurisdiction error.
+ 
+ ## Input contract (`ClearanceInput`, JSON)
+ 
+@@ -60,6 +70,10 @@ One item per conviction × relief type:
+   `granted` / `denied` (from the recorded filing).
+ - `referral`: counsel-dependent relief flag (e.g. certificates requiring
+   live-scan, pardon applications).
++- `filingGuidance`: `{ steps[], forms[], feeWaiverNote }` from the rule
++  (illustrative — verify locally).
++- `authority`: `{ cite, url }` — `[verify]`-tagged illustrative citation plus
++  a source URL for every relief type.
+ - `gate`: verify-with-counsel message on every report.
+ 
+ ## Prerequisite kinds the engine understands
+@@ -81,8 +95,13 @@ The LLM only structures a rap sheet into the input contract:
+   "uncertain": [ { "field": "finesPaid", "reason": "rap sheet shows balance, amount unclear" } ] }
+ ```
+ 
+-Fields in `uncertain` must be omitted from the record — the engine converts
+-them to `unknown` checklist rows rather than letting the model guess.
++Fields in `uncertain` must be omitted from the record — `core.validateIntake`
++implements this contract: it normalizes the LLM payload to a ClearanceInput
++(unknown keys stripped, missing conviction ids assigned), drops each
++`uncertain` field from the client and every conviction, and returns the drops
++as issues; the engine then converts the gaps to `unknown` checklist rows
++rather than letting the model guess. Worked example:
++`examples/intake.json` → `examples/intake-output.json` / `intake-report.md`.
+ 
+ ## What's BETTER than the closed counterpart
+ 

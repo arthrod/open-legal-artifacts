@@ -1,0 +1,1365 @@
+diff --git a/open-artifacts/ai-use-case-inventory/README.md b/open-artifacts/ai-use-case-inventory/README.md
+index a070a9e..7c4128f 100644
+--- a/open-artifacts/ai-use-case-inventory/README.md
++++ b/open-artifacts/ai-use-case-inventory/README.md
+@@ -9,14 +9,35 @@
+ ## What it does
+ 
+ - Each use case record (purpose, data sensitivity, human oversight,
+-  autonomy, controls) is **tiered** against an ordered keyword rubric
+-  (prohibited / high / limited / minimal) — first match wins, and every
+-  decision returns the rule id, the matched keyword, and an evidence note.
++  autonomy, controls, **role, lifecycle status/owner/next review, EU nexus**)
++  is **tiered** against an ordered keyword rubric — first match wins, and
++  every decision returns the rule id, the matched keyword, and an evidence
++  note.
++- **Six tiers**: prohibited / high / limited / minimal for specific uses,
++  plus **gpai / gpai_systemic** for model-side entries via
++  `trainingComputeFlops` (systemic-risk presumption ≥1e25 FLOPs,
++  Art. 51-style [verify]).
++- **Role-aware obligations**: `assessRole()` maps each record to a
++  supply-chain role (provider / deployer / importer / distributor /
++  authorised-representative / manufacturer) and flags the Art. 25-style
++  **dual-role shift** when a deployer substantially modifies a system;
++  `OBLIGATION_NOTES[role][tier]` returns a cited, `[verify]`-tagged
++  obligation list for every combination.
++- **Negation-safe matching**: prohibited rules carry `noneOfKeywords`
++  (detect / flag / block / moderate) — “detects dark patterns” tiers minimal,
++  not prohibited, with `needsHumanReview` and a loud gap. Never classify
++  silently.
++- **EU-nexus gate**: `euNexus:false` keeps the informational tier but marks
++  the entry `outOfScope` with a note.
++- **Lifecycle register + review clock**: `reviewDue(inv, asOfISO)` lists
++  reviews due within 30 days and entries stale over a year; CSV and the
++  dashboard carry status / owner / next review / needs-review / out-of-scope.
+ - **Gap flags** cross-check tier vs controls (high tier without human
+   oversight = blocker; special-category data without privacy controls =
+   major; autonomous action without eval logs = minor…).
+-- **Dashboard**: counts per tier, gap counts, blocker list, per-department
+-  split. **CSV export** for auditors.
++- **Dashboard**: counts per tier, gap counts, blocker list, per-department /
++  role / status splits, tier/status/nexus **filters**. **CSV export** for
++  auditors.
+ - Rubric is **rules-as-data**: replace `DEFAULT_TIER_RULES` wholesale to
+   match another framework; the engine (matching + cross-checks) is generic.
+ 
+@@ -55,16 +76,30 @@ never assigns the tier.
+ 
+ - **Explainable tiers**: rule + matched keyword + evidence note for every
+   record, versus an opaque first-pass risk level.
++- **Role + obligations as data**: 6 supply-chain roles, dual-role detection,
++  and a cited `[verify]`-tagged obligation note per role×tier — auditable
++  diffs, not obligations that only ever live in a conversation.
++- **Model-side tiers**: GPAI / systemic-risk compute track with the 1e25
++  FLOPs presumption cited in the basis.
++- **Living register**: status / owner / next-review fields plus a
++  deterministic review clock (≤30d due, >1y stale) and tier/status/nexus
++  filters.
++- **Scoping before tiering**: EU-nexus gate marks out-of-scope entries
++  instead of tiering unconditionally.
++- **Negation-safe, never silent**: detect/flag-style purposes don't trigger
++  prohibited tiers; they raise `needsHumanReview` instead.
+ - **Your data, your rules**: JSON records and a swappable rubric; auditable
+   diffs on every edit.
+ - **Gap severity levels** tied to specific missing controls, not a generic
+   "open compliance items" list.
+-- Offline, zero-dependency, CSV in one call.
++- Offline, zero-dependency, CSV in one call. (The counterpart's interactive
++  add-interview stays conversational; here the core is deterministic — the
++  LLM prompt schema below only enriches input text.)
+ 
+ ## Run / test
+ 
+ ```
+-node --test core/        # 13 unit tests (node:test)
+-node examples/run.js     # regenerates examples/output.json + inventory.csv
+-open demo/index.html     # interactive inventory + dashboard
++node --test core/core.test.js   # 29 unit tests (node:test)
++node examples/run.js           # regenerates examples/output.json + inventory.csv
++open demo/index.html           # interactive inventory + dashboard + review clock
+ ```
+diff --git a/open-artifacts/ai-use-case-inventory/core/core.js b/open-artifacts/ai-use-case-inventory/core/core.js
+index dccdd20..ba9bbf9 100644
+--- a/open-artifacts/ai-use-case-inventory/core/core.js
++++ b/open-artifacts/ai-use-case-inventory/core/core.js
+@@ -3,11 +3,13 @@
+  *
+  * Inventory of a firm's / company's AI use cases with a transparent,
+  * rules-as-data risk-tiering rubric (EU AI Act-ish classes as sensible
+- * defaults; NIST AI RMF mapping noted). Outputs tiered records, gap flags,
+- * dashboard counts, and CSV export.
++ * defaults; NIST AI RMF mapping noted). Outputs tiered records, role-aware
++ * obligation notes, gap flags, lifecycle review clock, EU-nexus scoping,
++ * dashboard counts, filters, and CSV export.
+  *
+  * Plain-JavaScript ES module, zero dependencies, browser + Node compatible.
+  * ALL DATA IS FICTIONAL. Not legal advice; tiering is a first-pass screen.
++ * Statutory references are "-style" approximations tagged [verify].
+  */
+ 
+ // ---------------------------------------------------------------------------
+@@ -16,10 +18,11 @@
+ 
+ /**
+  * @typedef {Object} TierRule
+- * @property {'prohibited'|'high'|'limited'|'minimal'} tier
++ * @property {'prohibited'|'high'|'limited'} tier
+  * @property {string} id
+  * @property {string} label
+  * @property {string[]} anyOfKeywords  matched against purpose/use text (case-insensitive)
++ * @property {string[]} [noneOfKeywords]  negation guard: any hit skips the rule and flags needsHumanReview
+  * @property {string} [evidenceNote]
+  */
+ 
+@@ -28,18 +31,26 @@ export const DEFAULT_TIER_RULES = [
+   {
+     tier: 'prohibited', id: 'social-scoring', label: 'Social scoring',
+     anyOfKeywords: ['social score', 'social scoring', 'citizen score', 'trustworthiness score of persons'],
++    noneOfKeywords: ['detect', 'flag', 'block', 'moderate'],
+     evidenceNote: 'EU AI Act Art. 5(1)(c)-style: evaluating or classifying persons for general social behavior.',
+   },
+   {
+     tier: 'prohibited', id: 'manipulation', label: 'Manipulative / exploitative techniques',
+     anyOfKeywords: ['subliminal manipulation', 'dark pattern', 'exploit vulnerability', 'voice cloning scam'],
++    noneOfKeywords: ['detect', 'flag', 'block', 'moderate'],
+     evidenceNote: 'EU AI Act Art. 5(1)(a)/(b)-style: manipulation causing significant harm.',
+   },
+   {
+     tier: 'prohibited', id: 'emotion-inference-workplace', label: 'Emotion inference in workplace/education',
+     anyOfKeywords: ['emotion recognition employee', 'emotion inference workplace', 'sentiment scoring of staff'],
++    noneOfKeywords: ['detect', 'flag', 'block', 'moderate'],
+     evidenceNote: 'EU AI Act Art. 5(1)(f)-style prohibition (limited exceptions).',
+   },
++  {
++    tier: 'high', id: 'critical-infrastructure', label: 'Safety component of critical infrastructure',
++    anyOfKeywords: ['critical infrastructure', 'safety component for road traffic', 'water treatment control', 'gas pipeline monitoring', 'power grid dispatch'],
++    evidenceNote: 'EU AI Act Annex III 2-style: critical-infrastructure safety components (traffic, water, gas, power) [verify].',
++  },
+   {
+     tier: 'high', id: 'employment-screening', label: 'Employment / recruitment screening',
+     anyOfKeywords: ['cv screening', 'resume screening', 'candidate ranking', 'hiring decision', 'promotion decision', 'performance monitoring of employees', 'employee termination recommendation'],
+@@ -65,6 +76,11 @@ export const DEFAULT_TIER_RULES = [
+     anyOfKeywords: ['criminal risk prediction', 'predictive policing', 'fraud detection for law enforcement', 'biometric identification', 'face recognition'],
+     evidenceNote: 'EU AI Act Annex III 6/2-style: law enforcement and remote biometric ID.',
+   },
++  {
++    tier: 'high', id: 'migration-asylum-border', label: 'Migration, asylum and border control',
++    anyOfKeywords: ['asylum eligibility', 'visa applicant assessment', 'migration risk assessment', 'border control screening', 'asylum claim triage'],
++    evidenceNote: 'EU AI Act Annex III 8-style: migration, asylum and border-control management [verify].',
++  },
+   {
+     tier: 'high', id: 'legal-advice-automation', label: 'Automated legal advice to consumers',
+     anyOfKeywords: ['automated legal advice to consumers', 'unattended legal determination', 'automated benefits determination'],
+@@ -82,14 +98,88 @@ export const DEFAULT_TIER_RULES = [
+   },
+ ];
+ 
++/** @type {string[]} All tiers, in evaluation-precedence order. */
++export const TIERS = ['prohibited', 'gpai_systemic', 'gpai', 'high', 'limited', 'minimal'];
++
++/** @type {string[]} Role enum a record can hold (EU AI Act-style supply-chain roles). */
++export const ROLES = ['provider', 'deployer', 'importer', 'distributor', 'authorised-representative', 'manufacturer'];
++
++/**
++ * Training-compute threshold (FLOPs) at which a general-purpose model is
++ * presumed to pose systemic risk. EU AI Act Art. 51-style presumption [verify].
++ */
++export const GPAI_SYSTEMIC_FLOPS = 1e25;
++
+ /** @type {Record<string,string>} NIST AI RMF function mapping per tier (govern/map/measure/manage). */
+ export const NIST_RMF_MAPPING = {
+   prohibited: 'Govern: prohibit; remove system (GE-1).',
++  gpai_systemic: 'Govern + Map + Measure + Manage: systemic-risk evaluation, adversarial testing, incident reporting (Art. 55-ish) [verify].',
++  gpai: 'Govern + Map: GPAI provider duties — technical documentation, copyright policy, training-data summary (Art. 53-ish) [verify].',
+   high: 'Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).',
+   limited: 'Govern + Map: transparency disclosures (Art. 50-ish).',
+   minimal: 'Map: inventory entry, no mandatory obligations (voluntary code of conduct).',
+ };
+ 
++// ---------------------------------------------------------------------------
++// Obligations — cited data per role × tier ("-style" + [verify]; illustrative)
++// ---------------------------------------------------------------------------
++
++/**
++ * Role- and tier-specific obligation notes, EU AI Act-style, each tagged
++ * [verify]. Illustrative defaults — never treat as legal advice.
++ * @type {Record<string, Record<string, string>>}
++ */
++export const OBLIGATION_NOTES = {
++  provider: {
++    prohibited: 'Prohibited practice: placing it on the market is banned — decommission; other provider duties never apply (Art. 5-style) [verify].',
++    gpai_systemic: 'Systemic-risk GPAI provider: model evaluation, adversarial testing, systemic-risk assessment and mitigation, serious-incident reporting (Art. 55-style) [verify].',
++    gpai: 'GPAI provider: technical documentation, copyright-compliance policy, training-data summary; pass information down the value chain (Art. 53-style) [verify].',
++    high: 'Provider duties: risk-management system, data governance, technical documentation, logging, transparency, human oversight, accuracy/robustness (Art. 8–15-style) [verify].',
++    limited: 'Provider duties: design for transparency — disclose AI interaction, mark synthetic content (Art. 50-style) [verify].',
++    minimal: 'No mandatory provider obligations; voluntary code of conduct applies (Art. 69-style) [verify].',
++  },
++  deployer: {
++    prohibited: 'Deploying a prohibited practice is itself banned — stop use and document removal (Art. 5-style) [verify].',
++    gpai_systemic: 'Deploying a systemic-risk GPAI model: verify the provider\u2019s Art. 55-style measures and incident-reporting channel; monitor and report serious incidents [verify].',
++    gpai: 'Deploying a GPAI model: verify the provider supplied Art. 53-style documentation; relay transparency information to end users [verify].',
++    high: 'Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].',
++    limited: 'Deployer duties: tell users they are interacting with AI; mark deepfakes/synthetic content (Art. 50-style) [verify].',
++    minimal: 'No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].',
++  },
++  importer: {
++    prohibited: 'Importing a prohibited practice is banned — halt import and notify authorities (Art. 5-style) [verify].',
++    gpai_systemic: 'Importer of systemic-risk GPAI: verify the provider\u2019s Art. 55-style measures; report incidents to provider and authorities [verify].',
++    gpai: 'Importer of GPAI: verify Art. 53-style provider documentation reaches EU deployers [verify].',
++    high: 'Importer duties: verify provider conformity/documentation before import, keep a register, act as EU addressee when the provider is non-EU (Art. 23-style) [verify].',
++    limited: 'Importer duties: verify provider transparency markings before placing on the market (Art. 50-style) [verify].',
++    minimal: 'No mandatory importer obligations for the minimal tier [verify].',
++  },
++  distributor: {
++    prohibited: 'Making a prohibited practice available is banned — withdraw and notify authorities (Art. 5-style) [verify].',
++    gpai_systemic: 'Distributor of systemic-risk GPAI: preserve the provider\u2019s incident-reporting channel (Art. 55-style) [verify].',
++    gpai: 'Distributor of GPAI: pass provider technical documentation down the value chain (Art. 53-style) [verify].',
++    high: 'Distributor duties: verify CE marking and documentation before making available; withdraw and report non-compliance (Art. 22-style) [verify].',
++    limited: 'Distributor duties: verify Art. 50-style transparency disclosures before making available [verify].',
++    minimal: 'No mandatory distributor obligations for the minimal tier [verify].',
++  },
++  'authorised-representative': {
++    prohibited: 'An authorised representative cannot legitimise a banned practice — terminate the mandate (Art. 5-style) [verify].',
++    gpai_systemic: 'AR for a systemic-risk GPAI provider: relay incident reports and authority requests (Art. 55-style) [verify].',
++    gpai: 'AR for a GPAI provider: keep Art. 53-style documentation available to authorities [verify].',
++    high: 'AR duties for high-risk providers: keep documentation, cooperate with authorities, act as contact point (Art. 22-style) [verify].',
++    limited: 'AR duties: maintain transparency-related documentation; authority contact point (Art. 22-style) [verify].',
++    minimal: 'No mandatory authorised-representative obligations for the minimal tier [verify].',
++  },
++  manufacturer: {
++    prohibited: 'Banned practice — no manufacturer pathway; cease integration (Art. 5-style) [verify].',
++    gpai_systemic: 'Manufacturer embedding a systemic-risk GPAI model: preserve the incident-reporting path (Art. 55-style) [verify].',
++    gpai: 'Manufacturer embedding a GPAI model: obtain and preserve provider documentation (Art. 53-style) [verify].',
++    high: 'Manufacturer integrating a high-risk AI system into a product: product-safety conformity regime applies (Art. 6(1)/Annex I-style, e.g. machinery) [verify].',
++    limited: 'Manufacturer duties: ensure transparency markings survive product integration (Art. 50-style) [verify].',
++    minimal: 'No mandatory manufacturer obligations for the minimal tier [verify].',
++  },
++};
++
+ // ---------------------------------------------------------------------------
+ // Records + tiering
+ // ---------------------------------------------------------------------------
+@@ -104,37 +194,96 @@ export const NIST_RMF_MAPPING = {
+  * @property {'assist'|'draft-with-review'|'act-with-review'|'autonomous'} autonomy
+  * @property {string} [department]
+  * @property {string[]} [existingControls]  e.g. ['DPA signed','model card','red-team log']
++ * @property {'provider'|'deployer'|'importer'|'distributor'|'authorised-representative'|'manufacturer'} [role]  supply-chain role (default 'deployer')
++ * @property {boolean} [substantialModification]  deployer fine-tunes/modifies under own name → dual-role flag (Art. 25-style)
++ * @property {number} [trainingComputeFlops]  model-side track: ⇒ gpai / gpai_systemic when no specific-use rule fires
++ * @property {'planned'|'pilot'|'production'|'retired'} [status]  lifecycle status
++ * @property {string} [owner]  accountable owner (name or role)
++ * @property {string} [nextReview]  ISO date of the next scheduled review
++ * @property {boolean} [euNexus]  false ⇒ system outside EU AI Act scope; tier still computed for information
++ */
++
++/**
++ * Assess the supply-chain role of a record. A deployer that substantially
++ * modifies a system under its own name takes on provider duties as well
++ * (EU AI Act Art. 25-style dual-role shift) [verify].
++ * @param {UseCaseRecord} record
++ * @returns {{ role: string, dualRoleFlag: boolean, note: string }}
+  */
++export function assessRole(record) {
++  const role = record.role && ROLES.includes(record.role) ? record.role : 'deployer';
++  const dualRoleFlag = role === 'deployer' && Boolean(record.substantialModification);
++  const note = dualRoleFlag
++    ? 'EU AI Act Art. 25-style: substantial modification / fine-tuning under the deployer\u2019s own name shifts the deployer into the provider role — provider obligations now also apply [verify].'
++    : `Obligations mapped for role: ${role} [verify].`;
++  return { role, dualRoleFlag, note };
++}
+ 
+ /**
+- * Tier one use case: first matching rule wins; no rule → minimal, with a
+- * data-sensitivity bump (personal/special-category data raises minimal→limited).
+- * Every tier decision returns the rule + matched keyword as evidence.
++ * Tier one use case: first matching rule wins; negation guard (noneOfKeywords)
++ * skips a rule when a detect/flag/block/moderate-style verb suggests the system
++ * polices the practice instead of performing it — and never classifies
++ * silently: needsHumanReview is set. Model-side compute (trainingComputeFlops)
++ * assigns the GPAI track when no specific-use rule fired. No rule → minimal,
++ * with a data-sensitivity bump (personal/special-category → limited).
++ * Every tier decision returns the rule + matched keyword (or a threshold/
++ * default note) as evidence.
+  *
+  * @param {UseCaseRecord} record
+  * @param {TierRule[]} [rules]
+  * @returns {{ record: UseCaseRecord, tier: string, basis: {ruleId: string, matchedKeyword: string, evidenceNote: string}|{ruleId: string, note: string},
+  *             gaps: Array<{id: string, severity: 'blocker'|'major'|'minor', message: string}>,
+- *             nistRmf: string }}
++ *             nistRmf: string, role: string, dualRoleFlag: boolean, roleNote: string,
++ *             obligations: string, outOfScope: boolean, scopeNote: string,
++ *             needsHumanReview: boolean }}
+  */
+ export function tierUseCase(record, rules = DEFAULT_TIER_RULES) {
+   const text = `${record.name} ${record.purpose}`.toLowerCase();
+   let tier = 'minimal';
+   let basis = { ruleId: 'default', note: 'no rubric rule matched; minimal by default' };
++  let needsHumanReview = false;
+ 
+   for (const rule of rules) {
++    if ((rule.noneOfKeywords || []).some((k) => text.includes(k.toLowerCase()))) {
++      needsHumanReview = true; // never classify silently
++      continue;
++    }
+     const hit = rule.anyOfKeywords.find((k) => text.includes(k.toLowerCase()));
+     if (hit) { tier = rule.tier; basis = { ruleId: rule.id, matchedKeyword: hit, evidenceNote: rule.evidenceNote }; break; }
+   }
++  if (basis.ruleId === 'default' && typeof record.trainingComputeFlops === 'number' && record.trainingComputeFlops > 0) {
++    if (record.trainingComputeFlops >= GPAI_SYSTEMIC_FLOPS) {
++      tier = 'gpai_systemic';
++      basis = { ruleId: 'gpai-systemic', note: `training compute ${record.trainingComputeFlops.toExponential()} FLOPs ≥ 1e25 FLOPs — systemic-risk presumption (EU AI Act Art. 51-style) [verify]` };
++    } else {
++      tier = 'gpai';
++      basis = { ruleId: 'gpai', note: `general-purpose model training track (${record.trainingComputeFlops.toExponential()} FLOPs; systemic-risk presumption starts at 1e25, EU AI Act Art. 51-style) [verify]` };
++    }
++  }
+   if (basis.ruleId === 'default' && (record.dataSensitivity === 'personal' || record.dataSensitivity === 'special-category')) {
+     tier = 'limited';
+     basis = { ruleId: 'sensitive-data', note: 'personal / special-category data → transparency tier' };
+   }
+ 
++  const { role, dualRoleFlag, note: roleNote } = assessRole(record);
++  const outOfScope = record.euNexus === false;
++  const scopeNote = outOfScope
++    ? 'EU-nexus gate: euNexus:false — the EU AI Act does not apply to this system as registered; tier shown for information only [verify].'
++    : '';
++
+   const gaps = [];
+   if (tier === 'prohibited') {
+     gaps.push({ id: 'prohibited-practice', severity: 'blocker', message: 'Prohibited-style practice per rubric — suspend pending counsel review.' });
+   }
++  if (needsHumanReview) {
++    gaps.push({ id: 'needs-human-review', severity: 'major', message: 'Negation guard: a prohibited-practice keyword hit co-occurs with detect/flag/block/moderate-style language — the system may police rather than perform the practice. Confirm intent with the owner; never classify silently. [verify]' });
++  }
++  if (dualRoleFlag) {
++    gaps.push({ id: 'dual-role-shift', severity: 'major', message: 'Substantial modification under own name — deployer also takes provider obligations (Art. 25-style) [verify].' });
++  }
++  if (outOfScope) {
++    gaps.push({ id: 'out-of-eu-scope', severity: 'minor', message: 'EU-nexus gate says out of scope — confirm the nexus assessment before relying on EU-AI-Act tiering [verify].' });
++  }
+   if ((tier === 'high') && (record.humanOversight === 'none' || record.humanOversight === 'notify')) {
+     gaps.push({ id: 'missing-oversight', severity: 'blocker', message: 'High tier with no meaningful human oversight — mandatory oversight gap.' });
+   }
+@@ -152,7 +301,8 @@ export function tierUseCase(record, rules = DEFAULT_TIER_RULES) {
+   }
+   if (tier === 'minimal') gaps.length || gaps.push({ id: 'none', severity: 'minor', message: 'No gaps flagged by the rubric — keep in inventory.' });
+ 
+-  return { record, tier, basis, gaps, nistRmf: NIST_RMF_MAPPING[tier] };
++  return { record, tier, basis, gaps, nistRmf: NIST_RMF_MAPPING[tier], role, dualRoleFlag, roleNote,
++    obligations: (OBLIGATION_NOTES[role] && OBLIGATION_NOTES[role][tier]) || '', outOfScope, scopeNote, needsHumanReview };
+ }
+ 
+ /**
+@@ -165,7 +315,7 @@ export function tierUseCase(record, rules = DEFAULT_TIER_RULES) {
+  */
+ export function buildInventory(records, rules = DEFAULT_TIER_RULES) {
+   const items = records.map((r) => tierUseCase(r, rules));
+-  const counts = { prohibited: 0, high: 0, limited: 0, minimal: 0 };
++  const counts = Object.fromEntries(TIERS.map((t) => [t, 0]));
+   const gapCounts = { blocker: 0, major: 0, minor: 0 };
+   for (const it of items) {
+     counts[it.tier] += 1;
+@@ -177,23 +327,68 @@ export function buildInventory(records, rules = DEFAULT_TIER_RULES) {
+ }
+ 
+ /**
+- * CSV export of the tiered inventory.
++ * CSV export of the tiered inventory, incl. role / lifecycle / scoping columns.
+  * @param {ReturnType<typeof tierUseCase>[]} items
+  * @returns {string}
+  */
+ export function toCSV(items) {
+   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+-  const head = 'id,name,department,tier,basisRule,matchedKeyword,dataSensitivity,humanOversight,autonomy,gaps,severity';
++  const head = 'id,name,department,tier,basisRule,matchedKeyword,role,status,nextReview,needsReview,outOfScope,dataSensitivity,humanOversight,autonomy,gaps,severity';
+   const rows = items.map((it) => [
+     it.record.id, it.record.name, it.record.department || '', it.tier,
+-    it.basis.ruleId, it.basis.matchedKeyword || '', it.record.dataSensitivity,
+-    it.record.humanOversight, it.record.autonomy,
++    it.basis.ruleId, it.basis.matchedKeyword || '', it.role || 'deployer',
++    it.record.status || '', it.record.nextReview || '',
++    it.needsHumanReview ? 'yes' : 'no', it.outOfScope ? 'yes' : 'no',
++    it.record.dataSensitivity, it.record.humanOversight, it.record.autonomy,
+     it.gaps.map((g) => g.id).join('; '),
+     it.gaps.length ? [...new Set(it.gaps.map((g) => g.severity))].join('/') : 'none',
+   ].map(q).join(','));
+   return [head, ...rows].join('\r\n') + '\r\n';
+ }
+ 
++/**
++ * Lifecycle review clock: entries whose nextReview falls within 30 days of
++ * asOf (including overdue) and entries stale by more than a year.
++ * @param {ReturnType<typeof tierUseCase>[]|{items: ReturnType<typeof tierUseCase>[]}} inventory
++ * @param {string} asOfISO  ISO date the clock is evaluated at
++ * @returns {{ dueSoon: Array<{id: string, name: string, tier: string, nextReview: string, days: number}>,
++ *             stale: Array<{id: string, name: string, tier: string, nextReview: string, daysOverdue: number}> }}
++ */
++export function reviewDue(inventory, asOfISO) {
++  const items = Array.isArray(inventory) ? inventory : inventory.items;
++  const asOf = Date.parse(asOfISO);
++  const DAY = 86400000;
++  const dueSoon = [];
++  const stale = [];
++  for (const it of items) {
++    if (!it.record.nextReview) continue;
++    const t = Date.parse(it.record.nextReview);
++    if (Number.isNaN(t)) continue;
++    const days = Math.round((t - asOf) / DAY);
++    if (days <= 30) dueSoon.push({ id: it.record.id, name: it.record.name, tier: it.tier, nextReview: it.record.nextReview, days });
++    if (days < -365) stale.push({ id: it.record.id, name: it.record.name, tier: it.tier, nextReview: it.record.nextReview, daysOverdue: -days });
++  }
++  return { dueSoon, stale };
++}
++
++/**
++ * Filter tiered items by tier, lifecycle status, or EU nexus.
++ * @param {ReturnType<typeof tierUseCase>[]|{items: ReturnType<typeof tierUseCase>[]}} inventory
++ * @param {{ tier?: string, status?: string, nexus?: 'in-scope'|'out-of-scope', needsReview?: boolean }} [filters]
++ * @returns {ReturnType<typeof tierUseCase>[]}
++ */
++export function filterInventory(inventory, filters = {}) {
++  const items = Array.isArray(inventory) ? inventory : inventory.items;
++  return items.filter((it) => {
++    if (filters.tier && it.tier !== filters.tier) return false;
++    if (filters.status && it.record.status !== filters.status) return false;
++    if (filters.nexus === 'in-scope' && it.outOfScope) return false;
++    if (filters.nexus === 'out-of-scope' && !it.outOfScope) return false;
++    if (filters.needsReview === true && !it.needsHumanReview) return false;
++    return true;
++  });
++}
++
+ /**
+  * Dashboard view: counts + top blockers, for the wall chart.
+  * @param {ReturnType<typeof buildInventory>} inventory
+@@ -206,7 +401,11 @@ export function dashboard(inventory) {
+     blockers: inventory.items
+       .filter((i) => i.gaps.some((g) => g.severity === 'blocker'))
+       .map((i) => ({ id: i.record.id, name: i.record.name, tier: i.tier, gap: i.gaps.find((g) => g.severity === 'blocker').message })),
++    needsReview: inventory.items.filter((i) => i.needsHumanReview).length,
++    outOfScope: inventory.items.filter((i) => i.outOfScope).length,
+     byDepartment: countBy(inventory.items.map((i) => i.record.department || 'unassigned')),
++    byRole: countBy(inventory.items.map((i) => i.role || 'deployer')),
++    byStatus: countBy(inventory.items.map((i) => i.record.status || 'unspecified')),
+   };
+ }
+ 
+diff --git a/open-artifacts/ai-use-case-inventory/core/core.test.js b/open-artifacts/ai-use-case-inventory/core/core.test.js
+index 1df2395..c500e63 100644
+--- a/open-artifacts/ai-use-case-inventory/core/core.test.js
++++ b/open-artifacts/ai-use-case-inventory/core/core.test.js
+@@ -1,7 +1,10 @@
+-/** node:test suite for ai-use-case-inventory core. Run: node --test core/ */
++/** node:test suite for ai-use-case-inventory core. Run: node --test core/core.test.js */
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { DEFAULT_TIER_RULES, tierUseCase, buildInventory, toCSV, dashboard, NIST_RMF_MAPPING } from './core.js';
++import {
++  DEFAULT_TIER_RULES, tierUseCase, buildInventory, toCSV, dashboard, NIST_RMF_MAPPING,
++  ROLES, TIERS, OBLIGATION_NOTES, assessRole, reviewDue, filterInventory, GPAI_SYSTEMIC_FLOPS,
++} from './core.js';
+ 
+ const rec = (over = {}) => ({
+   id: 'AI-01', name: 'Contract clause reviewer',
+@@ -63,8 +66,9 @@ test('special-category data without privacy controls is flagged', () => {
+ });
+ 
+ test('first-match-wins: prohibited beats high when both could apply', () => {
+-  const t = tierUseCase(rec({ id: 'AI-09', name: 'X', purpose: 'Emotion recognition employee monitoring with voice cloning scam detection data' }));
++  const t = tierUseCase(rec({ id: 'AI-09', name: 'X', purpose: 'Emotion recognition employee monitoring with voice cloning scam data' }));
+   assert.equal(t.tier, 'prohibited');
++  assert.equal(t.basis.ruleId, 'manipulation');
+ });
+ 
+ test('buildInventory: counts, gap rollup, blockers, CSV', () => {
+@@ -116,3 +120,160 @@ test('determinism: same records → identical inventory JSON', () => {
+   const b = JSON.stringify(buildInventory([rec(), rec({ id: 'x', purpose: 'credit scoring' })]));
+   assert.equal(a, b);
+ });
++
++// --- Improvement 1: role + dual-role (Art. 25-style) ---
++
++test('assessRole: fine-tuned deployer → dualRoleFlag true with Art. 25-style note', () => {
++  const a = assessRole(rec({ role: 'deployer', substantialModification: true }));
++  assert.equal(a.role, 'deployer');
++  assert.equal(a.dualRoleFlag, true);
++  assert.match(a.note, /Art\.?\s*25-style/);
++  assert.match(a.note, /\[verify\]/);
++});
++
++test('assessRole: unmodified deployer and other roles → no dual-role flag', () => {
++  assert.equal(assessRole(rec({ role: 'deployer' })).dualRoleFlag, false);
++  assert.equal(assessRole(rec({ role: 'provider', substantialModification: true })).dualRoleFlag, false);
++});
++
++test('tierUseCase exposes role, dual-role flag, and role-aware obligations', () => {
++  const t = tierUseCase(rec({ id: 'AI-14', purpose: 'resume screening', role: 'deployer', substantialModification: true }));
++  assert.equal(t.role, 'deployer');
++  assert.equal(t.dualRoleFlag, true);
++  assert.equal(t.obligations, OBLIGATION_NOTES.deployer.high);
++  assert.match(t.obligations, /Art\.?\s*26-style/);
++  assert.match(t.obligations, /\[verify\]/);
++});
++
++// --- Improvement 2: GPAI tiers via training compute (Art. 51-style) ---
++
++test('2e25 FLOPs ⇒ gpai_systemic with threshold-citing basis', () => {
++  const t = tierUseCase(rec({ id: 'AI-15', name: 'Foundation model train', purpose: 'General-purpose model training', trainingComputeFlops: 2e25 }));
++  assert.equal(t.tier, 'gpai_systemic');
++  assert.equal(t.basis.ruleId, 'gpai-systemic');
++  assert.match(t.basis.note, /1e\+?25/i);
++  assert.match(t.basis.note, /\[verify\]/);
++  assert.match(t.nistRmf, /systemic/i);
++});
++
++test('sub-threshold compute ⇒ gpai; keyword rules still take precedence over compute track', () => {
++  const g = tierUseCase(rec({ id: 'AI-16', purpose: 'General-purpose model training', trainingComputeFlops: 5e23 }));
++  assert.equal(g.tier, 'gpai');
++  assert.equal(g.basis.ruleId, 'gpai');
++  const kw = tierUseCase(rec({ id: 'AI-17', purpose: 'CV screening model', trainingComputeFlops: 9e25 }));
++  assert.equal(kw.tier, 'high');
++  assert.equal(kw.basis.ruleId, 'employment-screening');
++});
++
++test('counts include gpai and gpai_systemic buckets', () => {
++  const inv = buildInventory([
++    rec({ trainingComputeFlops: 2e25 }),
++    rec({ id: 'x2', trainingComputeFlops: 1e24 }),
++  ]);
++  assert.equal(inv.counts.gpai_systemic, 1);
++  assert.equal(inv.counts.gpai, 1);
++});
++
++// --- Improvement 3: lifecycle register + review clock ---
++
++test('reviewDue lists nextReview due within 30 days of asOf', () => {
++  const inv = buildInventory([
++    rec({ id: 'AI-18', nextReview: '2026-11-27' }),            // due in 20d
++    rec({ id: 'AI-19', nextReview: '2026-12-31' }),            // not due (54d)
++    rec({ id: 'AI-20' }),                                       // no nextReview → skipped
++  ]);
++  const rd = reviewDue(inv, '2026-11-07');
++  assert.deepEqual(rd.dueSoon.map((d) => d.id), ['AI-18']);
++  assert.equal(rd.dueSoon[0].days, 20);
++});
++
++test('reviewDue flags stale entries overdue by more than a year', () => {
++  const inv = buildInventory([
++    rec({ id: 'AI-21', nextReview: '2025-06-01' }),            // >1y overdue
++    rec({ id: 'AI-22', nextReview: '2026-10-01' }),            // overdue but fresh
++  ]);
++  const rd = reviewDue(inv, '2026-11-07');
++  assert.deepEqual(rd.stale.map((d) => d.id), ['AI-21']);
++  assert.ok(rd.dueSoon.some((d) => d.id === 'AI-21'));
++});
++
++// --- Improvement 4: EU-nexus scoping gate ---
++
++test('euNexus:false ⇒ tier computed but outOfScope:true with note', () => {
++  const t = tierUseCase(rec({ id: 'AI-23', purpose: 'credit scoring', euNexus: false }));
++  assert.equal(t.tier, 'high');
++  assert.equal(t.basis.ruleId, 'credit-scoring');
++  assert.equal(t.outOfScope, true);
++  assert.match(t.scopeNote, /nexus/i);
++});
++
++test('euNexus true/absent ⇒ in scope', () => {
++  assert.equal(tierUseCase(rec({ purpose: 'credit scoring' })).outOfScope, false);
++  assert.equal(tierUseCase(rec({ purpose: 'credit scoring', euNexus: true })).outOfScope, false);
++});
++
++// --- Improvement 5: negation-safe matching ---
++
++test('"detects dark patterns" ⇒ minimal + needsHumanReview, not prohibited', () => {
++  const t = tierUseCase(rec({ id: 'AI-24', name: 'Dark-pattern detector', purpose: 'Detects dark patterns in the marketing site and flags them for removal' }));
++  assert.equal(t.tier, 'minimal');
++  assert.equal(t.basis.ruleId, 'default');
++  assert.equal(t.needsHumanReview, true);
++  assert.ok(t.gaps.some((g) => g.id === 'needs-human-review' && g.severity === 'major'));
++});
++
++test('prohibited rules carry noneOfKeywords; performing (not detecting) still prohibits', () => {
++  for (const r of DEFAULT_TIER_RULES.filter((x) => x.tier === 'prohibited')) {
++    assert.ok(Array.isArray(r.noneOfKeywords) && r.noneOfKeywords.length > 0, 'prohibited rule missing noneOfKeywords: ' + r.id);
++  }
++  const t = tierUseCase(rec({ id: 'AI-25', purpose: 'Voice cloning scam calls generated from customer recordings' }));
++  assert.equal(t.tier, 'prohibited');
++  assert.equal(t.needsHumanReview, false);
++});
++
++// --- Improvement 6: obligations as cited data ---
++
++test('OBLIGATION_NOTES covers every role × tier combo with [verify] tags', () => {
++  for (const role of ROLES) {
++    for (const tier of TIERS) {
++      const note = OBLIGATION_NOTES[role][tier];
++      assert.ok(typeof note === 'string' && note.length > 20, `missing obligation note for ${role}×${tier}`);
++      assert.match(note, /\[verify\]/, `${role}×${tier} missing [verify] tag`);
++    }
++  }
++  assert.match(OBLIGATION_NOTES.deployer.high, /oversight/i);
++});
++
++// --- Improvement 7: coverage + exports ---
++
++test('critical-infrastructure and migration/asylum rules fire high', () => {
++  const ci = tierUseCase(rec({ id: 'AI-26', purpose: 'Safety component for road traffic management at the plant' }));
++  assert.equal(ci.tier, 'high');
++  assert.equal(ci.basis.ruleId, 'critical-infrastructure');
++  const mig = tierUseCase(rec({ id: 'AI-27', purpose: 'Asylum claim triage support for the registrar' }));
++  assert.equal(mig.tier, 'high');
++  assert.equal(mig.basis.ruleId, 'migration-asylum-border');
++});
++
++test('CSV header gains role, status, nextReview, needsReview, outOfScope columns', () => {
++  const inv = buildInventory([rec({ role: 'deployer', status: 'production', nextReview: '2026-12-01' })]);
++  assert.equal(
++    inv.csv.split('\r\n')[0],
++    'id,name,department,tier,basisRule,matchedKeyword,role,status,nextReview,needsReview,outOfScope,dataSensitivity,humanOversight,autonomy,gaps,severity',
++  );
++  const row = inv.csv.split('\r\n')[1];
++  assert.ok(row.includes('"deployer"') && row.includes('"production"') && row.includes('2026-12-01') && row.includes('"no"'));
++});
++
++test('filterInventory filters by tier, status, and nexus', () => {
++  const inv = buildInventory([
++    rec({ id: 'A', purpose: 'credit scoring', status: 'production', euNexus: false }),
++    rec({ id: 'B', purpose: 'chatbot for clients', status: 'pilot' }),
++    rec({ id: 'C' }),
++  ]);
++  assert.deepEqual(filterInventory(inv, { tier: 'high' }).map((i) => i.record.id), ['A']);
++  assert.deepEqual(filterInventory(inv, { status: 'pilot' }).map((i) => i.record.id), ['B']);
++  assert.deepEqual(filterInventory(inv, { nexus: 'in-scope' }).map((i) => i.record.id), ['B', 'C']);
++  assert.deepEqual(filterInventory(inv, { nexus: 'out-of-scope' }).map((i) => i.record.id), ['A']);
++  assert.equal(filterInventory(inv).length, 3);
++});
+diff --git a/open-artifacts/ai-use-case-inventory/demo/index.html b/open-artifacts/ai-use-case-inventory/demo/index.html
+index 65768a7..4b94fde 100644
+--- a/open-artifacts/ai-use-case-inventory/demo/index.html
++++ b/open-artifacts/ai-use-case-inventory/demo/index.html
+@@ -16,6 +16,7 @@
+   .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
+   button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
+   button:hover { background:#333; }
++  select { font-family:var(--font-mono); font-size:12px; background:#fff; color:var(--text); border:1px solid var(--border); border-radius:0; padding:8px 10px; }
+   .muted { color:var(--text-secondary); font-size:12px; }
+   .bars { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 20px; }
+   .bar { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
+@@ -49,22 +50,34 @@
+ 
+   <h2>Dashboard</h2>
+   <div class="bars" id="bars"></div>
++  <div class="row">
++    <span class="muted">filters:</span>
++    <select id="f-tier"><option value="">tier: all</option>${['prohibited','gpai_systemic','gpai','high','limited','minimal'].map((t) => `<option>${t}</option>`).join('')}</select>
++    <select id="f-status"><option value="">status: all</option>${['planned','pilot','production','retired'].map((s) => `<option>${s}</option>`).join('')}</select>
++    <select id="f-nexus"><option value="">nexus: all</option><option value="in-scope">in EU scope</option><option value="out-of-scope">out of EU scope</option></select>
++  </div>
++  <h2>Review clock (≤30d due · stale &gt;1y)</h2>
++  <div id="review"></div>
+   <div id="table"></div>
+ 
+   <p class="muted">Deterministic core · <code>open-artifacts/ai-use-case-inventory/core/core.js</code> · first-pass screen, not a compliance determination · not legal advice.</p>
+ </div>
+ 
+ <script type="module">
+-import { buildInventory, dashboard } from '../core/core.js';
++import { buildInventory, dashboard, reviewDue, filterInventory, TIERS } from '../core/core.js';
+ 
+ const records = [
+-  { id: 'AI-01', name: 'NDA fallback drafter', purpose: 'Drafts fallback positions for NDAs for attorney review', dataSensitivity: 'confidential', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Legal' },
+-  { id: 'AI-02', name: 'Talent screen', purpose: 'CV screening and candidate ranking for engineering roles', dataSensitivity: 'personal', humanOversight: 'notify', autonomy: 'act-with-review', department: 'People', existingControls: ['DPA signed'] },
+-  { id: 'AI-03', name: 'Community trust index', purpose: 'Social scoring of marketplace users for general trustworthiness', dataSensitivity: 'personal', humanOversight: 'none', autonomy: 'autonomous', department: 'Marketplace' },
+-  { id: 'AI-04', name: 'Client intake helper', purpose: 'Customer-facing assistant chatbot answering intake questions', dataSensitivity: 'confidential', humanOversight: 'human-decides', autonomy: 'assist', department: 'Sales' },
+-  { id: 'AI-05', name: 'Warranty claims triage', purpose: 'Insurance eligibility pre-checks for warranty claims', dataSensitivity: 'personal', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Warranty', existingControls: ['model card v3', 'eval log'] },
+-  { id: 'AI-06', name: 'Shop-floor safety vision', purpose: 'Biometric identification for shift access at the Nampo plant', dataSensitivity: 'special-category', humanOversight: 'human-decides', autonomy: 'act-with-review', department: 'Facilities', existingControls: ['GDPR mapping v1'] },
+-  { id: 'AI-07', name: 'Deal-room summarizer', purpose: 'Summarizes diligence data rooms for the deal team', dataSensitivity: 'confidential', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Corp Dev' },
++  { id: 'AI-01', name: 'NDA fallback drafter', purpose: 'Drafts fallback positions for NDAs for attorney review', dataSensitivity: 'confidential', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Legal', role: 'deployer', status: 'production', owner: 'M. Okafor', nextReview: '2027-02-01' },
++  { id: 'AI-02', name: 'Talent screen', purpose: 'CV screening and candidate ranking for engineering roles', dataSensitivity: 'personal', humanOversight: 'notify', autonomy: 'act-with-review', department: 'People', role: 'deployer', status: 'production', owner: 'L. Byrne', nextReview: '2026-11-20', existingControls: ['DPA signed'] },
++  { id: 'AI-03', name: 'Community trust index', purpose: 'Social scoring of marketplace users for general trustworthiness', dataSensitivity: 'personal', humanOversight: 'none', autonomy: 'autonomous', department: 'Marketplace', role: 'deployer', status: 'retired', owner: 'R. Aldaar', nextReview: '2025-03-01' },
++  { id: 'AI-04', name: 'Client intake helper', purpose: 'Customer-facing assistant chatbot answering intake questions', dataSensitivity: 'confidential', humanOversight: 'human-decides', autonomy: 'assist', department: 'Sales', role: 'deployer', status: 'production', owner: 'K. Kowalski', nextReview: '2027-01-15' },
++  { id: 'AI-05', name: 'Climatesco claims triage', purpose: 'Insurance eligibility pre-checks for warranty claims', dataSensitivity: 'personal', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Warranty', role: 'deployer', substantialModification: true, status: 'production', owner: 'S. Ferraz', nextReview: '2026-12-10', existingControls: ['model card v3', 'eval log'] },
++  { id: 'AI-06', name: 'Shop-floor safety vision', purpose: 'Biometric identification for shift access at the Nampo plant', dataSensitivity: 'special-category', humanOversight: 'human-decides', autonomy: 'act-with-review', department: 'Facilities', role: 'deployer', status: 'production', owner: 'J. Nkemelu', nextReview: '2026-08-01', existingControls: ['GDPR mapping v1'] },
++  { id: 'AI-07', name: 'Deal-room summarizer', purpose: 'Summarizes diligence data rooms for the deal team', dataSensitivity: 'confidential', humanOversight: 'human-in-loop', autonomy: 'draft-with-review', department: 'Corp Dev', role: 'deployer', status: 'pilot', owner: 'A. Petrov', nextReview: '2026-12-15' },
++  { id: 'AI-08', name: 'Grid-stability predictor', purpose: 'Power grid dispatch recommendations for the regional utility control room', dataSensitivity: 'internal', humanOversight: 'human-decides', autonomy: 'draft-with-review', department: 'Energy', role: 'provider', status: 'production', owner: 'D. Haugen', nextReview: '2026-11-25' },
++  { id: 'AI-09', name: 'VestraLM train', purpose: 'General-purpose model training for internal tooling', dataSensitivity: 'internal', humanOversight: 'human-in-loop', autonomy: 'assist', department: 'Platform', role: 'provider', trainingComputeFlops: 2.3e25, status: 'pilot', owner: 'T. Iwasaki', nextReview: '2026-12-01', existingControls: ['model card v1', 'eval log'] },
++  { id: 'AI-10', name: 'Dark-pattern auditor', purpose: 'Detects dark patterns in the marketing site and flags them for removal', dataSensitivity: 'internal', humanOversight: 'human-decides', autonomy: 'assist', department: 'Growth', role: 'deployer', status: 'production', owner: 'P. Novak', nextReview: '2027-03-01' },
++  { id: 'AI-11', name: 'Non-EU kiosk FAQ helper', purpose: 'Customer-facing assistant chatbot for the retail kiosk pilot (no EU output)', dataSensitivity: 'public', humanOversight: 'human-decides', autonomy: 'assist', department: 'Retail', role: 'deployer', euNexus: false, status: 'pilot', owner: 'P. Novak', nextReview: '2027-01-10' },
+ ];
+ 
+ const $ = (id) => document.getElementById(id);
+@@ -78,22 +91,39 @@ function run() {
+   const inv = buildInventory(recs);
+   const d = dashboard(inv);
+   lastCSV = inv.csv;
+-  $('bars').innerHTML = ['prohibited','high','limited','minimal']
+-    .map((t) => `<span class="bar">${t}<b>${d.counts[t]}</b></span>`).join('') +
++  const filters = {
++    tier: $('f-tier').value || undefined,
++    status: $('f-status').value || undefined,
++    nexus: $('f-nexus').value || undefined,
++  };
++  const shown = filterInventory(inv, filters);
++  const asOf = new Date().toISOString().slice(0, 10);
++  const clock = reviewDue(inv, asOf);
++  $('bars').innerHTML = TIERS.map((t) => `<span class="bar">${t}<b>${d.counts[t]}</b></span>`).join('') +
+     `<span class="bar">blockers<b>${d.blockers.length}</b></span>` +
+-    `<span class="bar">gaps major<b>${d.gapCounts.major}</b></span>`;
++    `<span class="bar">gaps major<b>${d.gapCounts.major}</b></span>` +
++    `<span class="bar">needs review<b>${d.needsReview}</b></span>` +
++    `<span class="bar">out of EU scope<b>${d.outOfScope}</b></span>`;
++  $('review').innerHTML = clock.dueSoon.length || clock.stale.length
++    ? `<div class="muted">Review clock @ ${asOf} (demo date = today):</div>` +
++      clock.dueSoon.map((r) => `<div class="gap">due ${esc(r.nextReview)} (${r.days >= 0 ? 'in ' + r.days + 'd' : Math.abs(r.days) + 'd overdue'}) — <b>${esc(r.id)}</b> ${esc(r.name)} · ${r.tier}${clock.stale.some((s) => s.id === r.id) ? ' · <b>STALE >1y</b>' : ''}</div>`).join('') +
++      clock.stale.filter((s) => !clock.dueSoon.some((r) => r.id === s.id)).map((s) => `<div class="gap">stale ${s.daysOverdue}d overdue — <b>${esc(s.id)}</b> ${esc(s.name)} · ${s.tier}</div>`).join('')
++    : '<span class="muted">No reviews due within 30 days.</span>';
+   $('table').innerHTML = `<table>
+-    <tr><th>ID</th><th>Use case</th><th>Dept</th><th>Tier</th><th>Basis (evidence)</th><th>Gaps</th></tr>
+-    ${inv.items.map((it) => `<tr>
++    <tr><th>ID</th><th>Use case</th><th>Dept</th><th>Role</th><th>Tier</th><th>Basis (evidence)</th><th>Lifecycle</th><th>Gaps</th></tr>
++    ${shown.map((it) => `<tr>
+       <td>${esc(it.record.id)}</td>
+-      <td><b>${esc(it.record.name)}</b><div class="basis">${esc(it.record.humanOversight)} · ${esc(it.record.autonomy)} · ${esc(it.record.dataSensitivity)}</div></td>
++      <td><b>${esc(it.record.name)}</b><div class="basis">${esc(it.record.humanOversight)} · ${esc(it.record.autonomy)} · ${esc(it.record.dataSensitivity)}${it.dualRoleFlag ? ' · <b>dual-role</b>' : ''}${it.outOfScope ? ' · <b>out of EU scope</b>' : ''}</div></td>
+       <td>${esc(it.record.department || '')}</td>
+-      <td><span class="tier ${it.tier}">${it.tier}</span></td>
+-      <td class="basis">${esc(it.basis.ruleId)}${it.basis.matchedKeyword ? ' (“' + esc(it.basis.matchedKeyword) + '”)' : ''}</td>
++      <td>${esc(it.role)}${it.dualRoleFlag ? ' → provider' : ''}</td>
++      <td><span class="tier ${it.tier}">${it.tier}</span>${it.needsHumanReview ? '<div class="gap blocker">needs review</div>' : ''}</td>
++      <td class="basis">${esc(it.basis.ruleId)}${it.basis.matchedKeyword ? ' (“' + esc(it.basis.matchedKeyword) + '”)' : ''}<div class="basis">${esc(it.obligations)}</div></td>
++      <td class="basis">${esc(it.record.status || '—')}<div class="basis">${esc(it.record.owner || '')}${it.record.nextReview ? ' · review ' + esc(it.record.nextReview) : ''}</div></td>
+       <td>${it.gaps.map((g) => `<div class="gap ${g.severity === 'blocker' ? 'blocker' : ''}">${g.severity}: ${esc(g.id)}</div>`).join('') || '<span class="muted">none</span>'}</td>
+     </tr>`).join('')}</table>`;
+-  $('status').textContent = `${d.total} use cases · ${d.blockers.length} blockers`;
++  $('status').textContent = `${d.total} use cases · ${shown.length} shown · ${d.blockers.length} blockers`;
+ }
++for (const id of ['f-tier', 'f-status', 'f-nexus']) $(id).addEventListener('change', run);
+ $('run').addEventListener('click', run);
+ $('csv').addEventListener('click', async () => {
+   try { await navigator.clipboard.writeText(lastCSV); $('status').textContent = 'CSV copied to clipboard'; }
+diff --git a/open-artifacts/ai-use-case-inventory/examples/input.json b/open-artifacts/ai-use-case-inventory/examples/input.json
+index 10ff790..74f97e8 100644
+--- a/open-artifacts/ai-use-case-inventory/examples/input.json
++++ b/open-artifacts/ai-use-case-inventory/examples/input.json
+@@ -1,12 +1,17 @@
+ {
+   "organization": "Vestra Dynamics Corp. (fictional)",
++  "asOf": "2026-11-07",
+   "records": [
+-    { "id": "AI-01", "name": "NDA fallback drafter", "purpose": "Drafts fallback positions for NDAs for attorney review", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Legal" },
+-    { "id": "AI-02", "name": "Talent screen", "purpose": "CV screening and candidate ranking for engineering roles", "dataSensitivity": "personal", "humanOversight": "notify", "autonomy": "act-with-review", "department": "People", "existingControls": ["DPA signed"] },
+-    { "id": "AI-03", "name": "Community trust index", "purpose": "Social scoring of marketplace users for general trustworthiness", "dataSensitivity": "personal", "humanOversight": "none", "autonomy": "autonomous", "department": "Marketplace" },
+-    { "id": "AI-04", "name": "Client intake helper", "purpose": "Customer-facing assistant chatbot answering intake questions", "dataSensitivity": "confidential", "humanOversight": "human-decides", "autonomy": "assist", "department": "Sales" },
+-    { "id": "AI-05", "name": "Climatesco claims triage", "purpose": "Insurance eligibility pre-checks for warranty claims", "dataSensitivity": "personal", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Warranty", "existingControls": ["model card v3", "eval log"] },
+-    { "id": "AI-06", "name": "Shop-floor safety vision", "purpose": "Biometric identification for shift access at the Nampo plant", "dataSensitivity": "special-category", "humanOversight": "human-decides", "autonomy": "act-with-review", "department": "Facilities", "existingControls": ["GDPR mapping v1"] },
+-    { "id": "AI-07", "name": "Deal-room summarizer", "purpose": "Summarizes diligence data rooms for the deal team", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Corp Dev" }
++    { "id": "AI-01", "name": "NDA fallback drafter", "purpose": "Drafts fallback positions for NDAs for attorney review", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Legal", "role": "deployer", "status": "production", "owner": "M. Okafor", "nextReview": "2027-02-01" },
++    { "id": "AI-02", "name": "Talent screen", "purpose": "CV screening and candidate ranking for engineering roles", "dataSensitivity": "personal", "humanOversight": "notify", "autonomy": "act-with-review", "department": "People", "role": "deployer", "status": "production", "owner": "L. Byrne", "nextReview": "2026-11-20", "existingControls": ["DPA signed"] },
++    { "id": "AI-03", "name": "Community trust index", "purpose": "Social scoring of marketplace users for general trustworthiness", "dataSensitivity": "personal", "humanOversight": "none", "autonomy": "autonomous", "department": "Marketplace", "role": "deployer", "status": "retired", "owner": "R. Aldaar", "nextReview": "2025-03-01" },
++    { "id": "AI-04", "name": "Client intake helper", "purpose": "Customer-facing assistant chatbot answering intake questions", "dataSensitivity": "confidential", "humanOversight": "human-decides", "autonomy": "assist", "department": "Sales", "role": "deployer", "status": "production", "owner": "K. Kowalski", "nextReview": "2027-01-15" },
++    { "id": "AI-05", "name": "Climatesco claims triage", "purpose": "Insurance eligibility pre-checks for warranty claims", "dataSensitivity": "personal", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Warranty", "role": "deployer", "substantialModification": true, "status": "production", "owner": "S. Ferraz", "nextReview": "2026-12-10", "existingControls": ["model card v3", "eval log"] },
++    { "id": "AI-06", "name": "Shop-floor safety vision", "purpose": "Biometric identification for shift access at the Nampo plant", "dataSensitivity": "special-category", "humanOversight": "human-decides", "autonomy": "act-with-review", "department": "Facilities", "role": "deployer", "status": "production", "owner": "J. Nkemelu", "nextReview": "2026-08-01", "existingControls": ["GDPR mapping v1"] },
++    { "id": "AI-07", "name": "Deal-room summarizer", "purpose": "Summarizes diligence data rooms for the deal team", "dataSensitivity": "confidential", "humanOversight": "human-in-loop", "autonomy": "draft-with-review", "department": "Corp Dev", "role": "deployer", "status": "pilot", "owner": "A. Petrov", "nextReview": "2026-12-15" },
++    { "id": "AI-08", "name": "Grid-stability predictor", "purpose": "Power grid dispatch recommendations for the regional utility control room", "dataSensitivity": "internal", "humanOversight": "human-decides", "autonomy": "draft-with-review", "department": "Energy", "role": "provider", "status": "production", "owner": "D. Haugen", "nextReview": "2026-11-25" },
++    { "id": "AI-09", "name": "VestraLM train", "purpose": "General-purpose model training for internal tooling", "dataSensitivity": "internal", "humanOversight": "human-in-loop", "autonomy": "assist", "department": "Platform", "role": "provider", "trainingComputeFlops": 2.3e+25, "status": "pilot", "owner": "T. Iwasaki", "nextReview": "2026-12-01", "existingControls": ["model card v1", "eval log"] },
++    { "id": "AI-10", "name": "Dark-pattern auditor", "purpose": "Detects dark patterns in the marketing site and flags them for removal", "dataSensitivity": "internal", "humanOversight": "human-decides", "autonomy": "assist", "department": "Growth", "role": "deployer", "status": "production", "owner": "P. Novak", "nextReview": "2027-03-01" },
++    { "id": "AI-11", "name": "Non-EU kiosk FAQ helper", "purpose": "Customer-facing assistant chatbot for the retail kiosk pilot (no EU output)", "dataSensitivity": "public", "humanOversight": "human-decides", "autonomy": "assist", "department": "Retail", "role": "deployer", "euNexus": false, "status": "pilot", "owner": "P. Novak", "nextReview": "2027-01-10" }
+   ]
+ }
+diff --git a/open-artifacts/ai-use-case-inventory/examples/inventory.csv b/open-artifacts/ai-use-case-inventory/examples/inventory.csv
+index e0c844f..c04a58a 100644
+--- a/open-artifacts/ai-use-case-inventory/examples/inventory.csv
++++ b/open-artifacts/ai-use-case-inventory/examples/inventory.csv
+@@ -1,8 +1,12 @@
+-id,name,department,tier,basisRule,matchedKeyword,dataSensitivity,humanOversight,autonomy,gaps,severity
+-"AI-01","NDA fallback drafter","Legal","minimal","default","","confidential","human-in-loop","draft-with-review","none","minor"
+-"AI-02","Talent screen","People","high","employment-screening","cv screening","personal","notify","act-with-review","missing-oversight; autonomy-high-tier","blocker/major"
+-"AI-03","Community trust index","Marketplace","prohibited","social-scoring","social scoring","personal","none","autonomous","prohibited-practice; no-evaluation","blocker/minor"
+-"AI-04","Client intake helper","Sales","limited","transparency-chatbot","chatbot","confidential","human-decides","assist","","none"
+-"AI-05","Climatesco claims triage","Warranty","high","essential-services","insurance eligibility","personal","human-in-loop","draft-with-review","","none"
+-"AI-06","Shop-floor safety vision","Facilities","high","law-enforcement","biometric identification","special-category","human-decides","act-with-review","autonomy-high-tier","major"
+-"AI-07","Deal-room summarizer","Corp Dev","minimal","default","","confidential","human-in-loop","draft-with-review","none","minor"
++id,name,department,tier,basisRule,matchedKeyword,role,status,nextReview,needsReview,outOfScope,dataSensitivity,humanOversight,autonomy,gaps,severity
++"AI-01","NDA fallback drafter","Legal","minimal","default","","deployer","production","2027-02-01","no","no","confidential","human-in-loop","draft-with-review","none","minor"
++"AI-02","Talent screen","People","high","employment-screening","cv screening","deployer","production","2026-11-20","no","no","personal","notify","act-with-review","missing-oversight; autonomy-high-tier","blocker/major"
++"AI-03","Community trust index","Marketplace","prohibited","social-scoring","social scoring","deployer","retired","2025-03-01","no","no","personal","none","autonomous","prohibited-practice; no-evaluation","blocker/minor"
++"AI-04","Client intake helper","Sales","limited","transparency-chatbot","chatbot","deployer","production","2027-01-15","no","no","confidential","human-decides","assist","","none"
++"AI-05","Climatesco claims triage","Warranty","high","essential-services","insurance eligibility","deployer","production","2026-12-10","no","no","personal","human-in-loop","draft-with-review","dual-role-shift","major"
++"AI-06","Shop-floor safety vision","Facilities","high","law-enforcement","biometric identification","deployer","production","2026-08-01","no","no","special-category","human-decides","act-with-review","autonomy-high-tier","major"
++"AI-07","Deal-room summarizer","Corp Dev","minimal","default","","deployer","pilot","2026-12-15","no","no","confidential","human-in-loop","draft-with-review","none","minor"
++"AI-08","Grid-stability predictor","Energy","high","critical-infrastructure","power grid dispatch","provider","production","2026-11-25","no","no","internal","human-decides","draft-with-review","","none"
++"AI-09","VestraLM train","Platform","gpai_systemic","gpai-systemic","","provider","pilot","2026-12-01","no","no","internal","human-in-loop","assist","","none"
++"AI-10","Dark-pattern auditor","Growth","minimal","default","","deployer","production","2027-03-01","yes","no","internal","human-decides","assist","needs-human-review","major"
++"AI-11","Non-EU kiosk FAQ helper","Retail","limited","transparency-chatbot","chatbot","deployer","pilot","2027-01-10","no","yes","public","human-decides","assist","out-of-eu-scope","minor"
+diff --git a/open-artifacts/ai-use-case-inventory/examples/output.json b/open-artifacts/ai-use-case-inventory/examples/output.json
+index d35f6eb..61badc8 100644
+--- a/open-artifacts/ai-use-case-inventory/examples/output.json
++++ b/open-artifacts/ai-use-case-inventory/examples/output.json
+@@ -1,16 +1,19 @@
+ {
+   "organization": "Vestra Dynamics Corp. (fictional)",
+-  "total": 7,
++  "asOf": "2026-11-07",
++  "total": 11,
+   "counts": {
+     "prohibited": 1,
+-    "high": 3,
+-    "limited": 1,
+-    "minimal": 2
++    "gpai_systemic": 1,
++    "gpai": 0,
++    "high": 4,
++    "limited": 2,
++    "minimal": 3
+   },
+   "gapCounts": {
+     "blocker": 2,
+-    "major": 2,
+-    "minor": 3
++    "major": 4,
++    "minor": 4
+   },
+   "blockers": [
+     {
+@@ -26,6 +29,8 @@
+       "gap": "Prohibited-style practice per rubric — suspend pending counsel review."
+     }
+   ],
++  "needsReview": 1,
++  "outOfScope": 1,
+   "byDepartment": {
+     "Legal": 1,
+     "People": 1,
+@@ -33,7 +38,68 @@
+     "Sales": 1,
+     "Warranty": 1,
+     "Facilities": 1,
+-    "Corp Dev": 1
++    "Corp Dev": 1,
++    "Energy": 1,
++    "Platform": 1,
++    "Growth": 1,
++    "Retail": 1
++  },
++  "byRole": {
++    "deployer": 9,
++    "provider": 2
++  },
++  "byStatus": {
++    "production": 7,
++    "retired": 1,
++    "pilot": 3
++  },
++  "reviewDue": {
++    "dueSoon": [
++      {
++        "id": "AI-02",
++        "name": "Talent screen",
++        "tier": "high",
++        "nextReview": "2026-11-20",
++        "days": 13
++      },
++      {
++        "id": "AI-03",
++        "name": "Community trust index",
++        "tier": "prohibited",
++        "nextReview": "2025-03-01",
++        "days": -616
++      },
++      {
++        "id": "AI-06",
++        "name": "Shop-floor safety vision",
++        "tier": "high",
++        "nextReview": "2026-08-01",
++        "days": -98
++      },
++      {
++        "id": "AI-08",
++        "name": "Grid-stability predictor",
++        "tier": "high",
++        "nextReview": "2026-11-25",
++        "days": 18
++      },
++      {
++        "id": "AI-09",
++        "name": "VestraLM train",
++        "tier": "gpai_systemic",
++        "nextReview": "2026-12-01",
++        "days": 24
++      }
++    ],
++    "stale": [
++      {
++        "id": "AI-03",
++        "name": "Community trust index",
++        "tier": "prohibited",
++        "nextReview": "2025-03-01",
++        "daysOverdue": 616
++      }
++    ]
+   },
+   "items": [
+     {
+@@ -44,7 +110,11 @@
+         "dataSensitivity": "confidential",
+         "humanOversight": "human-in-loop",
+         "autonomy": "draft-with-review",
+-        "department": "Legal"
++        "department": "Legal",
++        "role": "deployer",
++        "status": "production",
++        "owner": "M. Okafor",
++        "nextReview": "2027-02-01"
+       },
+       "tier": "minimal",
+       "basis": {
+@@ -58,7 +128,14 @@
+           "message": "No gaps flagged by the rubric — keep in inventory."
+         }
+       ],
+-      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
++      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -69,6 +146,10 @@
+         "humanOversight": "notify",
+         "autonomy": "act-with-review",
+         "department": "People",
++        "role": "deployer",
++        "status": "production",
++        "owner": "L. Byrne",
++        "nextReview": "2026-11-20",
+         "existingControls": [
+           "DPA signed"
+         ]
+@@ -91,7 +172,14 @@
+           "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
+         }
+       ],
+-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
++      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -101,7 +189,11 @@
+         "dataSensitivity": "personal",
+         "humanOversight": "none",
+         "autonomy": "autonomous",
+-        "department": "Marketplace"
++        "department": "Marketplace",
++        "role": "deployer",
++        "status": "retired",
++        "owner": "R. Aldaar",
++        "nextReview": "2025-03-01"
+       },
+       "tier": "prohibited",
+       "basis": {
+@@ -121,7 +213,14 @@
+           "message": "Autonomous action without logged evaluation/red-team/monitoring control."
+         }
+       ],
+-      "nistRmf": "Govern: prohibit; remove system (GE-1)."
++      "nistRmf": "Govern: prohibit; remove system (GE-1).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "Deploying a prohibited practice is itself banned — stop use and document removal (Art. 5-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -131,7 +230,11 @@
+         "dataSensitivity": "confidential",
+         "humanOversight": "human-decides",
+         "autonomy": "assist",
+-        "department": "Sales"
++        "department": "Sales",
++        "role": "deployer",
++        "status": "production",
++        "owner": "K. Kowalski",
++        "nextReview": "2027-01-15"
+       },
+       "tier": "limited",
+       "basis": {
+@@ -140,7 +243,14 @@
+         "evidenceNote": "EU AI Act Art. 50-style transparency: users must be told they interact with AI."
+       },
+       "gaps": [],
+-      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish)."
++      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "Deployer duties: tell users they are interacting with AI; mark deepfakes/synthetic content (Art. 50-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -151,6 +261,11 @@
+         "humanOversight": "human-in-loop",
+         "autonomy": "draft-with-review",
+         "department": "Warranty",
++        "role": "deployer",
++        "substantialModification": true,
++        "status": "production",
++        "owner": "S. Ferraz",
++        "nextReview": "2026-12-10",
+         "existingControls": [
+           "model card v3",
+           "eval log"
+@@ -162,8 +277,21 @@
+         "matchedKeyword": "insurance eligibility",
+         "evidenceNote": "EU AI Act Annex III 5-style: essential private/public services."
+       },
+-      "gaps": [],
+-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
++      "gaps": [
++        {
++          "id": "dual-role-shift",
++          "severity": "major",
++          "message": "Substantial modification under own name — deployer also takes provider obligations (Art. 25-style) [verify]."
++        }
++      ],
++      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
++      "role": "deployer",
++      "dualRoleFlag": true,
++      "roleNote": "EU AI Act Art. 25-style: substantial modification / fine-tuning under the deployer’s own name shifts the deployer into the provider role — provider obligations now also apply [verify].",
++      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -174,6 +302,10 @@
+         "humanOversight": "human-decides",
+         "autonomy": "act-with-review",
+         "department": "Facilities",
++        "role": "deployer",
++        "status": "production",
++        "owner": "J. Nkemelu",
++        "nextReview": "2026-08-01",
+         "existingControls": [
+           "GDPR mapping v1"
+         ]
+@@ -191,7 +323,14 @@
+           "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
+         }
+       ],
+-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
++      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
+     },
+     {
+       "record": {
+@@ -201,7 +340,11 @@
+         "dataSensitivity": "confidential",
+         "humanOversight": "human-in-loop",
+         "autonomy": "draft-with-review",
+-        "department": "Corp Dev"
++        "department": "Corp Dev",
++        "role": "deployer",
++        "status": "pilot",
++        "owner": "A. Petrov",
++        "nextReview": "2026-12-15"
+       },
+       "tier": "minimal",
+       "basis": {
+@@ -215,7 +358,150 @@
+           "message": "No gaps flagged by the rubric — keep in inventory."
+         }
+       ],
+-      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
++      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
++    },
++    {
++      "record": {
++        "id": "AI-08",
++        "name": "Grid-stability predictor",
++        "purpose": "Power grid dispatch recommendations for the regional utility control room",
++        "dataSensitivity": "internal",
++        "humanOversight": "human-decides",
++        "autonomy": "draft-with-review",
++        "department": "Energy",
++        "role": "provider",
++        "status": "production",
++        "owner": "D. Haugen",
++        "nextReview": "2026-11-25"
++      },
++      "tier": "high",
++      "basis": {
++        "ruleId": "critical-infrastructure",
++        "matchedKeyword": "power grid dispatch",
++        "evidenceNote": "EU AI Act Annex III 2-style: critical-infrastructure safety components (traffic, water, gas, power) [verify]."
++      },
++      "gaps": [],
++      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
++      "role": "provider",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: provider [verify].",
++      "obligations": "Provider duties: risk-management system, data governance, technical documentation, logging, transparency, human oversight, accuracy/robustness (Art. 8–15-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
++    },
++    {
++      "record": {
++        "id": "AI-09",
++        "name": "VestraLM train",
++        "purpose": "General-purpose model training for internal tooling",
++        "dataSensitivity": "internal",
++        "humanOversight": "human-in-loop",
++        "autonomy": "assist",
++        "department": "Platform",
++        "role": "provider",
++        "trainingComputeFlops": 2.3e+25,
++        "status": "pilot",
++        "owner": "T. Iwasaki",
++        "nextReview": "2026-12-01",
++        "existingControls": [
++          "model card v1",
++          "eval log"
++        ]
++      },
++      "tier": "gpai_systemic",
++      "basis": {
++        "ruleId": "gpai-systemic",
++        "note": "training compute 2.3e+25 FLOPs ≥ 1e25 FLOPs — systemic-risk presumption (EU AI Act Art. 51-style) [verify]"
++      },
++      "gaps": [],
++      "nistRmf": "Govern + Map + Measure + Manage: systemic-risk evaluation, adversarial testing, incident reporting (Art. 55-ish) [verify].",
++      "role": "provider",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: provider [verify].",
++      "obligations": "Systemic-risk GPAI provider: model evaluation, adversarial testing, systemic-risk assessment and mitigation, serious-incident reporting (Art. 55-style) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": false
++    },
++    {
++      "record": {
++        "id": "AI-10",
++        "name": "Dark-pattern auditor",
++        "purpose": "Detects dark patterns in the marketing site and flags them for removal",
++        "dataSensitivity": "internal",
++        "humanOversight": "human-decides",
++        "autonomy": "assist",
++        "department": "Growth",
++        "role": "deployer",
++        "status": "production",
++        "owner": "P. Novak",
++        "nextReview": "2027-03-01"
++      },
++      "tier": "minimal",
++      "basis": {
++        "ruleId": "default",
++        "note": "no rubric rule matched; minimal by default"
++      },
++      "gaps": [
++        {
++          "id": "needs-human-review",
++          "severity": "major",
++          "message": "Negation guard: a prohibited-practice keyword hit co-occurs with detect/flag/block/moderate-style language — the system may police rather than perform the practice. Confirm intent with the owner; never classify silently. [verify]"
++        }
++      ],
++      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
++      "outOfScope": false,
++      "scopeNote": "",
++      "needsHumanReview": true
++    },
++    {
++      "record": {
++        "id": "AI-11",
++        "name": "Non-EU kiosk FAQ helper",
++        "purpose": "Customer-facing assistant chatbot for the retail kiosk pilot (no EU output)",
++        "dataSensitivity": "public",
++        "humanOversight": "human-decides",
++        "autonomy": "assist",
++        "department": "Retail",
++        "role": "deployer",
++        "euNexus": false,
++        "status": "pilot",
++        "owner": "P. Novak",
++        "nextReview": "2027-01-10"
++      },
++      "tier": "limited",
++      "basis": {
++        "ruleId": "transparency-chatbot",
++        "matchedKeyword": "chatbot",
++        "evidenceNote": "EU AI Act Art. 50-style transparency: users must be told they interact with AI."
++      },
++      "gaps": [
++        {
++          "id": "out-of-eu-scope",
++          "severity": "minor",
++          "message": "EU-nexus gate says out of scope — confirm the nexus assessment before relying on EU-AI-Act tiering [verify]."
++        }
++      ],
++      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish).",
++      "role": "deployer",
++      "dualRoleFlag": false,
++      "roleNote": "Obligations mapped for role: deployer [verify].",
++      "obligations": "Deployer duties: tell users they are interacting with AI; mark deepfakes/synthetic content (Art. 50-style) [verify].",
++      "outOfScope": true,
++      "scopeNote": "EU-nexus gate: euNexus:false — the EU AI Act does not apply to this system as registered; tier shown for information only [verify].",
++      "needsHumanReview": false
+     }
+   ],
+   "disclaimer": "First-pass screen against a configurable EU AI Act-ish rubric; not a compliance determination. Fictional data. Not legal advice."
+diff --git a/open-artifacts/ai-use-case-inventory/examples/run.js b/open-artifacts/ai-use-case-inventory/examples/run.js
+index 9e61269..bace4ed 100644
+--- a/open-artifacts/ai-use-case-inventory/examples/run.js
++++ b/open-artifacts/ai-use-case-inventory/examples/run.js
+@@ -1,26 +1,28 @@
+ #!/usr/bin/env node
+ /**
+  * examples/run.js — regenerates examples/output.json + examples/inventory.csv.
+- * Deterministic. Run: node examples/run.js
++ * Deterministic (review clock evaluated at input.asOf). Run: node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { buildInventory, dashboard } from '../core/core.js';
++import { buildInventory, dashboard, reviewDue } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+ 
+ const inventory = buildInventory(input.records);
+ const view = dashboard(inventory);
++const clock = reviewDue(inventory, input.asOf);
+ 
+ writeFileSync(
+   join(here, 'output.json'),
+-  JSON.stringify({ organization: input.organization, ...view, items: inventory.items, disclaimer: inventory.disclaimer }, null, 2) + '\n',
++  JSON.stringify({ organization: input.organization, asOf: input.asOf, ...view, reviewDue: clock, items: inventory.items, disclaimer: inventory.disclaimer }, null, 2) + '\n',
+ );
+ writeFileSync(join(here, 'inventory.csv'), inventory.csv);
+ console.log(
+   `wrote output.json + inventory.csv — ${view.total} use cases: ` +
+-  `${view.counts.prohibited} prohibited / ${view.counts.high} high / ${view.counts.limited} limited / ${view.counts.minimal} minimal, ` +
+-  `${view.blockers.length} blockers`,
++  `${view.counts.prohibited} prohibited / ${view.counts.high} high / ${view.counts.limited} limited / ${view.counts.minimal} minimal / ` +
++  `${view.counts.gpai} gpai / ${view.counts.gpai_systemic} gpai_systemic, ${view.blockers.length} blockers, ` +
++  `review clock @ ${input.asOf}: ${clock.dueSoon.length} due soon, ${clock.stale.length} stale >1y`,
+ );
+diff --git a/open-artifacts/ai-use-case-inventory/spec.md b/open-artifacts/ai-use-case-inventory/spec.md
+index a053523..8f37fd9 100644
+--- a/open-artifacts/ai-use-case-inventory/spec.md
++++ b/open-artifacts/ai-use-case-inventory/spec.md
+@@ -9,38 +9,68 @@ governance programs (EU AI Act-style obligations, NIST AI RMF mapping).
+ 
+ | Export | Purpose |
+ |---|---|
+-| `DEFAULT_TIER_RULES` | Rubric as rules-as-data: ordered `{tier, id, label, anyOfKeywords, evidenceNote}`; first match wins |
+-| `tierUseCase(record, rules?)` | `{tier, basis{ruleId, matchedKeyword, evidenceNote}, gaps[], nistRmf}` |
+-| `buildInventory(records, rules?)` | Tiered items + counts + gap rollup + blockers + CSV + disclaimer |
+-| `toCSV(items)` / `dashboard(inventory)` | Exports and dashboard aggregates |
++| `DEFAULT_TIER_RULES` | Rubric as rules-as-data: ordered `{tier, id, label, anyOfKeywords, noneOfKeywords?, evidenceNote}`; first match wins |
++| `tierUseCase(record, rules?)` | `{tier, basis, gaps[], nistRmf, role, dualRoleFlag, roleNote, obligations, outOfScope, scopeNote, needsHumanReview}` |
++| `buildInventory(records, rules?)` | Tiered items + counts (6 tiers) + gap rollup + blockers + CSV + disclaimer |
++| `toCSV(items)` / `dashboard(inventory)` | CSV export (role/status/nextReview/needsReview/outOfScope columns) and dashboard aggregates (incl. byRole/byStatus) |
++| `assessRole(record)` | Role + dual-role flag (deployer + `substantialModification` ⇒ provider duties too, Art. 25-style [verify]) |
++| `reviewDue(inventory, asOfISO)` | Lifecycle clock: nextReview due ≤30d (incl. overdue) + stale >1y |
++| `filterInventory(inventory, {tier?, status?, nexus?, needsReview?})` | Tier / lifecycle-status / EU-nexus filters |
++| `OBLIGATION_NOTES` / `ROLES` / `TIERS` / `GPAI_SYSTEMIC_FLOPS` | Cited role×tier obligations (each `[verify]`-tagged), enums, 1e25 FLOPs systemic-risk presumption |
+ | `NIST_RMF_MAPPING` | Tier → NIST AI RMF govern/map/measure/manage note |
+ 
+ Record shape: `{id, name, purpose, dataSensitivity:
+ public|internal|confidential|personal|special-category, humanOversight:
+ none|notify|human-in-loop|human-decides, autonomy:
+ assist|draft-with-review|act-with-review|autonomous, department?,
+-existingControls?}`.
++existingControls?, role? (default deployer), substantialModification?,
++trainingComputeFlops?, status?: planned|pilot|production|retired, owner?,
++nextReview? (ISO date), euNexus?}`.
+ 
+ ## Tiering logic (transparent, no proprietary score)
+ 
+-1. First matching keyword rule (top-down) sets the tier — prohibited → high
+-   → limited. The matched keyword and the rule's evidence note are returned
+-   as the basis, so every tier is explainable.
+-2. No rule matched → `minimal`; personal/special-category data bumps it to
++Tiers: `prohibited > gpai_systemic > gpai > high > limited > minimal`.
++
++1. Keyword rules run top-down, first hit wins. Each prohibited rule carries
++   a **negation guard** (`noneOfKeywords: detect/flag/block/moderate`): if the
++   text also names a policing verb, the rule is skipped — “detects dark
++   patterns” stays minimal — but `needsHumanReview` is set and a major gap is
++   raised. Never classify silently.
++2. No rule matched + `trainingComputeFlops` ⇒ `gpai` (or `gpai_systemic` at
++   ≥1e25 FLOPs, Art. 51-style presumption [verify]); the basis cites the
++   threshold. Specific-use keyword rules take precedence over the compute
++   track.
++3. Still no rule → `minimal`; personal/special-category data bumps it to
+    `limited` (transparency), again with an explicit basis.
+-3. Gap flags cross-check tier × controls:
++4. `euNexus:false` ⇒ tier is still computed for information, but
++   `outOfScope:true` + note (the Act does not apply as registered).
++5. Gap flags cross-check tier × controls:
+    - prohibited practice → **blocker**
++   - negation guard fired → **major** (confirm intent with owner)
++   - dual-role shift (deployer + substantial modification) → **major**
+    - high tier without human-in-loop/human-decides → **blocker**
+      (mandatory-oversight gap)
+    - high tier with act-autonomy → **major** (verify logging/fallback)
+    - transparency tier with no oversight owner → **major**
+    - special-category data without privacy controls (DPA/GDPR/LGPD) → **major**
+    - autonomous action without eval/red-team/monitoring → **minor**
++   - out-of-EU-scope tiering relied on for EU purposes → **minor** [verify]
++6. Lifecycle: `reviewDue(inventory, asOfISO)` lists entries due ≤30d
++   (overdue included) and stale >1y; `filterInventory` slices by tier,
++   status, or nexus.
+ 
+ EU AI Act-ish defaults; swap `DEFAULT_TIER_RULES` wholesale for another
+ framework (e.g., sector rubric) — the engine is generic keyword-rule
+ matching + structured cross-checks.
+ 
++## Obligations (cited data, illustrative)
++
++`OBLIGATION_NOTES[role][tier]` maps all 6 supply-chain roles (provider,
++deployer, importer, distributor, authorised-representative, manufacturer)
++× 6 tiers to “-style” obligation lists, each tagged `[verify]` — e.g.
++deployer×high cites an Art. 26-style oversight list. These are illustrative
++defaults for diffing, not legal advice.
++
+ ## Deterministic vs LLM-assisted
+ 
+ - **Deterministic:** tiering, gap checks, counts, CSV, dashboard.

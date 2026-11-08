@@ -1,0 +1,1159 @@
+diff --git a/open-artifacts/discovery-response-log/README.md b/open-artifacts/discovery-response-log/README.md
+index b6b552a..1c2ccbd 100644
+--- a/open-artifacts/discovery-response-log/README.md
++++ b/open-artifacts/discovery-response-log/README.md
+@@ -14,14 +14,24 @@ For each discovery request (interrogatory / RFP / RFA) in a set:
+ - drafts a structured response entry (substantive text + objections + status),
+ - grounds every objection in a configurable **objection-ground library**
+   (FRCP defaults with cites; override per jurisdiction as rules-as-data),
++- checks every Bates **citation against a production manifest** — cites
++  outside the produced ranges (or unparseable) are flagged, so provenance is
++  machine-checked, not decorative,
+ - screens every draft with a **privilege-safe flag** so a draft mentioning
+   privilege/work-product or withholding on privilege is never silently
+-  released — withholding entries are routed to a privilege-log workflow,
++  released — withholding entries are routed to a privilege-log workflow;
++  deterministic negation/waiver boilerplate ("without waiver of privilege",
++  "not privileged") does not false-flag (flag-on-uncertain otherwise),
++- enforces a **release gate**: every entry carries
++  `reviewState: draft → in-review → approved`, and `assertReleasable(log)`
++  throws on any unapproved or privilege-unsafe entry before anything ships,
+ - versions drafts **per meet-and-confer round** with deterministic
+   field-level diffs (old → new), so concessions are auditable,
+ - computes the **response deadline**: 30 days after service by default
+   (FRCP 33(b)(2)/34(b)(2)), day of service excluded (FRCP 6(a)(1)), plus 3
+-  added days for mail service (FRCP 6(d)); every number is configurable.
++  added days for mail service (FRCP 6(d)); **FRCP 29(b) stipulated
++  extensions** extend the deadline with one audit line per stipulation;
++  every number is configurable.
+ 
+ ## IO contract
+ 
+@@ -29,31 +39,47 @@ For each discovery request (interrogatory / RFP / RFA) in a set:
+ buildLog({
+   servedDate: "2026-03-10",            // ISO date the set was served
+   serviceMethod: "mail",               // electronic|personal|mail|leave-of-court|other
++  extensions: [{ days: 14, basis: "...", agreedDate: "2026-03-24" }],  // FRCP 29(b) stipulations
+   requests: [{
+     requestNo, type, text,             // 'RFP 7', 'rfp', request text
+     responseText?, objectionIds?,      // draft answer, grounds from the library
++    citations?,                        // Bates cites relied on, e.g. "VEST 0001-3120"
+     privilegeBasis?                    // set when withholding on privilege
+   }]
+ }[, config]) ->
+ {
+-  deadline: { dueDate, responseDays, extensionDays, serviceMethod, ruleBasis, calculation[] },
+-  entries:  [{ id, requestNo, type, status, objections[], privilegeSafe, safetyFlags[],
++  deadline: { dueDate, responseDays, extensionDays, stipulatedDays, serviceMethod,
++              ruleBasis, calculation[] },
++  entries:  [{ id, requestNo, type, status, reviewState, citations[], citationFlags[],
++               objections[], privilegeSafe, safetyFlags[],
+                versions: [{ round, label, fields, changes[] }] }],
+   counts, disclaimer
+ }
+ 
+-reviseDraft(entry, patch, label)  // appends next meet-and-confer version + diff
+-calculateDeadline({servedDate, serviceMethod}[, config]) -> deadline
+-deadlineStatus(dueDate, asOf)     // ok | due-soon | overdue (+ days remaining)
+-assessPrivilegeSafety(text)       // { privilegeSafe, flags[] }
+-toMarkdown(log)                   // meet-and-confer table
++config = {
++  responseDays?, serviceExtensions?, objectionGrounds?,
++  productionManifest?: [{ prefix: "VEST", start: 1, end: 5000 }],
++  privilegeMarkers?: ["..."]          // replaces the default screen markers
++}
++
++reviseDraft(entry, patch, label?, config?)  // appends next M&C version + diff (throws on unknown grounds)
++setReviewState(entry, 'approved')     // draft | in-review | approved
++assertReleasable(log)                 // throws listing blockers; true when releasable
++calculateDeadline({servedDate, serviceMethod, extensions?}[, config]) -> deadline
++deadlineStatus(dueDate, asOf)         // ok | due-soon | overdue (+ days remaining)
++assessPrivilegeSafety(text, config?)  // { privilegeSafe, flags[] } — negation-aware
++checkCitations(citations, manifest)   // { citations, citationFlags }
++toMarkdown(log)                       // table + per-round M&C diff table
++toCSV(log)                            // CSV export (header + one row per entry)
+ ```
+ 
+ ## Deterministic vs LLM-assisted
+ 
+-**Deterministic (this core):** deadline math, objection-ground validation and
+-citation attachment, privilege-safety screening, version/diff bookkeeping,
+-counts, markdown/CSV-style exports. Same input → same output, testable.
++**Deterministic (this core):** deadline math (incl. stipulated extensions),
++objection-ground validation and citation attachment, manifest-checked Bates
++cites, privilege-safety screening, review/release gating, version/diff
++bookkeeping, counts, markdown and CSV exports. Same input → same output
++(byte-identical, including ids), testable.
+ 
+ **LLM-assisted (outside this core, optional):** drafting the substantive
+ `responseText` from a case file, classifying which grounds apply to a request,
+@@ -88,19 +114,29 @@ The core then validates `objectionIds` against the library and screens
+ - **Rules-as-data objections**: grounds ship as data with authorities you can
+   swap per jurisdiction; nothing is baked into a prompt.
+ - **Deadline math you can audit**: the `calculation[]` trace shows every addend
+-  (30d period, mail +3d, day-of-service exclusion) instead of a bare date.
++  (30d period, mail +3d, day-of-service exclusion, each FRCP 29(b) stipulation)
++  instead of a bare date.
++- **Manifest-checked citations**: every Bates cite is verified against the
++  supplied production index; out-of-range or malformed cites are flagged
++  before release.
+ - **Privilege-safe flag** on every draft before release, with routing to the
+-  privilege log for withholding responses.
++  privilege log for withholding responses; waiver boilerplate doesn't
++  false-flag (unknown phrasings still flag — flag-on-uncertain).
++- **Code-enforced release gate**: `assertReleasable` throws unless every
++  entry is attorney-approved and privilege-safe — a gate in the data model,
++  not in a prompt.
+ - **Meet-and-confer versioning** with field-level diffs — every narrowed
+-  objection has a paper trail.
++  objection has a paper trail, surfaced in the markdown export.
++- **Deterministic ids and outputs**: ids derive from the request number;
++  identical input rebuilds byte-identical JSON/CSV.
+ - **Runs anywhere**: dependency-free ES module, browser + Node, offline.
+ 
+ ## Run / test
+ 
+ ```
+-node --test core/        # unit tests (node:test)
+-node examples/run.js     # regenerate examples/output.json + examples/log.md
+-open demo/index.html     # interactive demo (file:// works; no server needed)
++node --test core/core.test.js   # unit tests (node:test; 30 tests)
++node examples/run.js            # regenerate examples/output.json + log.md + log.csv
++open demo/index.html            # interactive demo (file:// works; no server needed)
+ ```
+ 
+ ## Legal accuracy
+diff --git a/open-artifacts/discovery-response-log/core/core.js b/open-artifacts/discovery-response-log/core/core.js
+index 8e243c7..ebbaf96 100644
+--- a/open-artifacts/discovery-response-log/core/core.js
++++ b/open-artifacts/discovery-response-log/core/core.js
+@@ -57,6 +57,20 @@ const PRIVILEGE_MARKERS = [
+   'withheld', 'withhold', 'redact', 'redacted', 'fre 502', 'fre502',
+ ];
+ 
++/**
++ * Deterministic negation/waiver contexts that neutralize a marker hit:
++ * "without waiver of privilege and work product", "not privileged",
++ * "nothing is withheld", "isn't privileged". Anything not matching these
++ * patterns still flags (flag-on-uncertain default; see README for limits).
++ */
++const NEGATION_BEFORE =
++  /\bwithout waiver of\b[\w\s-]*$|\b(?:not|no|non-|nothing|neither|never)\b(?:\s+(?:is|are|was|were|be|been|being|am|a|an|the|any|further|longer))?\s*$|\w+n['’]t\s*$/;
++
++/** True when the text right before a marker hit is a negation/waiver context. */
++function isNegatedBefore(text, idx) {
++  return NEGATION_BEFORE.test(text.slice(Math.max(0, idx - 48), idx));
++}
++
+ // ---------------------------------------------------------------------------
+ // Helpers
+ // ---------------------------------------------------------------------------
+@@ -101,11 +115,13 @@ export function diffDays(aIso, bIso) {
+  * @param {Object} params
+  * @param {string} params.servedDate      ISO date the requests were served
+  * @param {string} [params.serviceMethod] key of config.serviceExtensions
++ * @param {Array<{days:number, basis?:string, agreedDate?:string}>} [params.extensions]
++ *   FRCP 29(b) stipulated extensions; each adds an audit line to calculation[]
+  * @param {Object} [config]
+  * @param {number} [config.responseDays=30]
+  * @param {Record<string,number>} [config.serviceExtensions]
+- * @param {number[]} [config.holidays] ISO holidays skipped only if config.countBusinessDays
+  * @returns {{dueDate: string, responseDays: number, extensionDays: number,
++ *            stipulatedDays: number,
+  *            serviceMethod: string, ruleBasis: string, calculation: string[]}}
+  */
+ export function calculateDeadline(params, config = {}) {
+@@ -114,18 +130,31 @@ export function calculateDeadline(params, config = {}) {
+   const method = params.serviceMethod || 'electronic';
+   if (!(method in ext)) throw new Error('unknown serviceMethod: ' + method);
+   const extensionDays = ext[method];
++  let stipulatedDays = 0;
++  const stipulationLines = [];
++  for (const s of params.extensions || []) {
++    if (!Number.isInteger(s.days) || s.days <= 0) {
++      throw new Error('invalid stipulated extension days: ' + JSON.stringify(s.days));
++    }
++    stipulatedDays += s.days;
++    stipulationLines.push(
++      `+ ${s.days} days stipulated extension (FRCP 29(b)${s.agreedDate ? ' — agreed ' + s.agreedDate : ''}: ${s.basis || 'stipulation between counsel'})`,
++    );
++  }
+   // FRCP 6(a)(1): exclude the day of service itself.
+-  const dueDate = addDays(addDays(params.servedDate, 1), responseDays + extensionDays - 1);
++  const dueDate = addDays(addDays(params.servedDate, 1), responseDays + extensionDays + stipulatedDays - 1);
+   return {
+     dueDate,
+     responseDays,
+     extensionDays,
++    stipulatedDays,
+     serviceMethod: method,
+     ruleBasis: 'FRCP 33(b)(2)/34(b)(2) + FRCP 6(a),(d) — configurable defaults',
+     calculation: [
+       `service ${params.servedDate} (${method}); day of service excluded (FRCP 6(a)(1))`,
+       `+ ${responseDays} days response period (FRCP default 30; configured: ${responseDays})`,
+       `+ ${extensionDays} days service-method extension (FRCP 6(d) default for method "${method}")`,
++      ...stipulationLines,
+     ],
+   };
+ }
+@@ -149,28 +178,87 @@ export function deadlineStatus(dueDate, asOf) {
+ /**
+  * Screen a draft response for privilege-sensitive content so the draft is
+  * never accidentally released with a disclosure of privileged material.
++ * Deterministic negation/waiver contexts ("without waiver of privilege",
++ * "not privileged", "nothing is withheld") do not flag; anything else that
++ * matches a marker flags — flag-on-uncertain default.
+  *
+  * @param {string} responseText
++ * @param {Object} [config]
++ * @param {string[]} [config.privilegeMarkers] replace the default marker list
+  * @returns {{privilegeSafe: boolean, flags: string[]}}
+  *   flags is empty when safe; each flag names the marker + a reason.
+  */
+-export function assessPrivilegeSafety(responseText) {
++export function assessPrivilegeSafety(responseText, config = {}) {
+   const text = (responseText || '').toLowerCase();
++  const markers = config.privilegeMarkers || PRIVILEGE_MARKERS;
+   const flags = [];
+-  for (const marker of PRIVILEGE_MARKERS) {
+-    if (text.includes(marker)) {
+-      flags.push(`mentions "${marker}" — verify against the privilege log before release; do not describe withheld content here`);
++  for (const marker of markers) {
++    let idx = text.indexOf(marker);
++    while (idx !== -1) {
++      if (!isNegatedBefore(text, idx)) {
++        flags.push(`mentions "${marker}" — verify against the privilege log before release; do not describe withheld content here`);
++        break;
++      }
++      idx = text.indexOf(marker, idx + marker.length);
+     }
+   }
+   return { privilegeSafe: flags.length === 0, flags };
+ }
+ 
++// ---------------------------------------------------------------------------
++// Citation-manifest check
++// ---------------------------------------------------------------------------
++
++/** Bates-style cite: PREFIX NNNN or PREFIX NNNN-NNNN. */
++const BATES_CITE = /^([A-Za-z][A-Za-z0-9]*)[ -]?(\d{1,6})(?:\s*-\s*(\d{1,6}))?$/;
++
++/**
++ * Check a response's Bates citations against the production manifest
++ * (ranges actually produced). A cite outside every manifest range — or not
++ * parseable as a Bates cite — is flagged rather than trusted.
++ * No manifest configured → no flags (screening is opt-in).
++ *
++ * @param {string[]} citations
++ * @param {Array<{prefix:string, start:number, end:number}>} [manifest]
++ * @returns {{citations: string[], citationFlags: string[]}}
++ */
++export function checkCitations(citations = [], manifest = null) {
++  const flags = [];
++  if (!manifest || !manifest.length) return { citations: [...citations], citationFlags: flags };
++  for (const cite of citations) {
++    const m = BATES_CITE.exec(String(cite).trim());
++    if (!m) {
++      flags.push(`"${cite}" is not a recognizable Bates cite (expected PREFIX 0000-9999) — fix or annotate`);
++      continue;
++    }
++    const [, prefix, start, end] = m;
++    const citeStart = Number(start);
++    const citeEnd = end === undefined ? citeStart : Number(end);
++    if (citeEnd < citeStart) {
++      flags.push(`"${cite}" has an inverted range — fix before release`);
++      continue;
++    }
++    const covered = manifest.some(
++      (r) => r.prefix.toLowerCase() === prefix.toLowerCase() && citeStart >= r.start && citeEnd <= r.end,
++    );
++    if (!covered) flags.push(`cite "${cite}" is outside every range in the production manifest — verify the production index`);
++  }
++  return { citations: [...citations], citationFlags: flags };
++}
++
+ // ---------------------------------------------------------------------------
+ // Drafting + versioned rounds (meet and confer)
+ // ---------------------------------------------------------------------------
+ 
+-let seq = 0;
+-function nextId(prefix) { seq += 1; return `${prefix}-${String(seq).padStart(3, '0')}`; }
++/**
++ * Deterministic entry id derived from the request number (no module counter —
++ * identical inputs produce identical ids regardless of call order).
++ */
++function idFor(requestNo) {
++  const slug = String(requestNo).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
++  if (!slug) throw new Error('requestNo must contain at least one letter or digit');
++  return 'dr-' + slug;
++}
+ 
+ /**
+  * Create the v1 draft response entry for one discovery request.
+@@ -182,7 +270,8 @@ function nextId(prefix) { seq += 1; return `${prefix}-${String(seq).padStart(3,
+  * @param {string} [request.responseText]   substantive draft answer
+  * @param {string[]} [request.objectionIds] ground ids from the library
+  * @param {string} [request.privilegeBasis] short basis if withholding
+- * @param {Object} [config]                 supplies the grounds library
++ * @param {string[]} [request.citations]    Bates cites relied on by the answer
++ * @param {Object} [config]                 supplies grounds library + manifest + markers
+  * @returns {import('./core.js').DraftEntry}
+  */
+ export function draftResponse(request, config = {}) {
+@@ -192,17 +281,21 @@ export function draftResponse(request, config = {}) {
+   const unknown = (request.objectionIds || []).filter((id) => !byId.has(id));
+   if (unknown.length) throw new Error('unknown objection ground ids: ' + unknown.join(', '));
+   const objections = objectionIds.map((id) => byId.get(id));
+-  const screening = assessPrivilegeSafety(request.responseText || '');
++  const screening = assessPrivilegeSafety(request.responseText || '', config);
++  const { citations, citationFlags } = checkCitations(request.citations, config.productionManifest);
+   const withholding = Boolean(request.privilegeBasis);
+   return {
+-    id: nextId('dr'),
++    id: idFor(request.requestNo),
+     requestNo: request.requestNo,
+     type: request.type,
+     requestText: request.text,
+     responseText: request.responseText || '',
++    citations,
++    citationFlags,
+     objections,
+     privilegeBasis: request.privilegeBasis || null,
+     status: withholding ? 'withheld-logged' : objections.length ? 'objection-and-response' : 'response-only',
++    reviewState: 'draft',
+     privilegeSafe: withholding ? false : screening.privilegeSafe,
+     safetyFlags: withholding
+       ? [`withholds on: ${request.privilegeBasis} — must appear on the privilege log (FRCP 26(b)(5))`]
+@@ -215,6 +308,7 @@ export function draftResponse(request, config = {}) {
+           responseText: request.responseText || '',
+           objectionIds,
+           privilegeBasis: request.privilegeBasis || null,
++          citations,
+         },
+         changes: ['initial draft'],
+       },
+@@ -223,7 +317,7 @@ export function draftResponse(request, config = {}) {
+ }
+ 
+ /** Fields tracked across meet-and-confer revisions. */
+-const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis'];
++const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis', 'citations'];
+ 
+ /**
+  * Revise a draft after a meet-and-confer round. Appends a new version with a
+@@ -233,9 +327,17 @@ const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis'];
+  * @param {import('./core.js').DraftEntry} draft
+  * @param {Object} patch                   subset of TRACKED fields
+  * @param {string} [label]                 e.g. "M&C round 2 — narrowed to 2024"
++ * @param {Object} [config]                same config as draftResponse (grounds,
++ *   productionManifest, privilegeMarkers) — objection ids and citations are
++ *   validated against it, and unknown ground ids throw
+  * @returns {import('./core.js').DraftEntry} same draft, mutated + returned
+  */
+-export function reviseDraft(draft, patch, label) {
++export function reviseDraft(draft, patch, label, config = {}) {
++  if (patch.objectionIds !== undefined) {
++    const grounds = new Map((config.objectionGrounds || DEFAULT_OBJECTION_GROUNDS).map((g) => [g.id, g]));
++    const unknown = patch.objectionIds.filter((id) => !grounds.has(id));
++    if (unknown.length) throw new Error('unknown objection ground ids: ' + unknown.join(', '));
++  }
+   const prev = draft.versions[draft.versions.length - 1];
+   const round = prev.round + 1;
+   const changes = [];
+@@ -250,11 +352,16 @@ export function reviseDraft(draft, patch, label) {
+   if (!changes.length) changes.push('no substantive change recorded this round');
+   if (patch.responseText !== undefined) draft.responseText = patch.responseText;
+   if (patch.objectionIds !== undefined) {
+-    const grounds = new Map(DEFAULT_OBJECTION_GROUNDS.map((g) => [g.id, g]));
+-    draft.objections = patch.objectionIds.filter((id) => grounds.has(id)).map((id) => grounds.get(id));
++    const grounds = new Map((config.objectionGrounds || DEFAULT_OBJECTION_GROUNDS).map((g) => [g.id, g]));
++    draft.objections = patch.objectionIds.map((id) => grounds.get(id));
+   }
+   if (patch.privilegeBasis !== undefined) draft.privilegeBasis = patch.privilegeBasis;
+-  const screening = assessPrivilegeSafety(draft.responseText);
++  if (patch.citations !== undefined) {
++    const checked = checkCitations(patch.citations, config.productionManifest);
++    draft.citations = checked.citations;
++    draft.citationFlags = checked.citationFlags;
++  }
++  const screening = assessPrivilegeSafety(draft.responseText, config);
+   draft.status = draft.privilegeBasis
+     ? 'withheld-logged'
+     : draft.objections.length ? 'objection-and-response' : 'response-only';
+@@ -271,6 +378,47 @@ export function reviseDraft(draft, patch, label) {
+   return draft;
+ }
+ 
++// ---------------------------------------------------------------------------
++// Review / release gate
++// ---------------------------------------------------------------------------
++
++const REVIEW_STATES = ['draft', 'in-review', 'approved'];
++
++/**
++ * Set an entry's review state (draft → in-review → approved). Approving a
++ * withholding entry attests it appears on the privilege log (FRCP 26(b)(5)).
++ * @param {import('./core.js').DraftEntry} entry
++ * @param {'draft'|'in-review'|'approved'} state
++ * @returns {import('./core.js').DraftEntry} same entry, mutated + returned
++ */
++export function setReviewState(entry, state) {
++  if (!REVIEW_STATES.includes(state)) throw new Error('invalid reviewState: ' + JSON.stringify(state));
++  entry.reviewState = state;
++  return entry;
++}
++
++/**
++ * Code-enforced release gate: throws unless EVERY entry is attorney-approved
++ * and privilege-safe. Withholding entries ('withheld-logged') are releasable
++ * once approved — approval attests the privilege-log routing — but a draft
++ * whose text trips the privilege screen blocks release even when approved.
++ * @param {ReturnType<typeof buildLog>} log
++ * @returns {true} when releasable
++ * @throws {Error} listing every blocking entry
++ */
++export function assertReleasable(log) {
++  const blockers = [];
++  for (const e of log.entries) {
++    if (e.reviewState !== 'approved') {
++      blockers.push(`${e.requestNo}: review state "${e.reviewState}" — attorney approval required before release`);
++    } else if (!e.privilegeSafe && e.status !== 'withheld-logged') {
++      blockers.push(`${e.requestNo}: privilege-unsafe draft — resolve flags: ${e.safetyFlags.join('; ')}`);
++    }
++  }
++  if (blockers.length) throw new Error('log not releasable:\n- ' + blockers.join('\n- '));
++  return true;
++}
++
+ // ---------------------------------------------------------------------------
+ // Log assembly
+ // ---------------------------------------------------------------------------
+@@ -282,11 +430,18 @@ export function reviseDraft(draft, patch, label) {
+  * @param {string} params.servedDate
+  * @param {string} [params.serviceMethod]
+  * @param {Array<Object>} params.requests  passed to draftResponse one by one
++ * @param {Array<{days:number, basis?:string, agreedDate?:string}>} [params.extensions]
++ *   FRCP 29(b) stipulated extensions for the whole set
+  * @param {Object} [config]
+  * @returns {{ deadline: Object, entries: import('./core.js').DraftEntry[],
+  *             counts: Object, disclaimer: string }}
+  */
+ export function buildLog(params, config = {}) {
++  const seen = new Set();
++  for (const r of params.requests) {
++    if (seen.has(r.requestNo)) throw new Error('duplicate requestNo: ' + r.requestNo + ' — request numbers must be unique within a set');
++    seen.add(r.requestNo);
++  }
+   const deadline = calculateDeadline(params, config);
+   const entries = params.requests.map((r) => draftResponse(r, config));
+   const counts = {
+@@ -295,6 +450,7 @@ export function buildLog(params, config = {}) {
+     responseOnly: entries.filter((e) => e.status === 'response-only').length,
+     withheldLogged: entries.filter((e) => e.status === 'withheld-logged').length,
+     privilegeFlags: entries.filter((e) => !e.privilegeSafe).length,
++    citationFlags: entries.filter((e) => e.citationFlags.length > 0).length,
+   };
+   return {
+     deadline,
+@@ -311,7 +467,8 @@ export function buildLog(params, config = {}) {
+ // ---------------------------------------------------------------------------
+ 
+ /**
+- * Render the log as a markdown table for meet-and-confer correspondence.
++ * Render the log as a markdown table for meet-and-confer correspondence,
++ * plus a per-round diff table for every entry with revision history.
+  * @param {ReturnType<typeof buildLog>} log
+  * @returns {string}
+  */
+@@ -320,15 +477,54 @@ export function toMarkdown(log) {
+     `# Discovery response log`,
+     ``,
+     `Response deadline: **${log.deadline.dueDate}** (${log.deadline.serviceMethod} service, ` +
+-      `${log.deadline.responseDays}d + ${log.deadline.extensionDays}d ext)`,
++      `${log.deadline.responseDays}d + ${log.deadline.extensionDays}d ext` +
++      `${log.deadline.stipulatedDays ? ` + ${log.deadline.stipulatedDays}d stipulated (FRCP 29(b))` : ''})`,
+     ``,
+-    `| # | Type | Status | Objections | Privilege-safe |`,
+-    `|---|------|--------|------------|----------------|`,
++    `| # | Type | Status | Objections | Privilege-safe | Review | Cite check |`,
++    `|---|------|--------|------------|----------------|--------|------------|`,
+   ];
+   for (const e of log.entries) {
+     const obj = e.objections.map((o) => o.label).join('; ') || '—';
+-    lines.push(`| ${e.requestNo} | ${e.type} | ${e.status} | ${obj} | ${e.privilegeSafe ? 'yes' : 'FLAG'} |`);
++    const cite = e.citationFlags.length ? `FLAG (${e.citationFlags.length})` : 'ok';
++    lines.push(`| ${e.requestNo} | ${e.type} | ${e.status} | ${obj} | ${e.privilegeSafe ? 'yes' : 'FLAG'} | ${e.reviewState} | ${cite} |`);
++  }
++  const revised = log.entries.filter((e) => e.versions.length > 1);
++  if (revised.length) {
++    lines.push('', `## Meet-and-confer rounds`, ``,
++      `| Entry | Round | Label | Changes |`,
++      `|-------|-------|-------|---------|`);
++    for (const e of revised) {
++      for (const v of e.versions) {
++        const changes = v.changes.map((c) => c.replace(/\|/g, '\\|')).join('<br>');
++        lines.push(`| ${e.requestNo} | ${v.round} | ${v.label} | ${changes} |`);
++      }
++    }
+   }
+   lines.push('', `_${log.disclaimer}_`);
+   return lines.join('\n');
+ }
++
++/**
++ * CSV export (RFC 4180-style quoting): header + one row per entry.
++ * @param {ReturnType<typeof buildLog>} log
++ * @returns {string}
++ */
++export function toCSV(log) {
++  const esc = (v) => {
++    const s = String(v ?? '');
++    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
++  };
++  const rows = [['requestNo', 'type', 'status', 'objections', 'privilegeSafe', 'reviewState', 'citationFlags'].join(',')];
++  for (const e of log.entries) {
++    rows.push([
++      e.requestNo,
++      e.type,
++      e.status,
++      e.objections.map((o) => o.label).join('; '),
++      e.privilegeSafe ? 'yes' : 'FLAG',
++      e.reviewState,
++      e.citationFlags.join('; '),
++    ].map(esc).join(','));
++  }
++  return rows.join('\n');
++}
+diff --git a/open-artifacts/discovery-response-log/core/core.test.js b/open-artifacts/discovery-response-log/core/core.test.js
+index 85a3f9d..e293e00 100644
+--- a/open-artifacts/discovery-response-log/core/core.test.js
++++ b/open-artifacts/discovery-response-log/core/core.test.js
+@@ -5,7 +5,9 @@ import {
+   DEFAULT_OBJECTION_GROUNDS, DEFAULT_SERVICE_EXTENSIONS,
+   addDays, diffDays, calculateDeadline, deadlineStatus,
+   assessPrivilegeSafety, draftResponse, reviseDraft, buildLog, toMarkdown,
++  setReviewState, assertReleasable, toCSV,
+ } from './core.js';
++import { readFileSync } from 'node:fs';
+ 
+ test('addDays / diffDays round-trip across month boundary', () => {
+   assert.equal(addDays('2026-03-10', 30), '2026-04-09');
+@@ -127,3 +129,212 @@ test('objection grounds library is non-trivial and FRCP-anchored', () => {
+   assert.ok(DEFAULT_OBJECTION_GROUNDS.length >= 8);
+   assert.ok(DEFAULT_OBJECTION_GROUNDS.every((g) => g.id && g.label && g.authority && g.description));
+ });
++
++// ---------------------------------------------------------------------------
++// Citation-manifest check (plan improvement 1)
++// ---------------------------------------------------------------------------
++
++test('citations outside the production manifest are flagged', () => {
++  const log = buildLog(
++    {
++      servedDate: '2026-03-10',
++      requests: [{
++        requestNo: 'RFP 2', type: 'rfp', text: 'x',
++        responseText: 'Vestra produces Bates VEST 0001-0500.',
++        citations: ['VEST 0001-0500', 'VEST 9999'],
++      }],
++    },
++    { productionManifest: [{ prefix: 'VEST', start: 1, end: 5000 }] },
++  );
++  const e = log.entries[0];
++  assert.deepEqual(e.citations, ['VEST 0001-0500', 'VEST 9999']);
++  assert.equal(e.citationFlags.length, 1);
++  assert.ok(e.citationFlags[0].includes('VEST 9999'));
++  assert.equal(log.counts.citationFlags, 1);
++});
++
++test('unparseable citations and foreign prefixes are flagged, not guessed', () => {
++  const log = buildLog(
++    {
++      servedDate: '2026-03-10',
++      requests: [{
++        requestNo: 'RFP 3', type: 'rfp', text: 'x',
++        citations: ['see the deposition', 'WIDG 0100'],
++      }],
++    },
++    { productionManifest: [{ prefix: 'VEST', start: 1, end: 5000 }] },
++  );
++  const flags = log.entries[0].citationFlags;
++  assert.equal(flags.length, 2);
++  assert.ok(flags.some((f) => f.includes('see the deposition')));
++  assert.ok(flags.some((f) => f.includes('WIDG 0100')));
++});
++
++// ---------------------------------------------------------------------------
++// reviseDraft honors config + throws on unknown grounds (plan improvement 2)
++// ---------------------------------------------------------------------------
++
++test('reviseDraft validates objection ids against config and throws on unknown', () => {
++  const custom = [{ id: 'custom-ground', label: 'C', authority: 'State R. 33', description: 'Y' }];
++  const e = draftResponse({ requestNo: 'RFP 1', type: 'rfp', text: 'a' }, { objectionGrounds: custom });
++  reviseDraft(e, { objectionIds: ['custom-ground'] }, 'M&C round 1', { objectionGrounds: custom });
++  assert.equal(e.objections[0].id, 'custom-ground'); // currently silently dropped -> fails pre-fix
++  assert.throws(() => reviseDraft(e, { objectionIds: ['nope'] }, 'bad'), /unknown objection ground/);
++});
++
++// ---------------------------------------------------------------------------
++// Release gate (plan improvement 3)
++// ---------------------------------------------------------------------------
++
++test('reviewState defaults to draft; assertReleasable throws until approved', () => {
++  const log = buildLog({
++    servedDate: '2026-03-10',
++    requests: [{ requestNo: 'RFP 1', type: 'rfp', text: 'a', responseText: 'b' }],
++  });
++  assert.equal(log.entries[0].reviewState, 'draft');
++  assert.throws(() => assertReleasable(log), /not approved|draft/);
++  setReviewState(log.entries[0], 'in-review');
++  assert.throws(() => assertReleasable(log), /in-review/);
++  setReviewState(log.entries[0], 'approved');
++  assert.equal(assertReleasable(log), true);
++});
++
++test('assertReleasable blocks privilege-unsafe drafts even when approved', () => {
++  const log = buildLog({
++    servedDate: '2026-03-10',
++    requests: [{ requestNo: 'RFP 9', type: 'rfp', text: 'a', responseText: 'See privileged work product memo.' }],
++  });
++  setReviewState(log.entries[0], 'approved');
++  assert.throws(() => assertReleasable(log), /privilege|RFP 9/);
++});
++
++test('setReviewState rejects invalid states loudly', () => {
++  const e = draftResponse({ requestNo: 'RFP 1', type: 'rfp', text: 'a' });
++  assert.throws(() => setReviewState(e, 'signed-off'), /invalid reviewState/);
++});
++
++// ---------------------------------------------------------------------------
++// Stipulated extensions, FRCP 29(b) (plan improvement 4)
++// ---------------------------------------------------------------------------
++
++test('FRCP 29(b) stipulated extension shifts due date and is audited', () => {
++  const d = calculateDeadline({
++    servedDate: '2026-03-10', serviceMethod: 'mail',
++    extensions: [{ days: 14, basis: 'stipulation between counsel', agreedDate: '2026-03-24' }],
++  });
++  assert.equal(d.dueDate, '2026-04-26'); // 2026-04-12 base + 14
++  assert.equal(d.stipulatedDays, 14);
++  assert.ok(d.calculation.some((l) => l.includes('FRCP 29(b)') && l.includes('14') && l.includes('2026-03-24')));
++});
++
++test('stipulated extensions with invalid day counts are rejected', () => {
++  assert.throws(
++    () => calculateDeadline({ servedDate: '2026-03-10', extensions: [{ days: 0, basis: 'x' }] }),
++    /invalid stipulated extension/,
++  );
++});
++
++// ---------------------------------------------------------------------------
++// Deterministic ids (plan improvement 5)
++// ---------------------------------------------------------------------------
++
++test('ids derive from requestNo; repeated builds deep-equal', () => {
++  const params = {
++    servedDate: '2026-03-10',
++    requests: [
++      { requestNo: 'RFP 7', type: 'rfp', text: 'a', responseText: 'b' },
++      { requestNo: 'ROG 3', type: 'interrogatory', text: 'c' },
++    ],
++  };
++  const a = buildLog(params);
++  const b = buildLog(params);
++  assert.deepEqual(a, b); // module counter would give dr-001..002 then dr-003..004
++  assert.equal(a.entries[0].id, 'dr-rfp-7');
++  assert.equal(a.entries[1].id, 'dr-rog-3');
++});
++
++test('buildLog rejects duplicate request numbers within a set', () => {
++  assert.throws(
++    () => buildLog({ servedDate: '2026-03-10', requests: [
++      { requestNo: 'RFP 1', type: 'rfp', text: 'a' },
++      { requestNo: 'RFP 1', type: 'rfp', text: 'b' },
++    ] }),
++    /duplicate requestNo/,
++  );
++});
++
++// ---------------------------------------------------------------------------
++// Export parity: toCSV + markdown diff table (plan improvement 6)
++// ---------------------------------------------------------------------------
++
++test('toCSV emits a header plus one row per entry, with CSV escaping', () => {
++  const log = buildLog(
++    {
++      servedDate: '2026-03-10',
++      requests: [{ requestNo: 'RFP 1', type: 'rfp', text: 'a', responseText: 'b', objectionIds: ['comma-ground'] }],
++    },
++    { objectionGrounds: [...DEFAULT_OBJECTION_GROUNDS,
++      { id: 'comma-ground', label: 'Overbroad, as to time period', authority: 'FRCP 26(b)(1)', description: 'x' }] },
++  );
++  const rows = toCSV(log).trim().split('\n');
++  assert.equal(rows.length, 2);
++  assert.ok(rows[0].startsWith('requestNo,'));
++  assert.ok(rows[1].includes('"Overbroad, as to time period"'));
++  assert.ok(rows[1].endsWith(',draft,'));
++});
++
++test('toMarkdown includes a per-round diff table after revisions', () => {
++  const log = buildLog({
++    servedDate: '2026-03-10',
++    requests: [{ requestNo: 'RFP 1', type: 'rfp', text: 'a', responseText: 'first draft' }],
++  });
++  reviseDraft(log.entries[0], { responseText: 'second draft' }, 'M&C round 1 — narrowed');
++  const md = toMarkdown(log);
++  assert.ok(md.includes('responseText:'));
++  assert.ok(md.includes('M&C round 1 — narrowed'));
++  assert.ok(md.includes('first draft'));
++  assert.ok(md.includes('second draft'));
++});
++
++// ---------------------------------------------------------------------------
++// Privilege-screen context rules (plan improvement 7)
++// ---------------------------------------------------------------------------
++
++test('waiver boilerplate does not trip the privilege screen', () => {
++  const r = assessPrivilegeSafety(
++    'Vestra produces Bates VEST 0001-0500 without waiver of privilege and work product.',
++  );
++  assert.equal(r.privilegeSafe, true);
++  assert.deepEqual(r.flags, []);
++});
++
++test('plain negation does not trip the privilege screen', () => {
++  assert.equal(assessPrivilegeSafety('The requested files are not privileged.').privilegeSafe, true);
++  assert.equal(assessPrivilegeSafety('Nothing is withheld from this production.').privilegeSafe, true);
++  // affirmative mentions still flag
++  assert.equal(assessPrivilegeSafety('These files are privileged.').privilegeSafe, false);
++});
++
++test('config.privilegeMarkers overrides the default marker list', () => {
++  const r = assessPrivilegeSafety('The AX-9 appendix is attached.', { privilegeMarkers: ['ax-9 appendix'] });
++  assert.equal(r.privilegeSafe, false);
++  assert.ok(r.flags[0].includes('ax-9 appendix'));
++});
++
++// ---------------------------------------------------------------------------
++// Examples stay in sync with core behavior (byte-identical rebuild)
++// ---------------------------------------------------------------------------
++
++test('examples/output.json matches a fresh deterministic rebuild', () => {
++  const input = JSON.parse(readFileSync(new URL('../examples/input.json', import.meta.url), 'utf8'));
++  const log = buildLog(input, input.config || {});
++  for (const round of input.meetAndConferRounds || []) {
++    const entry = log.entries.find((e) => e.requestNo === round.requestNo);
++    reviseDraft(entry, round.patch, round.label, input.config || {});
++  }
++  const output = JSON.parse(readFileSync(new URL('../examples/output.json', import.meta.url), 'utf8'));
++  assert.deepEqual(
++    { deadline: log.deadline, counts: log.counts, entries: log.entries },
++    { deadline: output.deadline, counts: output.counts, entries: output.entries },
++  );
++});
+diff --git a/open-artifacts/discovery-response-log/examples/input.json b/open-artifacts/discovery-response-log/examples/input.json
+index 407f316..90ed5ad 100644
+--- a/open-artifacts/discovery-response-log/examples/input.json
++++ b/open-artifacts/discovery-response-log/examples/input.json
+@@ -3,13 +3,21 @@
+   "court": "N.D. Cal. (fictional filing)",
+   "servedDate": "2026-03-10",
+   "serviceMethod": "mail",
++  "extensions": [
++    {
++      "days": 14,
++      "basis": "parties' stipulation extending responses to RFP set one",
++      "agreedDate": "2026-03-24"
++    }
++  ],
+   "requests": [
+     {
+       "requestNo": "RFP 1",
+       "type": "rfp",
+       "text": "All documents concerning the design, testing, or manufacture of the VX-2 battery module.",
+       "responseText": "After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below.",
+-      "objectionIds": ["overbroad", "trade-secret"]
++      "objectionIds": ["overbroad", "trade-secret"],
++      "citations": ["VEST 0001-3120"]
+     },
+     {
+       "requestNo": "RFP 7",
+@@ -30,10 +38,17 @@
+       "requestNo": "RFA 12",
+       "type": "rfa",
+       "text": "Admit that the QC-14 test log was altered after March 2025.",
+-      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
+-      "objectionIds": ["vague-ambiguous", "assumes-facts"]
++      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
++      "objectionIds": ["vague-ambiguous", "assumes-facts"],
++      "citations": ["VEST 2871-2904", "VEST 6100-6142"]
+     }
+   ],
++  "config": {
++    "productionManifest": [
++      { "prefix": "VEST", "start": 1, "end": 5000 },
++      { "prefix": "WIDG", "start": 1, "end": 5000 }
++    ]
++  },
+   "meetAndConferRounds": [
+     {
+       "requestNo": "RFP 1",
+diff --git a/open-artifacts/discovery-response-log/examples/log.csv b/open-artifacts/discovery-response-log/examples/log.csv
+new file mode 100644
+index 0000000..1213ce3
+--- /dev/null
++++ b/open-artifacts/discovery-response-log/examples/log.csv
+@@ -0,0 +1,5 @@
++requestNo,type,status,objections,privilegeSafe,reviewState,citationFlags
++RFP 1,rfp,objection-and-response,Trade secret / confidential,yes,draft,
++RFP 7,rfp,withheld-logged,Attorney-client privilege; Work product,FLAG,draft,
++ROG 3,interrogatory,response-only,,yes,draft,
++RFA 12,rfa,objection-and-response,Vague and ambiguous; Assumes facts not in evidence,yes,draft,"cite ""VEST 6100-6142"" is outside every range in the production manifest — verify the production index"
+diff --git a/open-artifacts/discovery-response-log/examples/log.md b/open-artifacts/discovery-response-log/examples/log.md
+index 9ede7c3..1035f93 100644
+--- a/open-artifacts/discovery-response-log/examples/log.md
++++ b/open-artifacts/discovery-response-log/examples/log.md
+@@ -1,12 +1,20 @@
+ # Discovery response log
+ 
+-Response deadline: **2026-04-12** (mail service, 30d + 3d ext)
+-
+-| # | Type | Status | Objections | Privilege-safe |
+-|---|------|--------|------------|----------------|
+-| RFP 1 | rfp | objection-and-response | Trade secret / confidential | yes |
+-| RFP 7 | rfp | withheld-logged | Attorney-client privilege; Work product | FLAG |
+-| ROG 3 | interrogatory | response-only | — | yes |
+-| RFA 12 | rfa | objection-and-response | Vague and ambiguous; Assumes facts not in evidence | yes |
++Response deadline: **2026-04-26** (mail service, 30d + 3d ext + 14d stipulated (FRCP 29(b)))
++
++| # | Type | Status | Objections | Privilege-safe | Review | Cite check |
++|---|------|--------|------------|----------------|--------|------------|
++| RFP 1 | rfp | objection-and-response | Trade secret / confidential | yes | draft | ok |
++| RFP 7 | rfp | withheld-logged | Attorney-client privilege; Work product | FLAG | draft | ok |
++| ROG 3 | interrogatory | response-only | — | yes | draft | ok |
++| RFA 12 | rfa | objection-and-response | Vague and ambiguous; Assumes facts not in evidence | yes | draft | FLAG (1) |
++
++## Meet-and-confer rounds
++
++| Entry | Round | Label | Changes |
++|-------|-------|-------|---------|
++| RFP 1 | 0 | initial draft | initial draft |
++| RFP 1 | 1 | M&C round 1 — narrowed to VX-2 modules shipped 2024-2026 | responseText: "After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below." → "After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below."<br>objectionIds: ["overbroad","trade-secret"] → ["trade-secret"] |
++| RFP 1 | 2 | M&C round 2 — overbroad objection withdrawn | responseText: "After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below." → "Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order." |
+ 
+ _Deadlines and objection grounds use configurable FRCP defaults; verify against the governing state or local rules before reliance. Fictional data. Not legal advice._
+diff --git a/open-artifacts/discovery-response-log/examples/output.json b/open-artifacts/discovery-response-log/examples/output.json
+index 7152f09..a06f2dd 100644
+--- a/open-artifacts/discovery-response-log/examples/output.json
++++ b/open-artifacts/discovery-response-log/examples/output.json
+@@ -1,15 +1,17 @@
+ {
+   "case": "Harlow v. Vestra Dynamics Corp. (fictional)",
+   "deadline": {
+-    "dueDate": "2026-04-12",
++    "dueDate": "2026-04-26",
+     "responseDays": 30,
+     "extensionDays": 3,
++    "stipulatedDays": 14,
+     "serviceMethod": "mail",
+     "ruleBasis": "FRCP 33(b)(2)/34(b)(2) + FRCP 6(a),(d) — configurable defaults",
+     "calculation": [
+       "service 2026-03-10 (mail); day of service excluded (FRCP 6(a)(1))",
+       "+ 30 days response period (FRCP default 30; configured: 30)",
+-      "+ 3 days service-method extension (FRCP 6(d) default for method \"mail\")"
++      "+ 3 days service-method extension (FRCP 6(d) default for method \"mail\")",
++      "+ 14 days stipulated extension (FRCP 29(b) — agreed 2026-03-24: parties' stipulation extending responses to RFP set one)"
+     ]
+   },
+   "counts": {
+@@ -17,15 +19,20 @@
+     "objectionAndResponse": 2,
+     "responseOnly": 1,
+     "withheldLogged": 1,
+-    "privilegeFlags": 1
++    "privilegeFlags": 1,
++    "citationFlags": 1
+   },
+   "entries": [
+     {
+-      "id": "dr-001",
++      "id": "dr-rfp-1",
+       "requestNo": "RFP 1",
+       "type": "rfp",
+       "requestText": "All documents concerning the design, testing, or manufacture of the VX-2 battery module.",
+       "responseText": "Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order.",
++      "citations": [
++        "VEST 0001-3120"
++      ],
++      "citationFlags": [],
+       "objections": [
+         {
+           "id": "trade-secret",
+@@ -36,6 +43,7 @@
+       ],
+       "privilegeBasis": null,
+       "status": "objection-and-response",
++      "reviewState": "draft",
+       "privilegeSafe": true,
+       "safetyFlags": [],
+       "versions": [
+@@ -48,7 +56,10 @@
+               "overbroad",
+               "trade-secret"
+             ],
+-            "privilegeBasis": null
++            "privilegeBasis": null,
++            "citations": [
++              "VEST 0001-3120"
++            ]
+           },
+           "changes": [
+             "initial draft"
+@@ -62,7 +73,10 @@
+             "objectionIds": [
+               "trade-secret"
+             ],
+-            "privilegeBasis": null
++            "privilegeBasis": null,
++            "citations": [
++              "VEST 0001-3120"
++            ]
+           },
+           "changes": [
+             "responseText: \"After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below.\" → \"After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below.\"",
+@@ -77,7 +91,10 @@
+             "objectionIds": [
+               "trade-secret"
+             ],
+-            "privilegeBasis": null
++            "privilegeBasis": null,
++            "citations": [
++              "VEST 0001-3120"
++            ]
+           },
+           "changes": [
+             "responseText: \"After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below.\" → \"Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order.\""
+@@ -86,11 +103,13 @@
+       ]
+     },
+     {
+-      "id": "dr-002",
++      "id": "dr-rfp-7",
+       "requestNo": "RFP 7",
+       "type": "rfp",
+       "requestText": "All communications with counsel concerning the VX-2 thermal events.",
+       "responseText": "",
++      "citations": [],
++      "citationFlags": [],
+       "objections": [
+         {
+           "id": "privileged",
+@@ -107,6 +126,7 @@
+       ],
+       "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log",
+       "status": "withheld-logged",
++      "reviewState": "draft",
+       "privilegeSafe": false,
+       "safetyFlags": [
+         "withholds on: attorney-client privilege and work product; items will be logged on the privilege log — must appear on the privilege log (FRCP 26(b)(5))"
+@@ -121,7 +141,8 @@
+               "privileged",
+               "work-product"
+             ],
+-            "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log"
++            "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log",
++            "citations": []
+           },
+           "changes": [
+             "initial draft"
+@@ -130,14 +151,17 @@
+       ]
+     },
+     {
+-      "id": "dr-003",
++      "id": "dr-rog-3",
+       "requestNo": "ROG 3",
+       "type": "interrogatory",
+       "requestText": "Identify every person with knowledge of the QC-14 test deviations.",
+       "responseText": "Vestra identifies: (1) Priya Nair, QC Director; (2) Daniel Okafor, Line Supervisor; (3) Wei-Lin Sung, outside consultant.",
++      "citations": [],
++      "citationFlags": [],
+       "objections": [],
+       "privilegeBasis": null,
+       "status": "response-only",
++      "reviewState": "draft",
+       "privilegeSafe": true,
+       "safetyFlags": [],
+       "versions": [
+@@ -147,7 +171,8 @@
+           "fields": {
+             "responseText": "Vestra identifies: (1) Priya Nair, QC Director; (2) Daniel Okafor, Line Supervisor; (3) Wei-Lin Sung, outside consultant.",
+             "objectionIds": [],
+-            "privilegeBasis": null
++            "privilegeBasis": null,
++            "citations": []
+           },
+           "changes": [
+             "initial draft"
+@@ -156,11 +181,18 @@
+       ]
+     },
+     {
+-      "id": "dr-004",
++      "id": "dr-rfa-12",
+       "requestNo": "RFA 12",
+       "type": "rfa",
+       "requestText": "Admit that the QC-14 test log was altered after March 2025.",
+-      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
++      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
++      "citations": [
++        "VEST 2871-2904",
++        "VEST 6100-6142"
++      ],
++      "citationFlags": [
++        "cite \"VEST 6100-6142\" is outside every range in the production manifest — verify the production index"
++      ],
+       "objections": [
+         {
+           "id": "vague-ambiguous",
+@@ -177,6 +209,7 @@
+       ],
+       "privilegeBasis": null,
+       "status": "objection-and-response",
++      "reviewState": "draft",
+       "privilegeSafe": true,
+       "safetyFlags": [],
+       "versions": [
+@@ -184,12 +217,16 @@
+           "round": 0,
+           "label": "initial draft",
+           "fields": {
+-            "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
++            "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
+             "objectionIds": [
+               "vague-ambiguous",
+               "assumes-facts"
+             ],
+-            "privilegeBasis": null
++            "privilegeBasis": null,
++            "citations": [
++              "VEST 2871-2904",
++              "VEST 6100-6142"
++            ]
+           },
+           "changes": [
+             "initial draft"
+diff --git a/open-artifacts/discovery-response-log/examples/run.js b/open-artifacts/discovery-response-log/examples/run.js
+index 9d06914..a9a74c9 100644
+--- a/open-artifacts/discovery-response-log/examples/run.js
++++ b/open-artifacts/discovery-response-log/examples/run.js
+@@ -6,18 +6,18 @@
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { buildLog, reviseDraft, toMarkdown } from '../core/core.js';
++import { buildLog, reviseDraft, toMarkdown, toCSV } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+ 
+-const log = buildLog(input, {});
++const log = buildLog(input, input.config || {});
+ 
+ // apply meet-and-confer rounds to the matching entries
+ for (const round of input.meetAndConferRounds || []) {
+   const entry = log.entries.find((e) => e.requestNo === round.requestNo);
+   if (!entry) throw new Error('no such request: ' + round.requestNo);
+-  reviseDraft(entry, round.patch, round.label);
++  reviseDraft(entry, round.patch, round.label, input.config || {});
+ }
+ 
+ const output = {
+@@ -29,4 +29,5 @@ const output = {
+ };
+ writeFileSync(join(here, 'output.json'), JSON.stringify(output, null, 2) + '\n');
+ writeFileSync(join(here, 'log.md'), toMarkdown(log) + '\n');
+-console.log(`wrote output.json (${output.entries.length} entries, deadline ${output.deadline.dueDate}) and log.md`);
++writeFileSync(join(here, 'log.csv'), toCSV(log) + '\n');
++console.log(`wrote output.json (${output.entries.length} entries, deadline ${output.deadline.dueDate}), log.md and log.csv`);
+diff --git a/open-artifacts/discovery-response-log/spec.md b/open-artifacts/discovery-response-log/spec.md
+index 2649b91..605ed18 100644
+--- a/open-artifacts/discovery-response-log/spec.md
++++ b/open-artifacts/discovery-response-log/spec.md
+@@ -12,37 +12,52 @@ deadline computed from service date and method.
+ |---|---|
+ | `DEFAULT_OBJECTION_GROUNDS` | Objection-ground library (rules-as-data, FRCP defaults + authorities) |
+ | `DEFAULT_SERVICE_EXTENSIONS` | FRCP 6(d)-style added-time defaults per service method |
+-| `calculateDeadline({servedDate, serviceMethod}, config?)` | Deadline + full `calculation[]` audit trace |
++| `calculateDeadline({servedDate, serviceMethod, extensions?}, config?)` | Deadline + full `calculation[]` audit trace, incl. FRCP 29(b) stipulated extensions (`extensions: [{days, basis?, agreedDate?}]`, audited line by line) |
+ | `deadlineStatus(dueDate, asOf)` | `ok` / `due-soon` / `overdue` + days remaining |
+-| `assessPrivilegeSafety(text)` | `{privilegeSafe, flags[]}` screen |
++| `assessPrivilegeSafety(text, config?)` | `{privilegeSafe, flags[]}` screen; deterministic negation/waiver contexts don't flag; `config.privilegeMarkers` overrides the marker list |
++| `checkCitations(citations, manifest)` | Bates cites vs `config.productionManifest` ranges; outside/unparseable → flags |
+ | `draftResponse(request, config?)` | v1 draft entry (validates objection ids; throws on unknown) |
+-| `reviseDraft(entry, patch, label?)` | Appends next meet-and-confer version with field diffs |
+-| `buildLog(params, config?)` | Deadline + entries + counts + disclaimer |
+-| `toMarkdown(log)` | Markdown log table for correspondence |
++| `reviseDraft(entry, patch, label?, config?)` | Appends next meet-and-confer version with field diffs; validates against config, throws on unknown grounds |
++| `buildLog(params, config?)` | Deadline + entries + counts + disclaimer; rejects duplicate request numbers |
++| `setReviewState(entry, state)` | `draft` → `in-review` → `approved`; rejects invalid states |
++| `assertReleasable(log)` | Release gate: throws listing every unapproved or privilege-unsafe entry; returns `true` when releasable |
++| `toMarkdown(log)` | Markdown log table + per-round meet-and-confer diff table |
++| `toCSV(log)` | CSV export (header + one row per entry, RFC 4180-style quoting) |
+ | `addDays`, `diffDays` | UTC-safe date helpers |
+ 
+-`config = { responseDays?, serviceExtensions?, objectionGrounds? }` — every
+-jurisdiction-dependent default is overridable rules-as-data.
++`config = { responseDays?, serviceExtensions?, objectionGrounds?, productionManifest?, privilegeMarkers? }` — every
++jurisdiction-dependent default is overridable rules-as-data. `productionManifest` is
++`[{prefix, start, end}]` Bates ranges actually produced; screening is opt-in (no manifest → no flags).
+ 
+ ## Data model
+ 
+ ```
+ DraftEntry = {
+-  id, requestNo, type: 'interrogatory'|'rfp'|'rfa', requestText, responseText,
++  id,                              // deterministic: derived from requestNo ("dr-rfp-7")
++  requestNo, type: 'interrogatory'|'rfp'|'rfa', requestText, responseText,
++  citations: string[],             // Bates cites relied on by the answer
++  citationFlags: string[],         // cites outside the production manifest / unparseable
+   objections: [{id,label,authority,description}],
+   privilegeBasis: string|null,
+   status: 'response-only'|'objection-and-response'|'withheld-logged',
++  reviewState: 'draft'|'in-review'|'approved',
+   privilegeSafe: boolean, safetyFlags: string[],
+-  versions: [{ round, label, fields:{responseText,objectionIds,privilegeBasis},
++  versions: [{ round, label, fields:{responseText,objectionIds,privilegeBasis,citations},
+                changes: string[] }]   // deterministic old→new diffs
+ }
+ ```
+ 
++Release gate: `assertReleasable(log)` throws unless every entry is `approved`
++and privilege-safe. Approving a `withheld-logged` entry attests it appears on
++the privilege log (FRCP 26(b)(5)); a draft whose text trips the screen blocks
++release even when approved.
++
+ ## Deterministic vs LLM-assisted
+ 
+-- Deterministic: everything in the export table above — deadline math,
+-  ground validation/citation, privilege screening, diffs, exports.
+-  Property: same input JSON → byte-identical output JSON.
++- Deterministic: everything in the export table above — deadline math
++  (incl. stipulated extensions), ground validation/citation, manifest-checked
++  Bates cites, privilege screening, review/release gate, diffs, exports.
++  Property: same input JSON → byte-identical output JSON, including ids.
+ - LLM-assisted (optional, outside core): drafting `responseText` from case
+   files, selecting applicable grounds, summarizing M&C positions. Prompt
+   schema in README.md; core validates LLM output (unknown grounds rejected,
+@@ -55,7 +70,10 @@ DraftEntry = {
+    jurisdiction offsets.
+ 3. Privilege-safe gate on every draft; withholdings routed to privilege log.
+ 4. Meet-and-confer rounds produce immutable version diffs.
+-5. Zero dependencies, offline, self-hostable; tests included.
++5. Machine-checked citation provenance: cites are verified against a supplied
++   production manifest, not linked decoratively.
++6. Code-enforced release gate: nothing ships unapproved or privilege-unsafe.
++7. Zero dependencies, offline, self-hostable; tests included.
+ 
+ ## Non-goals
+ No e-filing, no service of the responses themselves, no privilege-log

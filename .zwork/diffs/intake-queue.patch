@@ -1,0 +1,1130 @@
+diff --git a/open-artifacts/intake-queue/README.md b/open-artifacts/intake-queue/README.md
+index e80a959..72a10a6 100644
+--- a/open-artifacts/intake-queue/README.md
++++ b/open-artifacts/intake-queue/README.md
+@@ -1,17 +1,21 @@
+ # intake-queue
+ 
+ New-matter intake queue: same-party dedupe, conflict-check party
+-matching against a roster, deadline/age urgency triage, guarded assign
+-states, CSV export. All matching is deterministic name math with visible
+-scores.
++matching against a roster (with former-name aliases), deadline/age
++urgency triage, guarded assign states, an audited accept/decline/
++escalate decision layer, deterministic engagement/declination letter
++drafts, ICS calendar export, and LLM-extraction verification. All
++matching is deterministic name math with visible scores.
+ 
+ ## Run
+ 
+ - Demo: open `demo/index.html` (standalone, prefilled with the fictional
+-  worked example).
+-- Tests: `node --test core/core.test.js` — 18 tests.
++  worked example — decide/assign, letters, ICS export, audit log, ingest
++  verifier all live).
++- Tests: `node --test core/core.test.js` — 29 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+-  `queue.md`, `queue.csv` from `examples/input.json`.
++  `queue.md`, `queue.csv`, `letters.md`, `intake.ics` from
++  `examples/input.json`.
+ 
+ ## How it works
+ 
+@@ -20,20 +24,37 @@ scores.
+    Jaccard + containment bonus.
+ 2. Dedupe: a submission whose client AND opposing party both match an
+    earlier submission ≥ 0.85 becomes a duplicate of the first.
+-3. Conflicts: either party matching any roster entry ≥ 0.8 routes to
+-   conflict-review with the roster role, matter, side, and score shown.
++3. Conflicts: either party matching any roster entry — including its
++   `aliases[]` (former/DBA names, flagged `aliasMatch` with the alias
++   shown) — ≥ 0.8 routes to conflict-review with the roster role,
++   matter, side, and score shown.
+ 4. Urgency: overdue (deadline passed) / urgent (≤14d) / deadline-soon
+    (≤30d) / routine; matters older than a year get a limitations hint.
+ 5. States: new → duplicate | conflict-review | urgent | assignable →
+-   assigned (assignment requires an assignee). CSV + Markdown export.
++   assigned (assignment requires an assignee). On top, a guarded
++   decision layer: `decide(queue, id, accept|decline|escalate, by,
++   reason)` — terminal, reason required.
++6. Every process/assign/decide appends to `queue.audit`
++   (`{seq, at, actor, action, detail}`); failed actions append nothing.
++7. Letters: `renderLetter()` drafts engagement/declination letters from
++   queue fields only — conflict scores cited, jurisdiction left as
++   `[JURISDICTION]` placeholder, never legal advice.
++8. Exports: CSV, Markdown (with audit-log table), and ICS
++   (`toICS()`, one VEVENT per valid deadline).
++9. Ingest: `ingestSubmission(extracted, sourceText)` verifies LLM
++   extractions — names must appear verbatim in the source or the
++   submission is flagged `unverified-extraction`.
+ 
+ ## Better than the closed counterpart
+ 
+ - Auditable matching: every dedupe/conflict call shows normalized names,
+   score, and threshold — no black-box "possible duplicate".
++- Decisions are records, not vibes: accept/decline/escalate requires an
++  actor and reason, lands in an append-only audit log, and every letter
++  line traces to a queue field — no LLM hallucination possible.
+ - Conservative by design for people (initials preserved), configurable
+   thresholds for teams.
+-- Deterministic queue ordering; CSV export for review meetings;
+-  zero dependencies, self-hostable.
++- Deterministic queue ordering; CSV/Markdown/ICS export for review
++  meetings and calendars; zero dependencies, self-hostable.
+ 
+ All parties and matters in examples are fictional.
+diff --git a/open-artifacts/intake-queue/core/core.js b/open-artifacts/intake-queue/core/core.js
+index 4df8fc2..0d0d11c 100644
+--- a/open-artifacts/intake-queue/core/core.js
++++ b/open-artifacts/intake-queue/core/core.js
+@@ -53,8 +53,18 @@ export const STATES = {
+   urgent: ['assigned', 'conflict-review'],
+   assignable: ['assigned'],
+   assigned: [],
++  // decision-layer terminal states (reached only via decide(), never transition())
++  accepted: [],
++  declined: [],
++  escalated: [],
+ };
+ 
++// Decision layer: accept / decline / escalate from any open (undecided)
++// state. Every decision requires an actor and a reason — no unexplained
++// routing, unlike the counterpart's LLM-opaque triage.
++const DECISION_ACTIONS = { accept: 'accepted', decline: 'declined', escalate: 'escalated' };
++const DECIDABLE_STATES = ['new', 'conflict-review', 'urgent', 'assignable'];
++
+ /** Guarded state transition for one queue item. */
+ export function transition(item, to) {
+   if (!(to in STATES)) return { ok: false, item, error: `unknown state "${to}"` };
+@@ -140,17 +150,33 @@ export function processQueue(input) {
+     }
+     seen.push({ id: sub.id, client: sub.client.name, opposing: sub.opposing.name });
+ 
+-    // conflict check: either party matching any roster entry
++    // conflict check: either party matching any roster entry or one of its
++    // aliases[] — aliases are first-class candidates; on a score tie the
++    // primary roster name wins (an alias only supplements, never overrides)
+     const conflicts = [];
+     for (const r of roster) {
++      const candidates = [{ name: r.name, alias: null }, ...(r.aliases ?? []).map((a) => ({ name: a, alias: a }))];
+       for (const [side, party] of [['client', sub.client.name], ['opposing', sub.opposing.name]]) {
+-        const sim = nameSimilarity(r.name, party);
+-        if (sim >= conflictThreshold) {
+-          conflicts.push({ rosterName: r.name, role: r.role, matter: r.matter ?? null, matchedSide: side, score: sim });
++        let best = null;
++        for (const cand of candidates) {
++          const sim = nameSimilarity(cand.name, party);
++          if (!best || sim > best.score) best = { score: sim, via: cand.alias };
++        }
++        if (best && best.score >= conflictThreshold) {
++          conflicts.push({
++            rosterName: r.name,
++            role: r.role,
++            matter: r.matter ?? null,
++            matchedSide: side,
++            score: best.score,
++            ...(best.via ? { aliasMatch: true, matchedVia: best.via } : {}),
++          });
+         }
+       }
+     }
+-    for (const c of conflicts) flags.push(`possible conflict: ${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matches ${c.matchedSide} at ${c.score}`);
++    for (const c of conflicts) {
++      flags.push(`possible conflict: ${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matches ${c.matchedSide} at ${c.score}${c.aliasMatch ? ` via alias "${c.matchedVia}"` : ''}`);
++    }
+ 
+     const urgency = assessUrgency(sub, asOf, st);
+ 
+@@ -184,7 +210,9 @@ export function processQueue(input) {
+     duplicates: items.filter((i) => i.duplicateOf).length,
+     urgent: items.filter((i) => ['urgent', 'overdue'].includes(i.urgency.level)).length,
+   };
+-  return { asOf, items, summary, settings: { dedupeThreshold, conflictThreshold } };
++  const queue = { asOf, items, summary, settings: { dedupeThreshold, conflictThreshold }, audit: [] };
++  appendAudit(queue, 'process', 'system', `${items.length} submissions screened (dedupe ≥ ${dedupeThreshold}, conflicts ≥ ${conflictThreshold})`);
++  return queue;
+ }
+ 
+ function tally(values) {
+@@ -193,14 +221,42 @@ function tally(values) {
+   return t;
+ }
+ 
+-/** Assign an item to staff (new/conflict-review/urgent/assignable → assigned). */
++/** Append one entry to the queue's audit trail (who did what, when). */
++function appendAudit(queue, action, actor, detail) {
++  queue.audit.push({ seq: queue.audit.length + 1, at: queue.asOf, actor, action, detail });
++}
++
++/** Assign an item to staff (new/conflict-review/urgent/assignable → assigned).
++ *  Validates the transition on a copy first: a rejected assign leaves the
++ *  item untouched and writes no audit entry. */
+ export function assign(queue, id, staffId) {
+   const item = queue.items.find((i) => i.id === id);
+   if (!item) return { ok: false, queue, error: `no item "${id}"` };
+-  item.assignedTo = staffId;
+-  const r = transition(item, 'assigned');
++  const r = transition({ ...item, assignedTo: staffId }, 'assigned');
+   if (!r.ok) return { ok: false, queue, error: r.error };
+   Object.assign(item, r.item);
++  appendAudit(queue, 'assign', staffId, `assigned ${id} to ${staffId}`);
++  return { ok: true, queue };
++}
++
++/** Record an accept / decline / escalate decision with actor + reason.
++ *  Terminal: once accepted/declined/escalated (or assigned/duplicate), no
++ *  further decision is possible. */
++export function decide(queue, id, action, by, reason) {
++  const item = queue.items.find((i) => i.id === id);
++  if (!item) return { ok: false, queue, error: `no item "${id}"` };
++  if (!(action in DECISION_ACTIONS)) {
++    return { ok: false, queue, error: `unknown decision "${action}" (use: ${Object.keys(DECISION_ACTIONS).join(', ')})` };
++  }
++  if (!reason || !String(reason).trim()) {
++    return { ok: false, queue, error: `decision "${action}" on ${id} requires a reason` };
++  }
++  if (!DECIDABLE_STATES.includes(item.state)) {
++    return { ok: false, queue, error: `decision ${action} from ${item.state} not allowed (allowed from: ${DECIDABLE_STATES.join(', ')})` };
++  }
++  item.state = DECISION_ACTIONS[action];
++  item.decision = { action, by, reason: String(reason), at: queue.asOf };
++  appendAudit(queue, 'decide', by, `${action} ${id}: ${reason}`);
+   return { ok: true, queue };
+ }
+ 
+@@ -224,12 +280,140 @@ export function renderQueue(q) {
+   L.push('| # | Id | Submitted | Client ↔ Opposing | Matter | Deadline | Urgency | State | Notes |');
+   L.push('|---|---|---|---|---|---|---|---|---|');
+   const rank = { overdue: 0, urgent: 1, 'deadline-soon': 2, routine: 3 };
+-  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, new: 5 };
++  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
+   [...q.items]
+     .sort((a, b) => stateRank[a.state] - stateRank[b.state] || rank[a.urgency.level] - rank[b.urgency.level] || (a.id < b.id ? -1 : 1))
+     .forEach((i, n) => {
+-      L.push(`| ${n + 1} | ${i.id} | ${i.submittedAt} | ${i.client} ↔ ${i.opposing} | ${i.matterType} | ${i.deadline ?? '—'} | ${i.urgency.level} | ${i.state}${i.assignedTo ? ` → ${i.assignedTo}` : ''} | ${i.flags.join('; ') || '—'} |`);
++      L.push(`| ${n + 1} | ${i.id} | ${i.submittedAt} | ${i.client} ↔ ${i.opposing} | ${i.matterType} | ${i.deadline ?? '—'} | ${i.urgency.level} | ${i.state}${i.assignedTo ? ` → ${i.assignedTo}` : ''}${i.decision ? ` (${i.decision.action} by ${i.decision.by})` : ''} | ${i.flags.join('; ') || '—'} |`);
+     });
+   L.push('');
++  L.push('## Audit log', '');
++  L.push('| # | At | Actor | Action | Detail |');
++  L.push('|---|---|---|---|---|');
++  for (const a of q.audit ?? []) {
++    L.push(`| ${a.seq} | ${a.at} | ${a.actor} | ${a.action} | ${a.detail} |`);
++  }
++  L.push('');
++  return L.join('\n');
++}
++
++// ------------------------------------------------------ letter drafts
++
++/** Cite one conflict the way a letter must: roster party, role, matter,
++ *  matched side, score — and the alias when the match came via one. */
++function citeConflict(c) {
++  const base = `${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matched the ${c.matchedSide} party`;
++  return c.aliasMatch
++    ? `${base} "${c.matchedVia}" (alias) with similarity score ${c.score}`
++    : `${base} with similarity score ${c.score}`;
++}
++
++/**
++ * Deterministic letter drafts: kind = 'engagement' | 'declination'.
++ * Every line is generated from queue fields — nothing invented, no
++ * hallucination possible. Jurisdiction stays a [JURISDICTION] placeholder
++ * (UPL-safe: these templates are not legal advice).
++ */
++export function renderLetter(q, id, kind) {
++  const item = q.items.find((i) => i.id === id);
++  if (!item) throw new Error(`no item "${id}"`);
++  if (kind !== 'engagement' && kind !== 'declination') {
++    throw new Error(`unknown letter kind "${kind}" (use: engagement, declination)`);
++  }
++  const L = [];
++  L.push('[FIRM LETTERHEAD]', '');
++  L.push(`Date: ${q.asOf}`, '');
++  L.push(`${item.client}`);
++  L.push(`Re: ${kind === 'engagement' ? 'Proposed engagement' : 'Your inquiry'} — ${item.matterType} (intake ${item.id})`, '');
++  L.push(`Dear ${item.client}:`, '');
++  if (kind === 'engagement') {
++    L.push(`Thank you for contacting [FIRM NAME] about the matter above. We are pleased to confirm that [FIRM NAME] will consider representing you in this matter, subject to the terms below.`);
++    if (item.conflicts.length === 0) {
++      L.push('', `Conflict screening: our roster check found no roster match at or above the ${q.settings.conflictThreshold} conflict threshold for either party (intake ${item.id}, screened ${q.asOf}).`);
++    } else {
++      L.push('', `Conflict screening: our roster check found ${item.conflicts.length} possible match(es) that must be resolved before opening the matter:`);
++      for (const c of item.conflicts) L.push(`- ${citeConflict(c)}`);
++    }
++    L.push('', `Scope: ${item.matterType}.${item.deadline ? ` The intake records a possible deadline of ${item.deadline} [verify].` : ''} Scope of services, fees, and the governing law of [JURISDICTION] [verify] will be set out in a signed engagement agreement.`);
++    L.push('', 'This draft is a template generated from intake data; it is not legal advice and creates no attorney-client relationship until the engagement agreement is signed.');
++  } else {
++    const c = item.conflicts.find((x) => x.role === 'adverse' || x.role === 'client') ?? item.conflicts[0] ?? null;
++    L.push(`Thank you for contacting [FIRM NAME] about the matter above. After our conflict-screening review, we are unable to accept this engagement.`);
++    L.push('', c ? `Our records show that ${citeConflict(c)}. Because of that relationship, we cannot represent you in this matter.` : `Our screening review did not identify a matter we can accept; the decision record below states the reason.`);
++    if (item.decision) L.push('', `Decision record: ${item.decision.action} by ${item.decision.by} on ${item.decision.at} — "${item.decision.reason}".`);
++    L.push('', `Deadlines can pass quickly: the intake records ${item.deadline ? `a possible deadline of ${item.deadline} [verify]` : 'no deadline'}. Please consult another attorney promptly; the [JURISDICTION] bar association [verify] maintains a lawyer referral service.`);
++    L.push('', 'This letter is not legal advice and does not create an attorney-client relationship.');
++  }
++  L.push('', 'Sincerely,', '[FIRM NAME]');
+   return L.join('\n');
+ }
++
++// ------------------------------------------------------------ ICS
++
++/**
++ * RFC 5545 calendar export: one VEVENT per submission with a valid ISO
++ * deadline. CRLF line endings, escaped text (\\, \\; \\n), 74-char folding.
++ */
++export function toICS(q) {
++  const escIcs = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
++  const fold = (line) => {
++    if (line.length <= 74) return [line];
++    const out = [line.slice(0, 74)];
++    let rest = line.slice(74);
++    while (rest.length > 0) { out.push(` ${rest.slice(0, 73)}`); rest = rest.slice(73); }
++    return out;
++  };
++  const stamp = `${q.asOf.replace(/-/g, '')}T000000Z`;
++  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//intake-queue//open-legal-artifacts//EN', 'CALSCALE:GREGORIAN'];
++  for (const i of q.items) {
++    if (!i.deadline || !VALID_ISO.test(i.deadline)) continue;
++    lines.push(
++      'BEGIN:VEVENT',
++      `UID:${i.id}@intake-queue`,
++      `DTSTAMP:${stamp}`,
++      `DTSTART;VALUE=DATE:${i.deadline.replace(/-/g, '')}`,
++      `SUMMARY:${escIcs(`Intake ${i.id}: ${i.client} v. ${i.opposing}`)}`,
++      `DESCRIPTION:${escIcs(`${i.matterType} — deadline. State: ${i.state}.`)}`,
++      'END:VEVENT',
++    );
++  }
++  lines.push('END:VCALENDAR');
++  return lines.flatMap(fold).join('\r\n') + '\r\n';
++}
++
++// --------------------------------------------------- ingest verifier
++
++/**
++ * Verify an LLM extraction against the raw source text before it enters
++ * the queue: every extracted party name must appear VERBATIM in the
++ * source (enforces the spec's "copy names verbatim" prompt rule).
++ * Non-verbatim names flag the submission `unverified-extraction` and a
++ * human must re-extract; null names are simply "nothing extracted".
++ */
++export function ingestSubmission(extracted, sourceText) {
++  const source = String(sourceText ?? '');
++  const submission = {
++    id: extracted.id,
++    submittedAt: extracted.submittedAt,
++    client: { name: extracted.client?.name ?? null },
++    opposing: { name: extracted.opposing?.name ?? null },
++    matterType: extracted.matterType ?? null,
++    description: extracted.description ?? null,
++    deadline: extracted.deadline ?? null,
++    occurredOn: extracted.occurredOn ?? null,
++    flags: [],
++  };
++  const issues = [];
++  for (const side of ['client', 'opposing']) {
++    const name = submission[side].name;
++    // verbatim = appears in the source delimited by non-word characters on
++    // both sides, so a truncated "Sable Insurance Co" inside "Sable
++    // Insurance Company" does NOT count as copied verbatim
++    const verbatim = name != null && new RegExp(`(?<![a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`).test(source);
++    if (name != null && !verbatim) {
++      issues.push(`${side} name "${name}" not found verbatim in source text — extraction unverified`);
++      if (!submission.flags.includes('unverified-extraction')) submission.flags.push('unverified-extraction');
++    }
++  }
++  return { ok: issues.length === 0, submission, issues };
++}
+diff --git a/open-artifacts/intake-queue/core/core.test.js b/open-artifacts/intake-queue/core/core.test.js
+index 6b1cf80..607857e 100644
+--- a/open-artifacts/intake-queue/core/core.test.js
++++ b/open-artifacts/intake-queue/core/core.test.js
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { processQueue, transition, assign, normalizeName, nameSimilarity, assessUrgency, toCSV, renderQueue } from './core.js';
++import { processQueue, transition, assign, decide, renderLetter, toICS, ingestSubmission, normalizeName, nameSimilarity, assessUrgency, toCSV, renderQueue } from './core.js';
+ 
+ const AS_OF = '2026-11-07';
+ 
+@@ -204,3 +204,188 @@ test('renderQueue shows summary line and sorted rows', () => {
+ test('invalid asOf throws', () => {
+   assert.throws(() => processQueue({ asOf: 'today', submissions: [] }), /ISO/);
+ });
++
++// ------------------------------------------------- decision layer
++
++test('decide: decline from conflict-review ok; from duplicate rejected; missing reason rejected', () => {
++  const q = processQueue({
++    asOf: AS_OF, roster: ROSTER,
++    submissions: [
++      sub({ id: 'C1', client: { name: 'Brightpath Solar' }, opposing: { name: 'Zeta Print Co' }, deadline: '2026-12-01' }),
++      sub({ id: 'D1', client: { name: 'Cedar Lane HOA' }, opposing: { name: 'Foxglove Rentals LLC' } }),
++      sub({ id: 'D2', client: { name: 'Cedar Lane HOA' }, opposing: { name: 'Foxglove Rentals, LLC' } }),
++    ],
++  });
++  const r = decide(q, 'C1', 'decline', 'gc-lee', 'conflict: Brightpath Solar LLC adverse on LIT-2025-003');
++  assert.equal(r.ok, true);
++  const c1 = q.items.find((i) => i.id === 'C1');
++  assert.equal(c1.state, 'declined');
++  assert.equal(c1.decision.action, 'decline');
++  assert.equal(c1.decision.by, 'gc-lee');
++  assert.equal(c1.decision.reason, 'conflict: Brightpath Solar LLC adverse on LIT-2025-003');
++  assert.equal(c1.decision.at, AS_OF);
++  // duplicate state is a dead end for decisions
++  assert.equal(decide(q, 'D2', 'decline', 'x', 'r').ok, false);
++  assert.match(decide(q, 'D2', 'decline', 'x', 'r').error, /not allowed/);
++  // terminal state: already declined, no second decision
++  assert.equal(decide(q, 'C1', 'accept', 'x', 'r').ok, false);
++  // missing reason / unknown action / unknown id
++  assert.match(decide(q, 'D1', 'accept', 'x', '').error, /reason/);
++  assert.match(decide(q, 'D1', 'bonkers', 'x', 'r').error, /unknown decision/);
++  assert.equal(decide(q, 'zzz', 'accept', 'x', 'r').ok, false);
++});
++
++test('decide: accept from assignable and escalate from conflict-review land in guarded terminal states', () => {
++  const q = processQueue({
++    asOf: AS_OF, roster: ROSTER,
++    submissions: [
++      sub({ id: 'A1', client: { name: 'Other Client LLC' }, opposing: { name: 'Third Party Co' } }),
++      sub({ id: 'E1', client: { name: 'Brightpath Solar' }, opposing: { name: 'Zeta Print Co' }, deadline: '2026-12-01' }),
++    ],
++  });
++  assert.equal(decide(q, 'A1', 'accept', 'gc-lee', 'capacity confirmed').ok, true);
++  assert.equal(q.items.find((i) => i.id === 'A1').state, 'accepted');
++  assert.equal(decide(q, 'E1', 'escalate', 'partner-oh', 'needs partner review of conflict').ok, true);
++  assert.equal(q.items.find((i) => i.id === 'E1').state, 'escalated');
++});
++
++// ------------------------------------------------- audit trail
++
++test('audit: process + assign + decide → three ordered entries', () => {
++  const q = processQueue({
++    asOf: AS_OF, roster: [],
++    submissions: [
++      sub({ id: 'A1', deadline: '2026-11-12' }),
++      sub({ id: 'B1', client: { name: 'Other Client LLC' }, opposing: { name: 'Third Party Co' } }),
++    ],
++  });
++  assert.equal(q.audit.length, 1);
++  assert.equal(q.audit[0].action, 'process');
++  assert.equal(assign(q, 'A1', 'staff-1').ok, true);
++  assert.equal(decide(q, 'B1', 'accept', 'gc-lee', 'capacity confirmed').ok, true);
++  assert.equal(q.audit.length, 3);
++  assert.deepEqual(q.audit.map((a) => a.seq), [1, 2, 3]);
++  assert.deepEqual(q.audit.map((a) => a.actor), ['system', 'staff-1', 'gc-lee']);
++  assert.ok(q.audit.every((a) => a.at === AS_OF));
++  // failed actions leave no audit entry
++  assert.equal(assign(q, 'B1', 'staff-2').ok, false); // B1 is accepted, not assignable
++  assert.equal(q.audit.length, 3);
++});
++
++test('renderQueue includes the audit log table', () => {
++  const q = processQueue({ asOf: AS_OF, roster: [], submissions: [sub()] });
++  const md = renderQueue(q);
++  assert.match(md, /## Audit log/);
++  assert.match(md, /\| 1 \| 2026-11-07 \| system \| process \|/);
++});
++
++// ------------------------------------------------- alias-aware roster
++
++test('roster alias matches first-class: exact alias scores 1 with aliasMatch flag', () => {
++  const roster = [{ name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003', aliases: ['BPS Solarworks'] }];
++  const q = processQueue({
++    asOf: AS_OF, roster,
++    submissions: [sub({ opposing: { name: 'BPS Solarworks' }, deadline: '2026-12-01' })],
++  });
++  const it = q.items[0];
++  assert.equal(it.state, 'conflict-review');
++  assert.equal(it.conflicts.length, 1);
++  assert.equal(it.conflicts[0].rosterName, 'Brightpath Solar LLC');
++  assert.equal(it.conflicts[0].score, 1);
++  assert.equal(it.conflicts[0].aliasMatch, true);
++  assert.equal(it.conflicts[0].matchedVia, 'BPS Solarworks');
++  assert.ok(it.flags.some((f) => f.includes('alias')));
++});
++
++test('alias matching respects the configurable conflict threshold', () => {
++  const roster = [{ name: 'Brightpath Solar LLC', role: 'adverse', aliases: ['BPS Solarworks'] }];
++  const subs = [sub({ opposing: { name: 'BPS Solarworks' }, deadline: '2026-12-01' })];
++  const strict = processQueue({ asOf: AS_OF, roster, submissions: subs, settings: { conflictThreshold: 1.01 } });
++  assert.equal(strict.items[0].conflicts.length, 0);
++});
++
++// ------------------------------------------------- letters
++
++test('declination letter cites matched roster party and score, no unresolved placeholders', () => {
++  const q = processQueue({
++    asOf: AS_OF, roster: ROSTER,
++    submissions: [sub({ id: 'C1', client: { name: 'Brightpath Solar' }, opposing: { name: 'Zeta Print Co' }, deadline: '2026-12-01' })],
++  });
++  assert.equal(decide(q, 'C1', 'decline', 'gc-lee', 'conflict with adverse party on LIT-2025-003').ok, true);
++  const letter = renderLetter(q, 'C1', 'declination');
++  assert.ok(letter.includes('Brightpath Solar LLC'));
++  assert.ok(/score 1\b/.test(letter));
++  assert.ok(letter.includes('C1'));
++  assert.ok(!letter.includes('{{'));
++  assert.ok(letter.includes('[JURISDICTION]'));
++  assert.ok(/not legal advice/i.test(letter));
++});
++
++test('engagement letter names client and matter with jurisdiction placeholder; bad id/kind throw', () => {
++  const q = processQueue({ asOf: AS_OF, roster: ROSTER, submissions: [sub({ id: 'E1', deadline: '2026-12-15' })] });
++  const letter = renderLetter(q, 'E1', 'engagement');
++  assert.ok(letter.includes('Harbor Bakehouse Co.'));
++  assert.ok(letter.includes('contract dispute'));
++  assert.ok(letter.includes('no roster match at or above the 0.8 conflict threshold'));
++  assert.ok(letter.includes('[JURISDICTION]'));
++  assert.ok(!letter.includes('{{'));
++  assert.throws(() => renderLetter(q, 'nope', 'engagement'), /no item/);
++  assert.throws(() => renderLetter(q, 'E1', 'bonkers'), /unknown letter kind/);
++});
++
++test('declination letter for an alias match cites the alias verbatim', () => {
++  const roster = [{ name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003', aliases: ['BPS Solarworks'] }];
++  const q = processQueue({
++    asOf: AS_OF, roster,
++    submissions: [sub({ id: 'A1', opposing: { name: 'BPS Solarworks' }, deadline: '2026-12-01' })],
++  });
++  assert.equal(decide(q, 'A1', 'decline', 'gc-lee', 'alias conflict').ok, true);
++  const letter = renderLetter(q, 'A1', 'declination');
++  assert.ok(letter.includes('BPS Solarworks'));
++  assert.ok(letter.includes('alias'));
++  assert.ok(!letter.includes('{{'));
++});
++
++// ------------------------------------------------- ICS export
++
++test('toICS: one VEVENT per valid deadline, CRLF endings, escaped text', () => {
++  const q = processQueue({
++    asOf: AS_OF, roster: [],
++    submissions: [
++      sub({ id: 'V1', deadline: '2026-11-13', client: { name: 'Comma, Co.' }, opposing: { name: 'Semi;Colon LLC' } }),
++      sub({ id: 'V2', client: { name: 'Distinct Client Group' }, opposing: { name: 'Unrelated Party Co' } }), // no deadline
++    ],
++  });
++  const ics = toICS(q);
++  assert.ok(ics.startsWith('BEGIN:VCALENDAR'));
++  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
++  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, 1); // V2 has no deadline
++  assert.ok(ics.includes('UID:V1@intake-queue'));
++  assert.ok(ics.includes('DTSTART;VALUE=DATE:20261113'));
++  assert.ok(ics.includes('DTSTAMP:20261107T000000Z'));
++  assert.ok(ics.includes('\\,')); // RFC 5545 comma escape
++  assert.ok(ics.includes('\\;'));
++  assert.ok(ics.split('\r\n').every((l) => !l.endsWith('\n'))); // only CRLF endings
++});
++
++// ------------------------------------------------- ingest verifier
++
++test('ingestSubmission: verbatim names verify; altered name flagged unverified-extraction', () => {
++  const source = 'From: Dana Reyes (fictional). My company Ridgeline Dental Group PC has a billing dispute with Sable Insurance Company.';
++  const good = ingestSubmission(
++    { client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'billing dispute' },
++    source,
++  );
++  assert.equal(good.ok, true);
++  assert.deepEqual(good.submission.flags, []);
++  const bad = ingestSubmission(
++    { client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Co' }, matterType: 'billing dispute' },
++    source,
++  );
++  assert.equal(bad.ok, false);
++  assert.ok(bad.submission.flags.includes('unverified-extraction'));
++  assert.ok(bad.issues.some((i) => i.includes('opposing')));
++  // null name = nothing extracted, not a verification failure
++  const nullName = ingestSubmission({ client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: null } }, source);
++  assert.equal(nullName.ok, true);
++});
+diff --git a/open-artifacts/intake-queue/demo/index.html b/open-artifacts/intake-queue/demo/index.html
+index d1e48bc..8bbc8a0 100644
+--- a/open-artifacts/intake-queue/demo/index.html
++++ b/open-artifacts/intake-queue/demo/index.html
+@@ -25,8 +25,12 @@
+   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+   tr:hover td { background: var(--hover); }
+   .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
+-  .chip.urgent, .chip.overdue, .chip.duplicate { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
++  .chip.urgent, .chip.overdue, .chip.duplicate, .chip.declined, .chip.escalated { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+   .notes { color: var(--text-secondary); font-size: 12px; }
++  select, input[type="text"] { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 8px; }
++  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
++  .controls input[type="text"] { flex: 1; min-width: 180px; }
++  pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: #fff; border: var(--hairline); padding: 12px; overflow: auto; white-space: pre-wrap; margin: 12px 0 0; }
+   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
+ </style>
+ </head>
+@@ -45,35 +49,74 @@
+   <div id="summary"></div>
+   <h2>Queue</h2>
+   <div id="board"></div>
++
++  <h2>Decide / assign</h2>
++  <p class="lede">Guarded decision layer: accept / decline / escalate (reason required) or assign. Rejected actions leave the queue untouched and write no audit entry.</p>
++  <div class="controls">
++    <select id="d-id"></select>
++    <select id="d-action"><option value="accept">accept</option><option value="decline">decline</option><option value="escalate">escalate</option><option value="assign">assign</option></select>
++    <input type="text" id="d-by" placeholder="actor / assignee (fictional, e.g. gc-lee)" />
++    <input type="text" id="d-reason" placeholder="reason (required for decisions)" />
++    <button id="d-go">Record</button>
++  </div>
++  <div class="err" id="d-err"></div>
++
++  <h2>Letter draft</h2>
++  <p class="lede">Deterministic engagement / declination templates — every line traceable to queue fields; jurisdiction stays a [JURISDICTION] placeholder (not legal advice).</p>
++  <div class="controls">
++    <select id="l-id"></select>
++    <select id="l-kind"><option>declination</option><option>engagement</option></select>
++    <button id="l-go">Draft letter</button>
++  </div>
++  <pre id="letter" hidden></pre>
++
++  <h2>Calendar export (ICS)</h2>
++  <p class="lede">One VEVENT per submission with a valid deadline — deadlines leave the queue and reach a calendar.</p>
++  <button id="ics-go">Download intake-deadlines.ics</button>
++  <pre id="ics-out" hidden></pre>
++
++  <h2>Audit log</h2>
++  <div id="audit"></div>
++
++  <h2>Ingest verifier</h2>
++  <p class="lede">LLM extractions enter the queue only if every extracted name appears verbatim (word-delimited) in the source text; otherwise the submission is flagged <code>unverified-extraction</code>.</p>
++  <textarea id="ing-source" spellcheck="false" style="min-height: 90px"></textarea>
++  <textarea id="ing-extracted" spellcheck="false" style="min-height: 90px"></textarea>
++  <button id="ing-go">Verify extraction</button>
++  <div class="err" id="ing-out"></div>
+ </div>
+ 
+ <script type="module">
+-import { processQueue } from '../core/core.js';
++import { processQueue, assign, decide, renderLetter, toICS, ingestSubmission } from '../core/core.js';
+ 
+ const DEFAULT_INPUT = {
+-  asOf: new Date().toISOString().slice(0, 10),
++  asOf: '2026-11-07',
+   roster: [
+     { name: 'Northwind Logistics, Inc.', role: 'client', matter: 'LIT-2026-014' },
+-    { name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003' },
++    { name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003', aliases: ['BPS Solarworks'] },
+   ],
+   submissions: [
+     { id: 'INT-1041', submittedAt: '2026-11-06', client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'insurance coverage dispute', deadline: '2026-11-13' },
+     { id: 'INT-1042', submittedAt: '2026-11-06', client: { name: 'M. Iwata (fictional)' }, opposing: { name: 'Brightpath Solar' }, matterType: 'property damage', deadline: '2026-12-20' },
++    { id: 'INT-1048', submittedAt: '2026-11-07', client: { name: 'Quiet Harbor Tenants Assoc' }, opposing: { name: 'BPS Solarworks' }, matterType: 'roofing defect', deadline: '2026-12-15' },
+     { id: 'INT-1044', submittedAt: '2026-11-07', client: { name: 'Harbor Bakehouse Co.' }, opposing: { name: 'Delgado Trucking LLC' }, matterType: 'contract dispute', deadline: '2027-02-01' },
+     { id: 'INT-1047', submittedAt: '2026-11-07', client: { name: 'Harbor Bakehouse Company' }, opposing: { name: 'Delgado Trucking, L.L.C.' }, matterType: 'contract dispute' },
+     { id: 'INT-1045', submittedAt: '2026-11-07', client: { name: 'Tilly Andersen (fictional)' }, opposing: { name: 'Coastal View Apartments' }, matterType: 'security deposit return', occurredOn: '2024-05-30' },
+   ],
+ };
+ 
++const DEFAULT_SOURCE = 'From: Dana Reyes (fictional). My company Ridgeline Dental Group PC has a billing dispute with Sable Insurance Company.';
++const DEFAULT_EXTRACTED = { client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'billing dispute' };
++
+ const $ = (id) => document.getElementById(id);
+ $('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
++$('ing-source').value = DEFAULT_SOURCE;
++$('ing-extracted').value = JSON.stringify(DEFAULT_EXTRACTED, null, 2);
+ function esc(s) { return String(s).replace(/</g, '&lt;'); }
+ 
+-$('run').addEventListener('click', () => {
+-  const errEl = $('err'); errEl.style.display = 'none';
+-  let q;
+-  try { q = processQueue(JSON.parse($('input').value)); }
+-  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
++let q = null;
++
++function renderAll() {
+   const s = q.summary;
+   $('summary').innerHTML = `
+     <div class="cards">
+@@ -81,8 +124,9 @@ $('run').addEventListener('click', () => {
+       <div class="card alert"><div class="k">Urgent</div><div class="v">${s.urgent}</div></div>
+       <div class="card"><div class="k">Conflicts</div><div class="v">${s.conflicts}</div></div>
+       <div class="card"><div class="k">Duplicates</div><div class="v">${s.duplicates}</div></div>
++      <div class="card"><div class="k">Audit entries</div><div class="v">${q.audit.length}</div></div>
+     </div>`;
+-  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, new: 5 };
++  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
+   const rows = [...q.items].sort((a, b) => stateRank[a.state] - stateRank[b.state] || a.id.localeCompare(b.id))
+     .map((i) => `
+     <tr>
+@@ -91,11 +135,64 @@ $('run').addEventListener('click', () => {
+       <td>${esc(i.matterType)}<br /><span class="notes">deadline: ${i.deadline ?? '—'}</span></td>
+       <td><span class="chip ${i.urgency.level}">${i.urgency.level}</span></td>
+       <td><span class="chip ${i.state}">${i.state}</span>${i.duplicateOf ? `<br /><span class="notes">dup of ${esc(i.duplicateOf)}</span>` : ''}</td>
+-      <td>${i.conflicts.length ? i.conflicts.map((c) => `<span class="notes"><strong>${esc(c.rosterName)}</strong> (${c.role} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}</span>`).join('<br>') : '—'}</td>
+-      <td>${i.flags.length ? `<span class="notes">${i.flags.map(esc).join('<br>')}</span>` : '—'}</td>
++      <td>${i.conflicts.length ? i.conflicts.map((c) => `<span class="notes"><strong>${esc(c.rosterName)}</strong> (${c.role} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}${c.aliasMatch ? ` <strong>via alias “${esc(c.matchedVia)}”</strong>` : ''}</span>`).join('<br>') : '—'}</td>
++      <td>${i.flags.length ? `<span class="notes">${i.flags.map(esc).join('<br>')}</span>` : '—'}${i.decision ? `<br /><span class="notes">${esc(i.decision.action)} by ${esc(i.decision.by)}: ${esc(i.decision.reason)}</span>` : ''}</td>
+     </tr>`).join('');
+   $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Parties</th><th>Matter</th><th>Urgency</th><th>State</th><th>Conflicts</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
++  $('audit').innerHTML = `<table><thead><tr><th>#</th><th>At</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead><tbody>${
++    q.audit.map((a) => `<tr><td>${a.seq}</td><td>${esc(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail)}</td></tr>`).join('')
++  }</tbody></table>`;
++  for (const sel of [$('d-id'), $('l-id')]) {
++    sel.innerHTML = q.items.map((i) => `<option value="${esc(i.id)}">${esc(i.id)} — ${esc(i.state)}</option>`).join('');
++  }
++}
++
++$('run').addEventListener('click', () => {
++  const errEl = $('err'); errEl.style.display = 'none';
++  try { q = processQueue(JSON.parse($('input').value)); }
++  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
++  renderAll();
++});
++
++$('d-go').addEventListener('click', () => {
++  const errEl = $('d-err'); errEl.style.display = 'none';
++  const id = $('d-id').value, action = $('d-action').value, by = $('d-by').value, reason = $('d-reason').value;
++  const r = action === 'assign' ? assign(q, id, by) : decide(q, id, action, by, reason);
++  if (!r.ok) { errEl.textContent = 'Rejected: ' + r.error; errEl.style.display = 'block'; return; }
++  renderAll();
++});
++
++$('l-go').addEventListener('click', () => {
++  const out = $('letter');
++  try { out.textContent = renderLetter(q, $('l-id').value, $('l-kind').value); out.hidden = false; }
++  catch (e) { out.hidden = true; }
++});
++
++$('ics-go').addEventListener('click', () => {
++  const ics = toICS(q);
++  const out = $('ics-out');
++  out.textContent = ics;
++  out.hidden = false;
++  const a = document.createElement('a');
++  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
++  a.download = 'intake-deadlines.ics';
++  a.click();
++  URL.revokeObjectURL(a.href);
+ });
++
++$('ing-go').addEventListener('click', () => {
++  const out = $('ing-out');
++  out.style.display = 'none';
++  let extracted;
++  try { extracted = JSON.parse($('ing-extracted').value); }
++  catch (e) { out.textContent = 'Extracted JSON error: ' + e.message; out.style.display = 'block'; return; }
++  const r = ingestSubmission(extracted, $('ing-source').value);
++  out.textContent = r.ok
++    ? `OK — names verified verbatim; submission is queue-ready (flags: none).`
++    : `REJECTED — ${r.issues.join(' | ')} (submission flagged “unverified-extraction”: ${r.submission.flags.join(', ')})`;
++  out.style.display = 'block';
++});
++
+ $('run').click();
+ </script>
+ </body>
+diff --git a/open-artifacts/intake-queue/examples/intake.ics b/open-artifacts/intake-queue/examples/intake.ics
+new file mode 100644
+index 0000000..92dcc96
+--- /dev/null
++++ b/open-artifacts/intake-queue/examples/intake.ics
+@@ -0,0 +1,49 @@
++BEGIN:VCALENDAR
++VERSION:2.0
++PRODID:-//intake-queue//open-legal-artifacts//EN
++CALSCALE:GREGORIAN
++BEGIN:VEVENT
++UID:INT-1041@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261113
++SUMMARY:Intake INT-1041: Ridgeline Dental Group PC v. Sable Insurance Comp
++ any
++DESCRIPTION:insurance coverage dispute — deadline. State: assigned.
++END:VEVENT
++BEGIN:VEVENT
++UID:INT-1042@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261220
++SUMMARY:Intake INT-1042: M. Iwata (fictional) v. Brightpath Solar
++DESCRIPTION:property damage — deadline. State: declined.
++END:VEVENT
++BEGIN:VEVENT
++UID:INT-1043@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261201
++SUMMARY:Intake INT-1043: Foxglove Rentals LLC v. C. Moreau (fictional)
++DESCRIPTION:eviction filing — deadline. State: accepted.
++END:VEVENT
++BEGIN:VEVENT
++UID:INT-1044@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20270201
++SUMMARY:Intake INT-1044: Harbor Bakehouse Co. v. Delgado Trucking LLC
++DESCRIPTION:contract dispute — deadline. State: conflict-review.
++END:VEVENT
++BEGIN:VEVENT
++UID:INT-1046@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20270115
++SUMMARY:Intake INT-1046: Northwind Logistics v. Palmer Freight Solutions
++DESCRIPTION:freight contract dispute — deadline. State: escalated.
++END:VEVENT
++BEGIN:VEVENT
++UID:INT-1047@intake-queue
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20270201
++SUMMARY:Intake INT-1047: Harbor Bakehouse Company v. Delgado Trucking\, L.
++ L.C.
++DESCRIPTION:contract dispute — deadline. State: duplicate.
++END:VEVENT
++END:VCALENDAR
+diff --git a/open-artifacts/intake-queue/examples/letters.md b/open-artifacts/intake-queue/examples/letters.md
+new file mode 100644
+index 0000000..d752771
+--- /dev/null
++++ b/open-artifacts/intake-queue/examples/letters.md
+@@ -0,0 +1,43 @@
++[FIRM LETTERHEAD]
++
++Date: 2026-11-07
++
++M. Iwata (fictional)
++Re: Your inquiry — property damage (intake INT-1042)
++
++Dear M. Iwata (fictional):
++
++Thank you for contacting [FIRM NAME] about the matter above. After our conflict-screening review, we are unable to accept this engagement.
++
++Our records show that Brightpath Solar LLC (adverse on LIT-2025-003) matched the opposing party with similarity score 1. Because of that relationship, we cannot represent you in this matter.
++
++Decision record: decline by gc-lee (fictional) on 2026-11-07 — "conflict: Brightpath Solar LLC adverse on LIT-2025-003".
++
++Deadlines can pass quickly: the intake records a possible deadline of 2026-12-20 [verify]. Please consult another attorney promptly; the [JURISDICTION] bar association [verify] maintains a lawyer referral service.
++
++This letter is not legal advice and does not create an attorney-client relationship.
++
++Sincerely,
++[FIRM NAME]
++
++---
++
++[FIRM LETTERHEAD]
++
++Date: 2026-11-07
++
++Foxglove Rentals LLC
++Re: Proposed engagement — eviction filing (intake INT-1043)
++
++Dear Foxglove Rentals LLC:
++
++Thank you for contacting [FIRM NAME] about the matter above. We are pleased to confirm that [FIRM NAME] will consider representing you in this matter, subject to the terms below.
++
++Conflict screening: our roster check found no roster match at or above the 0.8 conflict threshold for either party (intake INT-1043, screened 2026-11-07).
++
++Scope: eviction filing. The intake records a possible deadline of 2026-12-01 [verify]. Scope of services, fees, and the governing law of [JURISDICTION] [verify] will be set out in a signed engagement agreement.
++
++This draft is a template generated from intake data; it is not legal advice and creates no attorney-client relationship until the engagement agreement is signed.
++
++Sincerely,
++[FIRM NAME]
+diff --git a/open-artifacts/intake-queue/examples/output.json b/open-artifacts/intake-queue/examples/output.json
+index d531504..36ccffb 100644
+--- a/open-artifacts/intake-queue/examples/output.json
++++ b/open-artifacts/intake-queue/examples/output.json
+@@ -43,11 +43,17 @@
+         "level": "routine",
+         "reasons": []
+       },
+-      "state": "conflict-review",
++      "state": "declined",
+       "assignedTo": null,
+       "flags": [
+         "possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1"
+-      ]
++      ],
++      "decision": {
++        "action": "decline",
++        "by": "gc-lee (fictional)",
++        "reason": "conflict: Brightpath Solar LLC adverse on LIT-2025-003",
++        "at": "2026-11-07"
++      }
+     },
+     {
+       "id": "INT-1043",
+@@ -65,9 +71,15 @@
+           "deadline 2026-12-01 in 24 days (≤ 30)"
+         ]
+       },
+-      "state": "assignable",
++      "state": "accepted",
+       "assignedTo": null,
+-      "flags": []
++      "flags": [],
++      "decision": {
++        "action": "accept",
++        "by": "gc-lee (fictional)",
++        "reason": "capacity confirmed at screening",
++        "at": "2026-11-07"
++      }
+     },
+     {
+       "id": "INT-1044",
+@@ -139,11 +151,17 @@
+         "level": "routine",
+         "reasons": []
+       },
+-      "state": "conflict-review",
++      "state": "escalated",
+       "assignedTo": null,
+       "flags": [
+         "possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
+-      ]
++      ],
++      "decision": {
++        "action": "escalate",
++        "by": "partner-oh (fictional)",
++        "reason": "existing firm client — relationship check needed",
++        "at": "2026-11-07"
++      }
+     },
+     {
+       "id": "INT-1047",
+@@ -190,5 +208,42 @@
+   "settings": {
+     "dedupeThreshold": 0.85,
+     "conflictThreshold": 0.8
+-  }
++  },
++  "audit": [
++    {
++      "seq": 1,
++      "at": "2026-11-07",
++      "actor": "system",
++      "action": "process",
++      "detail": "7 submissions screened (dedupe ≥ 0.85, conflicts ≥ 0.8)"
++    },
++    {
++      "seq": 2,
++      "at": "2026-11-07",
++      "actor": "staff-kim (fictional)",
++      "action": "assign",
++      "detail": "assigned INT-1041 to staff-kim (fictional)"
++    },
++    {
++      "seq": 3,
++      "at": "2026-11-07",
++      "actor": "gc-lee (fictional)",
++      "action": "decide",
++      "detail": "decline INT-1042: conflict: Brightpath Solar LLC adverse on LIT-2025-003"
++    },
++    {
++      "seq": 4,
++      "at": "2026-11-07",
++      "actor": "gc-lee (fictional)",
++      "action": "decide",
++      "detail": "accept INT-1043: capacity confirmed at screening"
++    },
++    {
++      "seq": 5,
++      "at": "2026-11-07",
++      "actor": "partner-oh (fictional)",
++      "action": "decide",
++      "detail": "escalate INT-1046: existing firm client — relationship check needed"
++    }
++  ]
+ }
+diff --git a/open-artifacts/intake-queue/examples/queue.csv b/open-artifacts/intake-queue/examples/queue.csv
+index 1f686bd..e7708c1 100644
+--- a/open-artifacts/intake-queue/examples/queue.csv
++++ b/open-artifacts/intake-queue/examples/queue.csv
+@@ -1,8 +1,8 @@
+ id,submittedAt,client,opposing,matterType,deadline,state,duplicateOf,conflictCount,urgencyLevel,assignedTo,flags
+ INT-1041,2026-11-06,Ridgeline Dental Group PC,Sable Insurance Company,insurance coverage dispute,2026-11-13,assigned,,0,urgent,staff-kim (fictional),
+-INT-1042,2026-11-06,M. Iwata (fictional),Brightpath Solar,property damage,2026-12-20,conflict-review,,1,routine,,possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1
+-INT-1043,2026-11-07,Foxglove Rentals LLC,C. Moreau (fictional),eviction filing,2026-12-01,assignable,,0,deadline-soon,,
++INT-1042,2026-11-06,M. Iwata (fictional),Brightpath Solar,property damage,2026-12-20,declined,,1,routine,,possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1
++INT-1043,2026-11-07,Foxglove Rentals LLC,C. Moreau (fictional),eviction filing,2026-12-01,accepted,,0,deadline-soon,,
+ INT-1044,2026-11-07,Harbor Bakehouse Co.,Delgado Trucking LLC,contract dispute,2027-02-01,conflict-review,,1,routine,,possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1
+ INT-1045,2026-11-07,Tilly Andersen (fictional),Coastal View Apartments,security deposit return,,urgent,,0,urgent,,
+-INT-1046,2026-11-07,Northwind Logistics,Palmer Freight Solutions,freight contract dispute,2027-01-15,conflict-review,,1,routine,,"possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
++INT-1046,2026-11-07,Northwind Logistics,Palmer Freight Solutions,freight contract dispute,2027-01-15,escalated,,1,routine,,"possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
+ INT-1047,2026-11-07,Harbor Bakehouse Company,"Delgado Trucking, L.L.C.",contract dispute,2027-02-01,duplicate,INT-1044,1,routine,,"same parties as INT-1044 (client 1, opposing 1); possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1"
+diff --git a/open-artifacts/intake-queue/examples/queue.md b/open-artifacts/intake-queue/examples/queue.md
+index e4a56b6..1103ece 100644
+--- a/open-artifacts/intake-queue/examples/queue.md
++++ b/open-artifacts/intake-queue/examples/queue.md
+@@ -5,9 +5,19 @@ Total **7** · duplicates **1** · conflicts **4** · urgent **2** · states urg
+ | # | Id | Submitted | Client ↔ Opposing | Matter | Deadline | Urgency | State | Notes |
+ |---|---|---|---|---|---|---|---|---|
+ | 1 | INT-1045 | 2026-11-07 | Tilly Andersen (fictional) ↔ Coastal View Apartments | security deposit return | — | urgent | urgent | — |
+-| 2 | INT-1042 | 2026-11-06 | M. Iwata (fictional) ↔ Brightpath Solar | property damage | 2026-12-20 | routine | conflict-review | possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1 |
+-| 3 | INT-1044 | 2026-11-07 | Harbor Bakehouse Co. ↔ Delgado Trucking LLC | contract dispute | 2027-02-01 | routine | conflict-review | possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1 |
+-| 4 | INT-1046 | 2026-11-07 | Northwind Logistics ↔ Palmer Freight Solutions | freight contract dispute | 2027-01-15 | routine | conflict-review | possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1 |
+-| 5 | INT-1043 | 2026-11-07 | Foxglove Rentals LLC ↔ C. Moreau (fictional) | eviction filing | 2026-12-01 | deadline-soon | assignable | — |
+-| 6 | INT-1047 | 2026-11-07 | Harbor Bakehouse Company ↔ Delgado Trucking, L.L.C. | contract dispute | 2027-02-01 | routine | duplicate | same parties as INT-1044 (client 1, opposing 1); possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1 |
+-| 7 | INT-1041 | 2026-11-06 | Ridgeline Dental Group PC ↔ Sable Insurance Company | insurance coverage dispute | 2026-11-13 | urgent | assigned → staff-kim (fictional) | — |
++| 2 | INT-1044 | 2026-11-07 | Harbor Bakehouse Co. ↔ Delgado Trucking LLC | contract dispute | 2027-02-01 | routine | conflict-review | possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1 |
++| 3 | INT-1047 | 2026-11-07 | Harbor Bakehouse Company ↔ Delgado Trucking, L.L.C. | contract dispute | 2027-02-01 | routine | duplicate | same parties as INT-1044 (client 1, opposing 1); possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1 |
++| 4 | INT-1041 | 2026-11-06 | Ridgeline Dental Group PC ↔ Sable Insurance Company | insurance coverage dispute | 2026-11-13 | urgent | assigned → staff-kim (fictional) | — |
++| 5 | INT-1043 | 2026-11-07 | Foxglove Rentals LLC ↔ C. Moreau (fictional) | eviction filing | 2026-12-01 | deadline-soon | accepted (accept by gc-lee (fictional)) | — |
++| 6 | INT-1042 | 2026-11-06 | M. Iwata (fictional) ↔ Brightpath Solar | property damage | 2026-12-20 | routine | declined (decline by gc-lee (fictional)) | possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1 |
++| 7 | INT-1046 | 2026-11-07 | Northwind Logistics ↔ Palmer Freight Solutions | freight contract dispute | 2027-01-15 | routine | escalated (escalate by partner-oh (fictional)) | possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1 |
++
++## Audit log
++
++| # | At | Actor | Action | Detail |
++|---|---|---|---|---|
++| 1 | 2026-11-07 | system | process | 7 submissions screened (dedupe ≥ 0.85, conflicts ≥ 0.8) |
++| 2 | 2026-11-07 | staff-kim (fictional) | assign | assigned INT-1041 to staff-kim (fictional) |
++| 3 | 2026-11-07 | gc-lee (fictional) | decide | decline INT-1042: conflict: Brightpath Solar LLC adverse on LIT-2025-003 |
++| 4 | 2026-11-07 | gc-lee (fictional) | decide | accept INT-1043: capacity confirmed at screening |
++| 5 | 2026-11-07 | partner-oh (fictional) | decide | escalate INT-1046: existing firm client — relationship check needed |
+diff --git a/open-artifacts/intake-queue/examples/run.js b/open-artifacts/intake-queue/examples/run.js
+index bc48ced..17bcf8c 100644
+--- a/open-artifacts/intake-queue/examples/run.js
++++ b/open-artifacts/intake-queue/examples/run.js
+@@ -1,29 +1,44 @@
+ /**
+  * Reproducible worked example: reads examples/input.json, processes the
+- * queue, writes output.json, queue.md, queue.csv.
++ * queue, records worked decisions via the guarded APIs, writes
++ * output.json, queue.md, queue.csv, letters.md, intake.ics.
+  * Run:  node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { processQueue, toCSV, renderQueue } from '../core/core.js';
++import { processQueue, assign, decide, renderLetter, toCSV, renderQueue, toICS } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+ 
+ const q = processQueue(input);
+-// demonstrate one assignment: the most urgent open item goes to staff
+-const urgent = q.items.find((i) => i.state === 'urgent');
+-if (urgent) {
+-  urgent.assignedTo = 'staff-kim (fictional)';
+-  urgent.state = 'assigned';
+-}
++// worked decisions — every action goes through the guarded APIs so the
++// audit trail records who did what, when, and why (all actors fictional)
++assign(q, 'INT-1041', 'staff-kim (fictional)'); // most urgent open item
++decide(q, 'INT-1042', 'decline', 'gc-lee (fictional)', 'conflict: Brightpath Solar LLC adverse on LIT-2025-003');
++decide(q, 'INT-1043', 'accept', 'gc-lee (fictional)', 'capacity confirmed at screening');
++decide(q, 'INT-1046', 'escalate', 'partner-oh (fictional)', 'existing firm client — relationship check needed');
++
+ writeFileSync(join(here, 'output.json'), JSON.stringify(q, null, 2) + '\n');
+ writeFileSync(join(here, 'queue.md'), renderQueue(q));
+ writeFileSync(join(here, 'queue.csv'), toCSV(q));
++writeFileSync(join(here, 'intake.ics'), toICS(q));
++writeFileSync(
++  join(here, 'letters.md'),
++  [
++    renderLetter(q, 'INT-1042', 'declination'),
++    '',
++    '---',
++    '',
++    renderLetter(q, 'INT-1043', 'engagement'),
++    '',
++  ].join('\n'),
++);
+ 
+ const s = q.summary;
+ console.log(
+   `${s.total} submissions -> ${s.duplicates} duplicates, ${s.conflicts} conflicts, ` +
+-  `${s.urgent} urgent; states ${Object.entries(s.byState).map(([k, v]) => `${k} ${v}`).join(', ')} -> output.json, queue.md, queue.csv`,
++  `${s.urgent} urgent; states ${Object.entries(s.byState).map(([k, v]) => `${k} ${v}`).join(', ')}; ` +
++  `${q.audit.length} audit entries -> output.json, queue.md, queue.csv, letters.md, intake.ics`,
+ );
+diff --git a/open-artifacts/intake-queue/spec.md b/open-artifacts/intake-queue/spec.md
+index d3cd563..775917b 100644
+--- a/open-artifacts/intake-queue/spec.md
++++ b/open-artifacts/intake-queue/spec.md
+@@ -11,16 +11,25 @@ deadline/age urgency triage, guarded assign states, and CSV export.
+ | Name normalization (case, punctuation, dotted abbreviations, corporate suffixes; initials kept) | core (deterministic) |
+ | Similarity: token Jaccard + containment bonus, in [0,1] | core (deterministic) |
+ | Dedupe: same client AND same opposing party ≥ threshold vs earlier submissions (first is primary) | core (deterministic) |
+-| Conflict check: either party vs roster entries ≥ threshold, with role + score | core (deterministic) |
++| Conflict check: either party vs roster entries (incl. `aliases[]`, former names) ≥ threshold, with role + score + alias flag | core (deterministic) |
+ | Urgency: overdue / urgent (≤14d) / deadline-soon (≤30d) / routine + aged-matter bump (>365d → limitations hint) | core (deterministic) |
+ | State machine: new → duplicate \| conflict-review \| urgent \| assignable → assigned | core (guarded) |
++| Decision layer: accept / decline / escalate from any open state; actor + reason required; terminal | core (guarded, audited) |
++| Audit trail: every process/assign/decide appends `{seq, at, actor, action, detail}`; failed actions append nothing | core (deterministic) |
++| Letter drafts: engagement / declination templates generated from queue fields only; jurisdiction stays `[JURISDICTION]` placeholder | core (deterministic, not legal advice) |
++| Calendar export: one VEVENT per valid deadline (RFC 5545, CRLF, escaped) | core (deterministic) |
++| Ingest verification: extracted party names must appear verbatim (word-delimited) in the source text | core (deterministic) |
+ | Extracting party names from emails/forms into the submission shape | LLM (prompt below) |
+ | Resolving conflicts (ethical screens, waivers) | attorney / general counsel |
+ 
+ Thresholds (`dedupeThreshold` 0.85, `conflictThreshold` 0.8,
+ `criticalDays` 14, `soonDays` 30, `staleAgeDays` 365) are configurable
+ settings. Matches are advisory: conflict-review state means "a human
+-must look", never "conflict exists".
++must look", never "conflict exists". Roster entries may carry
++`aliases[]` (former/DBA names) matched as first-class candidates; on a
++tie the primary roster name wins. Every accept/decline/escalate
++decision is terminal and must name an actor and a reason — there is no
++unexplained routing anywhere in the queue.
+ 
+ ## Input contract (JSON)
+ 
+@@ -28,7 +37,7 @@ must look", never "conflict exists".
+ {
+   "asOf": "2026-11-07",
+   "settings": { "dedupeThreshold": 0.85, "conflictThreshold": 0.8 },
+-  "roster": [ { "name": "…", "role": "client|adverse|other", "matter": "…" } ],
++  "roster": [ { "name": "…", "role": "client|adverse|other", "matter": "…", "aliases": ["…"] } ],
+   "submissions": [ {
+     "id": "INT-1041", "submittedAt": "ISO",
+     "client": { "name": "…" }, "opposing": { "name": "…" },
+@@ -42,11 +51,24 @@ must look", never "conflict exists".
+ ## Output contract (JSON)
+ 
+ Per submission: `duplicateOf|null`, `conflicts[{rosterName, role,
+-matter, matchedSide, score}]`, `urgency{level, reasons[]}`, `state`
+-(new/duplicate/conflict-review/urgent/assignable/assigned), `assignedTo`,
+-`flags[]`. Plus `summary{total, byState, conflicts, duplicates, urgent}`.
++matter, matchedSide, score, aliasMatch?, matchedVia?}]`,
++`urgency{level, reasons[]}`, `state`
++(new/duplicate/conflict-review/urgent/assignable/assigned/accepted/
++declined/escalated), `assignedTo`, `decision{action, by, reason,
++at}|null`, `flags[]`. Plus `summary{total, byState, conflicts,
++duplicates, urgent}` and `audit[{seq, at, actor, action, detail}]`.
++
++Decision API: `decide(queue, id, accept|decline|escalate, by, reason)` —
++guarded (open states only), reason required, appends to the audit log.
++Letter drafts: `renderLetter(queue, id, engagement|declination)` — every
++line traceable to queue fields; `[JURISDICTION]` placeholders keep it
++UPL-safe; templates, not legal advice.
++Ingest verifier: `ingestSubmission(extracted, sourceText)` — rejects
++extractions whose names are not verbatim in the source
++(`unverified-extraction` flag) before they enter the queue.
+ Exports: `toCSV()`, `renderQueue()` (Markdown sorted by state then
+-urgency then id — deterministic).
++urgency then id, with audit-log table — deterministic), `toICS()`
++(one VEVENT per valid deadline).
+ 
+ ## Prompt schema for the LLM part (extraction only)
+ 
+@@ -58,12 +80,27 @@ urgency then id — deterministic).
+   "matterType": "one phrase or null", "deadlineSeen": "ISO|null + source quote" }
+ ```
+ 
++Before a submission enters the queue, `ingestSubmission()` verifies the
++extraction deterministically: each extracted name must appear in the
++source text delimited by non-word characters (so a truncated
++"Sable Insurance Co" inside "Sable Insurance Company" is caught).
++
+ ## What's better than the closed counterpart
+ 
+ - Every match shows its math: normalized names, similarity score,
+   threshold — auditable dedupe/conflict calls instead of vendor trust.
+ - Initials are preserved (M. Iwata ≠ K. Iwata) so person matching stays
+-  conservative where it matters.
++  conservative where it matters; roster aliases (former/DBA names) match
++  first-class with an explicit `aliasMatch` flag.
++- Decisions are records, not vibes: accept/decline/escalate is guarded,
++  requires actor + reason, and lands in an append-only audit trail
++  (who checked what, when) — the counterpart's LLM routing is opaque.
++- Engagement/declination letters are deterministic drafts: every line
++  traceable to a queue field, jurisdiction left as a placeholder — no
++  hallucinated facts possible; the counterpart's letters are LLM-drafted.
++- Deadlines export to any calendar (RFC 5545 ICS), not just the queue.
++- LLM extraction is verified against the raw source before it is
++  trusted — the verbatim-copy prompt rule is enforced by code.
+ - Deterministic ordering and CSV export make the queue reviewable and
+   diffable; the closed item lives behind a product login.
+ - Runs anywhere, zero dependencies; roster is plain editable JSON.

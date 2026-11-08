@@ -1,0 +1,1865 @@
+diff --git a/open-artifacts/outside-counsel-spend/README.md b/open-artifacts/outside-counsel-spend/README.md
+index 360b463..afbb030 100644
+--- a/open-artifacts/outside-counsel-spend/README.md
++++ b/open-artifacts/outside-counsel-spend/README.md
+@@ -2,8 +2,8 @@
+ 
+ Open reimplementation of Anthropic's **Outside counsel spend** artifact —
+ spend across matters and firms — where **the findings ledger is the core**:
+-every rate exception, budget breach, and write-off flag cites the entry, the
+-violated rule, the expected value, and the dollar impact.
++every rate exception, budget breach, guideline violation, and write-off flag
++cites the entry, the violated rule, the expected value, and the dollar impact.
+ 
+ ## What it does
+ 
+@@ -14,47 +14,77 @@ violated rule, the expected value, and the dollar impact.
+ - `computeBudgetVariance(input)` — matter × firm spend **net of write-offs**
+   vs approved budgets; exact matter+firm budgets shadow matter-wide ones;
+   period-scoped budgets count only their period. `within` | `over` |
+-  `unbudgeted`.
++  `unbudgeted`. Over-budget pairs carry **drivers** — the top-3 billed
++  entries (id + amount) that pushed them over.
++- `checkGuidelines(input)` — typed billing-guideline rules-as-data:
++  `block_billing` (separator/word-count heuristics), `disallowed_expense`
++  (category caps), `max_hours_per_day`, `staffing_ratio`. Unknown rule types
++  surface as findings, never silently ignored.
++- `flagAnomalies(input)` — `rate_creep` (realized rate up > `rateCreepPct`%
++  period over period) and `hours_spike` (> `hoursSpikeFactor`× prior-period
++  hours) per firm × timekeeper, as ledger rows citing entry ids.
+ - `flagWriteOffs(input)` — write-offs ≥ `writeOffFlagPct`% of the bill
+   (default 10%, rules-as-data) flagged with evidence.
+ - `rollupByPeriod(input)` — per `YYYY-MM`: fees, disbursements, write-offs,
+   net, by-firm and by-matter splits.
+-- Export **JSON** (version-control friendly) and **findings CSV**.
++- `renderTalkingPoints(audit, names?)` — deterministic partner-review talking
++  points, one section per firm; totals tie to the audit summary and every
++  claim cites a finding or driver id.
++- `parseLedes(text, opts?)` (core/ledes.js) — deterministic **LEDES 1998B**
++  parser: pipe-delimited line items → ledger entries; malformed lines become
++  structured error rows, never guessed.
++- Export **JSON** (version-control friendly) and **findings CSV** (every row
++  cites its rule).
+ 
+ All money arithmetic in integer cents. No hidden clocks.
+ 
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"   # 14 tests (node:test)
+-node examples/run.js           # audits the example ledger → audit.json, findings.csv, report.md
++node --test core/*.test.js    # 29 tests (node:test; 26 core + 3 LEDES)
++node examples/run.js          # audits the example ledger → audit.json, findings.csv, report.md, talking-points.md
+ ```
+ 
+ Open `demo/index.html` for the interactive demo (findings tables, budget
+-bars, period filter, exports).
++bars with drivers, guideline & anomaly flags, period filter, exports
++including talking points).
+ 
+ ## What's better than the closed counterpart
+ 
+-1. **Findings, not a dashboard.** The closed artifact visualizes spend; this
++Counterpart (verified against Anthropic's Academy page,
++academy.claude.com/use-cases/outside-counsel-review): an LLM reviews
++outside-counsel invoices against prose billing guidelines and drafts
++partner-review talking points per run.
++
++1. **Every compliance decision is code.** Guidelines are typed rules-as-data
++   evaluated deterministically — identical input → byte-identical audit
++   JSON/CSV — where the counterpart re-interprets prose with an LLM each run.
++2. **Findings, not a dashboard.** The closed artifact visualizes spend; this
+    core's auditable object is the findings ledger — every exception row is
+-   reproducible from the input and exportable.
+-2. **Rate cards as data the firm owns** — negotiated rates are JSON, not
+-   values locked in a vendor UI; thresholds (`rateToleranceUsd`,
+-   `writeOffFlagPct`) are rules-as-data.
+-3. **Integer-cents arithmetic** — no float drift in billing comparisons;
+-   identical inputs → byte-identical outputs.
+-4. **Open exports** — JSON + CSV, no platform lock-in.
++   reproducible from the input, cites its rule id, and carries a dollar
++   impact.
++3. **Variance drivers computed and cited** — over-budget pairs name their
++   top-3 contributing entries, not an LLM's narration.
++4. **LEDES 1998B parsed deterministically** — structured errors for malformed
++   lines; zero hallucinated numbers.
++5. **Rate cards, guidelines, and thresholds as data the firm owns** — JSON,
++   not values locked in a vendor UI.
++6. **Integer-cents arithmetic + open exports** — no float drift, no platform
++   lock-in.
+ 
+ ## Layout
+ 
+-- `spec.md` — IO contract, schemas, extraction prompt schema, determinism
++- `spec.md` — IO contract, schemas, guideline/anomaly semantics, LEDES
++  dialect scope, extraction prompt schema, determinism
+ - `core/core.js` — dependency-free ES module (browser + Node)
+-- `core/core.test.js` — node:test suite
++- `core/ledes.js` — deterministic LEDES 1998B parser
++- `core/core.test.js`, `core/ledes.test.js` — node:test suites
+ - `examples/` — fictional worked example + runner + outputs
+ - `demo/index.html` — standalone demo using the shared design tokens
+ 
+ ## Disclaimer
+ 
+-All example data fictional. Parsing LEDES/invoices into ledger JSON may be
+-LLM-assisted (schema in spec.md), but compliance checks, variance, flags, and
+-rollups are pure code. Not legal or billing advice.
++All example data fictional. Non-LEDES invoice formats may be LLM-assisted
++(schema in spec.md); LEDES 1998B parsing and all compliance checks, variance,
++drivers, flags, talking points, and rollups are pure code. Not legal or
++billing advice.
+diff --git a/open-artifacts/outside-counsel-spend/core/core.js b/open-artifacts/outside-counsel-spend/core/core.js
+index a3330db..01c401d 100644
+--- a/open-artifacts/outside-counsel-spend/core/core.js
++++ b/open-artifacts/outside-counsel-spend/core/core.js
+@@ -55,10 +55,12 @@ function billedCents(e) {
+ }
+ 
+ /** Default settings (rules-as-data; override via input.settings).
+- * @type {{ rateToleranceUsd: number, writeOffFlagPct: number }} */
++ * @type {{ rateToleranceUsd: number, writeOffFlagPct: number, rateCreepPct: number, hoursSpikeFactor: number }} */
+ export const DEFAULT_SETTINGS = {
+   rateToleranceUsd: 0, // allowed excess over the card rate before "over_rate"
+   writeOffFlagPct: 10, // write-off as % of bill that triggers a flag
++  rateCreepPct: 10, // realized-rate increase (% period over period) that flags rate_creep
++  hoursSpikeFactor: 2, // hours multiple (period over period) that flags hours_spike
+ };
+ 
+ /* ---------- rate-card resolution ---------- */
+@@ -216,6 +218,15 @@ export function computeBudgetVariance(input) {
+       continue;
+     }
+     const varianceC = netC - approvedC;
++    // Variance drivers: the top-3 largest billed entries of an over-budget
++    // pair — the "why it's over", cited by entry id and amount.
++    const drivers = varianceC > 0
++      ? entriesOf(p.matterId, p.firmId)
++          .map((e) => ({ id: e.id, amtC: billedCents(e) }))
++          .sort((a, b) => b.amtC - a.amtC || String(a.id).localeCompare(String(b.id)))
++          .slice(0, 3)
++          .map((d) => ({ entryId: d.id, amount: toUsd(d.amtC) }))
++      : undefined;
+     out.push({
+       matterId: p.matterId, firmId: p.firmId,
+       gross: toUsd(p.grossC), writeOffs: toUsd(p.writeOffC), net: toUsd(netC),
+@@ -224,6 +235,7 @@ export function computeBudgetVariance(input) {
+       variancePct: approvedC === 0 ? null : Math.round((varianceC / approvedC) * 10000) / 100,
+       status: varianceC > 0 ? "over" : "within",
+       budgetScopes,
++      ...(drivers ? { drivers } : {}),
+     });
+   }
+   out.sort((a, b) => String(a.matterId).localeCompare(String(b.matterId)) || String(a.firmId).localeCompare(String(b.firmId)));
+@@ -267,6 +279,220 @@ export function flagWriteOffs(input) {
+   return flags;
+ }
+ 
++/* ---------- billing-guideline rules engine ---------- */
++
++/**
++ * Check the ledger against typed billing-guideline rules (rules-as-data in
++ * `input.guidelines`). Four rule types, all deterministic and countable:
++ *
++ *   block_billing       — narrative splits into `minPhrases` (default 2)
++ *                         ";"- or " / "-separated activity phrases, or exceeds
++ *                         `maxWords` (default 40). Impact = full billed amount
++ *                         (non-compliant entries are typically non-compensable).
++ *   disallowed_expense  — disbursement `category` over `capUsd`.
++ *                         Impact = the excess over the cap.
++ *   max_hours_per_day   — timekeeper (per firm) exceeds `maxHours` on one date
++ *                         across entries. Impact = over-cap hours × entry rate,
++ *                         allocated in ledger order. One finding per day.
++ *   staffing_ratio      — matter-wide non-senior hours / senior hours below
++ *                         `minRatio` (senior levels = `seniorLevels`, default
++ *                         ["partner"]). Informational: no dollar impact.
++ *
++ * An unknown rule type surfaces as an `unknown_rule_type` finding — a
++ * misconfigured guideline is visible, never silently ignored.
++ *
++ * @param {{ ledger?: any[], guidelines?: any[] }} input
++ * @returns {any[]} findings ledger rows (kind "guideline", flag = rule type)
++ */
++export function checkGuidelines(input) {
++  const ledger = input.ledger ?? [];
++  const findings = [];
++  for (const rule of input.guidelines ?? []) {
++    const base = { kind: "guideline", ruleId: rule.id ?? null, ruleType: rule.type ?? null };
++    switch (rule.type) {
++      case "block_billing": {
++        const minPhrases = rule.minPhrases ?? 2;
++        const maxWords = rule.maxWords ?? 40;
++        for (const e of ledger) {
++          if ((e.type ?? "fee") !== "fee" || typeof e.narrative !== "string" || !e.narrative.trim()) continue;
++          const segments = e.narrative.split(/;|\s\/\s/).map((s) => s.trim()).filter(Boolean);
++          const words = e.narrative.trim().split(/\s+/).filter(Boolean).length;
++          const why = segments.length >= minPhrases
++            ? `${segments.length} activities in one entry (separator-joined)`
++            : `${words} words (cap ${maxWords})`;
++          if (segments.length >= minPhrases || words > maxWords) {
++            findings.push({
++              ...base, flag: "block_billing", entryId: e.id, entryIds: [e.id],
++              matterId: e.matterId, firmId: e.firmId, period: e.period,
++              amountImpact: toUsd(billedCents(e)),
++              detail: `${why} — rule ${rule.id} treats the entry as block-billed; impact is the full billed amount (${toUsd(billedCents(e))})`,
++            });
++          }
++        }
++        break;
++      }
++      case "disallowed_expense": {
++        const capC = toCents(rule.capUsd ?? 0);
++        for (const e of ledger) {
++          if ((e.type ?? "fee") !== "disbursement") continue;
++          if (String(e.category ?? "") !== String(rule.category)) continue;
++          const amtC = billedCents(e);
++          if (amtC > capC) {
++            findings.push({
++              ...base, flag: "disallowed_expense", entryId: e.id, entryIds: [e.id],
++              matterId: e.matterId, firmId: e.firmId, period: e.period,
++              amountImpact: toUsd(amtC - capC),
++              detail: `category "${rule.category}" billed ${toUsd(amtC)} over the ${toUsd(capC)} cap (rule ${rule.id}) — excess ${toUsd(amtC - capC)}`,
++            });
++          }
++        }
++        break;
++      }
++      case "max_hours_per_day": {
++        const maxH = rule.maxHours ?? 24;
++        const groups = new Map();
++        for (const e of ledger) {
++          if ((e.type ?? "fee") !== "fee" || e.hours === undefined || e.hours === null) continue;
++          const key = `${e.firmId}::${e.timekeeper ?? "(none)"}::${e.date}`;
++          if (!groups.has(key)) groups.set(key, []);
++          groups.get(key).push(e);
++        }
++        for (const [key, entries] of groups) {
++          const totalCentiH = entries.reduce((s, e) => s + toCents(e.hours), 0);
++          if (totalCentiH <= maxH * 100) continue;
++          const maxCentiH = maxH * 100;
++          let used = 0;
++          let impactC = 0;
++          for (const e of entries) {
++            const start = used;
++            used += toCents(e.hours);
++            const overflowC = Math.max(0, used - maxCentiH) - Math.max(0, start - maxCentiH);
++            if (overflowC > 0 && e.rate !== undefined && e.rate !== null) impactC += Math.round((overflowC * toCents(e.rate)) / 100);
++          }
++          const [firmId, tk, date] = key.split("::");
++          const totalH = totalCentiH / 100;
++          findings.push({
++            ...base, flag: "max_hours_per_day", entryId: entries[0].id, entryIds: entries.map((e) => e.id),
++            matterId: entries[0].matterId, firmId, period: entries[0].period,
++            totalHours: Math.round(totalH * 100) / 100, amountImpact: toUsd(impactC),
++            detail: `${tk} billed ${Math.round(totalH * 100) / 100}h on ${date} across ${entries.length} entries (cap ${maxH}h, rule ${rule.id}) — over-cap portion billed at entry rates is ${toUsd(impactC)}`,
++          });
++        }
++        break;
++      }
++      case "staffing_ratio": {
++        const minRatio = rule.minRatio ?? 0;
++        const seniorLevels = new Set(rule.seniorLevels ?? ["partner"]);
++        const byMatter = new Map();
++        for (const e of ledger) {
++          if ((e.type ?? "fee") !== "fee" || e.hours === undefined || e.hours === null) continue;
++          const m = byMatter.get(e.matterId) ?? { seniorCentiH: 0, juniorCentiH: 0, entryIds: [] };
++          if (seniorLevels.has(e.level)) m.seniorCentiH += toCents(e.hours);
++          else m.juniorCentiH += toCents(e.hours);
++          m.entryIds.push(e.id);
++          byMatter.set(e.matterId, m);
++        }
++        for (const [matterId, m] of byMatter) {
++          if (m.seniorCentiH <= 0) continue; // no senior hours → ratio undefined, not flagged
++          const ratio = Math.round((m.juniorCentiH / m.seniorCentiH) * 100) / 100;
++          if (ratio < minRatio) {
++            findings.push({
++              ...base, flag: "staffing_ratio", entryId: null, entryIds: m.entryIds,
++              matterId, firmId: null, period: null, amountImpact: null,
++              detail: `junior/senior staffing ratio ${ratio} on matter ${matterId} is below the ${minRatio} minimum (rule ${rule.id}) — ${m.juniorCentiH / 100} non-senior hours vs ${m.seniorCentiH / 100} senior hours`,
++            });
++          }
++        }
++        break;
++      }
++      default:
++        findings.push({
++          ...base, flag: "unknown_rule_type", entryId: null, entryIds: [],
++          matterId: null, firmId: null, period: null, amountImpact: null,
++          detail: `rule ${rule.id} has unknown type "${rule.type}" — not evaluated; fix the guideline definition`,
++        });
++    }
++  }
++  return findings;
++}
++
++/* ---------- anomaly flags ---------- */
++
++/**
++ * Trend flags per firm × timekeeper across consecutive periods (a period
++ * counts when the timekeeper has hourly fee entries in it):
++ *
++ *   rate_creep   — realized rate (fees ÷ hours) rises by more than
++ *                  `rateCreepPct`% (default 10) over the prior period.
++ *   hours_spike  — hours exceed `hoursSpikeFactor` × (default 2) the prior
++ *                  period's hours.
++ *
++ * Comparisons use integer cross-multiplication (cents × centihours) — no
++ * float division in the decision itself.
++ * @param {{ ledger?: any[], settings?: any }} input
++ * @returns {any[]} findings ledger rows (kind "anomaly")
++ */
++export function flagAnomalies(input) {
++  const creepBp = Math.round((input.settings?.rateCreepPct ?? DEFAULT_SETTINGS.rateCreepPct) * 100);
++  const spikeFactorC = Math.round((input.settings?.hoursSpikeFactor ?? DEFAULT_SETTINGS.hoursSpikeFactor) * 100);
++  const byTk = new Map();
++  for (const e of input.ledger ?? []) {
++    if ((e.type ?? "fee") !== "fee" || e.hours === undefined || e.hours === null) continue;
++    if (!e.timekeeper) continue;
++    const key = `${e.firmId}::${e.timekeeper}`;
++    const m = byTk.get(key) ?? {};
++    const p = m[e.period] ?? { feeC: 0, centiH: 0, entryIds: [] };
++    p.feeC += billedCents(e);
++    p.centiH += toCents(e.hours);
++    p.entryIds.push(e.id);
++    m[e.period] = p;
++    byTk.set(key, m);
++  }
++  const flags = [];
++  for (const [key, periods] of byTk) {
++    const [firmId, timekeeper] = key.split("::");
++    const names = Object.keys(periods).sort();
++    for (let i = 1; i < names.length; i++) {
++      const a = periods[names[i - 1]];
++      const b = periods[names[i]];
++      if (a.centiH <= 0 || b.centiH <= 0) continue;
++      // rateB/rateA > 1 + creep%  ⇔  feeB·centiHA·10000 > feeA·centiHB·(10000 + creepBp)
++      const lhs = b.feeC * a.centiH * 10000;
++      const rhs = a.feeC * b.centiH * (10000 + creepBp);
++      if (a.feeC > 0 && lhs > rhs) {
++        const deltaBp = Math.round(((b.feeC * a.centiH - a.feeC * b.centiH) * 10000) / (a.feeC * b.centiH));
++        const fromRate = toUsd(Math.round((a.feeC * 100) / a.centiH));
++        const toRate = toUsd(Math.round((b.feeC * 100) / b.centiH));
++        flags.push({
++          kind: "anomaly", flag: "rate_creep", firmId, timekeeper,
++          fromPeriod: names[i - 1], toPeriod: names[i],
++          fromRate, toRate, deltaPct: deltaBp / 100,
++          entryIds: [...a.entryIds, ...b.entryIds], amountImpact: null,
++          detail: `realized rate rose from ${fromRate}/h to ${toRate}/h (+${deltaBp / 100}%, threshold ${creepBp / 100}%) between ${names[i - 1]} and ${names[i]}`,
++        });
++      }
++      // hoursB > factor × hoursA  ⇔  centiHB > factor × centiHA (integers)
++      if (b.centiH * 100 > spikeFactorC * a.centiH) {
++        const fromHours = a.centiH / 100;
++        const toHours = b.centiH / 100;
++        flags.push({
++          kind: "anomaly", flag: "hours_spike", firmId, timekeeper,
++          fromPeriod: names[i - 1], toPeriod: names[i],
++          fromHours: Math.round(fromHours * 100) / 100, toHours: Math.round(toHours * 100) / 100,
++          entryIds: [...a.entryIds, ...b.entryIds], amountImpact: null,
++          detail: `${Math.round(toHours * 100) / 100}h in ${names[i]} vs ${Math.round(fromHours * 100) / 100}h in ${names[i - 1]} — more than ${spikeFactorC / 100}× the prior period`,
++        });
++      }
++    }
++  }
++  flags.sort((x, y) =>
++    String(x.firmId).localeCompare(String(y.firmId)) ||
++    String(x.timekeeper).localeCompare(String(y.timekeeper)) ||
++    x.fromPeriod.localeCompare(y.fromPeriod) ||
++    x.flag.localeCompare(y.flag));
++  return flags;
++}
++
+ /* ---------- period rollups ---------- */
+ 
+ /**
+@@ -317,6 +543,8 @@ export function runSpendAudit(input) {
+   const rate = checkRateCompliance(input);
+   const budgets = computeBudgetVariance(input);
+   const writeOffs = flagWriteOffs(input);
++  const guidelines = checkGuidelines(input);
++  const anomalies = flagAnomalies(input);
+   const rollups = rollupByPeriod(input);
+ 
+   const grossC = (input.ledger ?? []).reduce((s, e) => s + billedCents(e), 0);
+@@ -337,10 +565,14 @@ export function runSpendAudit(input) {
+       overBudget: budgets.filter((b) => b.status === "over").length,
+       unbudgeted: budgets.filter((b) => b.status === "unbudgeted").length,
+       writeOffFlags: writeOffs.length,
++      guidelineFlags: guidelines.length,
++      anomalyFlags: anomalies.length,
+     },
+     rateFindings: rate.findings,
+     budgetVariances: budgets,
+     writeOffFlags: writeOffs,
++    guidelineFindings: guidelines,
++    anomalyFlags: anomalies,
+     periodRollups: rollups,
+   };
+ }
+@@ -366,6 +598,8 @@ export function auditToCsv(audit) {
+       .filter((b) => b.status !== "within")
+       .map((b) => ["budget", `${b.matterId}×${b.firmId}`, b.matterId, b.firmId, "", b.status, b.status === "over" ? `net spend ${b.net} exceeds approved ${b.approved} by ${b.variance} (${b.variancePct}%)` : `no budget found for this matter × firm (net spend ${b.net})`, b.status === "over" ? b.variance : b.net]),
+     ...audit.writeOffFlags.map((w) => ["write_off", w.entryId, w.matterId, w.firmId, w.period, w.flag, w.detail, w.writeOff]),
++    ...(audit.guidelineFindings ?? []).map((g) => ["guideline", g.entryId ?? g.ruleId, g.matterId ?? "", g.firmId ?? "", g.period ?? "", g.flag, g.detail, g.amountImpact ?? ""]),
++    ...(audit.anomalyFlags ?? []).map((a) => ["anomaly", a.entryIds.join("+"), "", a.firmId, `${a.fromPeriod}→${a.toPeriod}`, a.flag, a.detail, a.amountImpact ?? ""]),
+   ];
+   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+ }
+@@ -401,10 +635,11 @@ export function renderReport(audit, names = {}) {
+   }
+   lines.push("## Budget variance (net of write-offs)");
+   lines.push("");
+-  lines.push("| Matter | Firm | Net | Approved | Variance | Status |");
+-  lines.push("|---|---|---|---|---|---|");
++  lines.push("| Matter | Firm | Net | Approved | Variance | Drivers | Status |");
++  lines.push("|---|---|---|---|---|---|---|");
+   for (const b of audit.budgetVariances) {
+-    lines.push(`| ${matter(b.matterId)} | ${firm(b.firmId)} | ${b.net} | ${b.approved ?? "—"} | ${b.variance !== null ? `${b.variance}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}` : "—"} | ${b.status} |`);
++    const drivers = b.drivers ? b.drivers.map((d) => `${d.entryId} (${d.amount})`).join(", ") : "—";
++    lines.push(`| ${matter(b.matterId)} | ${firm(b.firmId)} | ${b.net} | ${b.approved ?? "—"} | ${b.variance !== null ? `${b.variance}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}` : "—"} | ${drivers} | ${b.status} |`);
+   }
+   lines.push("");
+   if (audit.writeOffFlags.length) {
+@@ -413,6 +648,18 @@ export function renderReport(audit, names = {}) {
+     for (const w of audit.writeOffFlags) lines.push(`- \`${w.entryId}\` · ${matter(w.matterId)} × ${firm(w.firmId)} · ${w.period} — ${w.detail}.`);
+     lines.push("");
+   }
++  if ((audit.guidelineFindings ?? []).length) {
++    lines.push("## Billing-guideline flags");
++    lines.push("");
++    for (const g of audit.guidelineFindings) lines.push(`- rule \`${g.ruleId}\` · **${g.flag}** · ${g.entryIds.length === 1 ? `entry \`${g.entryIds[0]}\`` : `${g.entryIds.length} entries (${g.entryIds.map((i) => `\`${i}\``).join(", ")})`} · ${g.detail}.`);
++    lines.push("");
++  }
++  if ((audit.anomalyFlags ?? []).length) {
++    lines.push("## Anomaly flags");
++    lines.push("");
++    for (const a of audit.anomalyFlags) lines.push(`- \`${a.flag}\` · ${firm(a.firmId)} · ${a.timekeeper} · ${a.fromPeriod}→${a.toPeriod} — ${a.detail} (entries ${a.entryIds.map((i) => `\`${i}\``).join(", ")}).`);
++    lines.push("");
++  }
+   lines.push("## Period rollups");
+   lines.push("");
+   lines.push("| Period | Entries | Fees | Disbursements | Write-offs | Net |");
+@@ -423,3 +670,77 @@ export function renderReport(audit, names = {}) {
+   lines.push("");
+   return lines.join("\n");
+ }
++
++/**
++ * Partner-review talking points — one section per firm, reproducible from the
++ * audit: totals tie to `audit.summary`, and every claim cites a finding id
++ * (budget claims cite variance-driver entry ids). Counterpart: an LLM drafts
++ * these per run; here they are deterministic code output.
++ * @param {any} audit — output of runSpendAudit
++ * @param {{ firmNames?: Record<string,string>, matterNames?: Record<string,string> }} [names]
++ * @returns {string}
++ */
++export function renderTalkingPoints(audit, names = {}) {
++  const firm = (f) => names.firmNames?.[f] ?? f;
++  const matter = (m) => names.matterNames?.[m] ?? m;
++  const firmIds = [...new Set([
++    ...audit.rateFindings.map((f) => f.firmId),
++    ...audit.budgetVariances.map((b) => b.firmId),
++    ...audit.writeOffFlags.map((w) => w.firmId),
++    ...(audit.guidelineFindings ?? []).map((g) => g.firmId),
++    ...(audit.anomalyFlags ?? []).map((a) => a.firmId),
++  ])].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
++
++  // firm net spend (cents) from period rollups — ties to summary.netSpend
++  const firmNetC = {};
++  for (const p of audit.periodRollups) {
++    for (const [f, v] of Object.entries(p.byFirm)) firmNetC[f] = Math.round((firmNetC[f] ?? 0) + v * 100);
++  }
++
++  const lines = [];
++  lines.push("# Partner-review talking points");
++  lines.push("");
++  lines.push(`Generated deterministically from the audit — totals tie to the summary; every claim cites a finding or driver id. ${audit.summary.entries} entries, ${audit.summary.rateExceptions} rate exceptions, ${audit.summary.overBudget} over-budget pairs, ${audit.summary.writeOffFlags} write-off flags, ${audit.summary.guidelineFlags ?? 0} guideline flags, ${audit.summary.anomalyFlags ?? 0} anomaly flags.`);
++  lines.push("");
++  for (const fid of firmIds) {
++    lines.push(`## ${firm(fid)}`);
++    lines.push("");
++    const matters = [...new Set(audit.budgetVariances.filter((b) => String(b.firmId) === String(fid)).map((b) => b.matterId))];
++    lines.push(`- Net spend ${toUsd(firmNetC[fid] ?? 0)} across ${matters.length} matter(s).`);
++    for (const b of audit.budgetVariances.filter((x) => String(x.firmId) === String(fid))) {
++      if (b.status === "over") {
++        lines.push(`- ${matter(b.matterId)}: over budget by ${b.variance} (${b.variancePct}%) — drivers ${b.drivers.map((d) => `\`${d.entryId}\` (${d.amount})`).join(", ")}.`);
++      } else if (b.status === "unbudgeted") {
++        lines.push(`- ${matter(b.matterId)}: unbudgeted — net spend ${b.net} with no approved budget on file.`);
++      } else {
++        lines.push(`- ${matter(b.matterId)}: within budget (net ${b.net} of ${b.approved}).`);
++      }
++    }
++    const rates = audit.rateFindings.filter((f) => String(f.firmId) === String(fid));
++    if (rates.length) {
++      lines.push(`- Rate exceptions (${rates.length}):`);
++      for (const f of rates) lines.push(`  - \`${f.entryId}\` ${f.status}${f.amountImpact !== null ? `, impact ${f.amountImpact}` : ""} — ${f.detail}.`);
++    }
++    const wos = audit.writeOffFlags.filter((w) => String(w.firmId) === String(fid));
++    if (wos.length) {
++      lines.push(`- Write-off flags (${wos.length}):`);
++      for (const w of wos) lines.push(`  - \`${w.entryId}\` ${w.writeOffPct}% of the ${w.amount} bill — ${w.detail.split(" — ")[0]}.`);
++    }
++    const gs = (audit.guidelineFindings ?? []).filter((g) => g.firmId !== null && String(g.firmId) === String(fid));
++    if (gs.length) {
++      lines.push(`- Billing-guideline flags (${gs.length}):`);
++      for (const g of gs) lines.push(`  - \`${g.entryIds[0] ?? g.ruleId}\` rule \`${g.ruleId}\` ${g.flag}${g.amountImpact !== null ? `, impact ${g.amountImpact}` : ""}.`);
++    }
++    const ans = (audit.anomalyFlags ?? []).filter((a) => String(a.firmId) === String(fid));
++    if (ans.length) {
++      lines.push(`- Anomaly flags (${ans.length}):`);
++      for (const a of ans) lines.push(`  - ${a.flag} — ${a.detail} (entries ${a.entryIds.map((i) => `\`${i}\``).join(", ")}).`);
++    }
++    lines.push("");
++  }
++  lines.push(`**Total net spend: ${audit.summary.netSpend} — ties to audit summary.netSpend.**`);
++  lines.push("");
++  lines.push("_All data fictional. Reproducible from the same audit input; not legal or billing advice._");
++  lines.push("");
++  return lines.join("\n");
++}
+diff --git a/open-artifacts/outside-counsel-spend/core/core.test.js b/open-artifacts/outside-counsel-spend/core/core.test.js
+index cfba5c1..a8dbdb2 100644
+--- a/open-artifacts/outside-counsel-spend/core/core.test.js
++++ b/open-artifacts/outside-counsel-spend/core/core.test.js
+@@ -1,10 +1,12 @@
+ /** Tests for outside-counsel-spend core. Run: node --test "core/*.test.js" (from artifact root) */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
+ import {
+   parseDate, toCents, toUsd, resolveRateCard,
+   checkRateCompliance, computeBudgetVariance, flagWriteOffs,
+   rollupByPeriod, runSpendAudit, auditToCsv, auditToJson, renderReport,
++  checkGuidelines, flagAnomalies, renderTalkingPoints,
+ } from "./core.js";
+ 
+ const RATE_CARDS = [
+@@ -140,8 +142,8 @@ test("auditToCsv emits one row per actionable finding with header and escapes",
+   const a = runSpendAudit(INPUT);
+   const csv = auditToCsv(a);
+   const lines = csv.trim().split("\n");
+-  // rate 4 + budget 2 (over + unbudgeted) + write_off 1 = 7 findings + header
+-  assert.equal(lines.length, 8);
++  // rate 4 + budget 2 (over + unbudgeted) + write_off 1 + anomaly 2 (S. Ito rate_creep 2026-08→09 and hours_spike 3h→13h) = 9 findings + header
++  assert.equal(lines.length, 10);
+   assert.match(lines[0], /^kind,ref,matterId/);
+   assert.match(csv, /rate,L-003,.*over_rate/);
+   assert.match(csv, /budget,M-210×HPL/);
+@@ -171,3 +173,183 @@ test("parseDate rejects rollover dates; toCents/toUsd round-trip", () => {
+   assert.equal(toCents(445.1), 44510);
+   assert.equal(toUsd(44510), 445.1);
+ });
++
++/* ---------- billing-guideline rules engine ---------- */
++
++const GUIDELINES = [
++  { id: "BG-01", type: "block_billing", minPhrases: 2, maxWords: 45 },
++  { id: "DE-01", type: "disallowed_expense", category: "meals", capUsd: 75 },
++  { id: "HD-01", type: "max_hours_per_day", maxHours: 10 },
++  { id: "SR-01", type: "staffing_ratio", minRatio: 1.5 },
++];
++
++test("checkGuidelines flags block-billing narratives with the rule id and billed amount", () => {
++  const input = {
++    ledger: [
++      { id: "G-001", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-02", timekeeper: "T. Kay", level: "associate", hours: 2, rate: 400, narrative: "Draft brief; call with client; research." },
++    ],
++    guidelines: GUIDELINES,
++  };
++  const findings = checkGuidelines(input);
++  const bb = findings.find((f) => f.flag === "block_billing");
++  assert.ok(bb, "block_billing finding present");
++  assert.equal(bb.ruleId, "BG-01");
++  assert.equal(bb.entryId, "G-001");
++  assert.equal(bb.amountImpact, 800); // full billed amount of the non-compliant entry
++  assert.match(bb.detail, /3 activities/);
++});
++
++test("checkGuidelines block_billing also fires on word-count over the rule cap", () => {
++  const long = Array.from({ length: 50 }, (_, i) => `word${i}`).join(" ");
++  const input = {
++    ledger: [{ id: "G-002", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-03", timekeeper: "T. Kay", level: "associate", hours: 1, rate: 400, narrative: long }],
++    guidelines: [{ id: "BG-02", type: "block_billing", minPhrases: 2, maxWords: 45 }],
++  };
++  const bb = checkGuidelines(input).find((f) => f.flag === "block_billing");
++  assert.ok(bb);
++  assert.equal(bb.ruleId, "BG-02");
++  assert.match(bb.detail, /50 words/);
++});
++
++test("checkGuidelines flags meal disbursements over the category cap with the excess as impact", () => {
++  const input = {
++    ledger: [
++      { id: "G-010", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-20", type: "disbursement", category: "meals", amount: 214.75, narrative: "Team dinner during filing week." },
++      { id: "G-011", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-21", type: "disbursement", category: "meals", amount: 41.0, narrative: "Working lunch." },
++      { id: "G-012", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-22", type: "disbursement", category: "printing", amount: 300, narrative: "Printing." },
++    ],
++    guidelines: GUIDELINES,
++  };
++  const f = checkGuidelines(input).filter((x) => x.flag === "disallowed_expense");
++  assert.equal(f.length, 1); // only the over-cap meal fires
++  assert.equal(f[0].entryId, "G-010");
++  assert.equal(f[0].ruleId, "DE-01");
++  assert.equal(f[0].amountImpact, 139.75); // 214.75 − 75 cap
++});
++
++test("checkGuidelines max_hours_per_day flags timekeeper-days over the cap with over-cap dollars", () => {
++  const mk = (id, date, hours) => ({ id, matterId: "M-1", firmId: "F", period: "2026-09", date, timekeeper: "T. Kay", level: "associate", hours, rate: 400, narrative: "Work." });
++  const input = {
++    ledger: [mk("G-020", "2026-09-02", 6), mk("G-021", "2026-09-02", 6), mk("G-022", "2026-09-03", 4)],
++    guidelines: GUIDELINES,
++  };
++  const f = checkGuidelines(input).filter((x) => x.flag === "max_hours_per_day");
++  assert.equal(f.length, 1); // one finding per timekeeper-day
++  assert.deepEqual(f[0].entryIds, ["G-020", "G-021"]);
++  assert.equal(f[0].totalHours, 12);
++  assert.equal(f[0].amountImpact, 800); // 2 hours beyond the 10h cap at $400/h
++});
++
++test("checkGuidelines staffing_ratio flags matters staffed below the minimum junior/senior ratio", () => {
++  const mk = (id, level, hours) => ({ id, matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-04", timekeeper: "X", level, hours, rate: 400, narrative: "Work." });
++  const input = {
++    ledger: [mk("G-030", "partner", 10), mk("G-031", "associate", 5)],
++    guidelines: GUIDELINES,
++  };
++  const f = checkGuidelines(input).find((x) => x.flag === "staffing_ratio");
++  assert.ok(f);
++  assert.equal(f.ruleId, "SR-01");
++  assert.equal(f.matterId, "M-1");
++  assert.match(f.detail, /0.5/); // 5 junior hours / 10 senior hours
++  // an unknown rule type surfaces instead of being silently ignored
++  const bogus = checkGuidelines({ ledger: [], guidelines: [{ id: "X-1", type: "bogus" }] });
++  assert.equal(bogus[0].flag, "unknown_rule_type");
++});
++
++/* ---------- variance drivers ---------- */
++
++test("computeBudgetVariance attaches top-3 drivers to over-budget pairs only", () => {
++  const rows = computeBudgetVariance(INPUT);
++  const m210 = rows.find((r) => r.matterId === "M-210" && r.firmId === "HPL");
++  assert.equal(m210.status, "over");
++  assert.deepEqual(m210.drivers, [
++    { entryId: "L-001", amount: 3400 },
++    { entryId: "L-002", amount: 2892.5 },
++    { entryId: "L-003", amount: 1850 },
++  ]);
++  const m211 = rows.find((r) => r.matterId === "M-211" && r.firmId === "HPL");
++  assert.equal(m211.status, "within");
++  assert.equal(m211.drivers, undefined);
++});
++
++/* ---------- anomaly flags ---------- */
++
++const TREND_LEDGER = [
++  { id: "T-001", matterId: "M-1", firmId: "F1", period: "2026-01", date: "2026-01-10", timekeeper: "R. Voss", level: "associate", hours: 10, rate: 400, narrative: "Drafting." },
++  { id: "T-002", matterId: "M-1", firmId: "F1", period: "2026-02", date: "2026-02-10", timekeeper: "R. Voss", level: "associate", hours: 3, rate: 450, narrative: "Drafting." },
++  { id: "T-003", matterId: "M-1", firmId: "F1", period: "2026-03", date: "2026-03-10", timekeeper: "R. Voss", level: "associate", hours: 7, rate: 460, narrative: "Drafting." },
++];
++
++test("flagAnomalies raises rate_creep with periods, rates, and delta", () => {
++  const flags = flagAnomalies({ ledger: TREND_LEDGER });
++  const creep = flags.find((f) => f.flag === "rate_creep");
++  assert.ok(creep);
++  assert.equal(creep.timekeeper, "R. Voss");
++  assert.equal(creep.fromPeriod, "2026-01");
++  assert.equal(creep.toPeriod, "2026-02");
++  assert.equal(creep.fromRate, 400);
++  assert.equal(creep.toRate, 450);
++  assert.equal(creep.deltaPct, 12.5);
++  assert.deepEqual(creep.entryIds, ["T-001", "T-002"]);
++});
++
++test("flagAnomalies raises hours_spike beyond twice the prior period", () => {
++  const flags = flagAnomalies({ ledger: TREND_LEDGER });
++  const spike = flags.find((f) => f.flag === "hours_spike");
++  assert.ok(spike); // 7h in March > 2 × 3h in February
++  assert.equal(spike.fromHours, 3);
++  assert.equal(spike.toHours, 7);
++  assert.deepEqual(spike.entryIds, ["T-002", "T-003"]);
++  assert.equal(flags.filter((f) => f.flag === "rate_creep").length, 1); // 450→460 is +2.2%, no second creep
++});
++
++test("flagAnomalies thresholds are rules-as-data", () => {
++  const lenient = flagAnomalies({ ledger: TREND_LEDGER, settings: { rateCreepPct: 20, hoursSpikeFactor: 3 } });
++  assert.equal(lenient.length, 0);
++});
++
++/* ---------- talking points ---------- */
++
++test("renderTalkingPoints sections cite exactly each firm's finding ids and tie totals to the summary", () => {
++  const a = runSpendAudit(INPUT);
++  const md = renderTalkingPoints(a, {
++    firmNames: { HPL: "Hale & Prior LLP", MVL: "Merrick Vaughan LLP" },
++    matterNames: { "M-210": "Project Kite", "M-211": "Atlas IP", "M-212": "Dune merger" },
++  });
++  const sections = md.split("\n## ").slice(1).map((s) => s.split("\n")[0]);
++  assert.deepEqual(sections, ["Hale & Prior LLP", "Merrick Vaughan LLP"]); // sorted by firm id
++  const section = (name) => { const start = md.indexOf(`\n## ${name}`); const end = md.indexOf("\n## ", start + 1); return md.slice(start, end > -1 ? end : undefined); };
++  const hplIds = new Set([...section("Hale & Prior LLP").matchAll(/L-\d+/g)].map((m) => m[0]));
++  const mvlIds = new Set([...section("Merrick Vaughan LLP").matchAll(/L-\d+/g)].map((m) => m[0]));
++  // every HPL finding id appears in the HPL section; no MVL finding id leaks in
++  for (const id of ["L-003", "L-005", "L-010"]) assert.ok(hplIds.has(id), `${id} in HPL section`);
++  for (const id of ["L-006", "L-007"]) assert.ok(!hplIds.has(id), `${id} not in HPL section`);
++  for (const id of ["L-006", "L-007"]) assert.ok(mvlIds.has(id), `${id} in MVL section`);
++  // grand total ties to the audit summary
++  assert.ok(md.includes(`Total net spend: ${a.summary.netSpend}`));
++});
++
++/* ---------- audit integration + counterpart attribution ---------- */
++
++test("runSpendAudit and exports include guideline and anomaly findings", () => {
++  const a = runSpendAudit({ ...INPUT, guidelines: GUIDELINES });
++  assert.equal(a.summary.guidelineFlags, a.guidelineFindings.length);
++  assert.ok(a.summary.guidelineFlags > 0);
++  assert.equal(a.summary.anomalyFlags, a.anomalyFlags.length);
++  const csv = auditToCsv(a);
++  assert.match(csv, /guideline,L-010,M-211,HPL,2026-09,block_billing/); // L-010's multi-activity narrative trips BG-01
++  assert.match(csv, /BG-01/);
++  assert.match(csv, /anomaly,/);
++  const md = renderReport(a);
++  assert.match(md, /Billing-guideline flags/);
++  assert.match(md, /Anomaly flags/);
++});
++
++test("spec and README cite the verified counterpart description, not the unverified one", () => {
++  const spec = readFileSync(new URL("../spec.md", import.meta.url), "utf8");
++  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
++  for (const doc of [spec, readme]) {
++    assert.ok(!doc.includes("flag unusual billing patterns"), "unverified quote removed");
++    assert.ok(doc.includes("academy.claude.com/use-cases/outside-counsel-review"), "Academy citation present");
++  }
++});
+diff --git a/open-artifacts/outside-counsel-spend/core/ledes.js b/open-artifacts/outside-counsel-spend/core/ledes.js
+new file mode 100644
+index 0000000..5f16cf0
+--- /dev/null
++++ b/open-artifacts/outside-counsel-spend/core/ledes.js
+@@ -0,0 +1,138 @@
++/**
++ * outside-counsel-spend — deterministic LEDES 1998B parser.
++ *
++ * Parses pipe-delimited LEDES 1998B invoice text into the ledger-entry shape
++ * consumed by core.js — no LLM, no guessing. The first non-empty line is the
++ * header (verbatim LEDES field names, `[]` suffixes included); every
++ * subsequent non-empty line is one line item. Any malformed line becomes a
++ * structured error row and is skipped: numbers are never inferred.
++ *
++ * Supported dialect: LEDES 1998B line-item subset (documented). Fields used:
++ * LINE_ITEM_DATE[], EXP/FEE/INV_ADJ_TYPE[], LINE_ITEM_NUMBER_OF_UNITS[],
++ * LINE_ITEM_UNIT_COST[], LINE_ITEM_TOTAL[], LINE_ITEM_DESCRIPTION[],
++ * TIMEKEEPER_NAME[], TIMEKEEPER_LEVEL[], LAW_FIRM_MATTER_ID[] (→ matterId),
++ * LAW_FIRM_ID[] (→ firmId when present in the header).
++ *
++ * @module core/ledes
++ */
++
++const REQUIRED_COLUMNS = [
++  "LAW_FIRM_MATTER_ID[]",
++  "LINE_ITEM_DATE[]",
++  "EXP/FEE/INV_ADJ_TYPE[]",
++  "LINE_ITEM_NUMBER_OF_UNITS[]",
++  "LINE_ITEM_UNIT_COST[]",
++  "LINE_ITEM_TOTAL[]",
++  "LINE_ITEM_DESCRIPTION[]",
++];
++
++/** Parse a YYYYMMDD LEDES date to "YYYY-MM-DD" (null when invalid — never guessed).
++ * @param {string} raw @returns {string|null} */
++function ledesDate(raw) {
++  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(raw ?? "").trim());
++  if (!m) return null;
++  const [, y, mo, d] = m;
++  const month = +mo;
++  const day = +d;
++  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
++  const dt = new Date(Date.UTC(+y, month - 1, day));
++  if (dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return null;
++  return `${y}-${mo}-${d}`;
++}
++
++/** Parse a numeric field to a number (null when blank, NaN-free — never guessed).
++ * @param {string} raw @returns {number|null} */
++function ledesNumber(raw) {
++  const s = String(raw ?? "").trim().replace(/[$,]/g, "");
++  if (s === "") return null;
++  const n = Number(s);
++  return Number.isFinite(n) ? n : NaN; // caller distinguishes null (blank) from NaN (malformed)
++}
++
++/**
++ * Parse LEDES 1998B text into ledger entries plus structured errors.
++ *
++ * @param {string} text — raw LEDES file contents
++ * @param {{ firmId?: string }} [opts] — firmId fallback when the header has no
++ *        LAW_FIRM_ID[] column (LEDES 1998B firm identity often lives in the
++ *        filename/vendor envelope, not the line rows)
++ * @returns {{ ledger: any[], errors: Array<{ line: number, error: string, detail: string }> }}
++ */
++export function parseLedes(text, opts = {}) {
++  const lines = String(text ?? "")
++    .split(/\r?\n/)
++    .map((l, i) => ({ n: i + 1, l }))
++    .filter((x) => x.l.trim() !== "");
++
++  const ledger = [];
++  const errors = [];
++  if (lines.length === 0) return { ledger, errors };
++
++  const header = lines[0].l.split("|").map((h) => h.trim());
++  const missing = REQUIRED_COLUMNS.filter((c) => !header.includes(c));
++  if (missing.length > 0) {
++    errors.push({
++      line: lines[0].n,
++      error: "missing_columns",
++      detail: `header is missing required column(s): ${missing.join(", ")}`,
++    });
++    return { ledger, errors };
++  }
++  const col = (row, name) => row[header.indexOf(name)];
++
++  for (const { n, l } of lines.slice(1)) {
++    const row = l.split("|");
++    if (row.length !== header.length) {
++      errors.push({ line: n, error: "column_count", detail: `expected ${header.length} columns, got ${row.length}` });
++      continue;
++    }
++    const date = ledesDate(col(row, "LINE_ITEM_DATE[]"));
++    if (!date) {
++      errors.push({ line: n, error: "bad_date", detail: `LINE_ITEM_DATE[] "${col(row, "LINE_ITEM_DATE[]")}" is not a valid YYYYMMDD date` });
++      continue;
++    }
++    const typeRaw = String(col(row, "EXP/FEE/INV_ADJ_TYPE[]") ?? "").trim().toUpperCase();
++    if (typeRaw !== "F" && typeRaw !== "E") {
++      errors.push({ line: n, error: "bad_line_type", detail: `EXP/FEE/INV_ADJ_TYPE[] "${col(row, "EXP/FEE/INV_ADJ_TYPE[]")}" is not F (fee) or E (expense)` });
++      continue;
++    }
++    const units = ledesNumber(col(row, "LINE_ITEM_NUMBER_OF_UNITS[]"));
++    const unitCost = ledesNumber(col(row, "LINE_ITEM_UNIT_COST[]"));
++    const total = ledesNumber(col(row, "LINE_ITEM_TOTAL[]"));
++    const fee = typeRaw === "F";
++    // NaN = malformed number; fee lines additionally require units, unit cost,
++    // and total present; expense lines require only the total.
++    const badFields = [];
++    if (Number.isNaN(units)) badFields.push("LINE_ITEM_NUMBER_OF_UNITS[]");
++    if (Number.isNaN(unitCost)) badFields.push("LINE_ITEM_UNIT_COST[]");
++    if (Number.isNaN(total)) badFields.push("LINE_ITEM_TOTAL[]");
++    if (fee && badFields.length === 0 && (units === null || unitCost === null || total === null)) {
++      badFields.push("fee line is missing units, unit cost, or total");
++    }
++    if (!fee && badFields.length === 0 && total === null) {
++      badFields.push("expense line is missing LINE_ITEM_TOTAL[]");
++    }
++    if (badFields.length > 0) {
++      errors.push({ line: n, error: "bad_number", detail: `${badFields.join("; ")} — on \"${l}\"` });
++      continue;
++    }
++    const matterRaw = String(col(row, "LAW_FIRM_MATTER_ID[]") ?? "").trim();
++    const firmRaw = header.includes("LAW_FIRM_ID[]") ? String(col(row, "LAW_FIRM_ID[]") ?? "").trim() : "";
++    ledger.push({
++      id: `LIN-${ledger.length + 1}`,
++      matterId: matterRaw || null,
++      firmId: firmRaw || (opts.firmId ?? null),
++      period: date.slice(0, 7),
++      date,
++      type: fee ? "fee" : "disbursement",
++      billing: fee ? "hourly" : "flat",
++      hours: fee && units !== null ? units : null,
++      rate: fee && unitCost !== null ? unitCost : null,
++      amount: total,
++      timekeeper: String(col(row, "TIMEKEEPER_NAME[]") ?? "").trim() || null,
++      level: String(col(row, "TIMEKEEPER_LEVEL[]") ?? "").trim().toLowerCase() || null,
++      narrative: String(col(row, "LINE_ITEM_DESCRIPTION[]") ?? "").trim(),
++    });
++  }
++  return { ledger, errors };
++}
+diff --git a/open-artifacts/outside-counsel-spend/core/ledes.test.js b/open-artifacts/outside-counsel-spend/core/ledes.test.js
+new file mode 100644
+index 0000000..14cf79d
+--- /dev/null
++++ b/open-artifacts/outside-counsel-spend/core/ledes.test.js
+@@ -0,0 +1,85 @@
++/** Tests for the deterministic LEDES 1998B parser. Run: node --test "core/*.test.js" (from artifact root) */
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { parseLedes } from "./ledes.js";
++
++const HEADER =
++  "LEDES_FILE_TYPE[]|INVOICE_DATE[]|INVOICE_ID[]|CLIENT_ID[]|LAW_FIRM_MATTER_ID[]|LINE_ITEM_DATE[]|EXP/FEE/INV_ADJ_TYPE[]|LINE_ITEM_NUMBER_OF_UNITS[]|LINE_ITEM_UNIT_COST[]|LINE_ITEM_TOTAL[]|TIMEKEEPER_NAME[]|TIMEKEEPER_LEVEL[]|LINE_ITEM_DESCRIPTION[]";
++
++const DOC = [
++  HEADER,
++  "LEDES1998B|20260930|INV-100|ACME|M-210|20260903|F|4.0|850|3400.00|A. Reyes|Partner|Draft response to FDA 483 letter",
++  "LEDES1998B|20260930|INV-100|ACME|M-210|20260910|F|2.0|925|1850.00|A. Reyes|Partner|Client call and strategy",
++  "LEDES1998B|20260930|INV-100|ACME|M-210|20260928|E|1||1840.25|||Regulatory printing and courier",
++].join("\n");
++
++test("parseLedes maps a 3-line 1998B fixture to exact ledger entries", () => {
++  const { ledger, errors } = parseLedes(DOC, { firmId: "HPL" });
++  assert.equal(errors.length, 0);
++  assert.equal(ledger.length, 3);
++  assert.deepEqual(ledger[0], {
++    id: "LIN-1",
++    matterId: "M-210",
++    firmId: "HPL",
++    period: "2026-09",
++    date: "2026-09-03",
++    type: "fee",
++    billing: "hourly",
++    hours: 4,
++    rate: 850,
++    amount: 3400,
++    timekeeper: "A. Reyes",
++    level: "partner",
++    narrative: "Draft response to FDA 483 letter",
++  });
++  assert.deepEqual(ledger[2], {
++    id: "LIN-3",
++    matterId: "M-210",
++    firmId: "HPL",
++    period: "2026-09",
++    date: "2026-09-28",
++    type: "disbursement",
++    billing: "flat",
++    hours: null,
++    rate: null,
++    amount: 1840.25,
++    timekeeper: null,
++    level: null,
++    narrative: "Regulatory printing and courier",
++  });
++  // parsed LEDES output feeds the deterministic audit unchanged
++  assert.equal(ledger[0].narrative, "Draft response to FDA 483 letter"); // verbatim, never rewritten
++});
++
++test("parseLedes reports malformed lines as structured errors and never guesses", () => {
++  const bad = [
++    HEADER,
++    "LEDES1998B|20260930|INV-100|ACME|M-210|20260903|F|4.0|850|3400.00|A. Reyes|Partner", // 12 of 13 columns
++    "LEDES1998B|20260930|INV-100|ACME|M-210|20261399|F|2.0|925|1850.00|A. Reyes|Partner|Impossible date", // bad date
++    "LEDES1998B|20260930|INV-100|ACME|M-210|20260910|X|2.0|925|1850.00|A. Reyes|Partner|Unknown line type", // bad EXP/FEE type
++    "LEDES1998B|20260930|INV-100|ACME|M-210|20260912|F|abc|925|1850.00|A. Reyes|Partner|Units not numeric", // bad units
++    "LEDES1998B|20260930|INV-100|ACME|M-210|20260914|F|2.0|925|one-eighty|A. Reyes|Partner|Total not numeric", // bad total
++  ].join("\n");
++  const { ledger, errors } = parseLedes(bad, { firmId: "HPL" });
++  assert.equal(ledger.length, 0);
++  assert.equal(errors.length, 5);
++  assert.deepEqual(
++    errors.map((e) => [e.line, e.error]),
++    [
++      [2, "column_count"],
++      [3, "bad_date"],
++      [4, "bad_line_type"],
++      [5, "bad_number"],
++      [6, "bad_number"],
++    ]
++  );
++  for (const e of errors) assert.ok(e.detail, "each error carries a detail");
++});
++
++test("parseLedes rejects headers missing required columns", () => {
++  const { ledger, errors } = parseLedes("A[]|B[]\n1|2", { firmId: "HPL" });
++  assert.equal(ledger.length, 0);
++  assert.equal(errors[0].line, 1);
++  assert.equal(errors[0].error, "missing_columns");
++  assert.ok(errors[0].detail.includes("LINE_ITEM_DATE[]"));
++});
+diff --git a/open-artifacts/outside-counsel-spend/demo/example.js b/open-artifacts/outside-counsel-spend/demo/example.js
+index 0f1cb9a..b09f675 100644
+--- a/open-artifacts/outside-counsel-spend/demo/example.js
++++ b/open-artifacts/outside-counsel-spend/demo/example.js
+@@ -3,9 +3,9 @@ export default {
+   meta: {
+     company: "Verdant Robotics, Inc. (fictional)",
+     firmNames: { HPL: "Hale & Prior LLP", MVL: "Merrick Vaughan LLP" },
+-    matterNames: { "M-210": "Project Kite — FDA response", "M-211": "Atlas IP enforcement", "M-212": "Dune merger — HSR filing" },
++    matterNames: { "M-210": "Project Kite — FDA response", "M-211": "Atlas IP enforcement", "M-212": "Dune merger — HSR filing", "M-213": "Northwind wage-and-hour audit" },
+   },
+-  settings: { rateToleranceUsd: 0, writeOffFlagPct: 10 },
++  settings: { rateToleranceUsd: 0, writeOffFlagPct: 10, rateCreepPct: 10, hoursSpikeFactor: 2 },
+   rateCards: [
+     { firmId: "HPL", effectiveFrom: "2026-07-01", effectiveTo: "2026-12-31", rates: { partner: 850, associate: 445, paralegal: 185 } },
+     { firmId: "HPL", matterId: "M-211", effectiveFrom: "2026-07-01", rates: { partner: 900, associate: 470, paralegal: 195 } },
+@@ -16,6 +16,12 @@ export default {
+     { matterId: "M-211", approved: 50000 },
+     { matterId: "M-212", firmId: "MVL", period: "2026-10", approved: 30000 },
+   ],
++  guidelines: [
++    { id: "BG-01", type: "block_billing", minPhrases: 2, maxWords: 40 },
++    { id: "DE-01", type: "disallowed_expense", category: "meals", capUsd: 75 },
++    { id: "HD-01", type: "max_hours_per_day", maxHours: 10 },
++    { id: "SR-01", type: "staffing_ratio", minRatio: 1.5 },
++  ],
+   ledger: [
+     { id: "L-001", matterId: "M-210", firmId: "HPL", period: "2026-09", date: "2026-09-03", timekeeper: "A. Reyes", level: "partner", hours: 4.0, rate: 850, narrative: "Draft response to FDA 483 letter; call with regulatory team." },
+     { id: "L-002", matterId: "M-210", firmId: "HPL", period: "2026-09", date: "2026-09-04", timekeeper: "J. Osei", level: "associate", hours: 6.5, rate: 445, narrative: "Research predicate device classifications; memo." },
+@@ -28,5 +34,11 @@ export default {
+     { id: "L-009", matterId: "M-210", firmId: "HPL", period: "2026-09", date: "2026-09-28", type: "disbursement", amount: 1840.25, narrative: "Regulatory printing and courier charges." },
+     { id: "L-010", matterId: "M-211", firmId: "HPL", period: "2026-09", date: "2026-09-30", timekeeper: "S. Ito", level: "partner", hours: 8.0, rate: 900, narrative: "Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.", writeOff: 1800 },
+     { id: "L-011", matterId: "M-210", firmId: "HPL", period: "2026-10", date: "2026-10-06", timekeeper: "J. Osei", level: "associate", hours: 4.0, rate: 445, narrative: "Supplemental responses to agency questions.", writeOff: 89 },
++    { id: "L-012", matterId: "M-213", firmId: "HPL", period: "2026-07", date: "2026-07-07", timekeeper: "K. Kwan", level: "associate", hours: 3.0, rate: 395, narrative: "Onboarding documentation review for the audit." },
++    { id: "L-013", matterId: "M-213", firmId: "HPL", period: "2026-08", date: "2026-08-05", timekeeper: "K. Kwan", level: "associate", hours: 3.5, rate: 445, narrative: "Wage-and-hour policy revisions." },
++    { id: "L-014", matterId: "M-213", firmId: "HPL", period: "2026-08", date: "2026-08-19", timekeeper: "D. Lindqvist", level: "paralegal", hours: 3.0, rate: 185, narrative: "Custodian interview scheduling." },
++    { id: "L-015", matterId: "M-213", firmId: "HPL", period: "2026-09", date: "2026-09-15", timekeeper: "D. Lindqvist", level: "paralegal", hours: 6.0, rate: 185, narrative: "Custodian interviews and document log." },
++    { id: "L-016", matterId: "M-213", firmId: "HPL", period: "2026-09", date: "2026-09-15", timekeeper: "D. Lindqvist", level: "paralegal", hours: 5.5, rate: 185, narrative: "Interview summaries and exhibit index." },
++    { id: "L-017", matterId: "M-213", firmId: "HPL", period: "2026-09", date: "2026-09-16", type: "disbursement", category: "meals", amount: 214.75, narrative: "Team dinner during interview week." },
+   ],
+ };
+diff --git a/open-artifacts/outside-counsel-spend/demo/index.html b/open-artifacts/outside-counsel-spend/demo/index.html
+index 66f0bb5..c381579 100644
+--- a/open-artifacts/outside-counsel-spend/demo/index.html
++++ b/open-artifacts/outside-counsel-spend/demo/index.html
+@@ -28,8 +28,8 @@
+   td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+   tr.flag td { background: #fffbe6; }
+   .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+-  .pill.over_rate, .pill.over, .pill.no_rate_card, .pill.high_write_off { background: var(--text); color: var(--bg); }
+-  .pill.unknown_level, .pill.unbudgeted { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
++  .pill.over_rate, .pill.over, .pill.no_rate_card, .pill.high_write_off, .pill.block_billing, .pill.disallowed_expense, .pill.max_hours_per_day, .pill.rate_creep, .pill.hours_spike { background: var(--text); color: var(--bg); }
++  .pill.unknown_level, .pill.unbudgeted, .pill.staffing_ratio { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+   .bar { position: relative; background: var(--hover); height: 8px; width: 160px; }
+   .bar i { position: absolute; inset: 0 auto 0 0; background: var(--text); }
+   .bar i.over { background: var(--flag-tint); outline: 1px solid var(--text); color: var(--bad); border-color: var(--bad);}
+@@ -52,11 +52,12 @@
+     <h1>Outside counsel spend</h1>
+     <div class="rule"></div>
+     <p class="lede">A spend audit whose core is the <b>findings ledger</b>: every hourly entry checked
+-      against the negotiated rate card for that firm × matter × date, budget variance net of write-offs,
+-      and over-threshold write-offs flagged — each finding citing the entry, the rule, and the dollar impact.
++      against the negotiated rate card for that firm × matter × date, budget variance net of write-offs
++      with the entries that drove it, billing-guideline and trend flags, and over-threshold write-offs
++      flagged — each finding citing the entry, the rule, and the dollar impact.
+       Open reimplementation of Anthropic's closed dashboard artifact.</p>
+-    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, three matters,
+-      Aug–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
++    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, four matters,
++      Jul–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
+   </header>
+ 
+   <section>
+@@ -79,6 +80,11 @@
+     <div class="scroll"><table id="writeoffs"></table></div>
+   </section>
+ 
++  <section>
++    <h2>Billing-guideline &amp; anomaly flags</h2>
++    <div class="scroll"><table id="guidelines"></table></div>
++  </section>
++
+   <section>
+     <h2>Period rollups</h2>
+     <div class="row" id="periodChips" style="margin: 0 0 12px"></div>
+@@ -86,18 +92,20 @@
+     <div class="row">
+       <button id="jsonBtn">Export audit JSON</button>
+       <button id="csvBtn" class="ghost">Export findings CSV</button>
++      <button id="tpBtn" class="ghost">Export talking points (MD)</button>
+     </div>
+   </section>
+ 
+   <footer class="disclaimer">
+-    Deterministic audit — an optional LLM may structure LEDES/invoice exports into ledger JSON (schema in spec.md),
+-    but rate compliance, budget variance, and flags are pure code. All example data fictional. Not legal or billing advice.
++    Deterministic audit — LEDES 1998B invoices parse deterministically (core/ledes.js); other invoice formats may be
++    LLM-assisted into ledger JSON (schema in spec.md), but rate compliance, budgets, guidelines, anomalies, and flags
++    are pure code. All example data fictional. Not legal or billing advice.
+     <code>anthropic counterpart: Outside counsel spend (closed)</code>
+   </footer>
+ </div>
+ 
+ <script type="module">
+-  import { runSpendAudit, auditToCsv, auditToJson } from "../core/core.js";
++  import { runSpendAudit, auditToCsv, auditToJson, renderTalkingPoints } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+   const audit = runSpendAudit(EXAMPLE);
+@@ -117,7 +125,9 @@
+     `<div><b>${usd(s.netSpend)}</b><span>net spend</span></div>` +
+     `<div><b>${s.rateExceptions}</b><span>rate exceptions</span></div>` +
+     `<div><b>${s.overBudget}</b><span>over budget</span></div>` +
+-    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>`;
++    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>` +
++    `<div><b>${s.guidelineFlags ?? 0}</b><span>guideline flags</span></div>` +
++    `<div><b>${s.anomalyFlags ?? 0}</b><span>anomaly flags</span></div>`;
+ 
+   table("rates", ["Entry", "Matter × Firm", "Timekeeper (level)", "Period", "Billed", "Expected", "Impact", "Status"], [
+     ...audit.rateFindings.map((f) => ({
+@@ -136,7 +146,7 @@
+     ...(audit.rateFindings.length ? [] : [{ cells: [{ v: "no rate exceptions" }] }]),
+   ]);
+ 
+-  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "", "Status"], [
++  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "Drivers", "", "Status"], [
+     ...audit.budgetVariances.map((b) => ({
+       cls: b.status === "over" ? "flag" : "",
+       cells: [
+@@ -146,6 +156,7 @@
+         { v: usd(b.net), cls: "amt" },
+         { v: b.approved === null ? "—" : usd(b.approved), cls: "amt" },
+         { v: b.variance === null ? "—" : `${usd(b.variance)}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}`, cls: "amt" },
++        { v: b.drivers ? b.drivers.map((d) => `<code>${esc(d.entryId)}</code> ${usd(d.amount)}`).join(", ") : "—", cls: "mono" },
+         { v: b.approved === null ? "" : `<div class="bar"><i class="${b.status === "over" ? "over" : ""}" style="width:${Math.min(100, Math.round((b.net / b.approved) * 100))}%"></i></div>` },
+         { v: `<span class="pill ${b.status}">${b.status}</span>` },
+       ],
+@@ -168,6 +179,34 @@
+     ...(audit.writeOffFlags.length ? [] : [{ cells: [{ v: "no write-offs above threshold" }] }]),
+   ]);
+ 
++  table("guidelines", ["Kind", "Rule", "Ref", "Matter × Firm", "Period", "Detail", "Impact"], [
++    ...(audit.guidelineFindings ?? []).map((g) => ({
++      cls: "flag",
++      cells: [
++        { v: `<span class="pill ${g.flag}">${g.flag}</span>` },
++        { v: `<code>${esc(g.ruleId)}</code>`, cls: "mono" },
++        { v: g.entryIds.length === 1 ? `<code>${esc(g.entryIds[0])}</code>` : `${g.entryIds.length} entries`, cls: "mono" },
++        { v: g.matterId === null ? "—" : `${esc(matter(g.matterId))}${g.firmId ? ` × ${esc(firm(g.firmId))}` : ""}` },
++        { v: g.period ?? "—", cls: "mono" },
++        { v: esc(g.detail) },
++        { v: g.amountImpact === null ? "—" : usd(g.amountImpact), cls: "amt" },
++      ],
++    })),
++    ...(audit.anomalyFlags ?? []).map((a) => ({
++      cls: "flag",
++      cells: [
++        { v: `<span class="pill ${a.flag}">${a.flag}</span>` },
++        { v: "—", cls: "mono" },
++        { v: a.entryIds.map((i) => `<code>${esc(i)}</code>`).join(", "), cls: "mono" },
++        { v: esc(firm(a.firmId)) },
++        { v: `${esc(a.fromPeriod)}→${esc(a.toPeriod)}`, cls: "mono" },
++        { v: esc(a.detail) },
++        { v: "—", cls: "amt" },
++      ],
++    })),
++    ...((audit.guidelineFindings?.length ?? 0) + (audit.anomalyFlags?.length ?? 0) ? [] : [{ cells: [{ v: "no guideline or anomaly flags" }] }]),
++  ]);
++
+   // period rollups with interactive period filter
+   const periods = ["all", ...audit.periodRollups.map((p) => p.period)];
+   const chips = document.getElementById("periodChips");
+@@ -217,6 +256,7 @@
+   }
+   document.getElementById("jsonBtn").onclick = () => download("spend-audit.json", auditToJson(audit), "application/json");
+   document.getElementById("csvBtn").onclick = () => download("spend-findings.csv", auditToCsv(audit), "text/csv");
++  document.getElementById("tpBtn").onclick = () => download("spend-talking-points.md", renderTalkingPoints(audit, { firmNames: EXAMPLE.meta.firmNames, matterNames: EXAMPLE.meta.matterNames }), "text/markdown");
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/outside-counsel-spend/examples/audit.json b/open-artifacts/outside-counsel-spend/examples/audit.json
+index 150c1d7..41571fa 100644
+--- a/open-artifacts/outside-counsel-spend/examples/audit.json
++++ b/open-artifacts/outside-counsel-spend/examples/audit.json
+@@ -1,16 +1,18 @@
+ {
+   "summary": {
+-    "entries": 11,
+-    "fees": 52185,
+-    "disbursements": 1840.25,
++    "entries": 17,
++    "fees": 57610,
++    "disbursements": 2055,
+     "writeOffs": 1889,
+-    "netSpend": 52136.25,
+-    "hourlyChecked": 9,
+-    "rateOk": 5,
++    "netSpend": 57776,
++    "hourlyChecked": 14,
++    "rateOk": 10,
+     "rateExceptions": 4,
+     "overBudget": 1,
+-    "unbudgeted": 0,
+-    "writeOffFlags": 1
++    "unbudgeted": 1,
++    "writeOffFlags": 1,
++    "guidelineFlags": 8,
++    "anomalyFlags": 4
+   },
+   "rateFindings": [
+     {
+@@ -91,6 +93,20 @@
+       "status": "over",
+       "budgetScopes": [
+         "matter M-210 firm HPL"
++      ],
++      "drivers": [
++        {
++          "entryId": "L-001",
++          "amount": 3400
++        },
++        {
++          "entryId": "L-002",
++          "amount": 2892.5
++        },
++        {
++          "entryId": "L-003",
++          "amount": 1850
++        }
+       ]
+     },
+     {
+@@ -120,6 +136,18 @@
+       "budgetScopes": [
+         "matter M-212 firm MVL period 2026-10"
+       ]
++    },
++    {
++      "matterId": "M-213",
++      "firmId": "HPL",
++      "gross": 5639.75,
++      "writeOffs": 0,
++      "net": 5639.75,
++      "approved": null,
++      "variance": null,
++      "variancePct": null,
++      "status": "unbudgeted",
++      "budgetScopes": []
+     }
+   ],
+   "writeOffFlags": [
+@@ -137,36 +165,250 @@
+       "detail": "write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: \"Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.\""
+     }
+   ],
++  "guidelineFindings": [
++    {
++      "kind": "guideline",
++      "ruleId": "BG-01",
++      "ruleType": "block_billing",
++      "flag": "block_billing",
++      "entryId": "L-001",
++      "entryIds": [
++        "L-001"
++      ],
++      "matterId": "M-210",
++      "firmId": "HPL",
++      "period": "2026-09",
++      "amountImpact": 3400,
++      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (3400)"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "BG-01",
++      "ruleType": "block_billing",
++      "flag": "block_billing",
++      "entryId": "L-002",
++      "entryIds": [
++        "L-002"
++      ],
++      "matterId": "M-210",
++      "firmId": "HPL",
++      "period": "2026-09",
++      "amountImpact": 2892.5,
++      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2892.5)"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "BG-01",
++      "ruleType": "block_billing",
++      "flag": "block_billing",
++      "entryId": "L-004",
++      "entryIds": [
++        "L-004"
++      ],
++      "matterId": "M-211",
++      "firmId": "HPL",
++      "period": "2026-08",
++      "amountImpact": 2475,
++      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2475)"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "BG-01",
++      "ruleType": "block_billing",
++      "flag": "block_billing",
++      "entryId": "L-010",
++      "entryIds": [
++        "L-010"
++      ],
++      "matterId": "M-211",
++      "firmId": "HPL",
++      "period": "2026-09",
++      "amountImpact": 7200,
++      "detail": "3 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (7200)"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "DE-01",
++      "ruleType": "disallowed_expense",
++      "flag": "disallowed_expense",
++      "entryId": "L-017",
++      "entryIds": [
++        "L-017"
++      ],
++      "matterId": "M-213",
++      "firmId": "HPL",
++      "period": "2026-09",
++      "amountImpact": 139.75,
++      "detail": "category \"meals\" billed 214.75 over the 75 cap (rule DE-01) — excess 139.75"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "HD-01",
++      "ruleType": "max_hours_per_day",
++      "flag": "max_hours_per_day",
++      "entryId": "L-015",
++      "entryIds": [
++        "L-015",
++        "L-016"
++      ],
++      "matterId": "M-213",
++      "firmId": "HPL",
++      "period": "2026-09",
++      "totalHours": 11.5,
++      "amountImpact": 277.5,
++      "detail": "D. Lindqvist billed 11.5h on 2026-09-15 across 2 entries (cap 10h, rule HD-01) — over-cap portion billed at entry rates is 277.5"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "SR-01",
++      "ruleType": "staffing_ratio",
++      "flag": "staffing_ratio",
++      "entryId": null,
++      "entryIds": [
++        "L-004",
++        "L-005",
++        "L-010"
++      ],
++      "matterId": "M-211",
++      "firmId": null,
++      "period": null,
++      "amountImpact": null,
++      "detail": "junior/senior staffing ratio 0 on matter M-211 is below the 1.5 minimum (rule SR-01) — 0 non-senior hours vs 16 senior hours"
++    },
++    {
++      "kind": "guideline",
++      "ruleId": "SR-01",
++      "ruleType": "staffing_ratio",
++      "flag": "staffing_ratio",
++      "entryId": null,
++      "entryIds": [
++        "L-006",
++        "L-007"
++      ],
++      "matterId": "M-212",
++      "firmId": null,
++      "period": null,
++      "amountImpact": null,
++      "detail": "junior/senior staffing ratio 0.6 on matter M-212 is below the 1.5 minimum (rule SR-01) — 1.5 non-senior hours vs 2.5 senior hours"
++    }
++  ],
++  "anomalyFlags": [
++    {
++      "kind": "anomaly",
++      "flag": "hours_spike",
++      "firmId": "HPL",
++      "timekeeper": "D. Lindqvist",
++      "fromPeriod": "2026-08",
++      "toPeriod": "2026-09",
++      "fromHours": 3,
++      "toHours": 11.5,
++      "entryIds": [
++        "L-014",
++        "L-015",
++        "L-016"
++      ],
++      "amountImpact": null,
++      "detail": "11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period"
++    },
++    {
++      "kind": "anomaly",
++      "flag": "rate_creep",
++      "firmId": "HPL",
++      "timekeeper": "K. Kwan",
++      "fromPeriod": "2026-07",
++      "toPeriod": "2026-08",
++      "fromRate": 395,
++      "toRate": 445,
++      "deltaPct": 12.66,
++      "entryIds": [
++        "L-012",
++        "L-013"
++      ],
++      "amountImpact": null,
++      "detail": "realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08"
++    },
++    {
++      "kind": "anomaly",
++      "flag": "hours_spike",
++      "firmId": "HPL",
++      "timekeeper": "S. Ito",
++      "fromPeriod": "2026-08",
++      "toPeriod": "2026-09",
++      "fromHours": 3,
++      "toHours": 13,
++      "entryIds": [
++        "L-004",
++        "L-005",
++        "L-010"
++      ],
++      "amountImpact": null,
++      "detail": "13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period"
++    },
++    {
++      "kind": "anomaly",
++      "flag": "rate_creep",
++      "firmId": "HPL",
++      "timekeeper": "S. Ito",
++      "fromPeriod": "2026-08",
++      "toPeriod": "2026-09",
++      "fromRate": 825,
++      "toRate": 919.23,
++      "deltaPct": 11.42,
++      "entryIds": [
++        "L-004",
++        "L-005",
++        "L-010"
++      ],
++      "amountImpact": null,
++      "detail": "realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09"
++    }
++  ],
+   "periodRollups": [
++    {
++      "period": "2026-07",
++      "entries": 1,
++      "fees": 1185,
++      "disbursements": 0,
++      "writeOffs": 0,
++      "net": 1185,
++      "byFirm": {
++        "HPL": 1185
++      },
++      "byMatter": {
++        "M-213": 1185
++      }
++    },
+     {
+       "period": "2026-08",
+-      "entries": 2,
+-      "fees": 4412.5,
++      "entries": 4,
++      "fees": 6525,
+       "disbursements": 0,
+       "writeOffs": 0,
+-      "net": 4412.5,
++      "net": 6525,
+       "byFirm": {
+-        "HPL": 2475,
++        "HPL": 4587.5,
+         "MVL": 1937.5
+       },
+       "byMatter": {
+         "M-211": 2475,
+-        "M-212": 1937.5
++        "M-212": 1937.5,
++        "M-213": 2112.5
+       }
+     },
+     {
+       "period": "2026-09",
+-      "entries": 6,
+-      "fees": 20092.5,
+-      "disbursements": 1840.25,
++      "entries": 9,
++      "fees": 22220,
++      "disbursements": 2055,
+       "writeOffs": 1800,
+-      "net": 20132.75,
++      "net": 22475,
+       "byFirm": {
+-        "HPL": 20132.75
++        "HPL": 22475
+       },
+       "byMatter": {
+         "M-210": 9982.75,
+-        "M-211": 10150
++        "M-211": 10150,
++        "M-213": 2342.25
+       }
+     },
+     {
+diff --git a/open-artifacts/outside-counsel-spend/examples/findings.csv b/open-artifacts/outside-counsel-spend/examples/findings.csv
+index d2f6dcf..75a9377 100644
+--- a/open-artifacts/outside-counsel-spend/examples/findings.csv
++++ b/open-artifacts/outside-counsel-spend/examples/findings.csv
+@@ -4,4 +4,17 @@ rate,L-005,M-211,HPL,2026-09,over_rate,"billed 950/h for level ""partner"" but c
+ rate,L-006,M-212,MVL,2026-08,no_rate_card,"no rate card covers firm ""MVL"" on 2026-08-20",
+ rate,L-007,M-212,MVL,2026-10,unknown_level,"level ""counsel"" is not on rate card for firm ""MVL"" — expected rate cannot be determined",
+ budget,M-210×HPL,M-210,HPL,,over,net spend 11673.75 exceeds approved 8000 by 3673.75 (45.92%),3673.75
++budget,M-213×HPL,M-213,HPL,,unbudgeted,no budget found for this matter × firm (net spend 5639.75),5639.75
+ write_off,L-010,M-211,HPL,2026-09,high_write_off,"write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: ""Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.""",1800
++guideline,L-001,M-210,HPL,2026-09,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (3400),3400
++guideline,L-002,M-210,HPL,2026-09,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2892.5),2892.5
++guideline,L-004,M-211,HPL,2026-08,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2475),2475
++guideline,L-010,M-211,HPL,2026-09,block_billing,3 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (7200),7200
++guideline,L-017,M-213,HPL,2026-09,disallowed_expense,"category ""meals"" billed 214.75 over the 75 cap (rule DE-01) — excess 139.75",139.75
++guideline,L-015,M-213,HPL,2026-09,max_hours_per_day,"D. Lindqvist billed 11.5h on 2026-09-15 across 2 entries (cap 10h, rule HD-01) — over-cap portion billed at entry rates is 277.5",277.5
++guideline,SR-01,M-211,,,staffing_ratio,junior/senior staffing ratio 0 on matter M-211 is below the 1.5 minimum (rule SR-01) — 0 non-senior hours vs 16 senior hours,
++guideline,SR-01,M-212,,,staffing_ratio,junior/senior staffing ratio 0.6 on matter M-212 is below the 1.5 minimum (rule SR-01) — 1.5 non-senior hours vs 2.5 senior hours,
++anomaly,L-014+L-015+L-016,,HPL,2026-08→2026-09,hours_spike,11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period,
++anomaly,L-012+L-013,,HPL,2026-07→2026-08,rate_creep,"realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08",
++anomaly,L-004+L-005+L-010,,HPL,2026-08→2026-09,hours_spike,13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period,
++anomaly,L-004+L-005+L-010,,HPL,2026-08→2026-09,rate_creep,"realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09",
+diff --git a/open-artifacts/outside-counsel-spend/examples/input.json b/open-artifacts/outside-counsel-spend/examples/input.json
+index d77e133..8e531af 100644
+--- a/open-artifacts/outside-counsel-spend/examples/input.json
++++ b/open-artifacts/outside-counsel-spend/examples/input.json
+@@ -8,10 +8,11 @@
+     "matterNames": {
+       "M-210": "Project Kite — FDA response",
+       "M-211": "Atlas IP enforcement",
+-      "M-212": "Dune merger — HSR filing"
++      "M-212": "Dune merger — HSR filing",
++      "M-213": "Northwind wage-and-hour audit"
+     }
+   },
+-  "settings": { "rateToleranceUsd": 0, "writeOffFlagPct": 10 },
++  "settings": { "rateToleranceUsd": 0, "writeOffFlagPct": 10, "rateCreepPct": 10, "hoursSpikeFactor": 2 },
+   "rateCards": [
+     {
+       "firmId": "HPL",
+@@ -36,6 +37,12 @@
+     { "matterId": "M-211", "approved": 50000 },
+     { "matterId": "M-212", "firmId": "MVL", "period": "2026-10", "approved": 30000 }
+   ],
++  "guidelines": [
++    { "id": "BG-01", "type": "block_billing", "minPhrases": 2, "maxWords": 40 },
++    { "id": "DE-01", "type": "disallowed_expense", "category": "meals", "capUsd": 75 },
++    { "id": "HD-01", "type": "max_hours_per_day", "maxHours": 10 },
++    { "id": "SR-01", "type": "staffing_ratio", "minRatio": 1.5 }
++  ],
+   "ledger": [
+     { "id": "L-001", "matterId": "M-210", "firmId": "HPL", "period": "2026-09", "date": "2026-09-03", "timekeeper": "A. Reyes", "level": "partner", "hours": 4.0, "rate": 850, "narrative": "Draft response to FDA 483 letter; call with regulatory team." },
+     { "id": "L-002", "matterId": "M-210", "firmId": "HPL", "period": "2026-09", "date": "2026-09-04", "timekeeper": "J. Osei", "level": "associate", "hours": 6.5, "rate": 445, "narrative": "Research predicate device classifications; memo." },
+@@ -47,6 +54,12 @@
+     { "id": "L-008", "matterId": "M-212", "firmId": "MVL", "period": "2026-10", "date": "2026-10-05", "type": "fee", "billing": "flat", "amount": 25000, "narrative": "Fixed fee: HSR filing package, forms and certifications." },
+     { "id": "L-009", "matterId": "M-210", "firmId": "HPL", "period": "2026-09", "date": "2026-09-28", "type": "disbursement", "amount": 1840.25, "narrative": "Regulatory printing and courier charges." },
+     { "id": "L-010", "matterId": "M-211", "firmId": "HPL", "period": "2026-09", "date": "2026-09-30", "timekeeper": "S. Ito", "level": "partner", "hours": 8.0, "rate": 900, "narrative": "Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner." , "writeOff": 1800 },
+-    { "id": "L-011", "matterId": "M-210", "firmId": "HPL", "period": "2026-10", "date": "2026-10-06", "timekeeper": "J. Osei", "level": "associate", "hours": 4.0, "rate": 445, "narrative": "Supplemental responses to agency questions.", "writeOff": 89 }
++    { "id": "L-011", "matterId": "M-210", "firmId": "HPL", "period": "2026-10", "date": "2026-10-06", "timekeeper": "J. Osei", "level": "associate", "hours": 4.0, "rate": 445, "narrative": "Supplemental responses to agency questions.", "writeOff": 89 },
++    { "id": "L-012", "matterId": "M-213", "firmId": "HPL", "period": "2026-07", "date": "2026-07-07", "timekeeper": "K. Kwan", "level": "associate", "hours": 3.0, "rate": 395, "narrative": "Onboarding documentation review for the audit." },
++    { "id": "L-013", "matterId": "M-213", "firmId": "HPL", "period": "2026-08", "date": "2026-08-05", "timekeeper": "K. Kwan", "level": "associate", "hours": 3.5, "rate": 445, "narrative": "Wage-and-hour policy revisions." },
++    { "id": "L-014", "matterId": "M-213", "firmId": "HPL", "period": "2026-08", "date": "2026-08-19", "timekeeper": "D. Lindqvist", "level": "paralegal", "hours": 3.0, "rate": 185, "narrative": "Custodian interview scheduling." },
++    { "id": "L-015", "matterId": "M-213", "firmId": "HPL", "period": "2026-09", "date": "2026-09-15", "timekeeper": "D. Lindqvist", "level": "paralegal", "hours": 6.0, "rate": 185, "narrative": "Custodian interviews and document log." },
++    { "id": "L-016", "matterId": "M-213", "firmId": "HPL", "period": "2026-09", "date": "2026-09-15", "timekeeper": "D. Lindqvist", "level": "paralegal", "hours": 5.5, "rate": 185, "narrative": "Interview summaries and exhibit index." },
++    { "id": "L-017", "matterId": "M-213", "firmId": "HPL", "period": "2026-09", "date": "2026-09-16", "type": "disbursement", "category": "meals", "amount": 214.75, "narrative": "Team dinner during interview week." }
+   ]
+ }
+diff --git a/open-artifacts/outside-counsel-spend/examples/report.md b/open-artifacts/outside-counsel-spend/examples/report.md
+index bcc2c15..61b6aa3 100644
+--- a/open-artifacts/outside-counsel-spend/examples/report.md
++++ b/open-artifacts/outside-counsel-spend/examples/report.md
+@@ -1,8 +1,8 @@
+ # Outside counsel spend audit
+ 
+-**11 entries · fees 52185 · disbursements 1840.25 · write-offs 1889 · net spend 52136.25**
++**17 entries · fees 57610 · disbursements 2055 · write-offs 1889 · net spend 57776**
+ 
+-Rate check: 9 hourly entries, 5 ok, **4 exception(s)** · Budgets: **1 over**, 0 unbudgeted · Write-off flags: **1**
++Rate check: 14 hourly entries, 10 ok, **4 exception(s)** · Budgets: **1 over**, 1 unbudgeted · Write-off flags: **1**
+ 
+ ## Rate-card exceptions
+ 
+@@ -13,22 +13,42 @@ Rate check: 9 hourly entries, 5 ok, **4 exception(s)** · Budgets: **1 over**, 0
+ 
+ ## Budget variance (net of write-offs)
+ 
+-| Matter | Firm | Net | Approved | Variance | Status |
+-|---|---|---|---|---|---|
+-| Project Kite — FDA response | Hale & Prior LLP | 11673.75 | 8000 | 3673.75 (45.92%) | over |
+-| Atlas IP enforcement | Hale & Prior LLP | 12625 | 50000 | -37375 (-74.75%) | within |
+-| Dune merger — HSR filing | Merrick Vaughan LLP | 25900 | 30000 | -4100 (-13.67%) | within |
++| Matter | Firm | Net | Approved | Variance | Drivers | Status |
++|---|---|---|---|---|---|---|
++| Project Kite — FDA response | Hale & Prior LLP | 11673.75 | 8000 | 3673.75 (45.92%) | L-001 (3400), L-002 (2892.5), L-003 (1850) | over |
++| Atlas IP enforcement | Hale & Prior LLP | 12625 | 50000 | -37375 (-74.75%) | — | within |
++| Dune merger — HSR filing | Merrick Vaughan LLP | 25900 | 30000 | -4100 (-13.67%) | — | within |
++| Northwind wage-and-hour audit | Hale & Prior LLP | 5639.75 | — | — | — | unbudgeted |
+ 
+ ## Write-off flags
+ 
+ - `L-010` · Atlas IP enforcement × Hale & Prior LLP · 2026-09 — write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: "Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.".
+ 
++## Billing-guideline flags
++
++- rule `BG-01` · **block_billing** · entry `L-001` · 2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (3400).
++- rule `BG-01` · **block_billing** · entry `L-002` · 2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2892.5).
++- rule `BG-01` · **block_billing** · entry `L-004` · 2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2475).
++- rule `BG-01` · **block_billing** · entry `L-010` · 3 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (7200).
++- rule `DE-01` · **disallowed_expense** · entry `L-017` · category "meals" billed 214.75 over the 75 cap (rule DE-01) — excess 139.75.
++- rule `HD-01` · **max_hours_per_day** · 2 entries (`L-015`, `L-016`) · D. Lindqvist billed 11.5h on 2026-09-15 across 2 entries (cap 10h, rule HD-01) — over-cap portion billed at entry rates is 277.5.
++- rule `SR-01` · **staffing_ratio** · 3 entries (`L-004`, `L-005`, `L-010`) · junior/senior staffing ratio 0 on matter M-211 is below the 1.5 minimum (rule SR-01) — 0 non-senior hours vs 16 senior hours.
++- rule `SR-01` · **staffing_ratio** · 2 entries (`L-006`, `L-007`) · junior/senior staffing ratio 0.6 on matter M-212 is below the 1.5 minimum (rule SR-01) — 1.5 non-senior hours vs 2.5 senior hours.
++
++## Anomaly flags
++
++- `hours_spike` · Hale & Prior LLP · D. Lindqvist · 2026-08→2026-09 — 11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period (entries `L-014`, `L-015`, `L-016`).
++- `rate_creep` · Hale & Prior LLP · K. Kwan · 2026-07→2026-08 — realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08 (entries `L-012`, `L-013`).
++- `hours_spike` · Hale & Prior LLP · S. Ito · 2026-08→2026-09 — 13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period (entries `L-004`, `L-005`, `L-010`).
++- `rate_creep` · Hale & Prior LLP · S. Ito · 2026-08→2026-09 — realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09 (entries `L-004`, `L-005`, `L-010`).
++
+ ## Period rollups
+ 
+ | Period | Entries | Fees | Disbursements | Write-offs | Net |
+ |---|---|---|---|---|---|
+-| 2026-08 | 2 | 4412.5 | 0 | 0 | 4412.5 |
+-| 2026-09 | 6 | 20092.5 | 1840.25 | 1800 | 20132.75 |
++| 2026-07 | 1 | 1185 | 0 | 0 | 1185 |
++| 2026-08 | 4 | 6525 | 0 | 0 | 6525 |
++| 2026-09 | 9 | 22220 | 2055 | 1800 | 22475 |
+ | 2026-10 | 3 | 27680 | 0 | 89 | 27591 |
+ 
+ _All data fictional. Rate cards and thresholds are rules-as-data. Not legal or billing advice._
+diff --git a/open-artifacts/outside-counsel-spend/examples/run.js b/open-artifacts/outside-counsel-spend/examples/run.js
+index 7ff164c..d670793 100644
+--- a/open-artifacts/outside-counsel-spend/examples/run.js
++++ b/open-artifacts/outside-counsel-spend/examples/run.js
+@@ -1,22 +1,24 @@
+ /**
+  * Worked example runner — reads input.json (ledger + rate cards + budgets),
+- * runs the deterministic audit, writes audit.json + findings.csv + report.md.
+- * Usage: node examples/run.js   (from the artifact root)
++ * runs the deterministic audit, writes audit.json + findings.csv + report.md
++ * + talking-points.md. Usage: node examples/run.js   (from the artifact root)
+  */
+ import { readFileSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { dirname, join } from "node:path";
+-import { runSpendAudit, auditToCsv, auditToJson, renderReport } from "../core/core.js";
++import { runSpendAudit, auditToCsv, auditToJson, renderReport, renderTalkingPoints } from "../core/core.js";
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+ 
+ const audit = runSpendAudit(input);
++const names = { firmNames: input.meta?.firmNames, matterNames: input.meta?.matterNames };
+ writeFileSync(join(here, "audit.json"), auditToJson(audit));
+ writeFileSync(join(here, "findings.csv"), auditToCsv(audit));
+-writeFileSync(join(here, "report.md"), renderReport(audit, { firmNames: input.meta?.firmNames, matterNames: input.meta?.matterNames }));
++writeFileSync(join(here, "report.md"), renderReport(audit, names));
++writeFileSync(join(here, "talking-points.md"), renderTalkingPoints(audit, names));
+ 
+ const s = audit.summary;
+ console.log(
+-  `${s.entries} entries: ${s.rateExceptions} rate exceptions, ${s.overBudget} over budget, ${s.unbudgeted} unbudgeted, ${s.writeOffFlags} write-off flags, net spend ${s.netSpend} — wrote audit.json, findings.csv, report.md`
++  `${s.entries} entries: ${s.rateExceptions} rate exceptions, ${s.overBudget} over budget, ${s.unbudgeted} unbudgeted, ${s.writeOffFlags} write-off flags, ${s.guidelineFlags} guideline flags, ${s.anomalyFlags} anomaly flags, net spend ${s.netSpend} — wrote audit.json, findings.csv, report.md, talking-points.md`
+ );
+diff --git a/open-artifacts/outside-counsel-spend/examples/talking-points.md b/open-artifacts/outside-counsel-spend/examples/talking-points.md
+new file mode 100644
+index 0000000..3509e8b
+--- /dev/null
++++ b/open-artifacts/outside-counsel-spend/examples/talking-points.md
+@@ -0,0 +1,39 @@
++# Partner-review talking points
++
++Generated deterministically from the audit — totals tie to the summary; every claim cites a finding or driver id. 17 entries, 4 rate exceptions, 1 over-budget pairs, 1 write-off flags, 8 guideline flags, 4 anomaly flags.
++
++## Hale & Prior LLP
++
++- Net spend 29938.5 across 3 matter(s).
++- Project Kite — FDA response: over budget by 3673.75 (45.92%) — drivers `L-001` (3400), `L-002` (2892.5), `L-003` (1850).
++- Atlas IP enforcement: within budget (net 12625 of 50000).
++- Northwind wage-and-hour audit: unbudgeted — net spend 5639.75 with no approved budget on file.
++- Rate exceptions (2):
++  - `L-003` over_rate, impact 150 — billed 925/h for level "partner" but card rate is 850/h (firm card, from 2026-07-01) — impact 150 over 2h.
++  - `L-005` over_rate, impact 250 — billed 950/h for level "partner" but card rate is 900/h (matter card, from 2026-07-01) — impact 250 over 5h.
++- Write-off flags (1):
++  - `L-010` 25% of the 7200 bill — write-off 1800 is 25% of the 7200 bill (threshold 10%).
++- Billing-guideline flags (6):
++  - `L-001` rule `BG-01` block_billing, impact 3400.
++  - `L-002` rule `BG-01` block_billing, impact 2892.5.
++  - `L-004` rule `BG-01` block_billing, impact 2475.
++  - `L-010` rule `BG-01` block_billing, impact 7200.
++  - `L-017` rule `DE-01` disallowed_expense, impact 139.75.
++  - `L-015` rule `HD-01` max_hours_per_day, impact 277.5.
++- Anomaly flags (4):
++  - hours_spike — 11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period (entries `L-014`, `L-015`, `L-016`).
++  - rate_creep — realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08 (entries `L-012`, `L-013`).
++  - hours_spike — 13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period (entries `L-004`, `L-005`, `L-010`).
++  - rate_creep — realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09 (entries `L-004`, `L-005`, `L-010`).
++
++## Merrick Vaughan LLP
++
++- Net spend 27837.5 across 1 matter(s).
++- Dune merger — HSR filing: within budget (net 25900 of 30000).
++- Rate exceptions (2):
++  - `L-006` no_rate_card — no rate card covers firm "MVL" on 2026-08-20.
++  - `L-007` unknown_level — level "counsel" is not on rate card for firm "MVL" — expected rate cannot be determined.
++
++**Total net spend: 57776 — ties to audit summary.netSpend.**
++
++_All data fictional. Reproducible from the same audit input; not legal or billing advice._
+diff --git a/open-artifacts/outside-counsel-spend/spec.md b/open-artifacts/outside-counsel-spend/spec.md
+index 88e0ef5..4485e8b 100644
+--- a/open-artifacts/outside-counsel-spend/spec.md
++++ b/open-artifacts/outside-counsel-spend/spec.md
+@@ -1,13 +1,20 @@
+ # outside-counsel-spend — open artifact spec
+ 
+ Open reimplementation of Anthropic's "Outside counsel spend" artifact (catalog
+-§2.16): *"track spending across matters and firms, monitor budgets, and flag
+-unusual billing patterns."*
++§2.16). Counterpart description, verified against Anthropic's Academy page
++(academy.claude.com/use-cases/outside-counsel-review): it reviews
++outside-counsel invoices against the company's own billing guidelines (for
++example block-billing and staffing rules), attributes budget variance to the
++activities that drove it, and ends in partner-review talking points, with
++matter/invoice coverage via iManage/NetDocuments connectors. (Secondary,
++gallery one-liner via S4: "checks invoices against your billing guidelines.")
+ 
+ The closed artifact is a dashboard. This core inverts the emphasis: the
+ auditable object is a **findings ledger** — every rate exception, budget
+-breach, and write-off carries the entry id, the rule it violated, the expected
+-value, and a dollar impact — exportable as JSON/CSV for commit-to-git review.
++breach, guideline violation, and write-off carries the entry id, the rule it
++violated, the expected value, and a dollar impact — exportable as JSON/CSV for
++commit-to-git review. Every compliance decision is code: identical input
++produces byte-identical output.
+ 
+ ## What it does
+ 
+@@ -19,27 +26,58 @@ value, and a dollar impact — exportable as JSON/CSV for commit-to-git review.
+ 2. **Budget variance** — matter × firm spend (net of write-offs) vs approved
+    budget, with exact-scope budgets (matter+firm, optionally period-scoped)
+    preferred over matter-wide ones. Status: `within` | `over` | `unbudgeted`.
+-3. **Write-off flags** — entries with write-offs above a configurable
++   Over-budget pairs carry **variance drivers**: the top-3 largest billed
++   entries (id + amount) — the "why it's over", cited, not narrated.
++3. **Billing-guideline rules engine** — typed rules-as-data in
++   `input.guidelines` (the counterpart re-reads prose guidelines with an LLM
++   each run; here every decision is deterministic code):
++   - `block_billing` — narrative splits into ≥ `minPhrases` (default 2)
++     `;`- or " / "-separated activity phrases, or exceeds `maxWords`
++     (default 40). Impact = full billed amount.
++   - `disallowed_expense` — disbursement `category` over `capUsd`;
++     impact = the excess over the cap.
++   - `max_hours_per_day` — timekeeper-day over `maxHours` across entries;
++     impact = over-cap hours × entry rates, allocated in ledger order.
++   - `staffing_ratio` — matter-wide junior/senior hours below `minRatio`
++     (senior levels configurable, default `["partner"]`). Informational.
++   - Unknown rule types surface as `unknown_rule_type` findings — a
++     misconfigured guideline is visible, never silently ignored.
++4. **Anomaly flags** — trend flags per firm × timekeeper across consecutive
++   periods: `rate_creep` (realized rate up > `rateCreepPct`% period over
++   period, default 10) and `hours_spike` (hours > `hoursSpikeFactor`× the
++   prior period, default 2). Flags are ledger rows with entry ids and
++   period-to-period deltas, not dashboard glances. Integer cross-multiplied
++   comparisons — no float division in the decision.
++5. **Write-off flags** — entries with write-offs above a configurable
+    percentage-of-bill (default 10%) are flagged with evidence; all write-offs
+    roll into period totals either way.
+-4. **Period rollups** — per `YYYY-MM` period: fees, disbursements, write-offs,
++6. **Period rollups** — per `YYYY-MM` period: fees, disbursements, write-offs,
+    net spend, plus by-firm and by-matter splits.
+-5. **Exports** — findings CSV (one row per finding, rule cited) and stable
++7. **Talking points** — `renderTalkingPoints(audit)` renders one
++   partner-review section per firm; totals tie to `audit.summary` and every
++   claim cites a finding or driver id. Deterministic code output, reproducible
++   run over run (the counterpart drafts these with an LLM each month).
++8. **Exports** — findings CSV (one row per finding, rule cited) and stable
+    JSON for version control.
+ 
+ ## IO contract
+ 
+ ```js
+-import { runSpendAudit, auditToCsv, auditToJson } from "./core/core.js";
++import { runSpendAudit, auditToCsv, auditToJson, renderTalkingPoints } from "./core/core.js";
++import { parseLedes } from "./core/ledes.js";
+ 
+ const audit = runSpendAudit(input);
+-//   => { summary, rateFindings[], budgetVariances[], writeOffFlags[], periodRollups[] }
+-auditToCsv(audit); auditToJson(audit);
++//   => { summary, rateFindings[], budgetVariances[], writeOffFlags[],
++//        guidelineFindings[], anomalyFlags[], periodRollups[] }
++auditToCsv(audit); auditToJson(audit); renderTalkingPoints(audit, names);
++
++const { ledger, errors } = parseLedes(ledesText, { firmId: "HPL" });
++//   malformed lines → structured error rows, never guessed
+ ```
+ 
+ - ledger entry: `{ id, matterId, firmId, period: "YYYY-MM", date: "YYYY-MM-DD",
+   timekeeper, level, type: "fee"|"disbursement", billing: "hourly"|"flat",
+-  hours?, rate?, amount?, narrative, writeOff? }`
++  hours?, rate?, amount?, category?, narrative, writeOff? }`
+   (`amount` derived as `hours × rate` when omitted).
+ - rate card: `{ firmId, matterId?, effectiveFrom?, effectiveTo?,
+   rates: { partner: 850, associate: 445, … } }` — matter-scoped cards beat
+@@ -47,24 +85,37 @@ auditToCsv(audit); auditToJson(audit);
+ - budget: `{ matterId, firmId?, period?, approved }` — exact matter+firm
+   budgets shadow matter-wide ones for that firm; period-scoped budgets count
+   only entries in that period.
++- guideline rule: `{ id, type: "block_billing"|"disallowed_expense"|
++  "max_hours_per_day"|"staffing_ratio", …type params }`.
+ - settings (rules-as-data, all overridable): `{ rateToleranceUsd = 0,
+-  writeOffFlagPct = 10 }`.
++  writeOffFlagPct = 10, rateCreepPct = 10, hoursSpikeFactor = 2 }`.
+ 
+ All arithmetic in integer cents; no floats in comparisons, no hidden clocks.
+ 
++## LEDES ingestion (deterministic)
++
++`core/ledes.js` parses **LEDES 1998B** line-item text (pipe-delimited; the
++first non-empty line is the verbatim header) into ledger entries — no LLM.
++Every malformed line (wrong column count, bad date, bad line type, bad
++number) becomes a structured error row `{ line, error, detail }` and is
++skipped: numbers are never inferred. Dialect scope is 1998B line items only
++(documented); other e-billing dialects are out of scope. Non-LEDES invoice
++formats may still use the optional LLM extraction step below.
++
+ ## Deterministic vs LLM-assisted
+ 
+ | Layer | Who |
+ |---|---|
+-| Rate compliance, budget variance, write-off flags, rollups, exports | **code** |
+-| Parsing LEDES/e-billing exports or invoices into ledger JSON | optional LLM (extraction) |
+-| Billing-guideline policy (levels, tolerance, thresholds) | **firm** (rules-as-data) |
++| Rate compliance, budget variance + drivers, guideline rules, anomaly flags, write-off flags, rollups, talking points, exports | **code** |
++| LEDES 1998B invoice text → ledger entries | **code** (`core/ledes.js`) |
++| Other invoice formats → ledger JSON | optional LLM (extraction) |
++| Billing-guideline policy (rules, tolerance, thresholds) | **firm** (rules-as-data) |
+ 
+-### LLM prompt schema (extraction step, optional)
++### LLM prompt schema (extraction step, optional, non-LEDES formats)
+ 
+ ```json
+ {
+-  "task": "Convert the provided LEDES/invoice lines into ledger-entry JSON.",
++  "task": "Convert the provided invoice lines into ledger-entry JSON.",
+   "output_schema": { "id": "line-item id", "matterId": "…", "firmId": "…", "period": "YYYY-MM", "date": "YYYY-MM-DD", "timekeeper": "…", "level": "one of the firm's levels", "type": "fee|disbursement", "billing": "hourly|flat", "hours": "number or null", "rate": "number or null", "amount": "number", "narrative": "verbatim time-entry text" },
+   "rules": ["Never invent rates or amounts; copy them from the invoice.", "Narrative must be verbatim.", "Skip nothing; every line becomes an entry."]
+ }
+@@ -72,18 +123,25 @@ All arithmetic in integer cents; no floats in comparisons, no hidden clocks.
+ 
+ ## What's better than the closed counterpart
+ 
++- **Every compliance decision is code.** The counterpart has an LLM interpret
++  prose billing guidelines per run; here guidelines are typed rules-as-data
++  and identical input → byte-identical audit JSON/CSV.
+ - **Findings are the product, not a dashboard.** Every exception is a row with
+-  entry id, violated rule, expected value, and dollar impact — auditable and
++  entry id, violated rule id, expected value, and dollar impact — auditable and
+   exportable, not just visualized.
+-- **Rate cards and thresholds as structured data** — the firm's negotiated
+-  rates are JSON it owns, not values locked in a vendor UI.
+-- **Integer-cents arithmetic** — billing comparisons don't drift by floats;
+-  identical inputs give byte-identical outputs.
+-- **Reproducible exports** — JSON + CSV suitable for version control and
+-  reconciliation against the e-billing system of record.
++- **Variance drivers computed and cited** — over-budget pairs name their
++  top-3 contributing entries (id + amount), not an LLM's narration.
++- **LEDES parsed deterministically** — 1998B line items become ledger entries
++  with structured errors for malformed lines; zero hallucinated numbers.
++- **Rate cards, guidelines, and thresholds as structured data** — the firm's
++  negotiated rates and policies are JSON it owns, not values locked in a
++  vendor UI.
++- **Integer-cents arithmetic** — billing comparisons don't drift by floats.
++- **Reproducible talking points** — per-firm partner-review sections tied to
++  the audit summary, regenerable at will.
+ 
+ ## Disclaimer
+ 
+-Billing-guideline thresholds (write-off percentage, rate tolerance) are
+-rules-as-data with US-market defaults. All example data fictional. Not legal
+-or billing advice.
++Billing-guideline thresholds (write-off percentage, rate tolerance, anomaly
++thresholds) are rules-as-data with illustrative US-market defaults. All
++example data fictional. Not legal or billing advice.

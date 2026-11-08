@@ -1,0 +1,1370 @@
+diff --git a/open-artifacts/record-sealing-screener/README.md b/open-artifacts/record-sealing-screener/README.md
+index a22248f..f5160ee 100644
+--- a/open-artifacts/record-sealing-screener/README.md
++++ b/open-artifacts/record-sealing-screener/README.md
+@@ -4,9 +4,19 @@ Criminal-record sealing eligibility screener. Case facts JSON in
+ (disposition, conviction type, sentence-completed date, subsequent history)
+ → per-case eligibility determination against **rules-as-data** for three
+ editable example US jurisdictions (DC, CA, TX), with disqualifier flags that
+-each cite the rule that produced them. **Never guesses** — unknown data
+-returns `insufficient_data` — and every report ends at a hard
+-**verify-with-counsel** gate.
++each cite the rule that produced them. The DC ruleset carries real
++**D.C. Code § citations** (verified 2026-11-07, `[verify]`-tagged — the
++numbers stay illustrative until a maintainer checks them against the current
++statute). **Never guesses** — unknown data returns `insufficient_data` — and
++every report ends at a hard **verify-with-counsel** gate.
++
++Screens the whole record, not just one case: a pending sibling case gates
++every other case, and sibling convictions feed the lookback window and
++lifetime cap automatically (per-case overrides still win). A deterministic
++`parseRapSheet(text)` turns a documented paste format into `cases[]` with
++unrecognized lines surfaced as `unmappedLines` — never classified. Eligible
++cases get **filing next steps** (steps, where to file, fee) and the report
++ships a **next-recheck date** for needs-more-time cases.
+ 
+ Open reimplementation of the Rising for Justice "Record sealing screener"
+ (Claude for Legal A2J gallery); the original is D.C.-only and closed.
+@@ -14,27 +24,34 @@ Open reimplementation of the Rising for Justice "Record sealing screener"
+ ## Run
+ 
+ ```bash
+-node --test 'core/*.test.js'   # 16 tests
++node --test 'core/*.test.js'   # 26 tests
+ node examples/run.js           # regenerates examples/output.json + report.md
+ ```
+ 
+-Open `demo/index.html` in a browser for the interactive demo (prefilled with
+-the worked example).
++Open `demo/index.html` in a browser for the interactive demo: JSON input mode
++or **rap-sheet paste mode** (paste → parseRapSheet → screenRecord), prefilled
++with the worked example.
+ 
+ ## Layout
+ 
+-- `spec.md` — IO contract, deterministic/LLM split, prompt schema
++- `spec.md` — IO contract, deterministic/LLM split, rap-sheet paste format, DC statutory-citation policy
+ - `core/core.js` — dependency-free ES module (browser + Node)
+-- `core/core.test.js` — node:test suite
+-- `examples/` — fictional 5-case record → output.json + report.md
+-- `demo/index.html` — standalone interactive demo (design tokens)
++- `core/core.test.js` — node:test suite (incl. golden-file reproducibility test)
++- `examples/` — fictional 5-case record → output.json + report.md (byte-reproducible)
++- `demo/index.html` — interactive demo: JSON + rap-sheet paste modes
+ 
+ ## Better than the closed counterpart
+ 
+-- Every flag cites its rule; the full rule chain is in the output (auditable).
++- Every flag cites its rule and the statute to verify it against (auditable;
++  DC paths cite D.C. Code § 16-803 / § 16-806 with `lastVerified`).
+ - Jurisdictions are editable data, not code — portable beyond D.C.
+ - Missing data is surfaced, never guessed; counsel gate is structural.
+-- Same input + ruleset version ⇒ identical output (reproducible).
+-
+-⚠️ Illustrative example rulesets and fictional data only. Not legal advice.
+-Verify with licensed counsel before filing.
++- Same input + ruleset version ⇒ identical output (reproducible, golden-file tested).
++- Whole-record aware: pending siblings and sibling convictions gate the
++  screen deterministically; offline rap-sheet paste intake; filing next
++  steps + recheck calendar on every report.
++
++⚠️ Illustrative example rulesets and fictional data only. The D.C. Code
++§ citations mark where to verify — the numbers themselves are illustrative
++until checked against the current statute. Not legal advice. Verify with
++licensed counsel before filing.
+diff --git a/open-artifacts/record-sealing-screener/core/core.js b/open-artifacts/record-sealing-screener/core/core.js
+index 33b46eb..93378ab 100644
+--- a/open-artifacts/record-sealing-screener/core/core.js
++++ b/open-artifacts/record-sealing-screener/core/core.js
+@@ -78,59 +78,159 @@ export function daysBetween(a, b) {
+  * engine echoes back on each determination. ILLUSTRATIVE ONLY — modeled on
+  * common sealing-scheme shapes (waiting periods, conviction-count caps,
+  * disqualifying offense categories/classes), not legal advice.
++ *
++ * The DC ruleset additionally carries `citation` blocks pointing at the real
++ * D.C. Code chapter (verified 2026-11-07 against code.dccouncil.gov). The
++ * numbers on the DC paths remain ILLUSTRATIVE and [verify]-tagged: the
++ * citation tells a maintainer exactly which statute to check, never that
++ * these parameters ARE the statute. CA and TX stay uncited fictional data.
++ *
+  * @type {Record<string, JurisdictionRules>}
+  */
+ export const JURISDICTION_RULES = {
+   DC: {
+     id: "DC",
+-    name: "District of Columbia (example ruleset)",
+-    version: "2026-11-example",
++    name: "District of Columbia (example ruleset, statutes cited for verification)",
++    version: "2026-11-dc-cited",
+     paths: {
+       conviction: {
+         ruleId: "DC-R1",
++        citation: {
++          statute: "D.C. Code § 16-806(a)(3)",
++          detail:
++            "Motion to seal a conviction after a waiting period measured from completion of the sentence " +
++            "— 5 years (misdemeanor) / 8 years (felony) under the current statute; this example path uses a " +
++            "flat 8-year wait and its caps/categories are illustrative [verify against current statute].",
++          effectiveDate: "2023-03-10 [verify]", // Second Chance Amendment Act of 2022 restated this chapter
++          lastVerified: "2026-11-07",
++          source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-806",
++        },
+         waitingPeriodYears: 8,
+         waitingAnchor: "sentenceCompletedDate",
+         maxLifetimeConvictions: 2,
+         disqualifyingCategories: ["violent_felony", "sex_offense", "dui_serious"],
+         disqualifyingClasses: ["felony_class_A", "felony_class_B"],
+         motion: "Motion to Seal Conviction Record",
++        whereToFile: "D.C. Superior Court [verify]",
++        fee: "No filing fee stated in § 16-806 [verify]",
++        filingSteps: [
++          "Draft the motion stating all unsealed citations, arrests, charges, and convictions as reasonably known (§ 16-806(c)(1)(A)) [verify]",
++          "Serve a copy of the motion on the prosecutor (§ 16-806(d)) [verify]",
++          "File with the court; the order is due within 180 days (§ 16-806(i)(4)(C)) [verify]",
++          "If granted, records are sealed within 90 days (§ 16-806(j)) [verify]",
++        ],
+       },
+       acquittal: {
+         ruleId: "DC-R2",
++        citation: {
++          statute: "D.C. Code § 16-803",
++          detail:
++            "Actual-innocence expungement by motion may be filed at any time (§ 16-803(b)(2)(B)); an acquittal " +
++            "alone does NOT establish a presumption of relief (§ 16-803(e)). The 0-year wait here is an " +
++            "illustrative simplification [verify against current statute].",
++          effectiveDate: "2023-03-10 [verify]",
++          lastVerified: "2026-11-07",
++          source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-803",
++        },
+         waitingPeriodYears: 0,
+         waitingAnchor: "dispositionDate",
+         disqualifyingCategories: [],
+         disqualifyingClasses: [],
+         motion: "Motion to Seal Following Acquittal",
++        whereToFile: "D.C. Superior Court [verify]",
++        fee: "No filing fee stated in § 16-803 [verify]",
++        filingSteps: [
++          "Draft the motion stating the grounds and supporting facts (§ 16-803(b)(1)) [verify]",
++          "Serve a copy on the prosecutor (§ 16-803(c)) [verify]",
++          "File with the court; may be filed at any time (§ 16-803(b)(2)(B)) [verify]",
++        ],
+       },
+       dismissed: {
+         ruleId: "DC-R3",
++        citation: {
++          statute: "D.C. Code § 16-806(a)(1)",
++          detail:
++            "Sealing by motion where the case was terminated by the prosecutor or otherwise reached a final " +
++            "disposition without conviction or acquittal, on an interests-of-justice showing. The 1-year wait " +
++            "here is illustrative — the cited subsection has no stated waiting period [verify].",
++          effectiveDate: "2023-03-10 [verify]",
++          lastVerified: "2026-11-07",
++          source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-806",
++        },
+         waitingPeriodYears: 1,
+         waitingAnchor: "dispositionDate",
+         disqualifyingCategories: [],
+         disqualifyingClasses: [],
+         motion: "Motion to Seal Dismissed Case",
++        whereToFile: "D.C. Superior Court [verify]",
++        fee: "No filing fee stated in § 16-806 [verify]",
++        filingSteps: [
++          "Draft the motion demonstrating it is in the interests of justice to seal (§ 16-806(a)(1)(C)) [verify]",
++          "Serve a copy on the prosecutor (§ 16-806(d)) [verify]",
++          "File with the court [verify]",
++        ],
+       },
+       nolle_prosequi: {
+         ruleId: "DC-R4",
++        citation: {
++          statute: "D.C. Code § 16-806(a)(1)",
++          detail:
++            "Sealing by motion where the case was terminated by the prosecutor (nolle prosequi) without " +
++            "conviction or acquittal. The 2-year wait here is illustrative [verify].",
++          effectiveDate: "2023-03-10 [verify]",
++          lastVerified: "2026-11-07",
++          source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-806",
++        },
+         waitingPeriodYears: 2,
+         waitingAnchor: "dispositionDate",
+         disqualifyingCategories: [],
+         disqualifyingClasses: [],
+         motion: "Motion to Seal Nolle Prosequi",
++        whereToFile: "D.C. Superior Court [verify]",
++        fee: "No filing fee stated in § 16-806 [verify]",
++        filingSteps: [
++          "Draft the motion demonstrating it is in the interests of justice to seal (§ 16-806(a)(1)(C)) [verify]",
++          "Serve a copy on the prosecutor (§ 16-806(d)) [verify]",
++          "File with the court [verify]",
++        ],
+       },
+       deferred_adjudication: {
+         ruleId: "DC-R5",
++        citation: {
++          statute: "D.C. Code § 16-806",
++          detail:
++            "The cited chapter has no deferred-adjudication-specific path; this example path and its " +
++            "3-year wait are illustrative fiction [verify].",
++          effectiveDate: "2023-03-10 [verify]",
++          lastVerified: "2026-11-07",
++          source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-806",
++        },
+         waitingPeriodYears: 3,
+         waitingAnchor: "dispositionDate",
+         requiresFinePaid: true,
+         disqualifyingCategories: ["violent_felony", "sex_offense"],
+         disqualifyingClasses: ["felony_class_A"],
+         motion: "Motion to Seal After Deferred Adjudication",
++        whereToFile: "D.C. Superior Court [verify]",
++        fee: "No filing fee stated in § 16-806 [verify]",
++        filingSteps: [
++          "Confirm fine/restitution paid before filing (illustrative condition of this path) [verify]",
++          "Draft and serve the motion on the prosecutor (§ 16-806(d)) [verify]",
++          "File with the court [verify]",
++        ],
+       },
+     },
+     subsequentConvictionRule: {
+       ruleId: "DC-R6",
++      citation: {
++        statute: "D.C. Code § 16-806(b)(2)(B)(iii)(VI)",
++        detail:
++          "The court weighs the movant's criminal history in the interests-of-justice analysis; the hard " +
++            "8-year disqualifying lookback here is illustrative [verify].",
++        effectiveDate: "2023-03-10 [verify]",
++        lastVerified: "2026-11-07",
++        source: "https://code.dccouncil.gov/us/dc/council/code/sections/16-806",
++      },
+       disqualifiesWithinYears: 8,
+       scope: "any conviction between anchor date and asOf",
+     },
+@@ -148,6 +248,13 @@ export const JURISDICTION_RULES = {
+         disqualifyingCategories: ["sex_offense", "violent_felony"],
+         disqualifyingClasses: ["felony_class_A", "felony_class_B"],
+         motion: "Petition for Dismissal (sealing analog)",
++        whereToFile: "(illustrative) superior court of the county of conviction",
++        fee: "(illustrative) check the court fee schedule",
++        filingSteps: [
++          "(illustrative) draft the petition",
++          "(illustrative) serve the district attorney",
++          "(illustrative) file with the court and attend the hearing if set",
++        ],
+       },
+       acquittal: {
+         ruleId: "CA-R2",
+@@ -202,6 +309,13 @@ export const JURISDICTION_RULES = {
+         disqualifyingCategories: ["sex_offense", "violent_felony", "family_violence"],
+         disqualifyingClasses: ["felony_class_A", "felony_class_B"],
+         motion: "Petition for Nondisclosure",
++        whereToFile: "(illustrative) district court of the county of conviction",
++        fee: "(illustrative) check the court fee schedule",
++        filingSteps: [
++          "(illustrative) draft the petition",
++          "(illustrative) serve the prosecutor",
++          "(illustrative) file with the court and attend the hearing if set",
++        ],
+       },
+       acquittal: {
+         ruleId: "TX-R2",
+@@ -282,18 +396,28 @@ export const COUNSEL_GATE = {
+ 
+ /**
+  * Screen one case against a jurisdiction ruleset.
++ *
++ * `record` carries whole-record context derived from the sibling cases by
++ * `screenRecord`: `pendingSiblingIds` (any case flagged pending gates every
++ * other case) and `siblingConvictions` (used for the lookback and the
++ * lifetime cap when this case does not carry an explicit
++ * `subsequentConvictions` array — an explicit array, even empty, overrides).
++ *
+  * @param {SealingCase} c
+  * @param {ReturnType<typeof getRuleset>} rules
+  * @param {Date} asOf
++ * @param {{pendingSiblingIds?:string[], siblingConvictions?:{date:string|null,offenseCategory?:string,sourceCaseId:string}[]}} [record]
+  * @returns {Object} determination result
+  */
+-export function screenCase(c, rules, asOf) {
+-  /** @type {{code:string, description:string, ruleId:string}[]} */
++export function screenCase(c, rules, asOf, record = {}) {
++  /** @type {{code:string, description:string, ruleId:string, statute?:string|null}[]} */
+   const disqualifiers = [];
+   /** @type {string[]} */
+   const missingData = [];
+-  /** @type {{ruleId:string, text:string}[]} */
++  /** @type {{ruleId:string, text:string, statute?:string|null}[]} */
+   const basis = [];
++  /** Statute string for a rule's citation block, or null when the rule has none. */
++  const citeOf = (rule) => (rule?.citation ? `${rule.citation.statute} [verify]` : null);
+   const result = {
+     caseId: c.id,
+     caseNumber: c.caseNumber ?? null,
+@@ -304,11 +428,24 @@ export function screenCase(c, rules, asOf) {
+     missingData,
+     basis,
+     motion: null,
++    statute: null,
++    filingSteps: null,
++    whereToFile: null,
++    fee: null,
+   };
+-  if (c.pendingCase) {
++  // Pending gate: own flag first, then the record-level gate from siblings.
++  // An explicit `pendingCase: false` on this case overrides the record gate.
++  const pendingSiblings = (record.pendingSiblingIds ?? []).filter((id) => id !== c.id);
++  if (c.pendingCase === true) {
++    disqualifiers.push({
++      code: "pending_case",
++      description: "This case is pending; most schemes bar sealing until it resolves.",
++      ruleId: "GATE-PENDING",
++    });
++  } else if (c.pendingCase === undefined && pendingSiblings.length > 0) {
+     disqualifiers.push({
+       code: "pending_case",
+-      description: "A pending case is open; most schemes bar sealing until it resolves.",
++      description: `Pending sibling case(s) ${pendingSiblings.join(", ")} elsewhere on this record; most schemes bar sealing until they resolve.`,
+       ruleId: "GATE-PENDING",
+     });
+   }
+@@ -322,7 +459,12 @@ export function screenCase(c, rules, asOf) {
+     missingData.push(`no ruleset path for disposition "${disp}" in ${rules.id}`);
+     return result;
+   }
+-  basis.push({ ruleId: path.ruleId, text: `${rules.id} ${disp} path: ${path.waitingPeriodYears}-year wait anchored to ${path.waitingAnchor}` });
++  const pathCite = citeOf(path);
++  basis.push({
++    ruleId: path.ruleId,
++    text: `${rules.id} ${disp} path: ${path.waitingPeriodYears}-year wait anchored to ${path.waitingAnchor}`,
++    statute: pathCite,
++  });
+ 
+   // Disqualifying offense categories / classes
+   if (c.offenseCategory && path.disqualifyingCategories.includes(c.offenseCategory)) {
+@@ -330,6 +472,7 @@ export function screenCase(c, rules, asOf) {
+       code: "disqualifying_category",
+       description: `Offense category "${c.offenseCategory}" is disqualifying on the ${disp} path.`,
+       ruleId: path.ruleId,
++      statute: pathCite,
+     });
+   }
+   if (c.offenseClass && path.disqualifyingClasses.includes(c.offenseClass)) {
+@@ -337,6 +480,7 @@ export function screenCase(c, rules, asOf) {
+       code: "disqualifying_class",
+       description: `Offense class "${c.offenseClass}" is disqualifying on the ${disp} path.`,
+       ruleId: path.ruleId,
++      statute: pathCite,
+     });
+   }
+ 
+@@ -358,35 +502,47 @@ export function screenCase(c, rules, asOf) {
+       code: "fines_unpaid",
+       description: "Fines/restitution reported unpaid; required condition not met.",
+       ruleId: path.ruleId,
++      statute: pathCite,
+     });
+   }
+ 
+-  // Subsequent convictions inside the lookback window
++  // Subsequent convictions inside the lookback window. When the case carries
++  // no explicit `subsequentConvictions` array, derive them from sibling
++  // conviction cases on the record (whole-record screening).
++  const explicitSubs = Array.isArray(c.subsequentConvictions);
++  const subs = explicitSubs
++    ? c.subsequentConvictions
++    : (record.siblingConvictions ?? []).filter((s) => s.sourceCaseId !== c.id);
+   const lookback = rules.subsequentConvictionRule;
+   const windowEnd = addYears(anchor, lookback.disqualifiesWithinYears);
+-  for (const sc of c.subsequentConvictions ?? []) {
++  for (const sc of subs) {
+     const d = parseDate(sc.date);
+     if (!d) {
+-      missingData.push(`subsequent conviction date "${sc.date}" unparseable — excluded, flagged`);
++      missingData.push(
++        (sc.sourceCaseId ? `sibling case "${sc.sourceCaseId}" conviction date "${sc.date}"` : `subsequent conviction date "${sc.date}"`) +
++        " missing or unparseable — excluded, flagged",
++      );
+       continue;
+     }
+     if (d > anchor && d <= (asOf < windowEnd ? asOf : windowEnd)) {
+       disqualifiers.push({
+         code: "subsequent_conviction",
+-        description: `Conviction on ${sc.date} falls inside the ${lookback.disqualifiesWithinYears}-year lookback from the anchor date.`,
++        description: `Conviction on ${sc.date}${sc.sourceCaseId ? ` (sibling case ${sc.sourceCaseId})` : ""} falls inside the ${lookback.disqualifiesWithinYears}-year lookback from the anchor date.`,
+         ruleId: lookback.ruleId,
++        statute: citeOf(lookback),
+       });
+     }
+   }
+ 
+-  // Lifetime conviction cap (heuristic: count subsequent + this conviction)
++  // Lifetime conviction cap (this conviction + subsequent/sibling convictions)
+   if (path.maxLifetimeConvictions != null && disp === "conviction") {
+-    const total = 1 + (c.subsequentConvictions ?? []).length;
++    const total = 1 + subs.length;
+     if (total > path.maxLifetimeConvictions) {
+       disqualifiers.push({
+         code: "conviction_count_over_cap",
+-        description: `${total} convictions reported; the ${rules.id} ${disp} path caps eligibility at ${path.maxLifetimeConvictions}.`,
++        description: `${total} convictions on this record${explicitSubs ? "" : " (this case plus sibling convictions)"}; the ${rules.id} ${disp} path caps eligibility at ${path.maxLifetimeConvictions}.`,
+         ruleId: path.ruleId,
++        statute: pathCite,
+       });
+     }
+   }
+@@ -411,9 +567,14 @@ export function screenCase(c, rules, asOf) {
+ 
+   result.determination = "potentially_eligible";
+   result.motion = path.motion;
++  result.statute = pathCite;
++  result.filingSteps = path.filingSteps ?? null;
++  result.whereToFile = path.whereToFile ?? null;
++  result.fee = path.fee ?? null;
+   basis.push({
+     ruleId: path.ruleId,
+     text: `Waiting period satisfied on or after ${fmtDate(eligibleOn)}; no disqualifier matched.`,
++    statute: pathCite,
+   });
+   return result;
+ }
+@@ -427,6 +588,25 @@ export function getRuleset(id) {
+   return JURISDICTION_RULES[id] ?? null;
+ }
+ 
++/**
++ * Derive whole-record context from the sibling cases: which cases are still
++ * pending, and which sibling cases are convictions (candidates for another
++ * case's lookback window and lifetime cap when not explicitly listed).
++ * @param {SealingCase[]} cases
++ * @returns {{pendingSiblingIds:string[], siblingConvictions:{date:string|null,offenseCategory?:string,sourceCaseId:string}[]}}
++ */
++function deriveRecordContext(cases) {
++  const pendingSiblingIds = cases.filter((c) => c?.pendingCase === true).map((c) => c.id);
++  const siblingConvictions = cases
++    .filter((c) => c?.disposition === "conviction")
++    .map((c) => ({
++      date: c.dispositionDate ?? c.sentenceCompletedDate ?? null,
++      offenseCategory: c.offenseCategory,
++      sourceCaseId: c.id,
++    }));
++  return { pendingSiblingIds, siblingConvictions };
++}
++
+ /**
+  * Run the full screen.
+  * @param {SealingInput} input
+@@ -443,6 +623,7 @@ export function screenRecord(input) {
+     results,
+     gate: COUNSEL_GATE,
+     summary: { total: 0, potentially_eligible: 0, needs_more_time: 0, ineligible: 0, insufficient_data: 0 },
++    nextReviewDate: null,
+   };
+   const rules = input?.jurisdiction ? getRuleset(input.jurisdiction) : null;
+   if (!rules) {
+@@ -454,6 +635,10 @@ export function screenRecord(input) {
+       basis: [],
+       eligibleOnDate: null,
+       motion: null,
++      statute: null,
++      filingSteps: null,
++      whereToFile: null,
++      fee: null,
+     }));
+     report.summary.insufficient_data = report.results.length;
+     report.summary.total = report.results.length;
+@@ -461,11 +646,18 @@ export function screenRecord(input) {
+   }
+   report.ruleset = { id: rules.id, name: rules.name, version: rules.version };
+   if (!asOf) return invalidAsOf_(report, input);
+-  for (const c of input.cases ?? []) results.push(screenCase(c, rules, asOf));
++  const record = deriveRecordContext(input.cases ?? []);
++  for (const c of input.cases ?? []) results.push(screenCase(c, rules, asOf, record));
+   report.summary.total = results.length;
+   for (const r of results) {
+     if (report.summary[r.determination] != null) report.summary[r.determination] += 1;
+   }
++  // Recheck calendar: earliest date any needs_more_time case becomes eligible.
++  for (const r of results) {
++    if (r.determination === "needs_more_time" && r.eligibleOnDate && (!report.nextReviewDate || r.eligibleOnDate < report.nextReviewDate)) {
++      report.nextReviewDate = r.eligibleOnDate;
++    }
++  }
+   return report;
+ }
+ 
+@@ -479,12 +671,108 @@ function invalidAsOf_(report, input) {
+     basis: [],
+     eligibleOnDate: null,
+     motion: null,
++    statute: null,
++    filingSteps: null,
++    whereToFile: null,
++    fee: null,
+   }));
+   report.summary.total = report.results.length;
+   report.summary.insufficient_data = report.results.length;
+   return report;
+ }
+ 
++/* ---------- rap-sheet paste parser (deterministic, never guesses) ---------- */
++
++/** Disposition values the parser will map; anything else goes to unmappedLines. */
++const RAP_KNOWN_DISPOSITIONS = new Set([
++  "conviction",
++  "acquittal",
++  "dismissed",
++  "nolle_prosequi",
++  "deferred_adjudication",
++  "unknown",
++]);
++
++/**
++ * Parse the documented rap-sheet paste format (see spec.md) into the
++ * `SealingInput` case shape. Deterministic line grammar; every line that is
++ * not part of the documented format lands in `unmappedLines` with its line
++ * number — the parser never guesses a disposition, date, or flag.
++ *
++ * Output: `{ jurisdiction: string|null, cases: SealingCase[],
++ * unmappedLines: {line:number, text:string}[] }`. The caller supplies `asOf`
++ * separately (the parser has no clock).
++ *
++ * @param {string} text
++ * @returns {{jurisdiction:string|null, cases:Object[], unmappedLines:{line:number,text:string}[]}}
++ */
++export function parseRapSheet(text) {
++  /** @type {{jurisdiction:string|null, cases:Object[], unmappedLines:{line:number,text:string}[]}} */
++  const out = { jurisdiction: null, cases: [], unmappedLines: [] };
++  if (typeof text !== "string") return out;
++  let cur = null;
++  const lines = text.split(/\r?\n/);
++  lines.forEach((raw, i) => {
++    const line = raw.trim();
++    if (!line) return;
++    const n = i + 1;
++    const unmapped = () => out.unmappedLines.push({ line: n, text: line });
++    // Case header: "CASE <id> [(<caseNumber>)]" — no colon, starts a new case.
++    const caseHeader = /^CASE\s+(\S+)(?:\s+\((.+)\))?\s*$/.exec(line);
++    if (caseHeader) {
++      cur = { id: caseHeader[1], caseNumber: caseHeader[2] ?? null };
++      out.cases.push(cur);
++      return;
++    }
++    const kv = /^([A-Z][A-Z ]*?):\s*(.*)$/.exec(line);
++    if (!kv) return unmapped();
++    const key = kv[1];
++    const v = kv[2].trim();
++    if (!v) return unmapped();
++    if (key === "JURISDICTION") {
++      if (/^[A-Z]{2}$/.test(v)) out.jurisdiction = v;
++      else unmapped();
++      return;
++    }
++    if (!cur) return unmapped();
++    switch (key) {
++      case "OFFENSE":
++        cur.offense = v;
++        return;
++      case "CATEGORY":
++        cur.offenseCategory = v;
++        return;
++      case "CLASS":
++        cur.offenseClass = v;
++        return;
++      case "DISPOSITION":
++        if (RAP_KNOWN_DISPOSITIONS.has(v)) cur.disposition = v;
++        else unmapped();
++        return;
++      case "OFFENSE DATE":
++      case "DISPOSITION DATE":
++      case "SENTENCE COMPLETED": {
++        if (!parseDate(v)) return unmapped();
++        const field =
++          key === "OFFENSE DATE" ? "offenseDate" : key === "DISPOSITION DATE" ? "dispositionDate" : "sentenceCompletedDate";
++        cur[field] = v;
++        return;
++      }
++      case "FINE PAID":
++      case "PENDING": {
++        const bool = /^yes$/i.test(v) ? true : /^no$/i.test(v) ? false : null;
++        if (bool === null) return unmapped();
++        if (key === "FINE PAID") cur.finePaid = bool;
++        else cur.pendingCase = bool;
++        return;
++      }
++      default:
++        unmapped();
++    }
++  });
++  return out;
++}
++
+ /** Render the report as deterministic Markdown.
+  * @param {ReturnType<screenRecord>} report
+  * @returns {string} */
+@@ -497,16 +785,27 @@ export function renderReport(report) {
+   const s = report.summary;
+   L.push(`**${s.total}** cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data`);
+   L.push("");
++  if (report.nextReviewDate) {
++    L.push(`**Next recheck date: ${report.nextReviewDate}** — earliest date any needs_more_time case may become eligible.`);
++    L.push("");
++  }
+   for (const r of report.results) {
+     L.push(`## ${r.caseId}${r.caseNumber ? ` (${r.caseNumber})` : ""} — ${r.determination}`);
+     L.push("");
+     if (r.offense) L.push(`Offense: ${r.offense}`);
+     if (r.eligibleOnDate) L.push(`Earliest eligibility date: **${r.eligibleOnDate}**`);
+-    if (r.motion) L.push(`Motion to file: ${r.motion}`);
++    if (r.motion) L.push(`Motion to file: ${r.motion}${r.statute ? ` (${r.statute})` : ""}`);
++    if (r.filingSteps?.length) {
++      L.push("");
++      L.push("Filing next steps:");
++      for (const s of r.filingSteps) L.push(`- ${s}`);
++      if (r.whereToFile) L.push(`- Where to file: ${r.whereToFile}`);
++      if (r.fee != null) L.push(`- Fee: ${r.fee}`);
++    }
+     if (r.disqualifiers?.length) {
+       L.push("");
+       L.push("Disqualifiers (rule cited):");
+-      for (const d of r.disqualifiers) L.push(`- **${d.code}** — ${d.description} \`${d.ruleId}\``);
++      for (const d of r.disqualifiers) L.push(`- **${d.code}** — ${d.description} \`${d.ruleId}\`${d.statute ? ` (${d.statute})` : ""}`);
+     }
+     if (r.missingData?.length) {
+       L.push("");
+@@ -516,7 +815,7 @@ export function renderReport(report) {
+     if (r.basis?.length) {
+       L.push("");
+       L.push("Rule chain:");
+-      for (const b of r.basis) L.push(`- \`${b.ruleId}\` ${b.text}`);
++      for (const b of r.basis) L.push(`- \`${b.ruleId}\` ${b.text}${b.statute ? ` — ${b.statute}` : ""}`);
+     }
+     L.push("");
+   }
+diff --git a/open-artifacts/record-sealing-screener/core/core.test.js b/open-artifacts/record-sealing-screener/core/core.test.js
+index 340af8e..173545f 100644
+--- a/open-artifacts/record-sealing-screener/core/core.test.js
++++ b/open-artifacts/record-sealing-screener/core/core.test.js
+@@ -1,9 +1,11 @@
+ /** Tests: record-sealing-screener core. Run: node --test core/ */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
+ import {
+   parseDate, fmtDate, addYears, yearsElapsed, daysBetween,
+   getRuleset, screenRecord, screenCase, renderReport, COUNSEL_GATE, JURISDICTION_RULES,
++  parseRapSheet,
+ } from "./core.js";
+ 
+ const AS_OF = "2026-11-07";
+@@ -144,3 +146,174 @@ test("rules-as-data: three example jurisdictions present and editable shape", ()
+   assert.equal(getRuleset("NOPE"), null);
+   assert.equal(Object.keys(JURISDICTION_RULES).length, 3);
+ });
++
++/* ---------- improvement: statutory-cited DC ruleset ---------- */
++
++test("DC ruleset: every path and the lookback rule cite D.C. Code § with lastVerified", () => {
++  const rs = getRuleset("DC");
++  for (const p of Object.values(rs.paths)) {
++    assert.match(p.citation.statute, /D\.C\. Code § 16-8\d+/, `${p.ruleId} statute cite`);
++    assert.ok(p.citation.lastVerified, `${p.ruleId} lastVerified`);
++    assert.ok(p.citation.detail, `${p.ruleId} detail`);
++  }
++  assert.match(rs.subsequentConvictionRule.citation.statute, /D\.C\. Code § 16-8\d+/);
++  assert.ok(rs.subsequentConvictionRule.citation.lastVerified);
++});
++
++test("statutory cite renders in the report (basis and disqualifier lines)", () => {
++  const r = screenRecord({ jurisdiction: "DC", asOf: AS_OF, cases: [base({ offenseCategory: "violent_felony" })] });
++  const md = renderReport(r);
++  assert.match(md, /D\.C\. Code § 16-806/); // basis chain cites the statute
++  assert.ok(md.includes("[verify]"));       // illustrative numbers stay verify-tagged
++});
++
++/* ---------- improvement: whole-record engine ---------- */
++
++test("whole-record: pending sibling case gates every other case (per-case override kept)", () => {
++  const r = screenRecord({
++    jurisdiction: "DC", asOf: AS_OF,
++    cases: [
++      base({ id: "A", subsequentConvictions: undefined }),
++      base({ id: "B", disposition: "acquittal", dispositionDate: "2024-06-20", subsequentConvictions: undefined }),
++      base({ id: "OVR", disposition: "acquittal", dispositionDate: "2024-06-20", pendingCase: false, subsequentConvictions: undefined }),
++      { id: "P", offense: "New charge (fictional)", disposition: "unknown", pendingCase: true },
++    ],
++  });
++  assert.equal(r.results[0].determination, "ineligible");
++  const dq = r.results[0].disqualifiers.find((d) => d.code === "pending_case");
++  assert.ok(dq && dq.description.includes("P"), "pending flag cites the sibling case id");
++  assert.equal(r.results[1].determination, "ineligible");
++  assert.equal(r.results[2].determination, "potentially_eligible", "explicit pendingCase:false overrides the record gate");
++  assert.equal(r.results[3].determination, "insufficient_data");
++});
++
++test("whole-record: sibling conviction feeds the lookback when subsequentConvictions is omitted", () => {
++  const r = screenRecord({
++    jurisdiction: "DC", asOf: AS_OF,
++    cases: [
++      base({ id: "OLD", sentenceCompletedDate: "2016-03-01", subsequentConvictions: undefined }),
++      base({ id: "NEW", offenseDate: "2020-01-05", dispositionDate: "2020-04-14", sentenceCompletedDate: "2021-02-27" }),
++    ],
++  });
++  assert.equal(r.results[0].determination, "ineligible");
++  const sc = r.results[0].disqualifiers.find((d) => d.code === "subsequent_conviction");
++  assert.ok(sc && sc.description.includes("NEW"), "lookback disqualifier cites the sibling case id");
++  // explicit empty list overrides derivation: same record, manual list, no disqualifier
++  const r2 = screenRecord({
++    jurisdiction: "DC", asOf: AS_OF,
++    cases: [
++      base({ id: "OLD", sentenceCompletedDate: "2016-03-01", subsequentConvictions: [] }),
++      base({ id: "NEW", offenseDate: "2020-01-05", dispositionDate: "2020-04-14", sentenceCompletedDate: "2021-02-27" }),
++    ],
++  });
++  assert.equal(r2.results[0].determination, "potentially_eligible");
++});
++
++test("whole-record: sibling conviction counts toward the lifetime cap", () => {
++  const r = screenRecord({
++    jurisdiction: "TX", asOf: AS_OF,
++    cases: [
++      base({ id: "FIRST", sentenceCompletedDate: "2005-01-01", subsequentConvictions: undefined }),
++      base({ id: "SECOND", dispositionDate: "2026-01-10", sentenceCompletedDate: "2026-02-01", offenseDate: "2025-11-01" }),
++    ],
++  });
++  assert.equal(r.results[0].determination, "ineligible");
++  const cap = r.results[0].disqualifiers.find((d) => d.code === "conviction_count_over_cap");
++  assert.ok(cap && cap.description.includes("sibling"), "cap disqualifier says the extra count came from sibling cases");
++});
++
++/* ---------- improvement: parseRapSheet ---------- */
++
++const RAP_FIXTURE = [
++  "JURISDICTION: DC",
++  "CASE C-1001 (2021-CF-0001)",
++  "OFFENSE: Possession of a controlled substance (fictional)",
++  "CATEGORY: drug_possession",
++  "CLASS: misdemeanor",
++  "DISPOSITION: conviction",
++  "OFFENSE DATE: 2015-04-02",
++  "DISPOSITION DATE: 2015-09-10",
++  "SENTENCE COMPLETED: 2016-03-01",
++  "FINE PAID: yes",
++  "some free-form note the parser must not guess at",
++  "CASE C-1002",
++  "OFFENSE: Theft II (fictional)",
++  "CATEGORY: theft",
++  "CLASS: misdemeanor",
++  "DISPOSITION: acquittal",
++  "DISPOSITION DATE: 2024-06-20",
++  "CONDITION OF RELEASE: ankle monitor (unclassifiable)",
++  "CASE C-1003",
++  "OFFENSE: Trespass (fictional)",
++  "CATEGORY: trespass",
++  "DISPOSITION: deferred_adjudication",
++  "DISPOSITION DATE: 2022-08-01",
++  "FINE PAID: no",
++].join("\n");
++
++test("parseRapSheet: fixture → 3 cases + 2 unmappedLines, never guesses", () => {
++  const parsed = parseRapSheet(RAP_FIXTURE);
++  assert.equal(parsed.jurisdiction, "DC");
++  assert.equal(parsed.cases.length, 3);
++  assert.equal(parsed.unmappedLines.length, 2);
++  assert.equal(parsed.cases[0].id, "C-1001");
++  assert.equal(parsed.cases[0].caseNumber, "2021-CF-0001");
++  assert.equal(parsed.cases[0].disposition, "conviction");
++  assert.equal(parsed.cases[0].finePaid, true);
++  assert.equal(parsed.cases[0].sentenceCompletedDate, "2016-03-01");
++  assert.equal(parsed.cases[1].disposition, "acquittal");
++  assert.equal(parsed.cases[2].finePaid, false);
++  assert.ok(parsed.unmappedLines.every((u) => Number.isInteger(u.line) && typeof u.text === "string"));
++});
++
++test("parseRapSheet: unknown disposition value or bad date → unmapped, never guessed", () => {
++  const parsed = parseRapSheet("CASE X\nDISPOSITION: banana\nDISPOSITION DATE: not-a-date");
++  assert.equal(parsed.cases.length, 1);
++  assert.equal(parsed.cases[0].disposition, undefined);
++  assert.equal(parsed.cases[0].dispositionDate, undefined);
++  assert.equal(parsed.unmappedLines.length, 2);
++  const parsed2 = parseRapSheet("");
++  assert.equal(parsed2.cases.length, 0);
++  assert.equal(parsed2.jurisdiction, null);
++});
++
++/* ---------- improvement: filing next steps ---------- */
++
++test("filing next steps: eligible case carries steps, where to file, fee; report renders them", () => {
++  const r = screenRecord({ jurisdiction: "DC", asOf: AS_OF, cases: [base()] });
++  const res = r.results[0];
++  assert.ok(Array.isArray(res.filingSteps) && res.filingSteps.length >= 3);
++  assert.ok(res.whereToFile);
++  assert.ok(res.fee != null);
++  const md = renderReport(r);
++  assert.match(md, /Filing next steps/);
++  assert.ok(md.includes(res.whereToFile));
++});
++
++/* ---------- improvement: recheck calendar ---------- */
++
++test("recheck calendar: nextReviewDate = earliest eligibleOnDate among needs_more_time", () => {
++  const r = screenRecord({
++    jurisdiction: "DC", asOf: AS_OF,
++    cases: [
++      base({ id: "LATE", sentenceCompletedDate: "2022-01-15" }),   // eligible 2030-01-15
++      base({ id: "EARLY", sentenceCompletedDate: "2020-12-01" }),  // eligible 2028-12-01
++    ],
++  });
++  assert.equal(r.summary.needs_more_time, 2);
++  assert.equal(r.nextReviewDate, "2028-12-01");
++  assert.match(renderReport(r), /Next recheck date: 2028-12-01/);
++  const r2 = screenRecord({ jurisdiction: "DC", asOf: AS_OF, cases: [base()] });
++  assert.equal(r2.nextReviewDate, null, "no needs_more_time cases → no recheck date");
++});
++
++/* ---------- improvement: golden-file reproducibility ---------- */
++
++test("golden file: screenRecord+renderReport ≡ examples/output.json + report.md byte-for-byte", () => {
++  const input = JSON.parse(readFileSync(new URL("../examples/input.json", import.meta.url), "utf8"));
++  const out = readFileSync(new URL("../examples/output.json", import.meta.url), "utf8");
++  const md = readFileSync(new URL("../examples/report.md", import.meta.url), "utf8");
++  const report = screenRecord(input);
++  assert.equal(JSON.stringify(report, null, 2) + "\n", out);
++  assert.equal(renderReport(report), md);
++});
+diff --git a/open-artifacts/record-sealing-screener/demo/index.html b/open-artifacts/record-sealing-screener/demo/index.html
+index a2943fb..0f06e7f 100644
+--- a/open-artifacts/record-sealing-screener/demo/index.html
++++ b/open-artifacts/record-sealing-screener/demo/index.html
+@@ -18,6 +18,8 @@
+   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
+   button:hover { background: #333; }
++  button.mode { background: transparent; color: var(--text); border: 1px solid var(--border); margin-right: 8px; padding: 8px 14px; }
++  button.mode:hover { background: var(--hover); }
+   .cols { display: grid; gap: 24px; margin-top: 32px; }
+   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
+   .case { border: var(--hairline); background: #fff; padding: 18px 18px 14px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
+@@ -45,8 +47,21 @@
+ 
+   <div class="cols">
+     <div>
+-      <div class="kicker">Case facts (JSON)</div>
+-      <textarea id="input" spellcheck="false"></textarea>
++      <div class="kicker">Input</div>
++      <p style="margin:8px 0 10px">
++        <button id="mode-json" class="mode" style="background:var(--text);color:var(--bg)">JSON input</button>
++        <button id="mode-rap" class="mode">Rap-sheet paste</button>
++      </p>
++      <div id="json-pane">
++        <div class="kicker">Case facts (JSON)</div>
++        <textarea id="input" spellcheck="false"></textarea>
++      </div>
++      <div id="rap-pane" style="display:none">
++        <div class="kicker">Rap sheet (documented paste format — see spec.md)</div>
++        <textarea id="rap" spellcheck="false"></textarea>
++        <div class="kicker" style="margin-top:12px">Screening date (as of)</div>
++        <input id="asof" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
++      </div>
+       <p><button id="run">Run screen</button></p>
+       <div class="err" id="err"></div>
+     </div>
+@@ -58,7 +73,7 @@
+ </div>
+ 
+ <script type="module">
+-import { screenRecord, renderReport } from "../core/core.js";
++import { screenRecord, renderReport, parseRapSheet } from "../core/core.js";
+ 
+ const EXAMPLE = {
+   jurisdiction: "DC",
+@@ -90,22 +105,93 @@ const $out = document.getElementById("out");
+ const $err = document.getElementById("err");
+ $input.value = JSON.stringify(EXAMPLE, null, 2);
+ 
++const RAP_EXAMPLE = [
++  "JURISDICTION: DC",
++  "CASE C-1001 (2021-CF-0001)",
++  "OFFENSE: Possession of a controlled substance (fictional)",
++  "CATEGORY: drug_possession",
++  "CLASS: misdemeanor",
++  "DISPOSITION: conviction",
++  "OFFENSE DATE: 2015-04-02",
++  "DISPOSITION DATE: 2015-09-10",
++  "SENTENCE COMPLETED: 2016-03-01",
++  "FINE PAID: yes",
++  "CASE C-1002",
++  "OFFENSE: Theft II (fictional)",
++  "CATEGORY: theft",
++  "CLASS: misdemeanor",
++  "DISPOSITION: conviction",
++  "OFFENSE DATE: 2021-07-19",
++  "DISPOSITION DATE: 2022-02-08",
++  "SENTENCE COMPLETED: 2022-11-30",
++  "FINE PAID: yes",
++  "handwritten margin note the parser will not guess at",
++  "CASE C-1003",
++  "OFFENSE: Trespass (fictional, still open)",
++  "CATEGORY: trespass",
++  "DISPOSITION: unknown",
++  "OFFENSE DATE: 2026-03-02",
++  "PENDING: yes",
++].join("\n");
++const $rap = document.getElementById("rap");
++$rap.value = RAP_EXAMPLE;
++const $asof = document.getElementById("asof");
++
++let mode = "json";
++function setMode(m) {
++  mode = m;
++  document.getElementById("json-pane").style.display = m === "json" ? "" : "none";
++  document.getElementById("rap-pane").style.display = m === "rap" ? "" : "none";
++  const a = document.getElementById("mode-json");
++  const b = document.getElementById("mode-rap");
++  a.style.background = m === "json" ? "var(--text)" : "transparent";
++  a.style.color = m === "json" ? "var(--bg)" : "var(--text)";
++  b.style.background = m === "rap" ? "var(--text)" : "transparent";
++  b.style.color = m === "rap" ? "var(--bg)" : "var(--text)";
++}
++document.getElementById("mode-json").addEventListener("click", () => setMode("json"));
++document.getElementById("mode-rap").addEventListener("click", () => setMode("rap"));
++setMode("json");
++
+ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ 
+ document.getElementById("run").addEventListener("click", () => {
+   $err.textContent = "";
+   try {
+-    const report = screenRecord(JSON.parse($input.value));
++    let parsedInput;
++    let unmapped = [];
++    if (mode === "rap") {
++      const parsed = parseRapSheet($rap.value);
++      unmapped = parsed.unmappedLines;
++      if (!parsed.jurisdiction) throw new Error("rap sheet needs a JURISDICTION: XX line matching a ruleset id (DC | CA | TX)");
++      if (!parsed.cases.length) throw new Error("rap sheet parsed to 0 cases — expected \"CASE <id>\" header lines");
++      parsedInput = { jurisdiction: parsed.jurisdiction, asOf: $asof.value, cases: parsed.cases };
++    } else {
++      parsedInput = JSON.parse($input.value);
++    }
++    const report = screenRecord(parsedInput);
+     const s = report.summary;
+-    let html = `<div class="summary">${s.total} cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data</div>`;
++    let html = `<div class="summary">${s.total} cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data` +
++      (report.nextReviewDate ? `<br>Next recheck date: <strong>${esc(report.nextReviewDate)}</strong>` : "") + `</div>`;
++    if (unmapped.length) {
++      html += `<div class="case" style="border-top-color:var(--border)"><h3>Rap-sheet lines not mapped (never guessed)</h3><ul>` +
++        unmapped.map((u) => `<li>line ${u.line}: ${esc(u.text)}</li>`).join("") + `</ul></div>`;
++    }
+     for (const r of report.results) {
+       html += `<div class="case"><h3>${esc(r.caseId)} ${r.caseNumber ? "(" + esc(r.caseNumber) + ")" : ""} <span class="badge ${esc(r.determination)}">${esc(r.determination)}</span></h3>`;
+       if (r.offense) html += `<div style="font-size:13px;color:var(--text-secondary)">${esc(r.offense)}</div>`;
+       if (r.eligibleOnDate) html += `<div style="font-size:13px;margin-top:4px">Earliest eligibility: <strong>${esc(r.eligibleOnDate)}</strong></div>`;
+-      if (r.motion) html += `<div style="font-size:13px;margin-top:4px">Motion: ${esc(r.motion)}</div>`;
++      if (r.motion) html += `<div style="font-size:13px;margin-top:4px">Motion: ${esc(r.motion)}${r.statute ? ` · ${esc(r.statute)}` : ""}</div>`;
++      if (r.filingSteps && r.filingSteps.length) {
++        html += `<ul>` + r.filingSteps.map((st) => `<li>next: ${esc(st)}</li>`).join("");
++        if (r.whereToFile) html += `<li>where: ${esc(r.whereToFile)}</li>`;
++        if (r.fee != null) html += `<li>fee: ${esc(r.fee)}</li>`;
++        html += `</ul>`;
++      }
+       const items = [
+-        ...(r.disqualifiers || []).map((d) => `<li>⚠ ${esc(d.description)} <code>${esc(d.ruleId)}</code></li>`),
++        ...(r.disqualifiers || []).map((d) => `<li>⚠ ${esc(d.description)} <code>${esc(d.ruleId)}</code>${d.statute ? ` <code>${esc(d.statute)}</code>` : ""}</li>`),
+         ...(r.missingData || []).map((m) => `<li>missing: ${esc(m)}</li>`),
++        ...(r.basis || []).map((b) => `<li>rule: ${esc(b.text)} <code>${esc(b.ruleId)}</code>${b.statute ? ` <code>${esc(b.statute)}</code>` : ""}</li>`),
+       ];
+       if (items.length) html += `<ul>${items.join("")}</ul>`;
+       html += `</div>`;
+diff --git a/open-artifacts/record-sealing-screener/examples/output.json b/open-artifacts/record-sealing-screener/examples/output.json
+index d7fd778..4b936ad 100644
+--- a/open-artifacts/record-sealing-screener/examples/output.json
++++ b/open-artifacts/record-sealing-screener/examples/output.json
+@@ -3,8 +3,8 @@
+   "jurisdiction": "DC",
+   "ruleset": {
+     "id": "DC",
+-    "name": "District of Columbia (example ruleset)",
+-    "version": "2026-11-example"
++    "name": "District of Columbia (example ruleset, statutes cited for verification)",
++    "version": "2026-11-dc-cited"
+   },
+   "results": [
+     {
+@@ -18,14 +18,25 @@
+       "basis": [
+         {
+           "ruleId": "DC-R1",
+-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
++          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         },
+         {
+           "ruleId": "DC-R1",
+-          "text": "Waiting period satisfied on or after 2024-03-01; no disqualifier matched."
++          "text": "Waiting period satisfied on or after 2024-03-01; no disqualifier matched.",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         }
+       ],
+-      "motion": "Motion to Seal Conviction Record"
++      "motion": "Motion to Seal Conviction Record",
++      "statute": "D.C. Code § 16-806(a)(3) [verify]",
++      "filingSteps": [
++        "Draft the motion stating all unsealed citations, arrests, charges, and convictions as reasonably known (§ 16-806(c)(1)(A)) [verify]",
++        "Serve a copy of the motion on the prosecutor (§ 16-806(d)) [verify]",
++        "File with the court; the order is due within 180 days (§ 16-806(i)(4)(C)) [verify]",
++        "If granted, records are sealed within 90 days (§ 16-806(j)) [verify]"
++      ],
++      "whereToFile": "D.C. Superior Court [verify]",
++      "fee": "No filing fee stated in § 16-806 [verify]"
+     },
+     {
+       "caseId": "C-2022-037",
+@@ -38,14 +49,19 @@
+       "basis": [
+         {
+           "ruleId": "DC-R1",
+-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
++          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         },
+         {
+           "ruleId": "DC-R1",
+           "text": "As of 2026-11-07, 3 of 8 required years elapsed."
+         }
+       ],
+-      "motion": null
++      "motion": null,
++      "statute": null,
++      "filingSteps": null,
++      "whereToFile": null,
++      "fee": null
+     },
+     {
+       "caseId": "C-2023-005",
+@@ -58,14 +74,24 @@
+       "basis": [
+         {
+           "ruleId": "DC-R2",
+-          "text": "DC acquittal path: 0-year wait anchored to dispositionDate"
++          "text": "DC acquittal path: 0-year wait anchored to dispositionDate",
++          "statute": "D.C. Code § 16-803 [verify]"
+         },
+         {
+           "ruleId": "DC-R2",
+-          "text": "Waiting period satisfied on or after 2024-06-20; no disqualifier matched."
++          "text": "Waiting period satisfied on or after 2024-06-20; no disqualifier matched.",
++          "statute": "D.C. Code § 16-803 [verify]"
+         }
+       ],
+-      "motion": "Motion to Seal Following Acquittal"
++      "motion": "Motion to Seal Following Acquittal",
++      "statute": "D.C. Code § 16-803 [verify]",
++      "filingSteps": [
++        "Draft the motion stating the grounds and supporting facts (§ 16-803(b)(1)) [verify]",
++        "Serve a copy on the prosecutor (§ 16-803(c)) [verify]",
++        "File with the court; may be filed at any time (§ 16-803(b)(2)(B)) [verify]"
++      ],
++      "whereToFile": "D.C. Superior Court [verify]",
++      "fee": "No filing fee stated in § 16-803 [verify]"
+     },
+     {
+       "caseId": "C-2024-089",
+@@ -77,22 +103,29 @@
+         {
+           "code": "disqualifying_category",
+           "description": "Offense category \"violent_felony\" is disqualifying on the conviction path.",
+-          "ruleId": "DC-R1"
++          "ruleId": "DC-R1",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         },
+         {
+           "code": "disqualifying_class",
+           "description": "Offense class \"felony_class_B\" is disqualifying on the conviction path.",
+-          "ruleId": "DC-R1"
++          "ruleId": "DC-R1",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         }
+       ],
+       "missingData": [],
+       "basis": [
+         {
+           "ruleId": "DC-R1",
+-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
++          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
++          "statute": "D.C. Code § 16-806(a)(3) [verify]"
+         }
+       ],
+-      "motion": null
++      "motion": null,
++      "statute": null,
++      "filingSteps": null,
++      "whereToFile": null,
++      "fee": null
+     },
+     {
+       "caseId": "C-2026-201",
+@@ -103,7 +136,7 @@
+       "disqualifiers": [
+         {
+           "code": "pending_case",
+-          "description": "A pending case is open; most schemes bar sealing until it resolves.",
++          "description": "This case is pending; most schemes bar sealing until it resolves.",
+           "ruleId": "GATE-PENDING"
+         }
+       ],
+@@ -111,7 +144,11 @@
+         "disposition (conviction / acquittal / dismissed / nolle_prosequi / deferred_adjudication)"
+       ],
+       "basis": [],
+-      "motion": null
++      "motion": null,
++      "statute": null,
++      "filingSteps": null,
++      "whereToFile": null,
++      "fee": null
+     }
+   ],
+   "gate": {
+@@ -124,5 +161,6 @@
+     "needs_more_time": 1,
+     "ineligible": 1,
+     "insufficient_data": 1
+-  }
++  },
++  "nextReviewDate": "2030-11-30"
+ }
+diff --git a/open-artifacts/record-sealing-screener/examples/report.md b/open-artifacts/record-sealing-screener/examples/report.md
+index 6b32ce7..4badc14 100644
+--- a/open-artifacts/record-sealing-screener/examples/report.md
++++ b/open-artifacts/record-sealing-screener/examples/report.md
+@@ -1,18 +1,28 @@
+-# Record sealing screen — District of Columbia (example ruleset)
++# Record sealing screen — District of Columbia (example ruleset, statutes cited for verification)
+ 
+-As of: **2026-11-07** · Ruleset: **DC v2026-11-example**
++As of: **2026-11-07** · Ruleset: **DC v2026-11-dc-cited**
+ 
+ **5** cases · 2 potentially eligible · 1 need more time · 1 ineligible · 1 insufficient data
+ 
++**Next recheck date: 2030-11-30** — earliest date any needs_more_time case may become eligible.
++
+ ## C-2021-114 (2021-CF-001142) — potentially_eligible
+ 
+ Offense: Possession of a controlled substance (fictional)
+ Earliest eligibility date: **2024-03-01**
+-Motion to file: Motion to Seal Conviction Record
++Motion to file: Motion to Seal Conviction Record (D.C. Code § 16-806(a)(3) [verify])
++
++Filing next steps:
++- Draft the motion stating all unsealed citations, arrests, charges, and convictions as reasonably known (§ 16-806(c)(1)(A)) [verify]
++- Serve a copy of the motion on the prosecutor (§ 16-806(d)) [verify]
++- File with the court; the order is due within 180 days (§ 16-806(i)(4)(C)) [verify]
++- If granted, records are sealed within 90 days (§ 16-806(j)) [verify]
++- Where to file: D.C. Superior Court [verify]
++- Fee: No filing fee stated in § 16-806 [verify]
+ 
+ Rule chain:
+-- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate
+-- `DC-R1` Waiting period satisfied on or after 2024-03-01; no disqualifier matched.
++- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate — D.C. Code § 16-806(a)(3) [verify]
++- `DC-R1` Waiting period satisfied on or after 2024-03-01; no disqualifier matched. — D.C. Code § 16-806(a)(3) [verify]
+ 
+ ## C-2022-037 (2022-CF-000371) — needs_more_time
+ 
+@@ -20,36 +30,43 @@ Offense: Theft II (fictional client matter)
+ Earliest eligibility date: **2030-11-30**
+ 
+ Rule chain:
+-- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate
++- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate — D.C. Code § 16-806(a)(3) [verify]
+ - `DC-R1` As of 2026-11-07, 3 of 8 required years elapsed.
+ 
+ ## C-2023-005 (2023-CF-000058) — potentially_eligible
+ 
+ Offense: Assault (fictional)
+ Earliest eligibility date: **2024-06-20**
+-Motion to file: Motion to Seal Following Acquittal
++Motion to file: Motion to Seal Following Acquittal (D.C. Code § 16-803 [verify])
++
++Filing next steps:
++- Draft the motion stating the grounds and supporting facts (§ 16-803(b)(1)) [verify]
++- Serve a copy on the prosecutor (§ 16-803(c)) [verify]
++- File with the court; may be filed at any time (§ 16-803(b)(2)(B)) [verify]
++- Where to file: D.C. Superior Court [verify]
++- Fee: No filing fee stated in § 16-803 [verify]
+ 
+ Rule chain:
+-- `DC-R2` DC acquittal path: 0-year wait anchored to dispositionDate
+-- `DC-R2` Waiting period satisfied on or after 2024-06-20; no disqualifier matched.
++- `DC-R2` DC acquittal path: 0-year wait anchored to dispositionDate — D.C. Code § 16-803 [verify]
++- `DC-R2` Waiting period satisfied on or after 2024-06-20; no disqualifier matched. — D.C. Code § 16-803 [verify]
+ 
+ ## C-2024-089 (2024-CF-000894) — ineligible
+ 
+ Offense: Burglary I (fictional)
+ 
+ Disqualifiers (rule cited):
+-- **disqualifying_category** — Offense category "violent_felony" is disqualifying on the conviction path. `DC-R1`
+-- **disqualifying_class** — Offense class "felony_class_B" is disqualifying on the conviction path. `DC-R1`
++- **disqualifying_category** — Offense category "violent_felony" is disqualifying on the conviction path. `DC-R1` (D.C. Code § 16-806(a)(3) [verify])
++- **disqualifying_class** — Offense class "felony_class_B" is disqualifying on the conviction path. `DC-R1` (D.C. Code § 16-806(a)(3) [verify])
+ 
+ Rule chain:
+-- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate
++- `DC-R1` DC conviction path: 8-year wait anchored to sentenceCompletedDate — D.C. Code § 16-806(a)(3) [verify]
+ 
+ ## C-2026-201 (2026-CF-002019) — insufficient_data
+ 
+ Offense: Trespass (fictional, record incomplete)
+ 
+ Disqualifiers (rule cited):
+-- **pending_case** — A pending case is open; most schemes bar sealing until it resolves. `GATE-PENDING`
++- **pending_case** — This case is pending; most schemes bar sealing until it resolves. `GATE-PENDING`
+ 
+ Missing data (never guessed):
+ - disposition (conviction / acquittal / dismissed / nolle_prosequi / deferred_adjudication)
+diff --git a/open-artifacts/record-sealing-screener/spec.md b/open-artifacts/record-sealing-screener/spec.md
+index 846a97e..54f197a 100644
+--- a/open-artifacts/record-sealing-screener/spec.md
++++ b/open-artifacts/record-sealing-screener/spec.md
+@@ -11,14 +11,76 @@ a client may be able to file.
+ |---|---|
+ | Waiting-period date math (anchor + years, calendar-accurate, leap-year safe) | core (deterministic) |
+ | Disqualifier matching (offense category/class, conviction caps, lookback, fines) | core (deterministic) |
+-| Rule citation behind every determination (`ruleId` echoed on every flag) | core (deterministic) |
+-| Jurisdiction rulesets as editable data | rules-as-data (3 example US jurisdictions) |
+-| Reading a rap sheet / docket into the case-facts JSON | LLM or human (out of core) |
++| Cross-case logic (pending sibling gates, lookback/cap from sibling convictions) | core (deterministic) |
++| Rule citation behind every determination (`ruleId` + statute, echoed on every flag) | core (deterministic) |
++| Jurisdiction rulesets as editable data | rules-as-data (3 example US jurisdictions; DC statute-cited) |
++| Rap-sheet paste → case-facts JSON (`parseRapSheet`, documented format, never guesses) | core (deterministic) |
++| Reading arbitrary real rap-sheet formats into the documented paste format | LLM or human (out of core) |
+ | Final eligibility call | **counsel only** (hard gate on every report) |
+ 
+ The engine NEVER guesses: unknown dispositions, missing dates, or unknown
+ jurisdictions return `insufficient_data` listing exactly what is missing.
+ 
++## Whole-record screening (cross-case logic)
++
++`screenRecord` derives record-level context from the sibling `cases[]`
++before screening each case (deterministic cross-case logic an LLM can
++silently miss):
++
++- **Pending gate** — if ANY case on the record is flagged `pendingCase: true`,
++  every case that does not explicitly set `pendingCase` itself gets a
++  `pending_case` disqualifier citing the sibling case id(s). An explicit
++  `pendingCase: false` on a case overrides the record-level gate (per-case
++  override kept).
++- **Lookback & lifetime cap from siblings** — when a case carries NO explicit
++  `subsequentConvictions` array, sibling cases with `disposition:
++  "conviction"` are derived as subsequent convictions (date =
++  `dispositionDate ?? sentenceCompletedDate`, tagged with `sourceCaseId`)
++  and feed both the lookback window and the lifetime conviction cap. An
++  explicit `subsequentConvictions` array — even empty — overrides the
++  derivation (the attorney already documented the history).
++
++## Rap-sheet paste format (input for `parseRapSheet`)
++
++`parseRapSheet(text)` parses a documented, fictional line format — no LLM,
++  no guessing. Grammar (line-based, case-sensitive keys):
++
++```text
++JURISDICTION: DC                       # two-letter ruleset id, required for screening
++CASE C-1001 (2021-CF-0001)             # case header: id + optional (caseNumber); starts a case
++OFFENSE: Possession of a controlled substance (fictional)
++CATEGORY: drug_possession              # single token, matched against rules
++CLASS: misdemeanor                     # single token, matched against rules
++DISPOSITION: conviction | acquittal | dismissed | nolle_prosequi | deferred_adjudication | unknown
++OFFENSE DATE: 2015-04-02               # YYYY-MM-DD, calendar-validated
++DISPOSITION DATE: 2015-09-10
++SENTENCE COMPLETED: 2016-03-01
++FINE PAID: yes | no
++PENDING: yes | no
++```
++
++Any line that is not part of this grammar — unknown keys, bad dates, unknown
++disposition values, prose notes, anything before the first `CASE` header that
++isn't `JURISDICTION` — lands in `unmappedLines: [{ line, text }]` verbatim.
++Fields are omitted, never guessed; the engine turns omissions into
++`insufficient_data` flags. The parser has no clock: the caller supplies `asOf`.
++
++## Statutory citations on the DC ruleset ([verify] policy)
++
++The DC ruleset carries a `citation` block per rule pointing at the real
++D.C. Code chapter (verified 2026-11-07 against `code.dccouncil.gov`):
++`statute`, `detail`, `effectiveDate`, `lastVerified`, `source`. Key anchors:
++
++- Sealing by motion (incl. the 5-year misdemeanor / 8-year felony
++  conviction waiting periods measured from completion of sentence, and the
++  non-conviction path): **D.C. Code § 16-806**
++- Expungement by motion on actual innocence (may be filed at any time; an
++  acquittal alone does not presume relief): **D.C. Code § 16-803**
++
++The citation tells a maintainer exactly which statute to check — it never
++claims the illustrative numbers ARE the statute. Every DC cite renders with a
++`[verify]` tag in reports; example data stays fictional.
++
+ ## Input contract (`SealingInput`, JSON)
+ 
+ ```jsonc
+@@ -51,12 +113,18 @@ One result per case:
+ - `determination`: `potentially_eligible` | `needs_more_time` | `ineligible` |
+   `insufficient_data`
+ - `eligibleOnDate`: earliest date the path opens (when computable)
+-- `disqualifiers[]`: `{ code, description, ruleId }` — every blocking flag
+-  cites the rule that produced it
++- `disqualifiers[]`: `{ code, description, ruleId, statute? }` — every blocking
++  flag cites the rule that produced it, plus the statute when the rule has a
++  citation block
+ - `missingData[]`: what the engine refused to guess
+-- `basis[]`: the rule chain behind the determination (audit trail)
++- `basis[]`: the rule chain behind the determination (audit trail, with
++  statute cites where present)
+ - `motion`: the motion/petition name on the matched path
++- `statute` / `filingSteps[]` / `whereToFile` / `fee`: on `potentially_eligible`
++  results — the filing chain beyond the motion name
+ - `gate`: `{ required: true, message }` — verify-with-counsel, on every report
++- `nextReviewDate` (report-level): the earliest `eligibleOnDate` among
++  `needs_more_time` cases — a recheck calendar for follow-up
+ 
+ `renderReport(report)` produces the deterministic Markdown version.
+ 
+@@ -64,10 +132,14 @@ One result per case:
+ 
+ `JURISDICTION_RULES` in `core/core.js` holds three example US jurisdictions
+ (DC, CA, TX), each with: per-disposition paths (waiting period, anchor,
+-caps, disqualifying categories/classes, motion name) and a
+-subsequent-conviction lookback rule — all carrying `ruleId`s and a
+-`version`. Adding a jurisdiction = adding a data object, not code.
+-Rules are **illustrative**, modeled on common scheme shapes, not legal advice.
++caps, disqualifying categories/classes, motion name, filing steps, where to
++file, fee) and a subsequent-conviction lookback rule — all carrying `ruleId`s
++and a `version`. The DC ruleset additionally carries `citation` blocks with
++real D.C. Code § references, `effectiveDate`, `lastVerified`, and `source`
++(see the [verify] policy above). Adding a jurisdiction = adding a data
++object, not code. Rules are **illustrative**, modeled on common scheme
++shapes, not legal advice — verify every number against the current statute
++before relying on it.
+ 
+ ## Prompt schema for the LLM part
+ 
+@@ -87,11 +159,16 @@ turns omissions into `insufficient_data` flags.
+ 
+ ## What's BETTER than the closed counterpart
+ 
+-1. **Auditability** — every determination ships its rule chain; the closed
+-   artifact's reasoning is not inspectable.
++1. **Auditability** — every determination ships its rule chain AND the statute
++   to verify it against (DC ruleset cites D.C. Code § 16-803/§ 16-806 with
++   `lastVerified`); the closed artifact's reasoning is not inspectable.
+ 2. **Portable by data** — any jurisdiction can be added as a plain data file
+    by legal-aid maintainers; the original is D.C.-only.
+-3. **Never guesses** — missing data is a first-class output, not a
+-   silent assumption.
++3. **Never guesses** — missing data is a first-class output, not a silent
++   assumption; the rap-sheet parser punts unrecognized lines to
++   `unmappedLines` instead of classifying them.
+ 4. **Counsel gate is structural** — code, not a prompt instruction.
+-5. **Reproducible** — same input + ruleset version ⇒ byte-identical output.
++5. **Reproducible** — same input + ruleset version ⇒ byte-identical output
++   (enforced by a golden-file test against `examples/`).
++6. **Whole-record aware** — a pending sibling case or sibling conviction
++   gates the screen deterministically; no manual duplication per case.

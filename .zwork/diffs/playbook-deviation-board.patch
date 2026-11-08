@@ -1,0 +1,1866 @@
+diff --git a/open-artifacts/playbook-deviation-board/README.md b/open-artifacts/playbook-deviation-board/README.md
+index de211f4..6fea24a 100644
+--- a/open-artifacts/playbook-deviation-board/README.md
++++ b/open-artifacts/playbook-deviation-board/README.md
+@@ -4,24 +4,48 @@ Classifies contract clauses against a versioned company playbook
+ (YAML-subset or JSON) into **compliant / deviates / deal-breaker /
+ unclassified**, quoting the clause span that matched, naming the fallback
+ tier, and routing approvals (tier ≥ escalation threshold or deal-breakers go
+-to the named approver). Numeric guard: "3 years" never passes as "18 months".
+-Full IO contract and LLM prompt schema in [spec.md](spec.md).
++to the named approver). Numeric guard with number-word normalization:
++"eighteen months" ≡ "18 months", and "3 years" never passes as "18 months".
++Every deviation carries a deterministic redline (−/+ token diff) back to the
++preferred standard. Full IO contract and LLM prompt schema in [spec.md](spec.md).
+ 
+-Fictional worked example in [examples/](examples/): Verdant Robotics' NDA
+-playbook vs. a draft NDA — 8 clauses → 1 compliant, 4 deviations (2 routed to
+-the General Counsel), 2 deal-breakers, 1 unclassified.
++Beyond single-contract boards, the core supports the full review loop,
++deterministically (no LLM anywhere in it):
++
++- **Portfolio batch** — `buildPortfolio({ playbook, contracts[] })` rolls up
++  per-rule deviation frequencies across a contract set (`portfolio.md`).
++- **Side/polarity** — `playbook.side` vs `contract.side` mismatch is flagged
++  on the board and in every row reason.
++- **Decision log** — `decide(board, decisions)` freezes approvals against a
++  hash of the exact board they were made on (`core/diff.ts`).
++- **Board diff** — `diffBoards(a, b)` splits a re-run into new / resolved /
++  changed / unchanged rows.
++- **Drift detector** — `detectDrift(log, { threshold, lookbackMonths })`
++  proposes per rule Revise / Clarify / Flag from accepted-deviation history
++  (`core/drift.ts`).
++
++Fictional worked examples in [examples/](examples/): Verdant Robotics' NDA
++playbook vs. two drafts — 8 clauses (1 compliant, 4 deviations, 2
++deal-breakers, 1 unclassified) and 4 clauses (word-form "ninety days" matches
++the 90-day-exit fallback tier), plus a cross-contract `portfolio.md`.
+ 
+ ## Layout
+ 
+ - `core/` — dependency-free TypeScript, no LLM: `yaml.ts` (strict YAML
+-  subset), `textutil.ts` (token-span matcher), `board.ts` (classifier +
+-  router + renderer), `board.test.ts`.
+-- `examples/` — `playbook.yaml`, `contract.json`, `run.ts`, generated
+-  `output.json` + `board.md`.
++  subset), `textutil.ts` (token-span matcher + number-word normalization),
++  `board.ts` (classifier + router + redlines + rollup + portfolio +
++  renderer), `redline.ts`, `diff.ts` (decision log + board diff), `drift.ts`,
++  `board.test.ts`. `core.js` is the browser/Node plain-JS port used by the
++  demo.
++- `examples/` — `playbook.yaml`, `contract.json`, `contract-2.json`, `run.ts`,
++  generated `output.json` + `board.md`, `output-2.json` + `board-2.md`,
++  `portfolio.md`.
++- `demo/` — standalone HTML demo (relative imports; inlined at build time by
++  `deploy/build-site.mjs`).
+ 
+ ## Run
+ 
+ ```bash
+-npx tsx --test core/board.test.ts   # 12 tests
+-npx tsx examples/run.ts             # regenerates examples/output.json + board.md
++npx tsx --test core/*.test.ts  # 25 tests
++npx tsx examples/run.ts        # regenerates examples/output*.json, board*.md, portfolio.md
+ ```
+diff --git a/open-artifacts/playbook-deviation-board/core/board.test.ts b/open-artifacts/playbook-deviation-board/core/board.test.ts
+index d41ebb8..3cbebcf 100644
+--- a/open-artifacts/playbook-deviation-board/core/board.test.ts
++++ b/open-artifacts/playbook-deviation-board/core/board.test.ts
+@@ -1,8 +1,11 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+ import { parseYaml } from './yaml';
+-import { buildBoard, renderBoard } from './board';
++import { buildBoard, renderBoard, buildPortfolio, renderPortfolio } from './board';
+ import type { Playbook, BoardInput } from './board';
++import { decide, diffBoards, boardHash } from './diff';
++import { detectDrift } from './drift';
++import type { DriftEntry } from './drift';
+ 
+ const PLAYBOOK_YAML = `
+ # fictional playbook for tests
+@@ -147,6 +150,175 @@ rules:
+   assert.ok(out.rows[0].reason.includes('uncapped'));
+ });
+ 
++test('word-form number spans numeric-match after normalization ("eighteen months" ≡ "eighteen (18) months")', () => {
++  const [row] = board([{ id: 'C10', heading: 'Term', text: '3.1 This Agreement continues for eighteen months.' }]).rows;
++  assert.equal(row.classification, 'deviates');
++  assert.equal(row.matchedTier, 2);
++  assert.equal(row.routedTo, 'General Counsel');
++});
++
++test('number-word restatement collapses: "two (2)" counts once, bare "18" still matches "eighteen (18)"', () => {
++  const rows = board([
++    { id: 'C11', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
++    { id: 'C12', heading: 'Term', text: 'This Agreement continues for 18 months.' },
++  ]).rows;
++  assert.equal(rows[0].matchedTier, 1);
++  assert.equal(rows[1].classification, 'deviates');
++  assert.equal(rows[1].matchedTier, 2);
++});
++
++test('playbook/contract side mismatch is flagged on the board and in every row reason', () => {
++  const playbook = { ...(parseYaml(PLAYBOOK_YAML) as unknown as Playbook), side: 'sales' as const };
++  const clause = { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' };
++  const bad = buildBoard({ playbook, contract: { name: 'T', side: 'purchasing', clauses: [clause] } });
++  assert.ok(bad.sideMismatch && bad.sideMismatch.includes('side mismatch'));
++  assert.ok(bad.rows.every((r) => r.reason.includes('side mismatch')));
++  assert.ok(renderBoard(bad).includes('side mismatch'));
++  const good = buildBoard({ playbook, contract: { name: 'T', side: 'sales', clauses: [clause] } });
++  assert.equal(good.sideMismatch, null);
++  assert.ok(good.rows.every((r) => !r.reason.includes('side mismatch')));
++});
++
++test('deviates rows carry a deterministic redline vs the preferred standard, rendered as −/+ diff lines', () => {
++  const [row] = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]).rows;
++  assert.equal(row.classification, 'deviates');
++  assert.ok(row.redline, 'deviates rows must carry a redline');
++  assert.equal(row.redline!.removals.join(' | '), 'two (2)');
++  assert.ok(row.redline!.additions.join(' | ').includes('three (3)'));
++  const md = renderBoard(board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]));
++  assert.ok(md.includes('```diff'));
++  assert.ok(md.includes('- two (2)'));
++  assert.ok(md.includes('+ three (3)'));
++});
++
++test('decide() records a decision log bound to a board hash; rejects unknown and duplicate clauseIds', () => {
++  const out = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]);
++  const log = decide(out, [{ clauseId: 'C2', decision: 'approve', by: 'Legal Operations', note: 'tier 1 acceptable for this deal' }]);
++  assert.equal(log.contractName, 'Test NDA');
++  assert.equal(log.playbookId, 'PB-TEST-1');
++  assert.equal(log.boardHash, boardHash(out));
++  assert.equal(log.decisions.length, 1);
++  assert.equal(log.decisions[0].by, 'Legal Operations');
++  assert.throws(() => decide(out, [{ clauseId: 'C99', decision: 'approve', by: 'X' }]), /C99/);
++  assert.throws(() => decide(out, [
++    { clauseId: 'C2', decision: 'approve', by: 'X' },
++    { clauseId: 'C2', decision: 'reject', by: 'Y' },
++  ]), /duplicate/);
++});
++
++test('diffBoards(): same clause moving tier 1 → tier 2 is changed, not new/resolved', () => {
++  const a = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]);
++  const b = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for eighteen (18) months.' }]);
++  const d = diffBoards(a, b);
++  assert.deepEqual(d.summary, { new: 0, resolved: 0, changed: 1, unchanged: 0 });
++  assert.equal(d.changedRows[0].clauseId, 'C2');
++  assert.ok(d.changedRows[0].changes.includes('matchedTier'));
++  assert.ok(d.changedRows[0].changes.includes('routedTo'));
++});
++
++test('diffBoards(): new, resolved, and unchanged rows are separated', () => {
++  const a = board([
++    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
++    { id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
++  ]);
++  const b = board([
++    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
++    { id: 'C2', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
++    { id: 'C3', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
++  ]);
++  const d = diffBoards(a, b);
++  assert.deepEqual(d.summary, { new: 1, resolved: 1, changed: 0, unchanged: 1 });
++  assert.equal(d.newRows[0].clauseId, 'C3');
++  assert.equal(d.resolvedRows[0].clauseId, 'C2');
++});
++
++test('detectDrift(): ≥5 same-direction deviations in the window ⇒ Revise', () => {
++  const entries: DriftEntry[] = Array.from({ length: 6 }, (_, i) => ({
++    date: `2026-0${i + 1}-10`,
++    ruleId: 'term',
++    direction: 'term:shorter',
++  }));
++  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
++  assert.equal(r.rules.length, 1);
++  assert.equal(r.rules[0].count, 6);
++  assert.equal(r.rules[0].proposal, 'Revise');
++  assert.equal(r.rules[0].directions[0].direction, 'term:shorter');
++});
++
++test('detectDrift(): split directions at threshold ⇒ Clarify', () => {
++  const entries: DriftEntry[] = [
++    ...Array.from({ length: 3 }, (_, i) => ({ date: `2026-0${i + 1}-10`, ruleId: 'term', direction: 'term:shorter' })),
++    ...Array.from({ length: 3 }, (_, i) => ({ date: `2026-0${i + 4}-10`, ruleId: 'term', direction: 'term:longer' })),
++  ];
++  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
++  assert.equal(r.rules[0].proposal, 'Clarify');
++});
++
++test('detectDrift(): repeated avoid-language (deal_breaker kind) at threshold ⇒ Flag', () => {
++  const entries: DriftEntry[] = Array.from({ length: 5 }, (_, i) => ({
++    date: `2026-0${i + 1}-10`,
++    ruleId: 'term',
++    direction: 'term:perpetual',
++    kind: 'deal_breaker' as const,
++  }));
++  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
++  assert.equal(r.rules[0].proposal, 'Flag');
++});
++
++test('detectDrift(): entries older than the lookback window are excluded', () => {
++  const entries: DriftEntry[] = [
++    ...Array.from({ length: 4 }, (_, i) => ({ date: `2024-0${i + 1}-10`, ruleId: 'term', direction: 'term:shorter' })),
++    { date: '2026-05-10', ruleId: 'term', direction: 'term:shorter' },
++    { date: '2026-06-10', ruleId: 'term', direction: 'term:shorter' },
++  ];
++  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
++  assert.equal(r.asOf, '2026-06-10');
++  assert.equal(r.rules[0].count, 2);
++  assert.equal(r.rules[0].proposal, null);
++});
++
++test('buildPortfolio(): per-rule rollup sums deviation counts across contracts', () => {
++  const playbook = parseYaml(PLAYBOOK_YAML) as unknown as Playbook;
++  const p = buildPortfolio({
++    playbook,
++    contracts: [
++      {
++        name: 'NDA A',
++        clauses: [
++          { id: 'A1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
++          { id: 'A2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
++        ],
++      },
++      {
++        name: 'NDA B',
++        clauses: [{ id: 'B1', heading: 'Term', text: 'This Agreement continues for two (2) years.' }],
++      },
++    ],
++  });
++  assert.equal(p.boards.length, 2);
++  const term = p.rollup.find((r) => r.ruleId === 'term')!;
++  assert.equal(term.clauses, 3);
++  assert.equal(term.compliant, 1);
++  assert.equal(term.deviates, 2);
++  assert.equal(term.deviationRate, 2 / 3);
++  const md = renderPortfolio(p);
++  assert.ok(md.includes('| term |'));
++  assert.ok(md.includes('NDA A'));
++  assert.ok(md.includes('NDA B'));
++});
++
++test('renderBoard(): includes the per-rule deviation-frequency rollup table and resolved thresholds', () => {
++  const out = board([
++    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
++    { id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
++    { id: 'C3', heading: 'Boilerplate', text: 'Notice clause.' },
++  ]);
++  assert.deepEqual(out.thresholds, { preferred: 0.7, fallback: 0.7, topic: 0.3 });
++  const md = renderBoard(out);
++  assert.ok(md.includes('| term |'));
++  assert.ok(md.includes('—'));
++});
++
+ test('summary counts and markdown board render', () => {
+   const out = board([
+     { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+diff --git a/open-artifacts/playbook-deviation-board/core/board.ts b/open-artifacts/playbook-deviation-board/core/board.ts
+index 296f833..9c1b64b 100644
+--- a/open-artifacts/playbook-deviation-board/core/board.ts
++++ b/open-artifacts/playbook-deviation-board/core/board.ts
+@@ -20,7 +20,9 @@
+  * review goes to the playbook's defaultApprover.
+  */
+ 
+-import { bestWindow, similarity } from './textutil';
++import { bestWindow, similarity, numericTokens } from './textutil';
++import { redline as makeRedline } from './redline';
++import type { Redline } from './redline';
+ 
+ export interface AvoidRule {
+   id?: string;
+@@ -46,6 +48,8 @@ export interface PlaybookRule {
+ export interface Playbook {
+   playbookId: string;
+   name?: string;
++  /** which paper this playbook is written from; contract.side must agree */
++  side?: 'sales' | 'purchasing';
+   defaultApprover: string;
+   rules: PlaybookRule[];
+ }
+@@ -58,7 +62,7 @@ export interface Clause {
+ }
+ export interface BoardInput {
+   playbook: Playbook;
+-  contract: { name: string; clauses: Clause[] };
++  contract: { name: string; side?: 'sales' | 'purchasing'; clauses: Clause[] };
+   thresholds?: { preferred?: number; fallback?: number; topic?: number };
+ }
+ 
+@@ -78,10 +82,16 @@ export interface BoardRow {
+   clauseText: string;
+   reason: string;
+   routedTo: string | null;
++  /** deterministic redline back to the preferred standard (deviates rows) */
++  redline?: Redline | null;
+ }
+ export interface BoardOutput {
+   contractName: string;
+   playbookId: string;
++  /** non-null when playbook.side and contract.side disagree */
++  sideMismatch: string | null;
++  /** thresholds actually applied (resolved, as data) */
++  thresholds: { preferred: number; fallback: number; topic: number };
+   summary: { compliant: number; deviates: number; dealBreaker: number; unclassified: number };
+   rows: BoardRow[];
+ }
+@@ -103,15 +113,6 @@ interface StandardScore {
+   span: { text: string; charStart: number; charEnd: number } | null;
+ }
+ 
+-function numericTokens(text: string): string[] {
+-  return text
+-    .toLowerCase()
+-    .split(/[^0-9.]+/)
+-    .map((t) => t.replace(/^\.+|\.+$/g, ''))
+-    .filter((t) => /^[0-9]+(\.[0-9]+)?$/.test(t))
+-    .sort();
+-}
+-
+ function sameMultiset(a: string[], b: string[]): boolean {
+   return a.length === b.length && a.every((x, idx) => x === b[idx]);
+ }
+@@ -243,12 +244,49 @@ function assignRule(clause: Clause, rules: PlaybookRule[], topicTh: number): { r
+   return { rule: null, how: `no rule topic matches heading "${clause.heading}" (best similarity ${best ? best.score.toFixed(2) : 'n/a'} < ${topicTh})` };
+ }
+ 
++/** Per-rule tally over board rows, in ruleId first-appearance order; null ruleId (unclassified) buckets last. */
++function rollupRows(rows: BoardRow[]): RuleRollup[] {
++  const order: string[] = [];
++  const byRule = new Map<string, BoardRow[]>();
++  for (const r of rows) {
++    const key = r.ruleId ?? '—';
++    if (!byRule.has(key)) {
++      byRule.set(key, []);
++      order.push(key);
++    }
++    byRule.get(key)!.push(r);
++  }
++  const grouped = order.filter((k) => k !== '—').map((k) => tally(k, byRule.get(k)!));
++  if (byRule.has('—')) grouped.push(tally('—', byRule.get('—')!));
++  return grouped;
++}
++
++function tally(ruleId: string, rs: BoardRow[]): RuleRollup {
++  const compliant = rs.filter((r) => r.classification === 'compliant').length;
++  const deviates = rs.filter((r) => r.classification === 'deviates').length;
++  const dealBreakers = rs.filter((r) => r.classification === 'deal_breaker').length;
++  const unclassified = rs.filter((r) => r.classification === 'unclassified').length;
++  return {
++    ruleId,
++    clauses: rs.length,
++    compliant,
++    deviates,
++    dealBreakers,
++    unclassified,
++    deviationRate: (deviates + dealBreakers) / rs.length,
++  };
++}
++
+ export function buildBoard(input: BoardInput): BoardOutput {
+   const th = {
+     preferred: input.thresholds?.preferred ?? 0.7,
+     fallback: input.thresholds?.fallback ?? 0.7,
+     topic: input.thresholds?.topic ?? 0.3,
+   };
++  const sideMismatch =
++    input.playbook.side !== undefined && input.contract.side !== undefined && input.playbook.side !== input.contract.side
++      ? `side mismatch: playbook is written from the ${input.playbook.side} side but the contract is ${input.contract.side}-side paper — classifications may read in the wrong direction`
++      : null;
+   const rows: BoardRow[] = input.contract.clauses.map((clause) => {
+     const { rule, how } = assignRule(clause, input.playbook.rules, th.topic);
+     if (!rule) {
+@@ -264,25 +302,88 @@ export function buildBoard(input: BoardInput): BoardOutput {
+         clauseText: clause.text,
+         reason: how,
+         routedTo: input.playbook.defaultApprover,
++        redline: null,
+       };
+     }
+     const { row } = classifyClause(clause, rule, th);
+-    return {
++    const full: BoardRow = {
+       ...row,
+       heading: clause.heading ?? null,
+       routedTo: row.routedTo === '__DEFAULT__' ? input.playbook.defaultApprover : row.routedTo,
++      redline: row.classification === 'deviates' ? makeRedline({ ...row, heading: clause.heading ?? null }, rule) : null,
+     };
++    return full;
+   });
++  const annotated = sideMismatch ? rows.map((r) => ({ ...r, reason: `${r.reason}; ${sideMismatch}` })) : rows;
+ 
+-  const count = (c: Classification) => rows.filter((r) => r.classification === c).length;
++  const count = (c: Classification) => annotated.filter((r) => r.classification === c).length;
+   return {
+     contractName: input.contract.name,
+     playbookId: input.playbook.playbookId,
++    sideMismatch,
++    thresholds: th,
+     summary: { compliant: count('compliant'), deviates: count('deviates'), dealBreaker: count('deal_breaker'), unclassified: count('unclassified') },
+-    rows,
++    rows: annotated,
+   };
+ }
+ 
++/* ---------- portfolio: batch of contracts, one playbook ---------- */
++
++export interface PortfolioInput {
++  playbook: Playbook;
++  contracts: BoardInput['contract'][];
++  thresholds?: BoardInput['thresholds'];
++}
++
++export interface RuleRollup {
++  ruleId: string;
++  clauses: number;
++  compliant: number;
++  deviates: number;
++  dealBreakers: number;
++  unclassified: number;
++  /** (deviates + dealBreakers) / clauses */
++  deviationRate: number;
++}
++
++export interface PortfolioOutput {
++  playbookId: string;
++  contractNames: string[];
++  boards: BoardOutput[];
++  /** per-rule deviation-frequency rollup across all contracts, ruleId first-appearance order */
++  rollup: RuleRollup[];
++}
++
++export function buildPortfolio(input: PortfolioInput): PortfolioOutput {
++  const boards = input.contracts.map((contract) => buildBoard({ playbook: input.playbook, contract, thresholds: input.thresholds }));
++  const rollup = rollupRows(boards.flatMap((b) => b.rows));
++  return { playbookId: input.playbook.playbookId, contractNames: boards.map((b) => b.contractName), boards, rollup };
++}
++
++export function renderPortfolio(p: PortfolioOutput): string {
++  const lines: string[] = [];
++  lines.push(`# Playbook portfolio — ${p.playbookId}`);
++  lines.push('');
++  lines.push(`${p.boards.length} contracts: ${p.contractNames.join(' · ')}`);
++  lines.push('');
++  lines.push('| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |');
++  lines.push('|---|---|---|---|---|---|---|');
++  for (const r of p.rollup) {
++    lines.push(
++      `| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`,
++    );
++  }
++  lines.push('');
++  for (const b of p.boards) {
++    const s = b.summary;
++    lines.push(
++      `- **${b.contractName}** — ${b.rows.length} clauses: ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`,
++    );
++  }
++  lines.push('');
++  return lines.join('\n');
++}
++
+ /** Markdown board — deterministic rendering. */
+ export function renderBoard(board: BoardOutput): string {
+   const lines: string[] = [];
+@@ -290,6 +391,14 @@ export function renderBoard(board: BoardOutput): string {
+   lines.push('');
+   lines.push(`Playbook: ${board.playbookId}`);
+   lines.push('');
++  if (board.sideMismatch) {
++    lines.push(`> ⚠ ${board.sideMismatch}`);
++    lines.push('');
++  }
++  lines.push(
++    `Thresholds: preferred ≥ ${board.thresholds.preferred.toFixed(2)} · fallback ≥ ${board.thresholds.fallback.toFixed(2)} · topic ≥ ${board.thresholds.topic.toFixed(2)}`,
++  );
++  lines.push('');
+   const s = board.summary;
+   lines.push(`**${board.rows.length} clauses:** ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`);
+   lines.push('');
+@@ -301,6 +410,16 @@ export function renderBoard(board: BoardOutput): string {
+     );
+   }
+   lines.push('');
++  lines.push('### Per-rule deviation frequency');
++  lines.push('');
++  lines.push('| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |');
++  lines.push('|---|---|---|---|---|---|---|');
++  for (const r of rollupRows(board.rows)) {
++    lines.push(
++      `| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`,
++    );
++  }
++  lines.push('');
+   for (const r of board.rows) {
+     if (r.classification === 'compliant') continue;
+     lines.push(`## ${r.clauseId} — ${r.classification}${r.matchedTier !== null ? ` (tier ${r.matchedTier})` : ''}`);
+@@ -308,6 +427,15 @@ export function renderBoard(board: BoardOutput): string {
+     lines.push(`> ${r.clauseQuote ? r.clauseQuote.text.replace(/\n/g, ' ') : r.clauseText.replace(/\n/g, ' ')}`);
+     lines.push('');
+     lines.push(r.reason + '.');
++    if (r.redline && (r.redline.removals.length > 0 || r.redline.additions.length > 0)) {
++      lines.push('');
++      lines.push(`Suggested redline to the preferred standard${r.redline.label ? ` (${r.redline.label})` : ''}:`);
++      lines.push('');
++      lines.push('```diff');
++      for (const x of r.redline.removals) lines.push(`- ${x.replace(/\n/g, ' ')}`);
++      for (const x of r.redline.additions) lines.push(`+ ${x.replace(/\n/g, ' ')}`);
++      lines.push('```');
++    }
+     if (r.routedTo) lines.push(`Routed to: **${r.routedTo}**.`);
+     lines.push('');
+   }
+diff --git a/open-artifacts/playbook-deviation-board/core/core.js b/open-artifacts/playbook-deviation-board/core/core.js
+index 433be77..dc90436 100644
+--- a/open-artifacts/playbook-deviation-board/core/core.js
++++ b/open-artifacts/playbook-deviation-board/core/core.js
+@@ -3,8 +3,11 @@
+  * a company playbook. NO LLM: same playbook + contract always yields the same
+  * board.
+  *
+- * Plain-JavaScript port of core/board.ts + core/yaml.ts (+ the shared
+- * textutil subset); the TypeScript sources stay authoritative for tests.
++ * Plain-JavaScript port of core/board.ts + core/yaml.ts + the shared
++ * textutil subset (incl. number-word normalization) and core/redline.ts
++ * (board-level port: buildBoard/renderBoard/buildPortfolio/renderPortfolio;
++ * the TS sources stay authoritative for tests — decide/diffBoards/detectDrift
++ * are core/board.test.ts-covered TS only).
+  * Dependency-free ES module; browser + Node compatible.
+  *
+  * Classification (evaluated per clause, in order):
+@@ -90,6 +93,119 @@ export function similarity(a, b) {
+   return inter / (ta.length + tb.length - inter);
+ }
+ 
++/* ---------- number-word normalization (port of core/textutil.ts) ---------- */
++
++const ONES = {
++  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
++  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
++  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
++};
++const TENS = {
++  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
++};
++const SCALES = { hundred: 100, thousand: 1000 };
++
++const isNumWord = (w) => w in ONES || w in TENS || w in SCALES;
++
++function parseNumberWordRun(parts, i) {
++  if (i >= parts.length || !isNumWord(parts[i])) return { value: null, len: 0 };
++  let total = 0;
++  let current = 0;
++  let len = 0;
++  while (i + len < parts.length && isNumWord(parts[i + len])) {
++    const w = parts[i + len];
++    if (w === "hundred") current = (current || 1) * 100;
++    else if (w === "thousand") { total += (current || 1) * 1000; current = 0; }
++    else current += ONES[w] ?? TENS[w] ?? 0;
++    len++;
++  }
++  return { value: total + current, len };
++}
++
++/** Numeric tokens with number-word normalization: "eighteen" and "18" both yield "18";
++ *  the restatement "eighteen (18)" counts once. Sorted for multiset comparison.
++ *  @param {string} text @returns {string[]} */
++export function numericTokens(text) {
++  const parts = text
++    .toLowerCase()
++    .split(/[^0-9a-z.]+/)
++    .map((t) => t.replace(/^\.+|\.+$/g, ""))
++    .filter((t) => t.length > 0);
++  const isDigits = (p) => /^[0-9]+(\.[0-9]+)?$/.test(p);
++  const out = [];
++  let i = 0;
++  while (i < parts.length) {
++    const p = parts[i];
++    if (isDigits(p)) {
++      out.push(p);
++      i++;
++      continue;
++    }
++    const { value, len } = parseNumberWordRun(parts, i);
++    if (value === null) {
++      i++;
++      continue;
++    }
++    const nextIdx = i + len;
++    out.push(String(value));
++    // collapse "eighteen (18)" — word run immediately followed by the same digit
++    i = nextIdx < parts.length && isDigits(parts[nextIdx]) && parts[nextIdx] === String(value) ? nextIdx + 1 : nextIdx;
++  }
++  return out.sort();
++}
++
++/* ---------- redline (port of core/redline.ts) ---------- */
++
++function lcsMask(a, b) {
++  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
++    }
++  }
++  const keep = new Array(a.length).fill(false);
++  let i = 0;
++  let j = 0;
++  while (i < a.length && j < b.length) {
++    if (a[i] === b[j]) {
++      keep[i] = true;
++      i++;
++      j++;
++    } else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
++    else j++;
++  }
++  return keep;
++}
++
++function runs(source, keep) {
++  const toks = tokenizeWithSpans(source);
++  const out = [];
++  let i = 0;
++  while (i < toks.length) {
++    if (keep[i]) {
++      i++;
++      continue;
++    }
++    const start = i;
++    while (i < toks.length && !keep[i]) i++;
++    const end = i < toks.length ? toks[i].start : source.length;
++    out.push(source.slice(toks[start].start, end).trim());
++  }
++  return out;
++}
++
++/** Deterministic redline of a deviates row back to the rule's preferred standard.
++ *  @param {any} row @param {any} rule */
++export function redline(row, rule) {
++  const old = row.clauseQuote?.text ?? row.clauseText;
++  const fresh = tokenizeWithSpans(old).map((t) => t.norm);
++  const preferred = tokenizeWithSpans(rule.preferred.text).map((t) => t.norm);
++  const removals = runs(old, lcsMask(fresh, preferred));
++  const additions = runs(rule.preferred.text, lcsMask(preferred, fresh));
++  if (removals.length === 0 && additions.length === 0) return null;
++  return { label: rule.preferred.label ?? null, removals, additions };
++}
++
+ /* ---------- yaml (port of core/yaml.ts) ---------- */
+ 
+ /**
+@@ -203,15 +319,6 @@ function normContains(haystack, needle) {
+   return n.length > 0 && h.includes(n);
+ }
+ 
+-function numericTokens(text) {
+-  return text
+-    .toLowerCase()
+-    .split(/[^0-9.]+/)
+-    .map((t) => t.replace(/^\.+|\.+$/g, ""))
+-    .filter((t) => /^[0-9]+(\.[0-9]+)?$/.test(t))
+-    .sort();
+-}
+-
+ function sameMultiset(a, b) {
+   return a.length === b.length && a.every((x, idx) => x === b[idx]);
+ }
+@@ -348,9 +455,43 @@ function assignRule(clause, rules, topicTh) {
+   return { rule: null, how: `no rule topic matches heading "${clause.heading}" (best similarity ${best ? best.score.toFixed(2) : "n/a"} < ${topicTh})` };
+ }
+ 
++function tally(ruleId, rs) {
++  const compliant = rs.filter((r) => r.classification === "compliant").length;
++  const deviates = rs.filter((r) => r.classification === "deviates").length;
++  const dealBreakers = rs.filter((r) => r.classification === "deal_breaker").length;
++  const unclassified = rs.filter((r) => r.classification === "unclassified").length;
++  return {
++    ruleId,
++    clauses: rs.length,
++    compliant,
++    deviates,
++    dealBreakers,
++    unclassified,
++    deviationRate: (deviates + dealBreakers) / rs.length,
++  };
++}
++
++/** Per-rule tally over board rows, ruleId first-appearance order; null ruleId (unclassified) last.
++ *  @param {any[]} rows */
++export function rollupRows(rows) {
++  const order = [];
++  const byRule = new Map();
++  for (const r of rows) {
++    const key = r.ruleId ?? "—";
++    if (!byRule.has(key)) {
++      byRule.set(key, []);
++      order.push(key);
++    }
++    byRule.get(key).push(r);
++  }
++  const grouped = order.filter((k) => k !== "—").map((k) => tally(k, byRule.get(k)));
++  if (byRule.has("—")) grouped.push(tally("—", byRule.get("—")));
++  return grouped;
++}
++
+ /**
+  * Build the deviation board for a contract against a playbook.
+- * @param {{ playbook: any, contract: { name: string, clauses: any[] }, thresholds?: { preferred?: number, fallback?: number, topic?: number } }} input
++ * @param {{ playbook: any, contract: { name: string, side?: string, clauses: any[] }, thresholds?: { preferred?: number, fallback?: number, topic?: number } }} input
+  * @returns {any} BoardOutput
+  */
+ export function buildBoard(input) {
+@@ -359,6 +500,10 @@ export function buildBoard(input) {
+     fallback: input.thresholds?.fallback ?? 0.7,
+     topic: input.thresholds?.topic ?? 0.3,
+   };
++  const sideMismatch =
++    input.playbook.side !== undefined && input.contract.side !== undefined && input.playbook.side !== input.contract.side
++      ? `side mismatch: playbook is written from the ${input.playbook.side} side but the contract is ${input.contract.side}-side paper — classifications may read in the wrong direction`
++      : null;
+   const rows = input.contract.clauses.map((clause) => {
+     const { rule, how } = assignRule(clause, input.playbook.rules, th.topic);
+     if (!rule) {
+@@ -374,6 +519,7 @@ export function buildBoard(input) {
+         clauseText: clause.text,
+         reason: how,
+         routedTo: input.playbook.defaultApprover,
++        redline: null,
+       };
+     }
+     const { row } = classifyClause(clause, rule, th);
+@@ -381,18 +527,59 @@ export function buildBoard(input) {
+       ...row,
+       heading: clause.heading ?? null,
+       routedTo: row.routedTo === "__DEFAULT__" ? input.playbook.defaultApprover : row.routedTo,
++      redline: row.classification === "deviates" ? redline({ ...row, heading: clause.heading ?? null }, rule) : null,
+     };
+   });
++  const annotated = sideMismatch ? rows.map((r) => ({ ...r, reason: `${r.reason}; ${sideMismatch}` })) : rows;
+ 
+-  const count = (c) => rows.filter((r) => r.classification === c).length;
++  const count = (c) => annotated.filter((r) => r.classification === c).length;
+   return {
+     contractName: input.contract.name,
+     playbookId: input.playbook.playbookId,
++    sideMismatch,
++    thresholds: th,
+     summary: { compliant: count("compliant"), deviates: count("deviates"), dealBreaker: count("deal_breaker"), unclassified: count("unclassified") },
+-    rows,
++    rows: annotated,
++  };
++}
++
++/**
++ * Batch a set of contracts against one playbook; per-rule deviation-frequency rollup.
++ * @param {{ playbook: any, contracts: any[], thresholds?: object }} input
++ * @returns {any} PortfolioOutput
++ */
++export function buildPortfolio(input) {
++  const boards = input.contracts.map((contract) => buildBoard({ playbook: input.playbook, contract, thresholds: input.thresholds }));
++  return {
++    playbookId: input.playbook.playbookId,
++    contractNames: boards.map((b) => b.contractName),
++    boards,
++    rollup: rollupRows(boards.flatMap((b) => b.rows)),
+   };
+ }
+ 
++/** Markdown portfolio rollup — deterministic rendering.
++ * @param {any} p @returns {string} */
++export function renderPortfolio(p) {
++  const lines = [];
++  lines.push(`# Playbook portfolio — ${p.playbookId}`);
++  lines.push("");
++  lines.push(`${p.boards.length} contracts: ${p.contractNames.join(" · ")}`);
++  lines.push("");
++  lines.push("| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |");
++  lines.push("|---|---|---|---|---|---|---|");
++  for (const r of p.rollup) {
++    lines.push(`| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`);
++  }
++  lines.push("");
++  for (const b of p.boards) {
++    const s = b.summary;
++    lines.push(`- **${b.contractName}** — ${b.rows.length} clauses: ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`);
++  }
++  lines.push("");
++  return lines.join("\n");
++}
++
+ /** Markdown board — deterministic rendering.
+  * @param {any} board @returns {string} */
+ export function renderBoard(board) {
+@@ -401,6 +588,14 @@ export function renderBoard(board) {
+   lines.push("");
+   lines.push(`Playbook: ${board.playbookId}`);
+   lines.push("");
++  if (board.sideMismatch) {
++    lines.push(`> ⚠ ${board.sideMismatch}`);
++    lines.push("");
++  }
++  lines.push(
++    `Thresholds: preferred ≥ ${board.thresholds.preferred.toFixed(2)} · fallback ≥ ${board.thresholds.fallback.toFixed(2)} · topic ≥ ${board.thresholds.topic.toFixed(2)}`,
++  );
++  lines.push("");
+   const s = board.summary;
+   lines.push(`**${board.rows.length} clauses:** ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`);
+   lines.push("");
+@@ -412,6 +607,14 @@ export function renderBoard(board) {
+     );
+   }
+   lines.push("");
++  lines.push("### Per-rule deviation frequency");
++  lines.push("");
++  lines.push("| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |");
++  lines.push("|---|---|---|---|---|---|---|");
++  for (const r of rollupRows(board.rows)) {
++    lines.push(`| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`);
++  }
++  lines.push("");
+   for (const r of board.rows) {
+     if (r.classification === "compliant") continue;
+     lines.push(`## ${r.clauseId} — ${r.classification}${r.matchedTier !== null ? ` (tier ${r.matchedTier})` : ""}`);
+@@ -419,6 +622,15 @@ export function renderBoard(board) {
+     lines.push(`> ${r.clauseQuote ? r.clauseQuote.text.replace(/\n/g, " ") : r.clauseText.replace(/\n/g, " ")}`);
+     lines.push("");
+     lines.push(r.reason + ".");
++    if (r.redline && (r.redline.removals.length > 0 || r.redline.additions.length > 0)) {
++      lines.push("");
++      lines.push(`Suggested redline to the preferred standard${r.redline.label ? ` (${r.redline.label})` : ""}:`);
++      lines.push("");
++      lines.push("```diff");
++      for (const x of r.redline.removals) lines.push(`- ${x.replace(/\n/g, " ")}`);
++      for (const x of r.redline.additions) lines.push(`+ ${x.replace(/\n/g, " ")}`);
++      lines.push("```");
++    }
+     if (r.routedTo) lines.push(`Routed to: **${r.routedTo}**.`);
+     lines.push("");
+   }
+diff --git a/open-artifacts/playbook-deviation-board/core/diff.ts b/open-artifacts/playbook-deviation-board/core/diff.ts
+new file mode 100644
+index 0000000..f4497c9
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/core/diff.ts
+@@ -0,0 +1,111 @@
++/**
++ * Decision log + board diff — deterministic amendment tracing.
++ *
++ * `decide()` freezes human decisions against a byte-stable hash of the board,
++ * so a decision log entry can always be checked against the exact board it
++ * was made on. `diffBoards()` compares two runs (e.g. draft v1 vs draft v2)
++ * into new / resolved / changed rows — no LLM prose, plain row identity.
++ */
++import type { BoardOutput, BoardRow } from './board';
++
++export type DecisionType = 'approve' | 'reject' | 'revise' | 'escalate';
++
++export interface Decision {
++  clauseId: string;
++  decision: DecisionType;
++  by: string;
++  note?: string;
++  /** ISO date (YYYY-MM-DD); optional — log stays deterministic without it */
++  date?: string;
++}
++
++export interface DecisionLog {
++  contractName: string;
++  playbookId: string;
++  /** hash of the exact BoardOutput the decisions were made against */
++  boardHash: string;
++  decisions: Decision[];
++}
++
++/** FNV-1a 32-bit hash of the canonical board JSON — stable within a version. */
++export function boardHash(board: BoardOutput): string {
++  const s = JSON.stringify(board);
++  let h = 0x811c9dc5;
++  for (let i = 0; i < s.length; i++) {
++    h ^= s.charCodeAt(i);
++    h = Math.imul(h, 0x01000193) >>> 0;
++  }
++  return h.toString(16).padStart(8, '0');
++}
++
++/**
++ * Record decisions against a board. Throws on unknown clauseIds and on
++ * duplicate clauseIds (one decision per clause per log).
++ */
++export function decide(board: BoardOutput, decisions: Decision[]): DecisionLog {
++  const known = new Set(board.rows.map((r) => r.clauseId));
++  const seen = new Set<string>();
++  for (const d of decisions) {
++    if (!known.has(d.clauseId)) throw new Error(`decide(): clauseId "${d.clauseId}" is not on the board`);
++    if (seen.has(d.clauseId)) throw new Error(`decide(): duplicate decision for clauseId "${d.clauseId}"`);
++    seen.add(d.clauseId);
++  }
++  return {
++    contractName: board.contractName,
++    playbookId: board.playbookId,
++    boardHash: boardHash(board),
++    decisions: decisions.map((d) => ({ ...d })),
++  };
++}
++
++export interface RowChange {
++  clauseId: string;
++  before: BoardRow;
++  after: BoardRow;
++  /** field names that differ */
++  changes: string[];
++}
++
++export interface BoardDiff {
++  contractName: string;
++  summary: { new: number; resolved: number; changed: number; unchanged: number };
++  /** rows present only in `b` (e.g. clauses added in draft v2) */
++  newRows: BoardRow[];
++  /** rows that were non-compliant in `a` and compliant in `b` */
++  resolvedRows: { clauseId: string; before: BoardRow; after: BoardRow }[];
++  /** same clause, same run, materially different outcome */
++  changedRows: RowChange[];
++}
++
++const COMPARED_FIELDS = ['classification', 'matchedTier', 'matchedLabel', 'ruleId', 'routedTo'] as const;
++
++/** Diff two boards of the same contract (row identity = clauseId). */
++export function diffBoards(a: BoardOutput, b: BoardOutput): BoardDiff {
++  const aById = new Map(a.rows.map((r) => [r.clauseId, r]));
++  const bById = new Map(b.rows.map((r) => [r.clauseId, r]));
++  const newRows: BoardRow[] = [];
++  const resolvedRows: { clauseId: string; before: BoardRow; after: BoardRow }[] = [];
++  const changedRows: RowChange[] = [];
++  let unchanged = 0;
++  for (const after of b.rows) {
++    const before = aById.get(after.clauseId);
++    if (!before) {
++      newRows.push(after);
++      continue;
++    }
++    if (before.classification !== 'compliant' && after.classification === 'compliant') {
++      resolvedRows.push({ clauseId: after.clauseId, before, after });
++      continue;
++    }
++    const changes = COMPARED_FIELDS.filter((f) => before[f] !== after[f]);
++    if (changes.length > 0) changedRows.push({ clauseId: after.clauseId, before, after, changes: [...changes] });
++    else unchanged++;
++  }
++  return {
++    contractName: b.contractName,
++    summary: { new: newRows.length, resolved: resolvedRows.length, changed: changedRows.length, unchanged },
++    newRows,
++    resolvedRows,
++    changedRows,
++  };
++}
+diff --git a/open-artifacts/playbook-deviation-board/core/drift.ts b/open-artifacts/playbook-deviation-board/core/drift.ts
+new file mode 100644
+index 0000000..462f4e0
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/core/drift.ts
+@@ -0,0 +1,121 @@
++/**
++ * Playbook drift detector — their `playbook-monitor` agent's rule, as
++ * auditable code. Consumes a deviation log (one entry per non-compliant row
++ * that was accepted anyway) and proposes per rule:
++ *
++ *   Flag    — threshold reached and the window includes avoid-language
++ *             (deal_breaker) hits: counterparties keep signing language the
++ *             playbook says never to accept → enforcement review.
++ *   Revise  — threshold reached and every counted entry deviates the same
++ *             direction: the standard does not match market reality →
++ *             revise the playbook.
++ *   Clarify — threshold reached but directions split: guidance is being read
++ *             both ways → clarify the rule.
++ *   null    — below threshold (watch only).
++ *
++ * All decisions are deterministic: entries are filtered to a rolling
++ * `lookbackMonths` window ending at the latest entry date (or `asOf`).
++ */
++
++export interface DriftEntry {
++  /** ISO date, YYYY-MM-DD */
++  date: string;
++  ruleId: string;
++  /** which way the clause deviated, e.g. "term:shorter" or "tier:2" */
++  direction: string;
++  kind?: 'deviation' | 'deal_breaker';
++  clauseId?: string;
++  contractName?: string;
++}
++
++export interface DriftOptions {
++  threshold?: number;
++  lookbackMonths?: number;
++  /** ISO date; defaults to the latest entry date */
++  asOf?: string;
++}
++
++export type DriftProposal = 'Revise' | 'Clarify' | 'Flag' | null;
++
++export interface DriftRuleReport {
++  ruleId: string;
++  /** entries inside the lookback window */
++  count: number;
++  /** deal_breaker-kind entries inside the window */
++  dealBreakers: number;
++  /** direction counts, sorted by count desc then direction asc */
++  directions: { direction: string; count: number }[];
++  proposal: DriftProposal;
++  note: string;
++}
++
++export interface DriftReport {
++  asOf: string;
++  lookbackMonths: number;
++  threshold: number;
++  rules: DriftRuleReport[];
++}
++
++const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
++
++function parseDate(s: string): { y: number; m: number; d: number } {
++  if (!DATE_RE.test(s)) throw new Error(`detectDrift(): date must be YYYY-MM-DD, got "${s}"`);
++  return { y: Number(s.slice(0, 4)), m: Number(s.slice(5, 7)), d: Number(s.slice(8, 10)) };
++}
++
++/** whole months from entry to asOf (negative ⇒ entry after asOf ⇒ excluded). */
++function monthsBack(entry: { y: number; m: number }, asOf: { y: number; m: number }): number {
++  return (asOf.y - entry.y) * 12 + (asOf.m - entry.m);
++}
++
++export function detectDrift(entries: DriftEntry[], opts: DriftOptions = {}): DriftReport {
++  const threshold = opts.threshold ?? 5;
++  const lookbackMonths = opts.lookbackMonths ?? 12;
++  if (entries.length === 0 && opts.asOf === undefined) {
++    return { asOf: '', lookbackMonths, threshold, rules: [] };
++  }
++  const dated = entries.map((e) => ({ entry: e, parsed: parseDate(e.date) }));
++  dated.sort((x, y) => (x.entry.date < y.entry.date ? -1 : x.entry.date > y.entry.date ? 1 : 0));
++  const asOfStr = opts.asOf ?? dated[dated.length - 1].entry.date;
++  const asOf = parseDate(asOfStr);
++
++  // group by ruleId in first-appearance order over date-sorted entries
++  const byRule = new Map<string, { entry: DriftEntry; parsed: { y: number; m: number; d: number } }[]>();
++  for (const d of dated) {
++    if (!byRule.has(d.entry.ruleId)) byRule.set(d.entry.ruleId, []);
++    byRule.get(d.entry.ruleId)!.push(d);
++  }
++
++  const rules: DriftRuleReport[] = [];
++  for (const [ruleId, ds] of byRule) {
++    const window = ds.filter((d) => {
++      const back = monthsBack(d.parsed, asOf);
++      return back >= 0 && back < lookbackMonths;
++    });
++    const dirCounts = new Map<string, number>();
++    let dealBreakers = 0;
++    for (const { entry } of window) {
++      dirCounts.set(entry.direction, (dirCounts.get(entry.direction) ?? 0) + 1);
++      if (entry.kind === 'deal_breaker') dealBreakers++;
++    }
++    const directions = [...dirCounts.entries()]
++      .map(([direction, count]) => ({ direction, count }))
++      .sort((a, b) => b.count - a.count || (a.direction < b.direction ? -1 : 1));
++    const count = window.length;
++
++    let proposal: DriftProposal = null;
++    let note = `${count} entr${count === 1 ? 'y' : 'ies'} in the last ${lookbackMonths} months — below threshold ${threshold}; watch only.`;
++    if (count >= threshold && dealBreakers > 0) {
++      proposal = 'Flag';
++      note = `${count} entries incl. ${dealBreakers} avoid-language (deal_breaker) hit(s) in ${lookbackMonths} months — counterparties keep signing deal-breaker language; flag for enforcement review.`;
++    } else if (count >= threshold && directions.length === 1) {
++      proposal = 'Revise';
++      note = `${count} same-direction deviations ("${directions[0].direction}") in ${lookbackMonths} months — the standard does not match practice; propose revising the rule.`;
++    } else if (count >= threshold) {
++      proposal = 'Clarify';
++      note = `${count} deviations split across ${directions.length} directions (${directions.map((d) => `${d.direction}: ${d.count}`).join(', ')}) in ${lookbackMonths} months — guidance reads both ways; propose clarifying the rule.`;
++    }
++    rules.push({ ruleId, count, dealBreakers, directions, proposal, note });
++  }
++  return { asOf: asOfStr, lookbackMonths, threshold, rules };
++}
+diff --git a/open-artifacts/playbook-deviation-board/core/redline.ts b/open-artifacts/playbook-deviation-board/core/redline.ts
+new file mode 100644
+index 0000000..599dcfd
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/core/redline.ts
+@@ -0,0 +1,78 @@
++/**
++ * Deterministic redlines — token-diff of the matched clause span against the
++ * rule's preferred standard. Not LLM-drafted: every −/+ line is traceable to
++ * a verbatim character span of the clause (removals) or to the playbook's own
++ * preferred text (additions).
++ */
++import { tokenizeWithSpans } from './textutil';
++import type { BoardRow, PlaybookRule } from './board';
++
++export interface Redline {
++  /** label of the preferred standard the redline targets */
++  label: string | null;
++  /** verbatim clause spans to remove (character-anchored in clauseText) */
++  removals: string[];
++  /** verbatim preferred-standard spans to insert */
++  additions: string[];
++}
++
++/** Longest-common-subsequence table over normalized token strings. */
++function lcsMask(a: string[], b: string[]): boolean[] {
++  // dp[i][j] = LCS length of a[i..], b[j..]
++  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
++  for (let i = a.length - 1; i >= 0; i--) {
++    for (let j = b.length - 1; j >= 0; j--) {
++      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
++    }
++  }
++  const keep: boolean[] = new Array(a.length).fill(false);
++  let i = 0;
++  let j = 0;
++  while (i < a.length && j < b.length) {
++    if (a[i] === b[j]) {
++      keep[i] = true;
++      i++;
++      j++;
++    } else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
++    else j++;
++  }
++  return keep;
++}
++
++/** Contiguous runs of removed/added tokens, rendered as verbatim source slices.
++ *  A run's trailing edge is extended to the next kept token (then trimmed) so
++ *  edge punctuation travels with the run: "two (2" -> "two (2)". */
++function runs(source: string, keep: boolean[]): string[] {
++  const toks = tokenizeWithSpans(source);
++  const out: string[] = [];
++  let i = 0;
++  while (i < toks.length) {
++    if (keep[i]) {
++      i++;
++      continue;
++    }
++    const start = i;
++    while (i < toks.length && !keep[i]) i++;
++    const end = i < toks.length ? toks[i].start : source.length;
++    out.push(source.slice(toks[start].start, end).trim());
++  }
++  return out;
++}
++
++/**
++ * Redline a deviates row back to the preferred standard: LCS token diff of
++ * the matched span (or the whole clause, when beyond playbook) vs the
++ * preferred text, grouped into contiguous −/+ runs. Returns null when there
++ * is nothing to change.
++ */
++export function redline(row: BoardRow, rule: PlaybookRule): Redline | null {
++  const old = row.clauseQuote?.text ?? row.clauseText;
++  const fresh = tokenizeWithSpans(old).map((t) => t.norm);
++  const preferred = tokenizeWithSpans(rule.preferred.text).map((t) => t.norm);
++  const keepOld = lcsMask(fresh, preferred);
++  const keepNew = lcsMask(preferred, fresh);
++  const removals = runs(old, keepOld);
++  const additions = runs(rule.preferred.text, keepNew);
++  if (removals.length === 0 && additions.length === 0) return null;
++  return { label: rule.preferred.label ?? null, removals, additions };
++}
+diff --git a/open-artifacts/playbook-deviation-board/core/textutil.ts b/open-artifacts/playbook-deviation-board/core/textutil.ts
+index 34a1f04..4961b21 100644
+--- a/open-artifacts/playbook-deviation-board/core/textutil.ts
++++ b/open-artifacts/playbook-deviation-board/core/textutil.ts
+@@ -102,3 +102,81 @@ export function similarity(a: string, b: string): number {
+   for (const [t, c] of ma) inter += Math.min(c, mb.get(t) ?? 0);
+   return inter / (ta.length + tb.length - inter);
+ }
++
++/* ---------- number-word normalization (finite map, deterministic) ---------- */
++
++const ONES: Record<string, number> = {
++  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
++  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
++  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
++};
++const TENS: Record<string, number> = {
++  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
++};
++const SCALES: Record<string, number> = { hundred: 100, thousand: 1000 };
++
++const isNumWord = (w: string): boolean => w in ONES || w in TENS || w in SCALES;
++
++/**
++ * Parse a maximal run of English number words (one–ninety-nine plus
++ * hundred/thousand scales) starting at parts[i]. Returns the value and how
++ * many parts were consumed ({ value: null, len: 0 } if parts[i] is not a
++ * number word).
++ */
++function parseNumberWordRun(parts: string[], i: number): { value: number | null; len: number } {
++  if (i >= parts.length || !isNumWord(parts[i])) return { value: null, len: 0 };
++  let total = 0;
++  let current = 0;
++  let len = 0;
++  while (i + len < parts.length && isNumWord(parts[i + len])) {
++    const w = parts[i + len];
++    if (w === 'hundred') current = (current || 1) * 100;
++    else if (w === 'thousand') { total += (current || 1) * 1000; current = 0; }
++    else current += ONES[w] ?? TENS[w] ?? 0;
++    len++;
++  }
++  return { value: total + current, len };
++}
++
++/**
++ * Numeric tokens of a text, with number-word normalization: "eighteen" and
++ * "18" both yield "18". The legal drafting restatement "eighteen (18)"
++ * (number word immediately followed by its own digit form) counts ONCE, so
++ * "eighteen (18) months" and "18 months" and "eighteen months" all yield
++ * ["18"]. Digit tokens (including "3.1"-style section numbers) are kept
++ * verbatim, exactly as before normalization existed. Sorted for multiset
++ * comparison.
++ */
++export function numericTokens(text: string): string[] {
++  const parts = text
++    .toLowerCase()
++    .split(/[^0-9a-z.]+/)
++    .map((t) => t.replace(/^\.+|\.+$/g, ''))
++    .filter((t) => t.length > 0);
++  const isDigits = (p: string): boolean => /^[0-9]+(\.[0-9]+)?$/.test(p);
++  const out: string[] = [];
++  let i = 0;
++  while (i < parts.length) {
++    const p = parts[i];
++    if (isDigits(p)) {
++      out.push(p);
++      i++;
++      continue;
++    }
++    const { value, len } = parseNumberWordRun(parts, i);
++    if (value === null) {
++      i++;
++      continue;
++    }
++    const nextIdx = i + len;
++    // collapse "eighteen (18)" — word run immediately followed by the same digit
++    if (nextIdx < parts.length && isDigits(parts[nextIdx]) && parts[nextIdx] === String(value)) {
++      out.push(String(value));
++      i = nextIdx + 1;
++    } else {
++      out.push(String(value));
++      i = nextIdx;
++    }
++  }
++  return out.sort();
++}
+diff --git a/open-artifacts/playbook-deviation-board/demo/index.html b/open-artifacts/playbook-deviation-board/demo/index.html
+index 2169eae..4b30b7d 100644
+--- a/open-artifacts/playbook-deviation-board/demo/index.html
++++ b/open-artifacts/playbook-deviation-board/demo/index.html
+@@ -38,6 +38,12 @@
+   .pill.unclassified { background: transparent; color: var(--text-secondary); border-style: dashed; }
+   .ev { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+   .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
++  .trace { margin-top: 8px; border: var(--hairline); background: var(--hover); padding: 8px 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--text-secondary); }
++  .trace summary { cursor: pointer; color: var(--text); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; }
++  .trace code { background: #fff; }
++  .red { color: var(--warn); } .add { color: var(--ok); }
++  .redline { margin-top: 8px; padding: 8px 12px; border: var(--hairline); background: #fff; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
++  .redline .lang { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
+   .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+     background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+@@ -56,8 +62,9 @@
+     <p class="lede">A clause board classified by <b>pure code against playbook-as-data</b>: same playbook +
+       contract always yields the same board. Every classified row quotes the clause span that drove the decision,
+       numbers in standards must match verbatim, and fallback tiers route to approvers (tier ≥ escalation threshold
+-      goes to the escalation owner). The playbook below is parsed in your browser by the core's own
+-      dependency-free YAML parser. Open reimplementation of Anthropic's closed artifact.</p>
++      goes to the escalation owner). Every deviation carries a deterministic redline back to the preferred standard
++      and a decision-trace panel (rule chain, score vs thresholds, char span, routing). The playbook below is parsed
++      in your browser by the core's own dependency-free YAML parser. Open reimplementation of Anthropic's closed artifact.</p>
+     <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics mutual-NDA playbook v3 ×
+       a Northwind draft — 8 clauses, including a perpetual-term deal-breaker and an uncapped-confidentiality carve-out.</p>
+   </header>
+@@ -123,7 +130,20 @@
+       `<div class="ev"><b><code>${esc(r.clauseId)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
+       `${r.matchedTier !== null ? ` (${TIER(r.matchedTier)})` : ""}${r.routedTo ? ` → <b>${esc(r.routedTo)}</b>` : ""}` +
+       `<blockquote>${esc((r.clauseQuote ? r.clauseQuote.text : r.clauseText).replace(/\n/g, " "))}</blockquote>` +
+-      `<div style="margin-top:6px">${esc(r.reason)}.</div></div>`
++      `<div style="margin-top:6px">${esc(r.reason)}.</div>` +
++      (r.redline && (r.redline.removals.length || r.redline.additions.length)
++        ? `<div class="redline"><span class="lang">suggested redline → preferred${r.redline.label ? ` (${esc(r.redline.label)})` : ""}</span>` +
++          r.redline.removals.map((x) => `<span class="red">- ${esc(x)}</span>`).join("<br>") +
++          (r.redline.removals.length && r.redline.additions.length ? "<br>" : "") +
++          r.redline.additions.map((x) => `<span class="add">+ ${esc(x)}</span>`).join("<br>") + `</div>`
++        : "") +
++      `<details class="trace"><summary>Decision trace</summary>` +
++      `<div>rule chain: heading <code>${esc(r.heading ?? "—")}</code> → rule <code>${esc(r.ruleId ?? "none")}</code>` +
++      `${r.ruleId ? ` → ${esc(r.classification)} at ${TIER(r.matchedTier)}` : ` → unclassified`}</div>` +
++      `<div>score: similarity <code>${r.similarity.toFixed(2)}</code> vs thresholds preferred ≥ <code>${board.thresholds.preferred.toFixed(2)}</code>, fallback ≥ <code>${board.thresholds.fallback.toFixed(2)}</code>, topic ≥ <code>${board.thresholds.topic.toFixed(2)}</code></div>` +
++      `<div>span: <code>${r.clauseQuote ? `chars ${r.clauseQuote.charStart}–${r.clauseQuote.charEnd} of ${r.clauseText.length}` : "none (beyond playbook)"}</code></div>` +
++      `<div>routing: <code>${esc(r.routedTo ?? "nobody (compliant)")}</code></div>` +
++      `</details></div>`
+     )
+     .join("");
+ 
+diff --git a/open-artifacts/playbook-deviation-board/examples/board-2.md b/open-artifacts/playbook-deviation-board/examples/board-2.md
+new file mode 100644
+index 0000000..7777290
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/examples/board-2.md
+@@ -0,0 +1,60 @@
++# Playbook deviation board — Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)
++
++Playbook: PB-NDA-2026-v3
++
++Thresholds: preferred ≥ 0.70 · fallback ≥ 0.70 · topic ≥ 0.30
++
++**4 clauses:** 1 compliant · 2 deviate · 0 deal-breaker · 1 unclassified
++
++| Clause | Rule | Classification | Matched tier | Similarity | Routed to |
++|---|---|---|---|---|---|
++| E1 (Term) | term | deviates | 1 | 0.95 | Legal Operations |
++| E2 (Limitation of Liability) | liability | compliant | preferred | 1.00 | — |
++| E3 (Term) | term | deviates | — | 0.71 | General Counsel |
++| E4 (Governing Law) | — | unclassified | — | 0.00 | Legal Operations |
++
++### Per-rule deviation frequency
++
++| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |
++|---|---|---|---|---|---|---|
++| term | 2 | 0 | 2 | 0 | 0 | 1.00 |
++| liability | 1 | 1 | 0 | 0 | 0 | 0.00 |
++| — | 1 | 0 | 0 | 0 | 1 | 0.00 |
++
++## E1 — deviates (tier 1)
++
++> This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice
++
++matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard.
++
++Suggested redline to the preferred standard (3-year fixed term):
++
++```diff
++- renews automatically
++- successive one-year terms unless either party gives ninety days prior written notice
+++ commences on the Effective Date and continues
+++ three (3) years.
++```
++Routed to: **Legal Operations**.
++
++## E3 — deviates
++
++> 4.1 Term. This Agreement commences on the Effective Date and continues for eighteen months.
++
++no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has [].
++
++Suggested redline to the preferred standard (3-year fixed term):
++
++```diff
++- 4.1 Term.
++- eighteen months.
+++ three (3) years.
++```
++Routed to: **General Counsel**.
++
++## E4 — unclassified
++
++> 12.1 Governing Law. This Agreement is governed by the laws of the State of New York.
++
++no rule topic matches heading "Governing Law" (best similarity 0.00 < 0.3).
++Routed to: **Legal Operations**.
+diff --git a/open-artifacts/playbook-deviation-board/examples/board.md b/open-artifacts/playbook-deviation-board/examples/board.md
+index c704e73..697c8d1 100644
+--- a/open-artifacts/playbook-deviation-board/examples/board.md
++++ b/open-artifacts/playbook-deviation-board/examples/board.md
+@@ -2,6 +2,8 @@
+ 
+ Playbook: PB-NDA-2026-v3
+ 
++Thresholds: preferred ≥ 0.70 · fallback ≥ 0.70 · topic ≥ 0.30
++
+ **8 clauses:** 1 compliant · 4 deviate · 2 deal-breaker · 1 unclassified
+ 
+ | Clause | Rule | Classification | Matched tier | Similarity | Routed to |
+@@ -15,11 +17,28 @@ Playbook: PB-NDA-2026-v3
+ | C7 (Term) | term | deviates | — | 0.71 | General Counsel |
+ | C8 (Governing Law) | — | unclassified | — | 0.00 | Legal Operations |
+ 
++### Per-rule deviation frequency
++
++| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |
++|---|---|---|---|---|---|---|
++| term | 5 | 1 | 3 | 1 | 0 | 0.80 |
++| liability | 2 | 0 | 1 | 1 | 0 | 1.00 |
++| — | 1 | 0 | 0 | 0 | 1 | 0.00 |
++
+ ## C2 — deviates (tier 1)
+ 
+ > This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice
+ 
+ matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard.
++
++Suggested redline to the preferred standard (3-year fixed term):
++
++```diff
++- renews automatically
++- successive one-year terms unless either party gives ninety (90) days prior written notice
+++ commences on the Effective Date and continues
+++ three (3) years.
++```
+ Routed to: **Legal Operations**.
+ 
+ ## C3 — deviates (tier 2)
+@@ -27,6 +46,15 @@ Routed to: **Legal Operations**.
+ > This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice
+ 
+ matches fallback tier 2 (Evergreen, 30-day exit), not the preferred standard.
++
++Suggested redline to the preferred standard (3-year fixed term):
++
++```diff
++- renews automatically
++- successive one-year terms unless either party gives thirty (30) days prior written notice
+++ commences on the Effective Date and continues
+++ three (3) years.
++```
+ Routed to: **General Counsel**.
+ 
+ ## C4 — deal_breaker
+@@ -48,6 +76,14 @@ Routed to: **General Counsel**.
+ > Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement
+ 
+ matches fallback tier 1 (Mutual cap at total contract value), not the preferred standard.
++
++Suggested redline to the preferred standard (Mutual cap at 12 months of fees):
++
++```diff
++- total
++- under this Agreement
+++ or payable in the twelve (12) months preceding the claim.
++```
+ Routed to: **Legal Operations**.
+ 
+ ## C7 — deviates
+@@ -55,6 +91,14 @@ Routed to: **Legal Operations**.
+ > 3.1 Term. This Agreement commences on the Effective Date and continues for eighteen (18) months.
+ 
+ no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has [].
++
++Suggested redline to the preferred standard (3-year fixed term):
++
++```diff
++- 3.1 Term.
++- eighteen (18) months.
+++ three (3) years.
++```
+ Routed to: **General Counsel**.
+ 
+ ## C8 — unclassified
+diff --git a/open-artifacts/playbook-deviation-board/examples/contract-2.json b/open-artifacts/playbook-deviation-board/examples/contract-2.json
+new file mode 100644
+index 0000000..04f253b
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/examples/contract-2.json
+@@ -0,0 +1,27 @@
++{
++  "contract": {
++    "name": "Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)",
++    "clauses": [
++      {
++        "id": "E1",
++        "heading": "Term",
++        "text": "4.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice of non-renewal."
++      },
++      {
++        "id": "E2",
++        "heading": "Limitation of Liability",
++        "text": "9.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim."
++      },
++      {
++        "id": "E3",
++        "heading": "Term",
++        "text": "4.1 Term. This Agreement commences on the Effective Date and continues for eighteen months."
++      },
++      {
++        "id": "E4",
++        "heading": "Governing Law",
++        "text": "12.1 Governing Law. This Agreement is governed by the laws of the State of New York."
++      }
++    ]
++  }
++}
+diff --git a/open-artifacts/playbook-deviation-board/examples/output-2.json b/open-artifacts/playbook-deviation-board/examples/output-2.json
+new file mode 100644
+index 0000000..73471d1
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/examples/output-2.json
+@@ -0,0 +1,101 @@
++{
++  "contractName": "Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)",
++  "playbookId": "PB-NDA-2026-v3",
++  "sideMismatch": null,
++  "thresholds": {
++    "preferred": 0.7,
++    "fallback": 0.7,
++    "topic": 0.3
++  },
++  "summary": {
++    "compliant": 1,
++    "deviates": 2,
++    "dealBreaker": 0,
++    "unclassified": 1
++  },
++  "rows": [
++    {
++      "clauseId": "E1",
++      "ruleId": "term",
++      "classification": "deviates",
++      "matchedTier": 1,
++      "matchedLabel": "Evergreen, 90-day exit",
++      "similarity": 0.9473684210526315,
++      "clauseQuote": {
++        "text": "This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice",
++        "charStart": 10,
++        "charEnd": 134
++      },
++      "clauseText": "4.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice of non-renewal.",
++      "reason": "matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard",
++      "routedTo": "Legal Operations",
++      "heading": "Term",
++      "redline": {
++        "label": "3-year fixed term",
++        "removals": [
++          "renews automatically",
++          "successive one-year terms unless either party gives ninety days prior written notice"
++        ],
++        "additions": [
++          "commences on the Effective Date and continues",
++          "three (3) years."
++        ]
++      }
++    },
++    {
++      "clauseId": "E2",
++      "ruleId": "liability",
++      "classification": "compliant",
++      "matchedTier": "preferred",
++      "matchedLabel": "Mutual cap at 12 months of fees",
++      "similarity": 1,
++      "clauseQuote": {
++        "text": "Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim",
++        "charStart": 15,
++        "charEnd": 165
++      },
++      "clauseText": "9.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim.",
++      "reason": "matches preferred standard (Mutual cap at 12 months of fees)",
++      "routedTo": null,
++      "heading": "Limitation of Liability",
++      "redline": null
++    },
++    {
++      "clauseId": "E3",
++      "ruleId": "term",
++      "classification": "deviates",
++      "matchedTier": null,
++      "matchedLabel": null,
++      "similarity": 0.7142857142857143,
++      "clauseQuote": null,
++      "clauseText": "4.1 Term. This Agreement commences on the Effective Date and continues for eighteen months.",
++      "reason": "no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has []",
++      "routedTo": "General Counsel",
++      "heading": "Term",
++      "redline": {
++        "label": "3-year fixed term",
++        "removals": [
++          "4.1 Term.",
++          "eighteen months."
++        ],
++        "additions": [
++          "three (3) years."
++        ]
++      }
++    },
++    {
++      "clauseId": "E4",
++      "heading": "Governing Law",
++      "ruleId": null,
++      "classification": "unclassified",
++      "matchedTier": null,
++      "matchedLabel": null,
++      "similarity": 0,
++      "clauseQuote": null,
++      "clauseText": "12.1 Governing Law. This Agreement is governed by the laws of the State of New York.",
++      "reason": "no rule topic matches heading \"Governing Law\" (best similarity 0.00 < 0.3)",
++      "routedTo": "Legal Operations",
++      "redline": null
++    }
++  ]
++}
+diff --git a/open-artifacts/playbook-deviation-board/examples/output.json b/open-artifacts/playbook-deviation-board/examples/output.json
+index 0b84941..b7c769d 100644
+--- a/open-artifacts/playbook-deviation-board/examples/output.json
++++ b/open-artifacts/playbook-deviation-board/examples/output.json
+@@ -1,6 +1,12 @@
+ {
+   "contractName": "Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional)",
+   "playbookId": "PB-NDA-2026-v3",
++  "sideMismatch": null,
++  "thresholds": {
++    "preferred": 0.7,
++    "fallback": 0.7,
++    "topic": 0.3
++  },
+   "summary": {
+     "compliant": 1,
+     "deviates": 4,
+@@ -23,7 +29,8 @@
+       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for three (3) years. Neither party may assign this Agreement without the other's prior written consent.",
+       "reason": "matches preferred standard (3-year fixed term)",
+       "routedTo": null,
+-      "heading": "Term"
++      "heading": "Term",
++      "redline": null
+     },
+     {
+       "clauseId": "C2",
+@@ -40,7 +47,18 @@
+       "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice of non-renewal.",
+       "reason": "matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard",
+       "routedTo": "Legal Operations",
+-      "heading": "Term"
++      "heading": "Term",
++      "redline": {
++        "label": "3-year fixed term",
++        "removals": [
++          "renews automatically",
++          "successive one-year terms unless either party gives ninety (90) days prior written notice"
++        ],
++        "additions": [
++          "commences on the Effective Date and continues",
++          "three (3) years."
++        ]
++      }
+     },
+     {
+       "clauseId": "C3",
+@@ -57,7 +75,18 @@
+       "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice of non-renewal.",
+       "reason": "matches fallback tier 2 (Evergreen, 30-day exit), not the preferred standard",
+       "routedTo": "General Counsel",
+-      "heading": "Term"
++      "heading": "Term",
++      "redline": {
++        "label": "3-year fixed term",
++        "removals": [
++          "renews automatically",
++          "successive one-year terms unless either party gives thirty (30) days prior written notice"
++        ],
++        "additions": [
++          "commences on the Effective Date and continues",
++          "three (3) years."
++        ]
++      }
+     },
+     {
+       "clauseId": "C4",
+@@ -74,7 +103,8 @@
+       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues in perpetuity unless terminated by mutual written agreement.",
+       "reason": "matches avoid rule \"perpetual-term\": contains \"in perpetuity\"",
+       "routedTo": "General Counsel",
+-      "heading": "Term"
++      "heading": "Term",
++      "redline": null
+     },
+     {
+       "clauseId": "C5",
+@@ -91,7 +121,8 @@
+       "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim, excluding breaches of Section 4 (Confidentiality), for which the receiving party accepts unlimited liability.",
+       "reason": "matches avoid rule \"uncapped-liability\": contains \"unlimited liability\"",
+       "routedTo": "General Counsel",
+-      "heading": "Limitation of Liability"
++      "heading": "Limitation of Liability",
++      "redline": null
+     },
+     {
+       "clauseId": "C6",
+@@ -108,7 +139,17 @@
+       "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement.",
+       "reason": "matches fallback tier 1 (Mutual cap at total contract value), not the preferred standard",
+       "routedTo": "Legal Operations",
+-      "heading": "Limitation of Liability"
++      "heading": "Limitation of Liability",
++      "redline": {
++        "label": "Mutual cap at 12 months of fees",
++        "removals": [
++          "total",
++          "under this Agreement"
++        ],
++        "additions": [
++          "or payable in the twelve (12) months preceding the claim."
++        ]
++      }
+     },
+     {
+       "clauseId": "C7",
+@@ -121,7 +162,17 @@
+       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for eighteen (18) months.",
+       "reason": "no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has []",
+       "routedTo": "General Counsel",
+-      "heading": "Term"
++      "heading": "Term",
++      "redline": {
++        "label": "3-year fixed term",
++        "removals": [
++          "3.1 Term.",
++          "eighteen (18) months."
++        ],
++        "additions": [
++          "three (3) years."
++        ]
++      }
+     },
+     {
+       "clauseId": "C8",
+@@ -134,7 +185,8 @@
+       "clauseQuote": null,
+       "clauseText": "11.1 Governing Law. This Agreement is governed by the laws of the State of Delaware, without regard to conflict-of-laws principles.",
+       "reason": "no rule topic matches heading \"Governing Law\" (best similarity 0.00 < 0.3)",
+-      "routedTo": "Legal Operations"
++      "routedTo": "Legal Operations",
++      "redline": null
+     }
+   ]
+ }
+diff --git a/open-artifacts/playbook-deviation-board/examples/portfolio.md b/open-artifacts/playbook-deviation-board/examples/portfolio.md
+new file mode 100644
+index 0000000..4b1f09f
+--- /dev/null
++++ b/open-artifacts/playbook-deviation-board/examples/portfolio.md
+@@ -0,0 +1,12 @@
++# Playbook portfolio — PB-NDA-2026-v3
++
++2 contracts: Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional) · Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)
++
++| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |
++|---|---|---|---|---|---|---|
++| term | 7 | 1 | 5 | 1 | 0 | 0.86 |
++| liability | 3 | 1 | 1 | 1 | 0 | 0.67 |
++| — | 2 | 0 | 0 | 0 | 2 | 0.00 |
++
++- **Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional)** — 8 clauses: 1 compliant · 4 deviate · 2 deal-breaker · 1 unclassified
++- **Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)** — 4 clauses: 1 compliant · 2 deviate · 0 deal-breaker · 1 unclassified
+diff --git a/open-artifacts/playbook-deviation-board/examples/run.ts b/open-artifacts/playbook-deviation-board/examples/run.ts
+index 649b04d..2d39ff1 100644
+--- a/open-artifacts/playbook-deviation-board/examples/run.ts
++++ b/open-artifacts/playbook-deviation-board/examples/run.ts
+@@ -1,21 +1,36 @@
+ /**
+  * Reproducible worked example: parses examples/playbook.yaml with the
+- * dependency-free YAML-subset parser, classifies examples/contract.json, and
+- * writes examples/output.json + examples/board.md.
++ * dependency-free YAML-subset parser, classifies examples/contract.json and
++ * examples/contract-2.json, and writes per-contract output.json / board.md
++ * (contract 1), output-2.json / board-2.md (contract 2), plus portfolio.md
++ * (cross-contract per-rule deviation-frequency rollup).
+  * Run:  npx tsx examples/run.ts
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+ import { parseYaml } from '../core/yaml';
+-import { buildBoard, renderBoard } from '../core/board';
++import { buildBoard, buildPortfolio, renderBoard, renderPortfolio } from '../core/board';
+ import type { Playbook, BoardInput } from '../core/board';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const playbook = parseYaml(readFileSync(join(here, 'playbook.yaml'), 'utf8')) as unknown as Playbook;
+-const contractInput = JSON.parse(readFileSync(join(here, 'contract.json'), 'utf8')) as Pick<BoardInput, 'contract'>;
++const read = (f: string): BoardInput['contract'] =>
++  (JSON.parse(readFileSync(join(here, f), 'utf8')) as Pick<BoardInput, 'contract'>).contract;
++const contract1 = read('contract.json');
++const contract2 = read('contract-2.json');
+ 
+-const board = buildBoard({ playbook, contract: contractInput.contract });
+-writeFileSync(join(here, 'output.json'), JSON.stringify(board, null, 2) + '\n');
+-writeFileSync(join(here, 'board.md'), renderBoard(board));
+-console.log(`classified ${board.rows.length} clauses -> output.json, board.md`);
++const board1 = buildBoard({ playbook, contract: contract1 });
++writeFileSync(join(here, 'output.json'), JSON.stringify(board1, null, 2) + '\n');
++writeFileSync(join(here, 'board.md'), renderBoard(board1));
++
++const board2 = buildBoard({ playbook, contract: contract2 });
++writeFileSync(join(here, 'output-2.json'), JSON.stringify(board2, null, 2) + '\n');
++writeFileSync(join(here, 'board-2.md'), renderBoard(board2));
++
++const portfolio = buildPortfolio({ playbook, contracts: [contract1, contract2] });
++writeFileSync(join(here, 'portfolio.md'), renderPortfolio(portfolio));
++
++console.log(
++  `classified ${board1.rows.length} + ${board2.rows.length} clauses -> output.json, board.md, output-2.json, board-2.md, portfolio.md`,
++);
+diff --git a/open-artifacts/playbook-deviation-board/spec.md b/open-artifacts/playbook-deviation-board/spec.md
+index 33f8eea..fa379f6 100644
+--- a/open-artifacts/playbook-deviation-board/spec.md
++++ b/open-artifacts/playbook-deviation-board/spec.md
+@@ -53,17 +53,28 @@ YAML subset supported by the dependency-free parser: nested maps, `- ` lists
+ 
+ ## Input (`BoardInput`)
+ 
+-`{ playbook, contract: { name, clauses: [{ id, heading?, text, ruleId? }] }, thresholds? }`
+-with defaults `preferred: 0.7`, `fallback: 0.7`, `topic: 0.3`.
++`{ playbook, contract: { name, side?, clauses: [{ id, heading?, text, ruleId? }] }, thresholds? }`
++with defaults `preferred: 0.7`, `fallback: 0.7`, `topic: 0.3`. Optional
++`playbook.side` / `contract.side` (`sales` | `purchasing`): when both are set
++and differ, the output carries a `sideMismatch` warning and every row's
++`reason` repeats it.
++
++Portfolio variant: `buildPortfolio({ playbook, contracts: [...], thresholds? })`
++classifies a contract set and adds a per-rule deviation-frequency `rollup`
++(counts + `deviationRate = (deviates + dealBreakers) / clauses`).
+ 
+ ## Output (`BoardOutput`)
+ 
+-One row per clause:
++`contractName`, `playbookId`, `sideMismatch`, `thresholds` (the resolved
++values, as data), `summary`, and one row per clause:
+ 
+ - `classification`: `compliant` | `deviates` | `deal_breaker` | `unclassified`
+ - `matchedTier`: `'preferred'` | fallback tier number | `null` (beyond playbook)
+ - `matchedLabel`, `similarity`, `clauseQuote` (char-span + verbatim text of the
+   matched clause fragment), full `clauseText`, `reason`, `routedTo`.
++- `redline`: on `deviates` rows, a deterministic token diff back to the
++  preferred standard (`{ label, removals, additions }`, char-anchored in the
++  clause / preferred text); rendered as a ` ```diff ` block in `board.md`.
+ 
+ Decision order per clause: avoid rules first (contains, or similarity ≥ the
+ avoid rule's threshold), then preferred (similarity ≥ threshold, numbers must
+@@ -77,6 +88,19 @@ beyond-playbook clauses → the rule's escalation approver; lower-tier
+ deviations → `defaultApprover`; compliant → nobody; unclassified →
+ `defaultApprover`.
+ 
++## Review-loop utilities (deterministic)
++
++- `core/diff.ts` — `decide(board, decisions)` records a decision log bound to
++  `boardHash(board)` (stable hash of the exact `BoardOutput`); rejects unknown
++  and duplicate clauseIds. `diffBoards(a, b)` diffs two runs of the same
++  contract into `newRows` / `resolvedRows` (non-compliant → compliant) /
++  `changedRows` (with the list of changed fields) / unchanged.
++- `core/drift.ts` — `detectDrift(entries, { threshold = 5, lookbackMonths = 12 })`
++  consumes accepted-deviation entries `{ date, ruleId, direction, kind? }` and
++  proposes per rule: **Flag** (threshold met and the window includes
++  deal-breaker language), **Revise** (threshold met, single direction),
++  **Clarify** (threshold met, split directions), or null (watch only).
++
+ ## Prompt schema for the LLM part
+ 
+ The LLM never classifies. It only structures the inputs:
+@@ -99,5 +123,7 @@ Same playbook + contract → byte-identical `output.json` / `board.md`
+   them from your playbook's rule list).
+ - `contains` avoid-rules are literal substring checks after lowercasing and
+   whitespace collapse; regex avoid-rules are deliberately not supported.
+-- Number-word drift ("three" vs "3") is not normalized; standards should quote
+-  the playbook's own wording.
++- Number-word normalization covers one–ninety-nine plus hundred/thousand
++  scales (finite map); any word outside the map is left as a plain token. The
++  drafting restatement "eighteen (18)" collapses to a single number, so
++  "eighteen (18) months", "18 months", and "eighteen months" are equivalent.

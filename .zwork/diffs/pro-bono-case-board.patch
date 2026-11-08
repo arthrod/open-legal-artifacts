@@ -1,0 +1,1381 @@
+diff --git a/open-artifacts/pro-bono-case-board/README.md b/open-artifacts/pro-bono-case-board/README.md
+index 6d997e9..9df6cb0 100644
+--- a/open-artifacts/pro-bono-case-board/README.md
++++ b/open-artifacts/pro-bono-case-board/README.md
+@@ -2,15 +2,18 @@
+ 
+ Pro bono case tracker: guarded intake → placement → closure workflow,
+ deterministic volunteer-skill matching (tag matching with score),
+-stale-case flags, impact rollups, CSV export.
++stale-case flags, malpractice-aware deadline warnings + ICS export,
++tolerant CSV intake parsing, per-stage SLA aging, volunteer-capacity
++rollups, board diff (regen audit), impact rollups, CSV export.
+ 
+ ## Run
+ 
+ - Demo: open `demo/index.html` (standalone, prefilled with the fictional
+-  worked example).
+-- Tests: `node --test core/core.test.js` — 17 tests.
++  worked example; demo dates are relative to today so warnings stay live).
++- Tests: `node --test core/core.test.js` — 27 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+-  `board.md`, `board.csv` from `examples/input.json`.
++  `board.md`, `board.csv`, `board.ics` from `examples/input.json`, plus
++  `board-diff.json` (diff against `examples/input-changed.json`).
+ 
+ ## How it works
+ 
+@@ -20,17 +23,43 @@ stale-case flags, impact rollups, CSV export.
+ 2. Matching: `70 × required-tags matched + 30 × optional-tags matched`
+    (0–100). Any unmatched required tag marks the candidate ineligible
+    with the gaps listed. Ranking is deterministic with id tie-break.
+-3. Stale: open cases with no activity for > `staleDays` (default 30) are
++3. Deadlines: cases carry `deadlines[]{label,dueDate,kind}`; the board
++   computes `daysTo`, `overdue`, and malpractice-aware severity — an
++   overdue **court** date is `critical`, anything overdue or due within
++   7 d is `warn`. `toICS()` exports one all-day VEVENT per deadline
++   (DTSTAMP pinned to `asOf`, byte-identical on reruns).
++4. Tolerant intake: `parseRows(text)` turns pasted CSV rows into draft
++   cases with per-row `issues[]` (bad date, unknown state, missing or
++   duplicate id) — it never throws; flagged rows still build.
++5. Capacity + SLA: `impact.byVolunteer{openCases,hours,staleOwned}`
++   flags load above `maxOpenPerVolunteer` (default 5); per-stage
++   `stageSla` budgets (e.g. intake 7 d) flag cases stuck in-state, with
++   open-case aging buckets (0–7 / 8–30 / 31–90 / >90 d). Days in state
++   are approximated by days since `openedDate` (no state history in the
++   input contract).
++6. Stale: open cases with no activity for > `staleDays` (default 30) are
+    flagged, with the day count. Data-integrity issues (placed without
+    volunteer, unknown volunteer, closed without outcome) are flagged too.
+-4. Impact rollups: open/closed/withdrawn/placed counts, volunteer hours,
+-   outcome tally — pure functions, auditable by funders.
++7. Board diff: `diffBoards(a, b)` lists added / removed cases,
++   stage changes, newly closed cases, and moved deadlines — a
++   deterministic change log for "what changed since the last run".
++8. Impact rollups: open/closed/withdrawn/placed counts, overdue
++   deadlines, SLA breaches, volunteer hours, outcome tally — pure
++   functions, auditable by funders.
+ 
+ ## Better than the closed counterpart
+ 
+ - Explainable matching (score + matched + missing tags), not a black-box
+   "best volunteer".
+-- Workflow rules enforced in code, not spreadsheet discipline.
+-- Auditable impact numbers; zero dependencies; self-hostable; CSV export.
++- Deadline warnings are computed, not just displayed: severity rules are
++  pinned by tests and exported as an auditable ICS calendar.
++- Inspectable, LLM-free intake parsing: per-row issues you can read,
++  instead of opaque doc ingestion.
++- Capacity-grounded placement and stuck-in-stage SLA flags — load and
++  aging are computed, not eyeballed.
++- Workflow rules enforced in code, not spreadsheet discipline; board
++  regen is auditable via a deterministic diff.
++- Auditable impact numbers; zero dependencies; self-hostable; CSV + ICS
++  export.
+ 
+ All volunteers, clients, and matters in examples are fictional.
+diff --git a/open-artifacts/pro-bono-case-board/core/core.js b/open-artifacts/pro-bono-case-board/core/core.js
+index e7b512e..66bb85f 100644
+--- a/open-artifacts/pro-bono-case-board/core/core.js
++++ b/open-artifacts/pro-bono-case-board/core/core.js
+@@ -3,6 +3,10 @@
+  *   - intake → placement → closure workflow states with guarded transitions
+  *   - volunteer-skill matching by deterministic tag matching with a score
+  *   - stale-case flags (no activity beyond a configurable threshold)
++ *   - malpractice-aware deadline severity + ICS calendar export
++ *   - tolerant CSV intake parsing (per-row issues, never throws)
++ *   - volunteer capacity rollup and per-stage SLA aging
++ *   - board diff (regen audit: added / stage-changed / deadline-moved / closed)
+  *   - impact rollups over closed cases
+  *
+  * NO LLM: matching, staleness, transitions, and rollups are pure
+@@ -92,10 +96,33 @@ export function rankVolunteers(volCase, volunteers, limit = 5) {
+ 
+ const VALID_ISO = /^\d{4}-\d{2}-\d{2}$/;
+ 
++/** Default per-stage SLA budgets in days (open states only). */
++export const DEFAULT_STAGE_SLA = { intake: 7, triage: 7, ready: 14, placed: 21, active: 90, closing: 21 };
++
++/** Deadlines closer than this many days are "warn". */
++const DEADLINE_WARN_DAYS = 7;
++
+ function daysBetween(a, b) {
+   return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+ }
+ 
++/**
++ * Evaluate one deadline against asOf. Malpractice-aware severity:
++ *   critical = overdue court date · warn = overdue (any kind) or due < 7 d.
++ */
++function evalDeadline(dl, asOf) {
++  const valid = VALID_ISO.test(dl.dueDate ?? '');
++  const daysTo = valid ? daysBetween(asOf, dl.dueDate) : null;
++  const overdue = valid ? daysTo < 0 : false;
++  let severity = 'none';
++  if (valid) {
++    if (overdue && dl.kind === 'court') severity = 'critical';
++    else if (overdue || daysTo < DEADLINE_WARN_DAYS) severity = 'warn';
++  }
++  return { label: dl.label ?? '(unlabeled)', dueDate: dl.dueDate ?? null, kind: dl.kind ?? 'internal',
++    valid, daysTo, overdue, severity };
++}
++
+ /**
+  * Build the full board.
+  * @param {Object} input
+@@ -110,6 +137,8 @@ export function buildBoard(input) {
+   if (!VALID_ISO.test(asOf)) throw new Error(`asOf must be ISO date, got "${asOf}"`);
+   const staleDays = input.settings?.staleDays ?? 30;
+   const matchLimit = input.settings?.matchLimit ?? 5;
++  const maxOpen = input.settings?.maxOpenPerVolunteer ?? 5;
++  const stageSla = { ...DEFAULT_STAGE_SLA, ...(input.settings?.stageSla ?? {}) };
+   const volunteers = input.volunteers ?? [];
+   const byId = Object.fromEntries(volunteers.map((v) => [v.id, v]));
+ 
+@@ -117,6 +146,7 @@ export function buildBoard(input) {
+     const flags = [];
+     if (!WORKFLOW.states.includes(c.state)) flags.push(`unknown state "${c.state}"`);
+     if (!VALID_ISO.test(c.lastActivityDate ?? '')) flags.push('lastActivityDate missing or not ISO — staleness unverified');
++    if (!VALID_ISO.test(c.openedDate ?? '')) flags.push('openedDate missing or not ISO — SLA aging unverified');
+     const staleFor = VALID_ISO.test(c.lastActivityDate ?? '') && !['closed', 'withdrawn'].includes(c.state)
+       ? daysBetween(c.lastActivityDate, asOf) : null;
+     const stale = staleFor != null && staleFor > staleDays;
+@@ -126,6 +156,25 @@ export function buildBoard(input) {
+     if (c.state === 'closed' && !c.outcome) flags.push('closed without outcome');
+ 
+     const isOpen = !['closed', 'withdrawn'].includes(c.state);
++
++    // deadlines: computed for display everywhere; flagged/counted on open cases only
++    const deadlines = (c.deadlines ?? []).map((d) => evalDeadline(d, asOf));
++    if (isOpen) {
++      for (const d of deadlines) {
++        if (!d.valid) flags.push(`deadline "${d.label}" dueDate missing or not ISO: "${d.dueDate}"`);
++        else if (d.severity === 'critical') flags.push(`OVERDUE court deadline "${d.label}" (${-d.daysTo} d overdue)`);
++        else if (d.overdue) flags.push(`overdue ${d.kind} deadline "${d.label}" (${-d.daysTo} d overdue)`);
++        else if (d.severity === 'warn') flags.push(`deadline "${d.label}" due in ${d.daysTo} d (< ${DEADLINE_WARN_DAYS})`);
++      }
++    }
++
++    // stage SLA aging: days in the workflow approximated by days since openedDate
++    // (the input contract carries no state-entry history; approximation documented in spec.md)
++    const daysOpen = VALID_ISO.test(c.openedDate ?? '') ? daysBetween(c.openedDate, asOf) : null;
++    const slaDays = stageSla[c.state] ?? null;
++    const slaBreached = isOpen && slaDays != null && daysOpen != null && daysOpen > slaDays;
++    if (slaBreached) flags.push(`in ${c.state} ${daysOpen} d > SLA ${slaDays} d`);
++
+     return {
+       id: c.id,
+       client: c.client,
+@@ -136,13 +185,46 @@ export function buildBoard(input) {
+       volunteerId: c.volunteerId ?? null,
+       outcome: c.outcome ?? null,
+       hours: c.hours ?? 0,
++      deadlines,
+       stale,
+       staleFor,
++      daysOpen,
++      slaDays,
++      slaBreached,
+       flags,
+       matches: isOpen ? rankVolunteers(c, volunteers, matchLimit) : [],
+     };
+   });
+ 
++  // volunteer capacity rollup: grounds placement decisions in actual load
++  const byVolunteer = {};
++  for (const v of volunteers) {
++    byVolunteer[v.id] = { openCases: 0, hours: 0, staleOwned: 0, maxOpen, atCapacity: false };
++  }
++  for (const r of rows) {
++    const slot = r.volunteerId != null ? byVolunteer[r.volunteerId] : undefined;
++    if (!slot) continue;
++    slot.hours += r.hours || 0;
++    if (!['closed', 'withdrawn'].includes(r.state)) {
++      slot.openCases += 1;
++      if (r.stale) slot.staleOwned += 1;
++    }
++  }
++  for (const slot of Object.values(byVolunteer)) {
++    slot.hours = Math.round(slot.hours * 10) / 10;
++    slot.atCapacity = slot.openCases > slot.maxOpen;
++  }
++
++  // aging buckets over open cases by days since openedDate
++  const aging = { '0-7': 0, '8-30': 0, '31-90': 0, '>90': 0 };
++  for (const r of rows) {
++    if (['closed', 'withdrawn'].includes(r.state) || r.daysOpen == null) continue;
++    if (r.daysOpen <= 7) aging['0-7'] += 1;
++    else if (r.daysOpen <= 30) aging['8-30'] += 1;
++    else if (r.daysOpen <= 90) aging['31-90'] += 1;
++    else aging['>90'] += 1;
++  }
++
+   const closed = rows.filter((r) => r.state === 'closed');
+   const impact = {
+     openCases: rows.filter((r) => !['closed', 'withdrawn'].includes(r.state)).length,
+@@ -153,9 +235,14 @@ export function buildBoard(input) {
+     byOutcome: tally(closed.map((r) => r.outcome).filter(Boolean)),
+     staleCases: rows.filter((r) => r.stale).length,
+     flaggedCases: rows.filter((r) => r.flags.length > 0).length,
++    overdueDeadlines: rows.filter((r) => !['closed', 'withdrawn'].includes(r.state))
++      .reduce((s, r) => s + r.deadlines.filter((d) => d.overdue).length, 0),
++    slaBreaches: rows.filter((r) => r.slaBreached).length,
++    aging,
++    byVolunteer,
+   };
+ 
+-  return { asOf, cases: rows, impact, settings: { staleDays, matchLimit } };
++  return { asOf, cases: rows, impact, settings: { staleDays, matchLimit, maxOpenPerVolunteer: maxOpen, stageSla } };
+ }
+ 
+ function tally(values) {
+@@ -164,6 +251,153 @@ function tally(values) {
+   return t;
+ }
+ 
++// -------------------------------------------------------- ICS export
++
++/**
++ * Deterministic iCalendar export: one all-day VEVENT per deadline
++ * (UTC dates only; DTSTAMP pinned to the board's asOf so reruns are
++ * byte-identical). Invalid dates are skipped, never guessed.
++ */
++export function toICS(board) {
++  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
++  const ymd = (d) => d.replace(/-/g, '');
++  const nextDay = (d) => new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
++  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//pro-bono-case-board//open-artifact//EN', 'CALSCALE:GREGORIAN'];
++  for (const r of board.cases) {
++    (r.deadlines ?? []).forEach((d, i) => {
++      if (!d.valid) return;
++      L.push('BEGIN:VEVENT',
++        `UID:${r.id}-dl${i + 1}@pro-bono-case-board`,
++        `DTSTAMP:${ymd(board.asOf)}T000000Z`,
++        `DTSTART;VALUE=DATE:${ymd(d.dueDate)}`,
++        `DTEND;VALUE=DATE:${ymd(nextDay(d.dueDate))}`,
++        `SUMMARY:${esc(`${r.id} ${d.label} [${d.kind}]${d.overdue ? ' (OVERDUE)' : ''}`)}`,
++        `DESCRIPTION:${esc(`Fictional demo data. Case ${r.id} (${r.client}) — ${r.problem}. Severity: ${d.severity}.`)}`,
++        'END:VEVENT');
++    });
++  }
++  L.push('END:VCALENDAR');
++  return L.join('\r\n') + '\r\n';
++}
++
++// ----------------------------------------------------- intake parsing
++
++const PARSE_FIELDS = new Set(['id', 'client', 'problem', 'state', 'openedDate', 'lastActivityDate',
++  'requiredSkills', 'optionalSkills', 'volunteerId', 'hours']);
++const PARSE_REQUIRED_COLS = ['id', 'client', 'problem', 'state', 'openedDate', 'lastActivityDate'];
++
++function splitCsvLine(line) {
++  const cells = [];
++  let cur = '';
++  let inQ = false;
++  for (const ch of line) {
++    if (ch === '"') inQ = !inQ;
++    else if (ch === ',' && !inQ) { cells.push(cur); cur = ''; }
++    else cur += ch;
++  }
++  cells.push(cur);
++  return cells;
++}
++
++const splitList = (v) => String(v ?? '').split(/[;|]/).map((s) => s.trim()).filter(Boolean);
++
++/** Resolve a header cell to its canonical field name (case-insensitive). */
++const canonical = (h) => [...PARSE_FIELDS].find((f) => f.toLowerCase() === h.toLowerCase()) ?? h.toLowerCase();
++
++/**
++ * Tolerant intake parsing: pasted CSV rows → draft cases + per-row
++ * issues (bad date, unknown state, missing/duplicate id). NEVER throws —
++ * messy rows are flagged, not dropped; drafts feed buildBoard which
++ * re-flags anything still invalid. Skills cells use ";" or "|" separators.
++ *
++ * @returns {{ cases: Object[], issues: { row: number, id?: string, issues: string[] }[] }}
++ */
++export function parseRows(text) {
++  const out = { cases: [], issues: [] };
++  if (typeof text !== 'string') return out;
++  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
++  if (lines.length === 0) return out;
++
++  const header = splitCsvLine(lines[0]).map((h) => canonical(h.trim()));
++  const missingCols = PARSE_REQUIRED_COLS.filter((f) => !header.includes(f));
++  if (missingCols.length) out.issues.push({ row: 1, issues: [`header missing required column(s): ${missingCols.join(', ')}`] });
++  for (const h of header) {
++    if (h && !PARSE_FIELDS.has(h)) out.issues.push({ row: 1, issues: [`unknown column "${h}" ignored`] });
++  }
++  const idIdx = header.indexOf('id');
++
++  const seen = new Set();
++  for (let i = 1; i < lines.length; i++) {
++    const row = i + 1;
++    const cells = splitCsvLine(lines[i]);
++    const rec = Object.fromEntries(header.map((h, j) => [h, (cells[j] ?? '').trim()]));
++    const rowIssues = [];
++
++    const id = rec.id ?? '';
++    if (!id) rowIssues.push('missing id');
++    else if (seen.has(id)) rowIssues.push(`duplicate id "${id}"`);
++    else seen.add(id);
++
++    const state = rec.state ?? '';
++    if (!state) rowIssues.push('missing state — draft left in intake');
++    else if (!WORKFLOW.states.includes(state)) rowIssues.push(`unknown state "${state}"`);
++
++    for (const f of ['openedDate', 'lastActivityDate']) {
++      if (!VALID_ISO.test(rec[f] ?? '')) rowIssues.push(`${f} "${rec[f] ?? ''}" is not an ISO date (YYYY-MM-DD)`);
++    }
++
++    if (rowIssues.length) out.issues.push({ row, id: id || undefined, issues: rowIssues });
++    out.cases.push({
++      id: id || `ROW-${row}`,
++      client: rec.client ?? '',
++      problem: rec.problem ?? '',
++      state: state && WORKFLOW.states.includes(state) ? state : 'intake',
++      openedDate: VALID_ISO.test(rec.openedDate ?? '') ? rec.openedDate : null,
++      lastActivityDate: VALID_ISO.test(rec.lastActivityDate ?? '') ? rec.lastActivityDate : null,
++      requiredSkills: splitList(rec.requiredSkills),
++      optionalSkills: splitList(rec.optionalSkills),
++      volunteerId: rec.volunteerId || null,
++      hours: Number(rec.hours) || 0,
++      sourceRow: row,
++    });
++  }
++  return out;
++}
++
++// ---------------------------------------------------------- board diff
++
++/**
++ * Deterministic diff between two boards (e.g., last run vs. regen):
++ * added / removed cases, stage changes, cases newly closed, and moved
++ * deadlines (same label, different dueDate). Sorted by id (then label),
++ * so identical inputs always produce an identical change log.
++ */
++export function diffBoards(a, b) {
++  const A = new Map(a.cases.map((r) => [r.id, r]));
++  const B = new Map(b.cases.map((r) => [r.id, r]));
++  const added = [...B.keys()].filter((id) => !A.has(id)).sort();
++  const removed = [...A.keys()].filter((id) => !B.has(id)).sort();
++  const stageChanged = [];
++  const closed = [];
++  const deadlineMoved = [];
++  for (const id of [...A.keys()].filter((id) => B.has(id)).sort()) {
++    const x = A.get(id);
++    const y = B.get(id);
++    if (x.state !== y.state) {
++      if (y.state === 'closed') closed.push({ id, from: x.state, to: 'closed' });
++      else stageChanged.push({ id, from: x.state, to: y.state });
++    }
++    const dlA = new Map((x.deadlines ?? []).map((d) => [d.label, d.dueDate]));
++    for (const d of y.deadlines ?? []) {
++      if (dlA.has(d.label) && dlA.get(d.label) !== d.dueDate) {
++        deadlineMoved.push({ id, label: d.label, from: dlA.get(d.label), to: d.dueDate });
++      }
++    }
++  }
++  deadlineMoved.sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : p.label < q.label ? -1 : p.label > q.label ? 1 : 0));
++  return { added, removed, stageChanged, closed, deadlineMoved };
++}
++
+ /** CSV export, one row per case. */
+ export function toCSV(board) {
+   const esc = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+@@ -184,15 +418,26 @@ export function renderBoard(b) {
+   L.push(`- Open cases: **${i.openCases}** · placed/active/closing: **${i.placedCases}** · closed: **${i.closedCases}** · withdrawn: **${i.withdrawnCases}**`);
+   L.push(`- Volunteer hours logged: **${i.totalHours}**`);
+   L.push(`- Stale cases (> ${b.settings.staleDays}d no activity): **${i.staleCases}** · flagged: **${i.flaggedCases}**`);
++  L.push(`- Overdue deadlines (open cases): **${i.overdueDeadlines}** · SLA breaches: **${i.slaBreaches}**`);
++  L.push(`- Open-case aging: ${Object.entries(i.aging).map(([k, v]) => `${k}d ${v}`).join(' · ')}`);
+   L.push(`- Outcomes: ${Object.entries(i.byOutcome).map(([k, v]) => `${k} ${v}`).join(' · ') || '—'}`);
++  L.push('', '## Volunteer capacity', '');
++  L.push('| Volunteer | Open cases | Hours | Stale owned |');
++  L.push('|---|---|---|---|');
++  for (const [vid, v] of Object.entries(i.byVolunteer)) {
++    L.push(`| ${vid} | ${v.openCases}${v.atCapacity ? ` (**at capacity** > ${v.maxOpen})` : ` / ${v.maxOpen}`} | ${v.hours} | ${v.staleOwned} |`);
++  }
+   L.push('', '## Cases', '');
+-  L.push('| Case | State | Volunteer | Last activity | Flags | Top match |');
+-  L.push('|---|---|---|---|---|---|');
++  L.push('| Case | State | Volunteer | Last activity | Deadlines | Flags | Top match |');
++  L.push('|---|---|---|---|---|---|---|');
+   const order = { active: 0, closing: 1, placed: 2, ready: 3, triage: 4, intake: 5, closed: 6, withdrawn: 7 };
+   for (const r of [...b.cases].sort((a, c) =>
+     (order[a.state] ?? 99) - (order[c.state] ?? 99) || (c.staleFor ?? -1) - (a.staleFor ?? -1))) {
+     const top = r.matches[0];
+-    L.push(`| ${r.id} ${r.client} — ${r.problem} | ${r.state} | ${r.volunteerId ?? '—'} | ${r.lastActivityDate ?? '—'}${r.stale ? ' (STALE)' : ''} | ${r.flags.join('; ') || '—'} | ${top ? `${top.volunteerId} ${top.score}${top.eligible ? '' : ' (ineligible)'}` : '—'} |`);
++    const dls = r.deadlines.length
++      ? r.deadlines.map((d) => `${d.valid ? `${d.label} ${d.dueDate}` : `⚠ ${d.label} (invalid date)`} ${d.severity}`).join('<br>')
++      : '—';
++    L.push(`| ${r.id} ${r.client} — ${r.problem} | ${r.state} | ${r.volunteerId ?? '—'} | ${r.lastActivityDate ?? '—'}${r.stale ? ' (STALE)' : ''} | ${dls} | ${r.flags.join('; ') || '—'} | ${top ? `${top.volunteerId} ${top.score}${top.eligible ? '' : ' (ineligible)'}` : '—'} |`);
+   }
+   L.push('');
+   return L.join('\n');
+diff --git a/open-artifacts/pro-bono-case-board/core/core.test.js b/open-artifacts/pro-bono-case-board/core/core.test.js
+index 65f3e77..7fa5df3 100644
+--- a/open-artifacts/pro-bono-case-board/core/core.test.js
++++ b/open-artifacts/pro-bono-case-board/core/core.test.js
+@@ -1,6 +1,7 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { buildBoard, transition, matchScore, rankVolunteers, toCSV, renderBoard, WORKFLOW } from './core.js';
++import { readFileSync } from 'node:fs';
++import { buildBoard, transition, matchScore, rankVolunteers, toCSV, renderBoard, toICS, parseRows, diffBoards, WORKFLOW } from './core.js';
+ 
+ const AS_OF = '2026-11-07';
+ 
+@@ -173,3 +174,162 @@ test('renderBoard shows rollup, stale marker, and top match', () => {
+ test('invalid asOf throws instead of computing nonsense', () => {
+   assert.throws(() => buildBoard({ asOf: 'Nov 7', cases: [], volunteers: [] }), /ISO/);
+ });
++
++// --------------------------------------------------------- deadlines
++
++test('deadline due within 7 days is warn with daysTo computed', () => {
++  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
++    case_({ id: 'D1', deadlines: [{ label: 'answer filing', dueDate: '2026-11-10', kind: 'court' }] }),
++  ] });
++  const dl = b.cases[0].deadlines[0];
++  assert.equal(dl.daysTo, 3);
++  assert.equal(dl.overdue, false);
++  assert.equal(dl.severity, 'warn');
++  assert.match(b.cases[0].flags.join(' | '), /due in 3 d/);
++});
++
++test('overdue court deadline is critical and counted in impact.overdueDeadlines (open cases only)', () => {
++  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
++    case_({ id: 'D1', state: 'active', deadlines: [
++      { label: 'hearing', dueDate: '2026-11-05', kind: 'court' },        // 2 d overdue, court
++      { label: 'report', dueDate: '2026-11-04', kind: 'administrative' }, // 3 d overdue, non-court
++    ] }),
++    case_({ id: 'D2', state: 'closed', outcome: 'advice-only', lastActivityDate: '2026-11-01',
++      deadlines: [{ label: 'old hearing', dueDate: '2026-11-01', kind: 'court' }] }),
++  ] });
++  const [hearing, report] = b.cases[0].deadlines;
++  assert.equal(hearing.severity, 'critical');
++  assert.equal(hearing.overdue, true);
++  assert.equal(hearing.daysTo, -2);
++  assert.equal(report.severity, 'warn'); // overdue non-court = warn, not critical
++  assert.equal(b.impact.overdueDeadlines, 2); // closed case D2 not counted
++  assert.match(b.cases[0].flags.join(' | '), /OVERDUE court deadline "hearing" \(2 d overdue\)/);
++});
++
++test('toICS emits one all-day VEVENT per deadline, escaped, deterministic', () => {
++  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
++    case_({ id: 'D1', deadlines: [
++      { label: 'hearing, part 1; pm session', dueDate: '2026-11-10', kind: 'court' },
++      { label: 'report', dueDate: '2026-11-20', kind: 'administrative' },
++    ] }),
++  ] });
++  const ics = toICS(b);
++  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
++  assert.match(ics, /VERSION:2\.0/);
++  assert.match(ics, /DTSTART;VALUE=DATE:20261110/);
++  assert.match(ics, /DTEND;VALUE=DATE:20261111/); // all-day: end is exclusive next day
++  assert.match(ics, /SUMMARY:D1 hearing\\, part 1\\; pm session \[court\]/); // comma/semicolon escaped
++  assert.match(ics, /DTSTAMP:20261107T000000Z/); // deterministic stamp from asOf
++  assert.equal(ics, toICS(b));
++});
++
++// ------------------------------------------------------- intake parse
++
++test('parseRows: messy CSV flags per-row issues and drafts still build a board', () => {
++  const messy = [
++    'id,client,problem,state,openedDate,lastActivityDate,requiredSkills,volunteerId',
++    'PB-1,Ann X (fictional),eviction defense,intake,2026-11-01,2026-11-02,housing;spanish,V-01',
++    'PB-1,Dup Id (fictional),wage theft,intake,11/3/2026,2026-11-03,consumer,',
++    'PB-2,Bo Y (fictional),custody,mystery,2026-11-01,2026-11-05,family,V-02',
++  ].join('\n');
++  const parsed = parseRows(messy);
++  assert.equal(parsed.cases.length, 3);
++  const rowIssues = parsed.issues.map((i) => `row ${i.row}: ${i.issues.join(' | ')}`).join(' ;; ');
++  assert.match(rowIssues, /row 3: .*duplicate id "PB-1"/);
++  assert.match(rowIssues, /row 3: .*openedDate "11\/3\/2026" is not an ISO date/);
++  assert.match(rowIssues, /row 4: .*unknown state "mystery"/);
++  const board = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: parsed.cases });
++  assert.equal(board.cases.length, 3); // tolerant: flagged rows still board-buildable
++  assert.match(board.cases[1].flags.join(' | '), /openedDate missing or not ISO — SLA aging unverified/); // bad date carried as flag
++});
++
++test('parseRows: never throws — empty, whitespace, non-string, missing header columns', () => {
++  assert.deepEqual(parseRows(''), { cases: [], issues: [] });
++  assert.deepEqual(parseRows('   \n  \n'), { cases: [], issues: [] });
++  assert.equal(parseRows(null).cases.length, 0);
++  const noHeader = parseRows('id,state\nPB-1,intake');
++  assert.match(noHeader.issues.map((i) => i.issues.join(' ')).join(' '),
++    /header missing required column\(s\): client, problem, openedDate, lastActivityDate/);
++  assert.equal(noHeader.cases[0].state, 'intake');
++});
++
++// ---------------------------------------------------------- capacity
++
++test('volunteer capacity rollup: 6 open > default maxOpen 5 → at capacity, with hours and staleOwned', () => {
++  const six = Array.from({ length: 6 }, (_, i) =>
++    case_({ id: `S-${i + 1}`, state: 'active', volunteerId: 'V-01', hours: 2,
++      lastActivityDate: i === 0 ? '2026-09-01' : '2026-11-06' })); // S-1 stale
++  const b = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: six });
++  const v = b.impact.byVolunteer['V-01'];
++  assert.equal(v.openCases, 6);
++  assert.equal(v.hours, 12);
++  assert.equal(v.staleOwned, 1);
++  assert.equal(v.atCapacity, true);
++  assert.equal(buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS,
++    cases: six.slice(0, 4) }).impact.byVolunteer['V-01'].atCapacity, false); // 4 ≤ 5 default
++  assert.equal(buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS,
++    cases: six.slice(0, 5), settings: { maxOpenPerVolunteer: 4 } }).impact.byVolunteer['V-01'].atCapacity, true); // 5 > 4
++});
++
++// ---------------------------------------------------------- stage SLA
++
++test('stage SLA: intake case open 10 d breaches the 7 d SLA and lands in aging buckets', () => {
++  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
++    case_({ id: 'SL-1', state: 'intake', openedDate: '2026-10-28', lastActivityDate: '2026-11-06' }), // fresh but stuck
++    case_({ id: 'SL-2', state: 'ready', openedDate: '2026-11-05', lastActivityDate: '2026-11-06' }),
++  ] });
++  const sl = b.cases[0];
++  assert.equal(sl.daysOpen, 10);
++  assert.equal(sl.slaBreached, true);
++  assert.match(sl.flags.join(' | '), /in intake 10 d > SLA 7 d/);
++  assert.equal(b.cases[1].slaBreached, false);
++  assert.equal(b.impact.slaBreaches, 1);
++  assert.deepEqual(b.impact.aging, { '0-7': 1, '8-30': 1, '31-90': 0, '>90': 0 });
++  const custom = buildBoard({ asOf: AS_OF, volunteers: [], settings: { stageSla: { intake: 30 } },
++    cases: [case_({ id: 'SL-1', state: 'intake', openedDate: '2026-10-28', lastActivityDate: '2026-11-06' })] });
++  assert.equal(custom.cases[0].slaBreached, false); // configurable per stage
++});
++
++// ---------------------------------------------------------- board diff
++
++test('diffBoards: exact added / stage-changed / deadline-moved / closed diff on fixtures', () => {
++  const base = (over = {}) => [
++    case_({ id: 'X', state: over.X ?? 'intake', openedDate: '2026-11-01', lastActivityDate: '2026-11-06' }),
++    case_({ id: 'Y', state: 'ready', openedDate: '2026-11-01', lastActivityDate: '2026-11-06',
++      deadlines: [{ label: 'hearing', dueDate: over.hearing ?? '2026-12-01', kind: 'court' }] }),
++    case_({ id: 'Z', state: over.Z ?? 'active', outcome: over.Z === 'closed' ? 'favorable-settlement' : undefined,
++      volunteerId: 'V-01', openedDate: '2026-10-01', lastActivityDate: '2026-11-06' }),
++  ];
++  const bA = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: base() });
++  const bC = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: [...base({ X: 'triage', hearing: '2026-12-15', Z: 'closed' }),
++    case_({ id: 'W', state: 'intake', openedDate: '2026-11-07', lastActivityDate: '2026-11-07' })] });
++  assert.deepEqual(diffBoards(bA, bC), {
++    added: ['W'],
++    removed: [],
++    stageChanged: [{ id: 'X', from: 'intake', to: 'triage' }],
++    closed: [{ id: 'Z', from: 'active', to: 'closed' }],
++    deadlineMoved: [{ id: 'Y', label: 'hearing', from: '2026-12-01', to: '2026-12-15' }],
++  });
++  assert.deepEqual(diffBoards(bA, bC), diffBoards(bA, bC)); // deterministic across runs
++  assert.deepEqual(diffBoards(bA, bA), { added: [], removed: [], stageChanged: [], closed: [], deadlineMoved: [] });
++});
++
++// -------------------------------------------------------- render/demo
++
++test('renderBoard shows deadline severity, SLA breaches, and volunteer capacity', () => {
++  const b = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: [
++    case_({ id: 'PB-1', volunteerId: 'V-01', state: 'active',
++      deadlines: [{ label: 'hearing', dueDate: '2026-11-05', kind: 'court' }] }),
++    case_({ id: 'PB-2', state: 'intake', openedDate: '2026-10-20', lastActivityDate: '2026-11-06' }),
++  ] });
++  const md = renderBoard(b);
++  assert.match(md, /## Volunteer capacity/);
++  assert.match(md, /hearing .*2026-11-05.*critical/);
++  assert.match(md, /SLA breaches: \*\*1\*\*/);
++});
++
++test('demo stays self-contained: no external src= or href="http links', () => {
++  const html = readFileSync(new URL('../demo/index.html', import.meta.url), 'utf8');
++  assert.equal(/src\s*=\s*["']https?:/.test(html), false);
++  assert.equal(/href\s*=\s*["']https?:/.test(html), false);
++});
+diff --git a/open-artifacts/pro-bono-case-board/demo/index.html b/open-artifacts/pro-bono-case-board/demo/index.html
+index 0db2a1c..9d81940 100644
+--- a/open-artifacts/pro-bono-case-board/demo/index.html
++++ b/open-artifacts/pro-bono-case-board/demo/index.html
+@@ -20,15 +20,19 @@
+   textarea { width: 100%; box-sizing: border-box; min-height: 240px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; }
+   button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 12px; }
+   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
++  button + button { margin-left: 8px; }
+   table { border-collapse: collapse; width: 100%; font-size: 13px; }
+   th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+   tr:hover td { background: var(--hover); }
+   .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
+-  .chip.stale { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
++  .chip.stale, .chip.critical { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); font-weight: 700; }
++  .chip.warn { border-color: var(--bad); color: var(--bad); }
+   .flags { color: var(--text-secondary); font-size: 12px; }
++  .dl { font-family: var(--font-mono); font-size: 11px; margin: 2px 0; white-space: nowrap; }
+   .match { font-family: var(--font-mono); font-size: 11px; }
+   .match .inel { color: var(--text-secondary); text-decoration: line-through; }
++  .cap-note { font-family: var(--font-mono); font-size: 11px; color: var(--bad); font-weight: 700; }
+   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
+ </style>
+ </head>
+@@ -36,35 +40,48 @@
+ <div class="wrap">
+   <h1>Pro bono case board</h1>
+   <div class="rule"></div>
+-  <p class="lede">Intake → placement → closure workflow with guarded transitions, deterministic volunteer-skill matching (tag match with score), stale-case flags, and impact rollups. No LLM — the board is a pure function of the input.</p>
++  <p class="lede">Intake → placement → closure workflow with guarded transitions, deterministic volunteer-skill matching (tag match with score), stale-case flags, malpractice-aware deadline warnings (overdue court date = critical), per-stage SLA aging, volunteer-capacity rollups, and impact numbers. No LLM — the board is a pure function of the input.</p>
+ 
+   <h2>Board input (JSON)</h2>
+   <textarea id="input" spellcheck="false"></textarea>
+   <button id="run">Rebuild board</button>
++  <button id="ics">Download deadlines (.ics)</button>
+   <div class="err" id="err"></div>
+ 
+   <h2>Impact rollup</h2>
+   <div id="impact"></div>
+ 
++  <h2>Volunteer capacity</h2>
++  <div id="capacity"></div>
++
+   <h2>Cases</h2>
+   <div id="board"></div>
+ </div>
+ 
+ <script type="module">
+-import { buildBoard, toCSV } from '../core/core.js';
++import { buildBoard, toCSV, toICS } from '../core/core.js';
++
++// Demo dates are relative to today so warnings stay evergreen.
++const today = new Date().toISOString().slice(0, 10);
++const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
+ 
+ const DEFAULT_INPUT = {
+-  asOf: new Date().toISOString().slice(0, 10),
+-  settings: { staleDays: 30, matchLimit: 3 },
++  asOf: today,
++  settings: { staleDays: 30, matchLimit: 3, maxOpenPerVolunteer: 1 },
+   volunteers: [
+     { id: 'V-01', name: 'D. Whitfield (fictional)', skills: ['housing', 'tenant-defense', 'spanish'] },
+     { id: 'V-03', name: 'K. Osei (fictional)', skills: ['family', 'spanish'] },
+     { id: 'V-04', name: 'R. Aronov (fictional)', skills: ['housing', 'tenant-defense', 'benefits', 'spanish'] },
+   ],
+   cases: [
+-    { id: 'PB-2026-010', client: 'C. Moreau (fictional)', problem: 'eviction defense', state: 'active', openedDate: '2026-10-20', lastActivityDate: '2026-10-28', requiredSkills: ['housing', 'tenant-defense'], optionalSkills: ['spanish'], volunteerId: 'V-01', hours: 8 },
+-    { id: 'PB-2026-011', client: 'J. Baptiste (fictional)', problem: 'custody modification', state: 'ready', openedDate: '2026-11-02', lastActivityDate: '2026-11-03', requiredSkills: ['family'], optionalSkills: ['spanish'] },
+-    { id: 'PB-2026-012', client: 'S. Nakamura (fictional)', problem: 'benefits denial appeal', state: 'triage', openedDate: '2026-08-14', lastActivityDate: '2026-09-20', requiredSkills: ['benefits'], optionalSkills: ['consumer'] },
++    { id: 'PB-2026-010', client: 'C. Moreau (fictional)', problem: 'eviction defense', state: 'active', openedDate: iso(-18), lastActivityDate: iso(-10), requiredSkills: ['housing', 'tenant-defense'], optionalSkills: ['spanish'], volunteerId: 'V-01', hours: 8,
++      deadlines: [{ label: 'answer filing', dueDate: iso(3), kind: 'court' }] },
++    { id: 'PB-2026-011', client: 'J. Baptiste (fictional)', problem: 'custody modification', state: 'ready', openedDate: iso(-5), lastActivityDate: iso(-4), requiredSkills: ['family'], optionalSkills: ['spanish'],
++      deadlines: [{ label: 'custody hearing', dueDate: iso(20), kind: 'court' }] },
++    { id: 'PB-2026-012', client: 'S. Nakamura (fictional)', problem: 'benefits denial appeal', state: 'triage', openedDate: iso(-85), lastActivityDate: iso(-48), requiredSkills: ['benefits'], optionalSkills: ['consumer'], volunteerId: 'V-04',
++      deadlines: [{ label: 'appeal brief', dueDate: iso(13), kind: 'administrative' }] },
++    { id: 'PB-2026-013', client: 'L. Osei-Bonsu (fictional)', problem: 'family law TRO', state: 'placed', openedDate: iso(-2), lastActivityDate: iso(-1), requiredSkills: ['family'], volunteerId: 'V-04',
++      deadlines: [{ label: 'TRO hearing', dueDate: iso(-2), kind: 'court' }] },
+     { id: 'PB-2025-044', client: 'P. Vargas (fictional)', problem: 'eviction defense', state: 'closed', openedDate: '2025-09-10', lastActivityDate: '2026-03-12', requiredSkills: ['housing'], volunteerId: 'V-04', hours: 41, outcome: 'favorable-settlement' },
+   ],
+ };
+@@ -74,35 +91,56 @@ $('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
+ 
+ function esc(s) { return String(s).replace(/</g, '&lt;'); }
+ 
+-$('run').addEventListener('click', () => {
+-  const errEl = $('err'); errEl.style.display = 'none';
+-  let b;
+-  try { b = buildBoard(JSON.parse($('input').value)); }
+-  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
++function render(b) {
+   const i = b.impact;
+   $('impact').innerHTML = `
+     <div class="cards">
+       <div class="card"><div class="k">Open</div><div class="v">${i.openCases}</div></div>
+       <div class="card"><div class="k">Closed</div><div class="v">${i.closedCases}</div></div>
+       <div class="card alert"><div class="k">Stale</div><div class="v">${i.staleCases}</div></div>
++      <div class="card alert"><div class="k">Overdue deadlines</div><div class="v">${i.overdueDeadlines}</div></div>
++      <div class="card alert"><div class="k">SLA breaches</div><div class="v">${i.slaBreaches}</div></div>
+       <div class="card"><div class="k">Hours</div><div class="v">${i.totalHours}</div></div>
+       <div class="card"><div class="k">Flagged</div><div class="v">${i.flaggedCases}</div></div>
+     </div>
+-    <p class="lede" style="font-size:0.8rem">Outcomes: ${Object.entries(i.byOutcome).map(([k, v]) => `${esc(k)} × ${v}`).join(' · ') || '—'}</p>`;
++    <p class="lede" style="font-size:0.8rem">Outcomes: ${Object.entries(i.byOutcome).map(([k, v]) => `${esc(k)} × ${v}`).join(' · ') || '—'} · open-case aging: ${Object.entries(i.aging).map(([k, v]) => `${esc(k)}d ${v}`).join(' · ')}</p>`;
++  $('capacity').innerHTML = `<table><thead><tr><th>Volunteer</th><th>Open cases</th><th>Hours</th><th>Stale owned</th><th></th></tr></thead><tbody>` +
++    Object.entries(i.byVolunteer).map(([vid, v]) => `
++    <tr><td><strong>${esc(vid)}</strong></td><td>${v.openCases} / ${v.maxOpen}</td><td>${v.hours}</td><td>${v.staleOwned}</td>
++    <td>${v.atCapacity ? `<span class="cap-note">at capacity (${v.openCases} open > ${v.maxOpen})</span>` : ''}</td></tr>`).join('') +
++    `</tbody></table>`;
+   const order = { active: 0, closing: 1, placed: 2, ready: 3, triage: 4, intake: 5, closed: 6, withdrawn: 7 };
+   const rows = [...b.cases].sort((a, c) => (order[a.state] ?? 99) - (order[c.state] ?? 99) || (c.staleFor ?? -1) - (a.staleFor ?? -1))
+     .map((r) => `
+     <tr>
+-      <td><strong>${esc(r.id)}</strong> · ${esc(r.client)}<br /><span class="flags">${esc(r.problem)} · opened ${r.openedDate}</span></td>
+-      <td><span class="chip">${r.state}</span></td>
++      <td><strong>${esc(r.id)}</strong> · ${esc(r.client)}<br /><span class="flags">${esc(r.problem)} · opened ${r.openedDate ?? '—'}</span></td>
++      <td><span class="chip">${r.state}</span>${r.slaBreached ? `<br /><span class="flags">in state ${r.daysOpen} d &gt; SLA ${r.slaDays} d</span>` : ''}</td>
+       <td>${r.volunteerId ?? '—'}</td>
+       <td>${r.lastActivityDate ?? '—'} ${r.stale ? '<span class="chip stale">STALE ' + r.staleFor + 'd</span>' : ''}</td>
++      <td>${r.deadlines.length ? r.deadlines.map((d) =>
++        `<div class="dl">${esc(d.label)} ${d.valid ? d.dueDate : '(invalid date)'} ${d.severity !== 'none' ? `<span class="chip ${d.severity}">${d.severity.toUpperCase()}${d.overdue ? ' ' + (-d.daysTo) + 'd' : ' in ' + d.daysTo + 'd'}</span>` : ''}</div>`).join('') : '—'}</td>
+       <td>${r.matches.length ? r.matches.map((m) => `<span class="match${m.eligible ? '' : ' inel'}">${esc(m.volunteerId)} ${m.score}</span>`).join('<br>') : '—'}</td>
+       <td>${r.flags.length ? `<span class="flags">${r.flags.map(esc).join('<br>')}</span>` : '—'}</td>
+     </tr>`).join('');
+-  $('board').innerHTML = `<table><thead><tr><th>Case</th><th>State</th><th>Volunteer</th><th>Last activity</th><th>Matches (score)</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
++  $('board').innerHTML = `<table><thead><tr><th>Case</th><th>State</th><th>Volunteer</th><th>Last activity</th><th>Deadlines</th><th>Matches (score)</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
+   window.__csv = toCSV(b);
++  window.__ics = toICS(b);
++}
++
++$('run').addEventListener('click', () => {
++  const errEl = $('err'); errEl.style.display = 'none';
++  try { render(buildBoard(JSON.parse($('input').value))); }
++  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; }
+ });
++
++$('ics').addEventListener('click', () => {
++  if (!window.__ics) return;
++  const url = URL.createObjectURL(new Blob([window.__ics], { type: 'text/calendar' }));
++  const a = document.createElement('a');
++  a.href = url; a.download = 'pro-bono-deadlines.ics'; a.click();
++  URL.revokeObjectURL(url);
++});
++
+ $('run').click();
+ </script>
+ </body>
+diff --git a/open-artifacts/pro-bono-case-board/examples/board-diff.json b/open-artifacts/pro-bono-case-board/examples/board-diff.json
+new file mode 100644
+index 0000000..987dfaf
+--- /dev/null
++++ b/open-artifacts/pro-bono-case-board/examples/board-diff.json
+@@ -0,0 +1,37 @@
++{
++  "from": "2026-11-07",
++  "to": "2026-11-07",
++  "diff": {
++    "added": [
++      "PB-2026-014"
++    ],
++    "removed": [],
++    "stageChanged": [
++      {
++        "id": "PB-2026-012",
++        "from": "triage",
++        "to": "ready"
++      },
++      {
++        "id": "PB-2026-013",
++        "from": "placed",
++        "to": "active"
++      }
++    ],
++    "closed": [
++      {
++        "id": "PB-2026-010",
++        "from": "active",
++        "to": "closed"
++      }
++    ],
++    "deadlineMoved": [
++      {
++        "id": "PB-2026-011",
++        "label": "custody hearing",
++        "from": "2026-11-05",
++        "to": "2026-11-19"
++      }
++    ]
++  }
++}
+diff --git a/open-artifacts/pro-bono-case-board/examples/board.csv b/open-artifacts/pro-bono-case-board/examples/board.csv
+index 9718765..8a5da93 100644
+--- a/open-artifacts/pro-bono-case-board/examples/board.csv
++++ b/open-artifacts/pro-bono-case-board/examples/board.csv
+@@ -1,7 +1,7 @@
+ id,client,problem,state,volunteerId,stale,staleFor,hours,outcome,flags
+-PB-2026-010,C. Moreau (fictional),eviction defense,active,V-01,false,10,8,,
+-PB-2026-011,J. Baptiste (fictional),custody modification,ready,,false,4,0,,
+-PB-2026-012,S. Nakamura (fictional),benefits denial appeal,triage,,true,48,0,,no activity for 48 days (> 30)
++PB-2026-010,C. Moreau (fictional),eviction defense,active,V-01,false,10,8,,"deadline ""answer filing"" due in 5 d (< 7)"
++PB-2026-011,J. Baptiste (fictional),custody modification,ready,,false,4,0,,"OVERDUE court deadline ""custody hearing"" (2 d overdue)"
++PB-2026-012,S. Nakamura (fictional),benefits denial appeal,triage,V-04,true,48,0,,no activity for 48 days (> 30); in triage 85 d > SLA 7 d
+ PB-2026-006,A. Ferro (fictional),wage theft consultation,closed,V-05,false,,6.5,advice-only,
+ PB-2025-044,P. Vargas (fictional),eviction defense,closed,V-04,false,,41,favorable-settlement,
+-PB-2026-013,L. Osei-Bonsu (fictional),family law TRO,placed,,false,1,0,,state is placed but no volunteerId set
++PB-2026-013,L. Osei-Bonsu (fictional),family law TRO,placed,V-04,false,1,0,,"deadline ""TRO hearing"" due in 2 d (< 7)"
+diff --git a/open-artifacts/pro-bono-case-board/examples/board.ics b/open-artifacts/pro-bono-case-board/examples/board.ics
+new file mode 100644
+index 0000000..114b986
+--- /dev/null
++++ b/open-artifacts/pro-bono-case-board/examples/board.ics
+@@ -0,0 +1,37 @@
++BEGIN:VCALENDAR
++VERSION:2.0
++PRODID:-//pro-bono-case-board//open-artifact//EN
++CALSCALE:GREGORIAN
++BEGIN:VEVENT
++UID:PB-2026-010-dl1@pro-bono-case-board
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261112
++DTEND;VALUE=DATE:20261113
++SUMMARY:PB-2026-010 answer filing [court]
++DESCRIPTION:Fictional demo data. Case PB-2026-010 (C. Moreau (fictional)) — eviction defense. Severity: warn.
++END:VEVENT
++BEGIN:VEVENT
++UID:PB-2026-011-dl1@pro-bono-case-board
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261105
++DTEND;VALUE=DATE:20261106
++SUMMARY:PB-2026-011 custody hearing [court] (OVERDUE)
++DESCRIPTION:Fictional demo data. Case PB-2026-011 (J. Baptiste (fictional)) — custody modification. Severity: critical.
++END:VEVENT
++BEGIN:VEVENT
++UID:PB-2026-012-dl1@pro-bono-case-board
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261120
++DTEND;VALUE=DATE:20261121
++SUMMARY:PB-2026-012 appeal brief [administrative]
++DESCRIPTION:Fictional demo data. Case PB-2026-012 (S. Nakamura (fictional)) — benefits denial appeal. Severity: none.
++END:VEVENT
++BEGIN:VEVENT
++UID:PB-2026-013-dl1@pro-bono-case-board
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261109
++DTEND;VALUE=DATE:20261110
++SUMMARY:PB-2026-013 TRO hearing [court]
++DESCRIPTION:Fictional demo data. Case PB-2026-013 (L. Osei-Bonsu (fictional)) — family law TRO. Severity: warn.
++END:VEVENT
++END:VCALENDAR
+diff --git a/open-artifacts/pro-bono-case-board/examples/board.md b/open-artifacts/pro-bono-case-board/examples/board.md
+index fa3d514..f086891 100644
+--- a/open-artifacts/pro-bono-case-board/examples/board.md
++++ b/open-artifacts/pro-bono-case-board/examples/board.md
+@@ -4,16 +4,29 @@
+ 
+ - Open cases: **4** · placed/active/closing: **4** · closed: **2** · withdrawn: **0**
+ - Volunteer hours logged: **55.5**
+-- Stale cases (> 30d no activity): **1** · flagged: **2**
++- Stale cases (> 30d no activity): **1** · flagged: **4**
++- Overdue deadlines (open cases): **1** · SLA breaches: **1**
++- Open-case aging: 0-7d 2 · 8-30d 1 · 31-90d 1 · >90d 0
+ - Outcomes: advice-only 1 · favorable-settlement 1
+ 
++## Volunteer capacity
++
++| Volunteer | Open cases | Hours | Stale owned |
++|---|---|---|---|
++| V-01 | 1 / 1 | 8 | 0 |
++| V-02 | 0 / 1 | 0 | 0 |
++| V-03 | 0 / 1 | 0 | 0 |
++| V-04 | 2 (**at capacity** > 1) | 41 | 1 |
++| V-05 | 0 / 1 | 6.5 | 0 |
++| V-06 | 0 / 1 | 0 | 0 |
++
+ ## Cases
+ 
+-| Case | State | Volunteer | Last activity | Flags | Top match |
+-|---|---|---|---|---|---|
+-| PB-2026-010 C. Moreau (fictional) — eviction defense | active | V-01 | 2026-10-28 | — | V-01 100 |
+-| PB-2026-013 L. Osei-Bonsu (fictional) — family law TRO | placed | — | 2026-11-06 | state is placed but no volunteerId set | V-03 70 |
+-| PB-2026-011 J. Baptiste (fictional) — custody modification | ready | — | 2026-11-03 | — | V-03 85 |
+-| PB-2026-012 S. Nakamura (fictional) — benefits denial appeal | triage | — | 2026-09-20 (STALE) | no activity for 48 days (> 30) | V-05 100 |
+-| PB-2026-006 A. Ferro (fictional) — wage theft consultation | closed | V-05 | 2026-06-30 | — | — |
+-| PB-2025-044 P. Vargas (fictional) — eviction defense | closed | V-04 | 2026-03-12 | — | — |
++| Case | State | Volunteer | Last activity | Deadlines | Flags | Top match |
++|---|---|---|---|---|---|---|
++| PB-2026-010 C. Moreau (fictional) — eviction defense | active | V-01 | 2026-10-28 | answer filing 2026-11-12 warn | deadline "answer filing" due in 5 d (< 7) | V-01 100 |
++| PB-2026-013 L. Osei-Bonsu (fictional) — family law TRO | placed | V-04 | 2026-11-06 | TRO hearing 2026-11-09 warn | deadline "TRO hearing" due in 2 d (< 7) | V-03 70 |
++| PB-2026-011 J. Baptiste (fictional) — custody modification | ready | — | 2026-11-03 | custody hearing 2026-11-05 critical | OVERDUE court deadline "custody hearing" (2 d overdue) | V-03 85 |
++| PB-2026-012 S. Nakamura (fictional) — benefits denial appeal | triage | V-04 | 2026-09-20 (STALE) | appeal brief 2026-11-20 none | no activity for 48 days (> 30); in triage 85 d > SLA 7 d | V-05 100 |
++| PB-2026-006 A. Ferro (fictional) — wage theft consultation | closed | V-05 | 2026-06-30 | — | — | — |
++| PB-2025-044 P. Vargas (fictional) — eviction defense | closed | V-04 | 2026-03-12 | — | — | — |
+diff --git a/open-artifacts/pro-bono-case-board/examples/input-changed.json b/open-artifacts/pro-bono-case-board/examples/input-changed.json
+new file mode 100644
+index 0000000..3f52f37
+--- /dev/null
++++ b/open-artifacts/pro-bono-case-board/examples/input-changed.json
+@@ -0,0 +1,106 @@
++{
++  "asOf": "2026-11-07",
++  "settings": { "staleDays": 30, "matchLimit": 3, "maxOpenPerVolunteer": 1 },
++  "volunteers": [
++    { "id": "V-01", "name": "D. Whitfield (fictional)", "skills": ["housing", "tenant-defense", "spanish"] },
++    { "id": "V-02", "name": "M. Sandoval (fictional)", "skills": ["housing", "benefits", "spanish"] },
++    { "id": "V-03", "name": "K. Osei (fictional)", "skills": ["family", "spanish"] },
++    { "id": "V-04", "name": "R. Aronov (fictional)", "skills": ["housing", "tenant-defense", "benefits", "spanish"] },
++    { "id": "V-05", "name": "T. Ibarra (fictional)", "skills": ["consumer", "benefits"] },
++    { "id": "V-06", "name": "F. Duquette (fictional)", "skills": ["family", "immigration"] }
++  ],
++  "cases": [
++    {
++      "id": "PB-2026-010",
++      "client": "C. Moreau (fictional)",
++      "problem": "eviction defense",
++      "state": "closed",
++      "openedDate": "2026-10-20",
++      "lastActivityDate": "2026-11-07",
++      "requiredSkills": ["housing", "tenant-defense"],
++      "optionalSkills": ["spanish"],
++      "volunteerId": "V-01",
++      "hours": 14,
++      "outcome": "favorable-settlement",
++      "closedDate": "2026-11-07",
++      "deadlines": [
++        { "label": "answer filing", "dueDate": "2026-11-12", "kind": "court" }
++      ]
++    },
++    {
++      "id": "PB-2026-011",
++      "client": "J. Baptiste (fictional)",
++      "problem": "custody modification",
++      "state": "ready",
++      "openedDate": "2026-11-02",
++      "lastActivityDate": "2026-11-06",
++      "requiredSkills": ["family"],
++      "optionalSkills": ["spanish", "immigration"],
++      "deadlines": [
++        { "label": "custody hearing", "dueDate": "2026-11-19", "kind": "court" }
++      ]
++    },
++    {
++      "id": "PB-2026-012",
++      "client": "S. Nakamura (fictional)",
++      "problem": "benefits denial appeal",
++      "state": "ready",
++      "openedDate": "2026-08-14",
++      "lastActivityDate": "2026-11-05",
++      "requiredSkills": ["benefits"],
++      "optionalSkills": ["consumer"],
++      "volunteerId": "V-04",
++      "deadlines": [
++        { "label": "appeal brief", "dueDate": "2026-11-20", "kind": "administrative" }
++      ]
++    },
++    {
++      "id": "PB-2026-006",
++      "client": "A. Ferro (fictional)",
++      "problem": "wage theft consultation",
++      "state": "closed",
++      "openedDate": "2026-05-02",
++      "lastActivityDate": "2026-06-30",
++      "requiredSkills": ["consumer"],
++      "volunteerId": "V-05",
++      "hours": 6.5,
++      "outcome": "advice-only",
++      "closedDate": "2026-06-30"
++    },
++    {
++      "id": "PB-2025-044",
++      "client": "P. Vargas (fictional)",
++      "problem": "eviction defense",
++      "state": "closed",
++      "openedDate": "2025-09-10",
++      "lastActivityDate": "2026-03-12",
++      "requiredSkills": ["housing"],
++      "volunteerId": "V-04",
++      "hours": 41,
++      "outcome": "favorable-settlement",
++      "closedDate": "2026-03-12"
++    },
++    {
++      "id": "PB-2026-013",
++      "client": "L. Osei-Bonsu (fictional)",
++      "problem": "family law TRO",
++      "state": "active",
++      "openedDate": "2026-11-05",
++      "lastActivityDate": "2026-11-07",
++      "requiredSkills": ["family"],
++      "volunteerId": "V-04",
++      "deadlines": [
++        { "label": "TRO hearing", "dueDate": "2026-11-09", "kind": "court" }
++      ]
++    },
++    {
++      "id": "PB-2026-014",
++      "client": "R. Okafor (fictional)",
++      "problem": "security deposit return",
++      "state": "intake",
++      "openedDate": "2026-11-07",
++      "lastActivityDate": "2026-11-07",
++      "requiredSkills": ["housing", "consumer"]
++    }
++  ]
++}
+diff --git a/open-artifacts/pro-bono-case-board/examples/input.json b/open-artifacts/pro-bono-case-board/examples/input.json
+index 6a071d5..0dd03b6 100644
+--- a/open-artifacts/pro-bono-case-board/examples/input.json
++++ b/open-artifacts/pro-bono-case-board/examples/input.json
+@@ -1,6 +1,6 @@
+ {
+   "asOf": "2026-11-07",
+-  "settings": { "staleDays": 30, "matchLimit": 3 },
++  "settings": { "staleDays": 30, "matchLimit": 3, "maxOpenPerVolunteer": 1 },
+   "volunteers": [
+     { "id": "V-01", "name": "D. Whitfield (fictional)", "skills": ["housing", "tenant-defense", "spanish"] },
+     { "id": "V-02", "name": "M. Sandoval (fictional)", "skills": ["housing", "benefits", "spanish"] },
+@@ -20,7 +20,10 @@
+       "requiredSkills": ["housing", "tenant-defense"],
+       "optionalSkills": ["spanish"],
+       "volunteerId": "V-01",
+-      "hours": 8
++      "hours": 8,
++      "deadlines": [
++        { "label": "answer filing", "dueDate": "2026-11-12", "kind": "court" }
++      ]
+     },
+     {
+       "id": "PB-2026-011",
+@@ -30,7 +33,10 @@
+       "openedDate": "2026-11-02",
+       "lastActivityDate": "2026-11-03",
+       "requiredSkills": ["family"],
+-      "optionalSkills": ["spanish", "immigration"]
++      "optionalSkills": ["spanish", "immigration"],
++      "deadlines": [
++        { "label": "custody hearing", "dueDate": "2026-11-05", "kind": "court" }
++      ]
+     },
+     {
+       "id": "PB-2026-012",
+@@ -40,7 +46,11 @@
+       "openedDate": "2026-08-14",
+       "lastActivityDate": "2026-09-20",
+       "requiredSkills": ["benefits"],
+-      "optionalSkills": ["consumer"]
++      "optionalSkills": ["consumer"],
++      "volunteerId": "V-04",
++      "deadlines": [
++        { "label": "appeal brief", "dueDate": "2026-11-20", "kind": "administrative" }
++      ]
+     },
+     {
+       "id": "PB-2026-006",
+@@ -75,7 +85,11 @@
+       "state": "placed",
+       "openedDate": "2026-11-05",
+       "lastActivityDate": "2026-11-06",
+-      "requiredSkills": ["family"]
++      "requiredSkills": ["family"],
++      "volunteerId": "V-04",
++      "deadlines": [
++        { "label": "TRO hearing", "dueDate": "2026-11-09", "kind": "court" }
++      ]
+     }
+   ]
+ }
+diff --git a/open-artifacts/pro-bono-case-board/examples/output.json b/open-artifacts/pro-bono-case-board/examples/output.json
+index 77368c2..beb56e5 100644
+--- a/open-artifacts/pro-bono-case-board/examples/output.json
++++ b/open-artifacts/pro-bono-case-board/examples/output.json
+@@ -11,9 +11,25 @@
+       "volunteerId": "V-01",
+       "outcome": null,
+       "hours": 8,
++      "deadlines": [
++        {
++          "label": "answer filing",
++          "dueDate": "2026-11-12",
++          "kind": "court",
++          "valid": true,
++          "daysTo": 5,
++          "overdue": false,
++          "severity": "warn"
++        }
++      ],
+       "stale": false,
+       "staleFor": 10,
+-      "flags": [],
++      "daysOpen": 18,
++      "slaDays": 90,
++      "slaBreached": false,
++      "flags": [
++        "deadline \"answer filing\" due in 5 d (< 7)"
++      ],
+       "matches": [
+         {
+           "volunteerId": "V-01",
+@@ -61,9 +77,25 @@
+       "volunteerId": null,
+       "outcome": null,
+       "hours": 0,
++      "deadlines": [
++        {
++          "label": "custody hearing",
++          "dueDate": "2026-11-05",
++          "kind": "court",
++          "valid": true,
++          "daysTo": -2,
++          "overdue": true,
++          "severity": "critical"
++        }
++      ],
+       "stale": false,
+       "staleFor": 4,
+-      "flags": [],
++      "daysOpen": 5,
++      "slaDays": 14,
++      "slaBreached": false,
++      "flags": [
++        "OVERDUE court deadline \"custody hearing\" (2 d overdue)"
++      ],
+       "matches": [
+         {
+           "volunteerId": "V-03",
+@@ -105,13 +137,28 @@
+       "state": "triage",
+       "openedDate": "2026-08-14",
+       "lastActivityDate": "2026-09-20",
+-      "volunteerId": null,
++      "volunteerId": "V-04",
+       "outcome": null,
+       "hours": 0,
++      "deadlines": [
++        {
++          "label": "appeal brief",
++          "dueDate": "2026-11-20",
++          "kind": "administrative",
++          "valid": true,
++          "daysTo": 13,
++          "overdue": false,
++          "severity": "none"
++        }
++      ],
+       "stale": true,
+       "staleFor": 48,
++      "daysOpen": 85,
++      "slaDays": 7,
++      "slaBreached": true,
+       "flags": [
+-        "no activity for 48 days (> 30)"
++        "no activity for 48 days (> 30)",
++        "in triage 85 d > SLA 7 d"
+       ],
+       "matches": [
+         {
+@@ -154,8 +201,12 @@
+       "volunteerId": "V-05",
+       "outcome": "advice-only",
+       "hours": 6.5,
++      "deadlines": [],
+       "stale": false,
+       "staleFor": null,
++      "daysOpen": 189,
++      "slaDays": null,
++      "slaBreached": false,
+       "flags": [],
+       "matches": []
+     },
+@@ -169,8 +220,12 @@
+       "volunteerId": "V-04",
+       "outcome": "favorable-settlement",
+       "hours": 41,
++      "deadlines": [],
+       "stale": false,
+       "staleFor": null,
++      "daysOpen": 423,
++      "slaDays": null,
++      "slaBreached": false,
+       "flags": [],
+       "matches": []
+     },
+@@ -181,13 +236,27 @@
+       "state": "placed",
+       "openedDate": "2026-11-05",
+       "lastActivityDate": "2026-11-06",
+-      "volunteerId": null,
++      "volunteerId": "V-04",
+       "outcome": null,
+       "hours": 0,
++      "deadlines": [
++        {
++          "label": "TRO hearing",
++          "dueDate": "2026-11-09",
++          "kind": "court",
++          "valid": true,
++          "daysTo": 2,
++          "overdue": false,
++          "severity": "warn"
++        }
++      ],
+       "stale": false,
+       "staleFor": 1,
++      "daysOpen": 2,
++      "slaDays": 21,
++      "slaBreached": false,
+       "flags": [
+-        "state is placed but no volunteerId set"
++        "deadline \"TRO hearing\" due in 2 d (< 7)"
+       ],
+       "matches": [
+         {
+@@ -231,10 +300,71 @@
+       "favorable-settlement": 1
+     },
+     "staleCases": 1,
+-    "flaggedCases": 2
++    "flaggedCases": 4,
++    "overdueDeadlines": 1,
++    "slaBreaches": 1,
++    "aging": {
++      "0-7": 2,
++      "8-30": 1,
++      "31-90": 1,
++      ">90": 0
++    },
++    "byVolunteer": {
++      "V-01": {
++        "openCases": 1,
++        "hours": 8,
++        "staleOwned": 0,
++        "maxOpen": 1,
++        "atCapacity": false
++      },
++      "V-02": {
++        "openCases": 0,
++        "hours": 0,
++        "staleOwned": 0,
++        "maxOpen": 1,
++        "atCapacity": false
++      },
++      "V-03": {
++        "openCases": 0,
++        "hours": 0,
++        "staleOwned": 0,
++        "maxOpen": 1,
++        "atCapacity": false
++      },
++      "V-04": {
++        "openCases": 2,
++        "hours": 41,
++        "staleOwned": 1,
++        "maxOpen": 1,
++        "atCapacity": true
++      },
++      "V-05": {
++        "openCases": 0,
++        "hours": 6.5,
++        "staleOwned": 0,
++        "maxOpen": 1,
++        "atCapacity": false
++      },
++      "V-06": {
++        "openCases": 0,
++        "hours": 0,
++        "staleOwned": 0,
++        "maxOpen": 1,
++        "atCapacity": false
++      }
++    }
+   },
+   "settings": {
+     "staleDays": 30,
+-    "matchLimit": 3
++    "matchLimit": 3,
++    "maxOpenPerVolunteer": 1,
++    "stageSla": {
++      "intake": 7,
++      "triage": 7,
++      "ready": 14,
++      "placed": 21,
++      "active": 90,
++      "closing": 21
++    }
+   }
+ }
+diff --git a/open-artifacts/pro-bono-case-board/examples/run.js b/open-artifacts/pro-bono-case-board/examples/run.js
+index 313e9da..df4994a 100644
+--- a/open-artifacts/pro-bono-case-board/examples/run.js
++++ b/open-artifacts/pro-bono-case-board/examples/run.js
+@@ -1,23 +1,33 @@
+ /**
+  * Reproducible worked example: reads examples/input.json, runs the
+- * deterministic board, writes output.json, board.md, board.csv.
++ * deterministic board, writes output.json, board.md, board.csv,
++ * board.ics (deadline calendar), and — against examples/input-changed.json —
++ * board-diff.json (regen audit: what changed between the two snapshots).
+  * Run:  node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { buildBoard, renderBoard, toCSV } from '../core/core.js';
++import { buildBoard, renderBoard, toCSV, toICS, diffBoards } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
++const inputChanged = JSON.parse(readFileSync(join(here, 'input-changed.json'), 'utf8'));
+ 
+ const board = buildBoard(input);
++const changed = buildBoard(inputChanged);
+ writeFileSync(join(here, 'output.json'), JSON.stringify(board, null, 2) + '\n');
+ writeFileSync(join(here, 'board.md'), renderBoard(board));
+ writeFileSync(join(here, 'board.csv'), toCSV(board));
++writeFileSync(join(here, 'board.ics'), toICS(board));
++writeFileSync(join(here, 'board-diff.json'), JSON.stringify({ from: input.asOf, to: inputChanged.asOf, diff: diffBoards(board, changed) }, null, 2) + '\n');
+ 
+ const i = board.impact;
++const d = diffBoards(board, changed);
+ console.log(
+   `${board.cases.length} cases -> open ${i.openCases}, closed ${i.closedCases}, ` +
+-  `stale ${i.staleCases}, hours ${i.totalHours} -> output.json, board.md, board.csv`,
++  `stale ${i.staleCases}, overdue deadlines ${i.overdueDeadlines}, SLA breaches ${i.slaBreaches}, ` +
++  `hours ${i.totalHours} -> output.json, board.md, board.csv, board.ics` +
++  ` | diff vs changed snapshot: +${d.added.length} added, ${d.stageChanged.length} stage-changed, ` +
++  `${d.deadlineMoved.length} deadline-moved, ${d.closed.length} closed -> board-diff.json`,
+ );
+diff --git a/open-artifacts/pro-bono-case-board/spec.md b/open-artifacts/pro-bono-case-board/spec.md
+index 55fad69..a9f18fe 100644
+--- a/open-artifacts/pro-bono-case-board/spec.md
++++ b/open-artifacts/pro-bono-case-board/spec.md
+@@ -12,6 +12,11 @@ matching, stale-case flags, and impact rollups.
+ | Volunteer matching: tag matching with 0–100 score, eligibility on required tags | core (deterministic) |
+ | Ranking (eligible first, score desc, id-asc tie-break) | core (deterministic, stable) |
+ | Stale flags (no activity > staleDays, open cases only) | core (deterministic) |
++| Deadline severity (overdue court = critical, overdue/dues<7d = warn) + ICS export | core (deterministic) |
++| Tolerant CSV intake parsing with per-row issues | core (deterministic) |
++| Volunteer capacity rollup (open/hours/staleOwned vs maxOpenPerVolunteer) | core (deterministic) |
++| Per-stage SLA aging + aging buckets | core (deterministic) |
++| Board diff (added / removed / stage-changed / deadline-moved / closed) | core (deterministic) |
+ | Data-integrity flags (placed w/o volunteer, unknown volunteer, closed w/o outcome) | core (deterministic) |
+ | Impact rollups (hours, outcomes, placement counts) | core (deterministic) |
+ | Reading skills off a volunteer profile, drafting problem summaries | LLM / coordinator (prompt below) |
+@@ -30,7 +35,8 @@ Ranking: eligible > score > volunteer id ascending.
+ ```jsonc
+ {
+   "asOf": "2026-11-07",
+-  "settings": { "staleDays": 30, "matchLimit": 3 },
++  "settings": { "staleDays": 30, "matchLimit": 3, "maxOpenPerVolunteer": 5,
++               "stageSla": { "intake": 7, "triage": 7, "ready": 14, "placed": 21, "active": 90, "closing": 21 } },
+   "volunteers": [ { "id": "V-01", "name": "…", "skills": ["housing", "spanish"] } ],
+   "cases": [ {
+     "id": "PB-2026-010", "client": "…", "problem": "eviction defense",
+@@ -38,18 +44,33 @@ Ranking: eligible > score > volunteer id ascending.
+     "openedDate": "ISO", "lastActivityDate": "ISO",
+     "requiredSkills": ["housing"], "optionalSkills": ["spanish"],
+     "volunteerId": "V-01|null", "hours": 8,
+-    "outcome": "favorable-settlement|represented|advice-only|unfavorable|null"
++    "outcome": "favorable-settlement|represented|advice-only|unfavorable|null",
++    "deadlines": [ { "label": "answer filing", "dueDate": "ISO", "kind": "court|administrative|internal" } ]
+   } ]
+ }
+ ```
+ 
++`parseRows(text)` accepts the same fields as CSV columns (header row
++required; skills cells use `;` or `|` separators) and returns
++`{ cases: drafts, issues: [{row, id, issues[]}] }` — never throws.
++
++SLA note: days in state are approximated by days since `openedDate`
++(the contract carries no state-entry history); the approximation is
++documented here and flagged as such nowhere else needed.
++
+ ## Output contract (JSON)
+ 
+-Per case: `state`, `stale`, `staleFor`, `flags[]`, `matches[]`
++Per case: `state`, `stale`, `staleFor`, `daysOpen`, `slaDays`,
++`slaBreached`, `deadlines[]` (`{label, dueDate, kind, valid, daysTo,
++overdue, severity}`), `flags[]`, `matches[]`
+ (`{volunteerId, score, eligible, missingRequired, matched}`).
+ Plus `impact { openCases, closedCases, withdrawnCases, placedCases,
+-totalHours, byOutcome, staleCases, flaggedCases }`. Exports: CSV row per
+-case, Markdown board (impact + case table sorted by workflow stage).
++totalHours, byOutcome, staleCases, flaggedCases, overdueDeadlines,
++slaBreaches, aging, byVolunteer }`. Exports: CSV row per case,
++Markdown board (impact + capacity + case table sorted by workflow
++stage), ICS calendar (one all-day VEVENT per deadline, DTSTAMP pinned
++to asOf), and `diffBoards(a, b)` change log
++(`{added, removed, stageChanged, closed, deadlineMoved}`, sorted).
+ 
+ ## Prompt schema for the LLM part (input prep only)
+ 

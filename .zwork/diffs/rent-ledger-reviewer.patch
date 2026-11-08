@@ -1,0 +1,984 @@
+diff --git a/open-artifacts/rent-ledger-reviewer/README.md b/open-artifacts/rent-ledger-reviewer/README.md
+index 476ee86..0a21763 100644
+--- a/open-artifacts/rent-ledger-reviewer/README.md
++++ b/open-artifacts/rent-ledger-reviewer/README.md
+@@ -1,11 +1,14 @@
+ # rent-ledger-reviewer
+ 
+ Rent ledger auditor for eviction defense. Ledger entries JSON in (payments,
+-rent due, late fees, misc charges) → running balance recomputed entry by
+-entry, overcharge/underpayment detection, late-fee cap + grace-period checks
+-per **rules-as-data** (3 editable example US jurisdictions), and an itemized
+-dispute report where every line cites the rule that produced it, plus a
+-recomputed-ledger CSV.
++rent due, late fees, interest, misc charges — or a pasted CSV/TSV table via
++the deterministic `parseLedgerTable`) → running balance recomputed entry by
++entry, overcharge/underpayment detection, late-fee cap + grace-period checks,
++interest recomputation, rent-schedule cap checks, claimed-balance mismatch,
++and unknown/disallowed charge flagging per **rules-as-data** (3 editable
++example US jurisdictions, each rule carrying an illustrative [verify]-tagged
++citation pointer) — plus an itemized dispute report where every line cites
++the rule that produced it, and a recomputed-ledger CSV.
+ 
+ Open reimplementation of the Rising for Justice "Rent ledger reviewer"
+ (Claude for Legal A2J gallery); the original is D.C.-only and closed. The
+@@ -14,13 +17,15 @@ recalculation here is pure, inspectable arithmetic — no LLM in the loop.
+ ## Run
+ 
+ ```bash
+-node --test 'core/*.test.js'   # 18 tests
++node --test 'core/*.test.js'   # 29 tests
+ node examples/run.js           # regenerates output.json + report.md + ledger.csv
+ ```
+ 
+ Open `demo/index.html` for the interactive demo (prefilled worked example:
+ duplicate rent entry, grace-window late fee, over-cap late fee, disallowed
+-admin fee → $400 overcharge identified).
++admin fee, landlord-claimed balance $400 above the recomputation → $400
++overcharge identified; plus a paste box that turns a CSV/TSV ledger table
++into input deterministically, no LLM).
+ 
+ ## Layout
+ 
+@@ -33,8 +38,14 @@ admin fee → $400 overcharge identified).
+ ## Better than the closed counterpart
+ 
+ - Inspectable engine: every audit rule is data with an id; every dispute
+-  line cites it — defensible in court.
++  line cites it — and carries an illustrative [verify]-tagged citation
++  pointer — defensible in court.
+ - Two ledgers (as-charged vs lawful-only) make the overcharge delta obvious.
++- Covers the checks the closed counterpart is known for — interest
++  miscalculation and rent-increase caps — plus a claimed-balance-vs-
++  recomputation check it doesn't advertise.
++- LLM-free, deterministic CSV/TSV table ingestion: dirty rows are listed,
++  never guessed; same input + ruleset version ⇒ byte-identical output.
+ - Portable beyond D.C. by editing rules-as-data.
+ - Reproducible byte-for-byte; exports CSV + JSON, not just a chat artifact.
+ 
+diff --git a/open-artifacts/rent-ledger-reviewer/core/core.js b/open-artifacts/rent-ledger-reviewer/core/core.js
+index f3bdd17..df39ab3 100644
+--- a/open-artifacts/rent-ledger-reviewer/core/core.js
++++ b/open-artifacts/rent-ledger-reviewer/core/core.js
+@@ -3,9 +3,12 @@
+  *
+  * Recomputes a landlord rent ledger entry by entry, validates every charge
+  * against jurisdiction rules-as-data (late-fee trigger + cap, allowable
+- * charge types), detects overcharges / underpayments / misapplication, and
+- * emits an itemized dispute report + CSV. Pure arithmetic — no LLM, no
++ * charge types, interest rates, annual rent-increase caps), detects
++ * overcharges / underpayments / misapplication / claimed-balance mismatches,
++ * and emits an itemized dispute report + CSV. Pure arithmetic — no LLM, no
+  * guessing; entries that don't fit a rule are flagged, never assumed.
++ * Deterministic `parseLedgerTable` turns a pasted CSV/TSV ledger into the
++ * entry contract, listing rows it cannot trust instead of guessing them.
+  *
+  * Dependency-free plain-JavaScript ES module; browser + Node compatible.
+  * No hidden clocks: all time math anchors to a caller-supplied `asOf`.
+@@ -71,7 +74,10 @@ export function cents(n) {
+ /**
+  * Example US jurisdiction rulesets. ILLUSTRATIVE ONLY — modeled on common
+  * tenant-protection shapes (grace periods, late-fee caps as % of monthly
+- * rent or flat), not legal advice. Maintainers edit data, not code.
++ * rent or flat, deposit/judgment interest rates, annual increase caps),
++ * not legal advice. Each rule carries a `citations[ruleId]` pointer for
++ * attorney verification — illustrative, always [verify]-tagged.
++ * Maintainers edit data, not code.
+  * @type {Record<string, Object>}
+  */
+ export const JURISDICTION_RULES = {
+@@ -88,6 +94,16 @@ export const JURISDICTION_RULES = {
+     },
+     allowableChargeTypes: ["rent", "late_fee"],
+     disallowedChargeTypes: ["misc_fee", "court_cost", "repair", "replacement_key"],
++    depositInterestPct: 25,    // annual % interest owed on the security deposit — illustrative [verify]
++    judgmentInterestPct: 6,    // annual % on money judgments — illustrative [verify]
++    annualIncreaseCapPct: 10,  // annual rent-increase cap — illustrative [verify]
++    citations: {
++      "DC-LF": "D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative]",
++      "DC-ALLOWABLE": "D.C. Code tit. 42 + DCMR housing regs [verify — illustrative]",
++      "DC-CAP": "D.C. rent-stabilization annual-increase provisions [verify — illustrative]",
++      "DC-DI": "D.C. security-deposit escrow/interest provisions [verify — illustrative]",
++      "DC-JI": "D.C. judgment-interest provisions [verify — illustrative]",
++    },
+     partialPayments: "must_be_accepted", // ledger may not reject/short-apply partial payment
+     notes: "Modeled on D.C.-style tenant protections (5-day grace, 5%-of-rent cap).",
+   },
+@@ -104,6 +120,16 @@ export const JURISDICTION_RULES = {
+     },
+     allowableChargeTypes: ["rent", "late_fee"],
+     disallowedChargeTypes: ["misc_fee", "court_cost", "repair"],
++    depositInterestPct: 0,     // no general deposit-interest requirement — illustrative [verify]
++    judgmentInterestPct: 10,   // annual % on money judgments — illustrative [verify]
++    annualIncreaseCapPct: 5,   // annual rent-increase cap — illustrative [verify]
++    citations: {
++      "CA-LF": "Cal. Civ. Code late-fee reasonableness case law [verify — illustrative]",
++      "CA-ALLOWABLE": "Cal. Civ. Code + local rent ordinances [verify — illustrative]",
++      "CA-CAP": "Cal. tenant-protection rent-cap provisions [verify — illustrative]",
++      "CA-DI": "Cal. local deposit-interest ordinances [verify — illustrative]",
++      "CA-JI": "Cal. judgment-interest provisions [verify — illustrative]",
++    },
+     partialPayments: "must_be_accepted",
+     notes: "Illustrative flat-cap example; CA law requires late fees be 'reasonable'.",
+   },
+@@ -120,6 +146,16 @@ export const JURISDICTION_RULES = {
+     },
+     allowableChargeTypes: ["rent", "late_fee"],
+     disallowedChargeTypes: ["misc_fee", "repair", "replacement_key"],
++    depositInterestPct: 5,     // annual % interest owed on the security deposit — illustrative [verify]
++    judgmentInterestPct: 12,   // annual % on money judgments — illustrative [verify]
++    annualIncreaseCapPct: 10,  // annual rent-increase cap — illustrative [verify]
++    citations: {
++      "MA-LF": "Mass. Gen. Laws ch. 186 late-fee provisions [verify — illustrative]",
++      "MA-ALLOWABLE": "Mass. Gen. Laws ch. 186 + 254 CMR [verify — illustrative]",
++      "MA-CAP": "Mass. local rent-stabilization/tenancy provisions [verify — illustrative]",
++      "MA-DI": "Mass. security-deposit interest provisions [verify — illustrative]",
++      "MA-JI": "Mass. judgment-interest provisions [verify — illustrative]",
++    },
+     partialPayments: "must_be_accepted",
+     notes: "Illustrative: 30-day grace shape with a 4%-of-rent cap.",
+   },
+@@ -186,6 +222,27 @@ export function validateLateFee(fee, month, ctx) {
+   return { lawful: reasons.length === 0, lawfulAmount, reasons };
+ }
+ 
++/**
++ * Recompute an interest entry at the ruleset's rate. `kind:"deposit"`
++ * (default) is interest credited to the tenant (e.g. security-deposit
++ * escrow interest); `kind:"judgment"` is interest charged on arrears.
++ * @param {LedgerEntry} e type "interest" with principal, days, ratePct
++ * @param {Object} rules
++ * @returns {{kind:string, pct:number, expected:number, lawfulAmount:number, ok:boolean, amountInQuestion:number}}
++ */
++export function validateInterest(e, rules) {
++  const kind = e.kind === "judgment" ? "judgment" : "deposit";
++  const pct = kind === "judgment" ? rules.judgmentInterestPct : rules.depositInterestPct;
++  const expected = cents((e.principal * pct * e.days) / 36500);
++  const lawfulAmount = kind === "judgment" ? Math.min(e.amount, expected) : Math.max(e.amount, expected);
++  return {
++    kind, pct, expected,
++    lawfulAmount: cents(lawfulAmount),
++    ok: Math.abs(e.amount - expected) <= 0.005,
++    amountInQuestion: cents(Math.abs(e.amount - expected)),
++  };
++}
++
+ /**
+  * Recompute the ledger and produce the itemized review.
+  * @param {ReviewInput} input
+@@ -201,17 +258,62 @@ export function reviewLedger(input) {
+     rows: [],
+     disputes: [],
+     balance: { ledgerFinal: 0, lawfulFinal: 0, overchargeTotal: 0 },
++    claimedBalance: null,
+     underpayments: [],
++    ignoredEntries: [],
+     gate: GATE,
+   };
++  const errors = [];
+   if (!rules || !asOf || !input?.lease || typeof input.lease.monthlyRent !== "number" || !parseDate(input.lease.leaseStart)) {
+-    out.errors = ["Input incomplete: need jurisdiction with a ruleset, asOf (YYYY-MM-DD), lease.monthlyRent and lease.leaseStart."];
+-    return out;
++    errors.push("Input incomplete: need jurisdiction with a ruleset, asOf (YYYY-MM-DD), lease.monthlyRent and lease.leaseStart.");
++  }
++  if (input?.ledger != null && !Array.isArray(input.ledger)) {
++    errors.push("Input ledger must be an array of entries.");
+   }
++  // optional rent schedule: [{from:"YYYY-MM-DD", amount}] steps — validated, never guessed
++  const schedule = [];
++  if (input?.lease && input.lease.rentSchedule != null) {
++    if (!Array.isArray(input.lease.rentSchedule)) {
++      errors.push("lease.rentSchedule must be an array of {from, amount} steps.");
++    } else {
++      for (const s of input.lease.rentSchedule) {
++        const f = parseDate(s?.from);
++        if (!f || typeof s?.amount !== "number" || !Number.isFinite(s.amount) || s.amount <= 0) {
++          errors.push(`Invalid lease.rentSchedule step: ${JSON.stringify(s)}`);
++        } else {
++          schedule.push({ from: f, month: monthKey(f), amount: cents(s.amount) });
++        }
++      }
++    }
++  }
++  if (errors.length) { out.errors = errors; return out; }
+   const monthlyRent = cents(input.lease.monthlyRent);
+   const dueDay = input.lease.rentDueDay ?? 1;
+   const start = parseDate(input.lease.leaseStart);
+-  const entries = [...(input.ledger ?? [])].filter((e) => parseDate(e?.date));
++  // entry hardening: invalid entries are listed in ignoredEntries, never dropped silently
++  const entries = [];
++  const seenIds = new Set();
++  for (const e of Array.isArray(input.ledger) ? input.ledger : []) {
++    const reasons = [];
++    if (e == null || typeof e !== "object") {
++      reasons.push("entry is not an object");
++    } else {
++      if (e.id == null || e.id === "") reasons.push("missing id");
++      else if (seenIds.has(String(e.id))) reasons.push(`duplicate id ${e.id}`);
++      if (!parseDate(e.date)) reasons.push(`unparseable date ${JSON.stringify(e.date)}`);
++      if (typeof e.amount !== "number" || !Number.isFinite(e.amount) || e.amount <= 0) reasons.push(`invalid amount ${JSON.stringify(e.amount)}`);
++      if (e.type == null || e.type === "") reasons.push("missing type");
++      if (e.type === "interest") {
++        const kind = e.kind ?? "deposit";
++        if (kind !== "deposit" && kind !== "judgment") reasons.push(`unknown interest kind ${JSON.stringify(e.kind)}`);
++        for (const f of ["principal", "days", "ratePct"]) {
++          if (typeof e[f] !== "number" || !Number.isFinite(e[f]) || e[f] < 0) reasons.push(`interest entry missing valid ${f}`);
++        }
++      }
++    }
++    if (reasons.length) out.ignoredEntries.push({ entry: e, reason: reasons.join("; ") });
++    else { seenIds.add(String(e.id)); entries.push(e); }
++  }
+   entries.sort((a, b) => {
+     const d = parseDate(a.date).getTime() - parseDate(b.date).getTime();
+     return d !== 0 ? d : String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+@@ -225,6 +327,34 @@ export function reviewLedger(input) {
+     if (due >= start && due <= asOf) expected.push({ month: monthKey(cur), dueDate: due });
+   }
+ 
++  /** Scheduled rent for a month: the last rentSchedule step effective by then. */
++  const rentForMonth = (mk) => {
++    let amt = monthlyRent;
++    for (const s of schedule) if (s.month <= mk) amt = s.amount;
++    return amt;
++  };
++
++  // --- rent schedule vs annual-increase cap ---
++  if (typeof rules.annualIncreaseCapPct === "number" && schedule.length) {
++    let prev = { month: monthKey(start), amount: monthlyRent };
++    for (const s of schedule) {
++      const risePct = prev.amount > 0 ? ((s.amount - prev.amount) / prev.amount) * 100 : 0;
++      if (risePct > rules.annualIncreaseCapPct + 1e-9) {
++        const capLine = cents(prev.amount * (1 + rules.annualIncreaseCapPct / 100));
++        out.disputes.push({
++          issue: "rent_increase_over_cap",
++          severity: "overcharge",
++          month: s.month,
++          amountInQuestion: cents(s.amount - capLine),
++          ruleId: `${rules.id}-CAP`,
++          citation: rules.citations?.[`${rules.id}-CAP`],
++          text: `Scheduled rent rises to ${s.amount.toFixed(2)} effective ${fmtDate(s.from)} (+${risePct.toFixed(1)}%), above the ${rules.annualIncreaseCapPct}% annual-increase cap (illustrative); capped at ${capLine.toFixed(2)}.`,
++        });
++      }
++      prev = s;
++    }
++  }
++
+   // --- index ledger entries ---
+   const rentDueByMonth = new Map();   // month -> entries of type rent
+   const paymentsByMonth = new Map();  // month -> entries (for late-fee trigger detection we allocate oldest-first below)
+@@ -247,7 +377,7 @@ export function reviewLedger(input) {
+         issue: "missing_rent_entry",
+         severity: "landlord_omission",
+         month,
+-        amountInQuestion: monthlyRent,
++        amountInQuestion: rentForMonth(month),
+         ruleId: "LEDGER-COMPLETENESS",
+         text: `No rent entry recorded for ${month} though the lease was active and the due date passed ${fmtDate(asOf) ? "by " + out.asOf : ""}.`,
+       });
+@@ -263,22 +393,23 @@ export function reviewLedger(input) {
+       });
+     }
+     for (const d of dues) {
+-      if (d.amount > monthlyRent + 0.005) {
++      const sched = rentForMonth(month);
++      if (d.amount > sched + 0.005) {
+         out.disputes.push({
+           issue: "rent_overcharged",
+           severity: "overcharge",
+           month,
+           entryId: d.id,
+-          amountInQuestion: cents(d.amount - monthlyRent),
++          amountInQuestion: cents(d.amount - sched),
+           ruleId: "LEASE-RENT",
+-          text: `Rent charged ${d.amount.toFixed(2)} for ${month} exceeds the lease rent ${monthlyRent.toFixed(2)}.`,
++          text: `Rent charged ${d.amount.toFixed(2)} for ${month} exceeds the scheduled rent ${sched.toFixed(2)}.`,
+         });
+       }
+     }
+   }
+ 
+   // --- allocate payments oldest-first; find underpayments & late-fee context ---
+-  const remaining = new Map(expected.map(({ month }) => [month, monthlyRent]));
++  const remaining = new Map(expected.map(({ month }) => [month, rentForMonth(month)]));
+   /** month -> Date of payment that first covered the month's rent (or null) */
+   const coveredOn = new Map(expected.map(({ month }) => [month, null]));
+   const openMonths = [...remaining.keys()];
+@@ -332,12 +463,13 @@ export function reviewLedger(input) {
+           severity: "overcharge",
+           entryId: fee.id, month: mk, amountInQuestion: fee.amount,
+           ruleId: rules.lateFee.ruleId,
++          citation: rules.citations?.[rules.lateFee.ruleId],
+           text: `More than one late fee recorded for ${mk}.`,
+         });
+         continue;
+       }
+       const verdict = validateLateFee(fee, mk, {
+-        monthlyRent, dueDate,
++        monthlyRent: rentForMonth(mk), dueDate,
+         paymentDate: coveredOn.get(mk) ?? null,
+         rules,
+       });
+@@ -348,6 +480,7 @@ export function reviewLedger(input) {
+           entryId: fee.id, month: mk,
+           amountInQuestion: cents(fee.amount - verdict.lawfulAmount),
+           ruleId: r.ruleId,
++          citation: rules.citations?.[r.ruleId],
+           text: r.text,
+         });
+       }
+@@ -363,33 +496,65 @@ export function reviewLedger(input) {
+         entryId: e.id, month: monthKey(parseDate(e.date)),
+         amountInQuestion: e.amount,
+         ruleId: `${rules.id}-ALLOWABLE`,
++        citation: rules.citations?.[`${rules.id}-ALLOWABLE`],
+         text: `Charge of type "${e.type}" (${e.amount.toFixed(2)} on ${e.date}) is not an allowable charge type in the ${rules.id} example ruleset.`,
+       });
+     }
+   }
+ 
++  // --- unknown charge types: neither known nor listed — flagged, never assumed lawful ---
++  const KNOWN_TYPES = ["rent", "payment", "late_fee", "interest"];
++  for (const e of entries) {
++    if (KNOWN_TYPES.includes(e.type)) continue;
++    if (rules.disallowedChargeTypes.includes(e.type) || rules.allowableChargeTypes.includes(e.type)) continue;
++    out.disputes.push({
++      issue: "unknown_charge_type",
++      severity: "unverifiable",
++      entryId: e.id, month: monthKey(parseDate(e.date)),
++      amountInQuestion: e.amount,
++      ruleId: `${rules.id}-ALLOWABLE`,
++      citation: rules.citations?.[`${rules.id}-ALLOWABLE`],
++      text: `Charge of type "${e.type}" (${e.amount.toFixed(2)} on ${e.date}) is neither a known ledger type nor in the ${rules.id} example ruleset's allowable list; excluded from the lawful balance pending attorney review.`,
++    });
++  }
++
+   // --- running balance recomputation (ledger vs lawful) ---
+   let bal = 0;
+   let lawfulBal = 0;
+   const lawfulFee = new Map(); // entryId -> lawful amount for disallowed portions
+   for (const e of entries) {
+-    let lawfulDelta = null;
+     if (e.type === "payment") { bal = cents(bal - e.amount); lawfulBal = cents(lawfulBal - e.amount); }
+-    else if (e.type === "rent") { bal = cents(bal + e.amount); lawfulBal = cents(lawfulBal + Math.min(e.amount, monthlyRent)); }
++    else if (e.type === "rent") { bal = cents(bal + e.amount); lawfulBal = cents(lawfulBal + Math.min(e.amount, rentForMonth(monthKey(parseDate(e.date))))); }
+     else if (e.type === "late_fee") {
+       bal = cents(bal + e.amount);
+       const mk = e.appliedTo ?? monthKey(addDays(parseDate(e.date), -30));
+       const ctxMonth = expected.find((x) => x.month === mk);
+       const verdict = validateLateFee(e, mk, {
+-        monthlyRent,
++        monthlyRent: rentForMonth(mk),
+         dueDate: ctxMonth ? ctxMonth.dueDate : dueDateFor(parseDate(`${mk}-01`), dueDay),
+         paymentDate: coveredOn.get(mk) ?? null,
+         rules,
+       });
+       lawfulFee.set(String(e.id), verdict.lawfulAmount);
+       lawfulBal = cents(lawfulBal + verdict.lawfulAmount);
+-    } else if (rules.disallowedChargeTypes.includes(e.type)) {
+-      bal = cents(bal + e.amount); // stays in ledger balance, excluded from lawful
++    } else if (e.type === "interest") {
++      const v = validateInterest(e, rules);
++      const ruleId = v.kind === "judgment" ? `${rules.id}-JI` : `${rules.id}-DI`;
++      if (v.kind === "judgment") { bal = cents(bal + e.amount); lawfulBal = cents(lawfulBal + v.lawfulAmount); }
++      else { bal = cents(bal - e.amount); lawfulBal = cents(lawfulBal - v.lawfulAmount); }
++      if (!v.ok) {
++        out.disputes.push({
++          issue: "interest_miscalculation",
++          severity: v.kind === "judgment" ? "overcharge" : "tenant_credit_shortfall",
++          entryId: e.id, month: monthKey(parseDate(e.date)),
++          amountInQuestion: v.amountInQuestion,
++          ruleId,
++          citation: rules.citations?.[ruleId],
++          text: `Interest ${v.kind === "judgment" ? "charged" : "credited"} ${e.amount.toFixed(2)} on principal ${e.principal.toFixed(2)} at ${e.ratePct}%/yr for ${e.days} days, but the ${rules.id} example ruleset rate is ${v.pct}%/yr ⇒ ${v.expected.toFixed(2)} — a ${v.amountInQuestion.toFixed(2)} difference.`,
++        });
++      }
++    } else if (rules.disallowedChargeTypes.includes(e.type) || !rules.allowableChargeTypes.includes(e.type)) {
++      bal = cents(bal + e.amount); // disallowed or unknown: stays in ledger balance, excluded from lawful (flagged above)
+     } else {
+       bal = cents(bal + e.amount); lawfulBal = cents(lawfulBal + e.amount);
+     }
+@@ -404,6 +569,22 @@ export function reviewLedger(input) {
+     lawfulFinal: lawfulBal,
+     overchargeTotal: cents(Math.max(0, bal - lawfulBal)),
+   };
++  // --- claimed balance (what the landlord/complaint says is owed) vs recomputation ---
++  const claimedRaw = input?.claimedBalance && typeof input.claimedBalance === "object" ? input.claimedBalance.amount : input.claimedBalance;
++  if (typeof claimedRaw === "number" && Number.isFinite(claimedRaw)) {
++    const claimed = cents(claimedRaw);
++    const delta = cents(claimed - bal);
++    out.claimedBalance = { claimed, recomputed: bal, delta };
++    if (Math.abs(delta) > 0.005) {
++      out.disputes.push({
++        issue: "claimed_balance_mismatch",
++        severity: "accuracy",
++        amountInQuestion: Math.abs(delta),
++        ruleId: "RECOMPUTE",
++        text: `The landlord-claimed balance of ${claimed.toFixed(2)} differs from the recomputed as-charged balance of ${bal.toFixed(2)} by ${Math.abs(delta).toFixed(2)} — verify the amount demanded in the complaint.`,
++      });
++    }
++  }
+   out.expectedMonths = expected.length;
+   return out;
+ }
+@@ -429,6 +610,81 @@ export function toCSV(review) {
+   return [head, ...rows].join("\r\n") + "\r\n";
+ }
+ 
++/**
++ * Deterministic CSV/TSV ledger-table parser (subset: no embedded-delimiter
++ * quoting; optional surrounding double quotes only). Required header
++ * columns: date, type, amount. Optional: id (or entry_id), applied_to,
++ * note, kind, rate_pct, principal, days. Without an id column, accepted
++ * rows get sequential ids 1..n. Rows that fail entry validation are listed
++ * in ignoredRows with a reason — never dropped silently.
++ * @param {string} text
++ * @returns {{entries: Object[], ignoredRows: {line:number, reason:string, raw:string}[], errors: string[]}}
++ */
++export function parseLedgerTable(text) {
++  const result = { entries: [], ignoredRows: [], errors: [] };
++  if (typeof text !== "string" || !text.trim()) {
++    result.errors.push("parseLedgerTable: empty input");
++    return result;
++  }
++  const lines = text.split(/\r?\n/);
++  const headerIdx = lines.findIndex((l) => l.trim() !== "");
++  const delim = lines[headerIdx].includes("\t") ? "\t" : ",";
++  const ALIAS = { entry_id: "id", entryid: "id", rate_pct: "ratepct", applied_to: "appliedto" };
++  const header = lines[headerIdx].split(delim).map((h) => {
++    const k = h.trim().toLowerCase().replace(/[\s-]+/g, "_");
++    return ALIAS[k] ?? k;
++  });
++  const col = {};
++  header.forEach((h, i) => { if (!(h in col)) col[h] = i; });
++  const missing = ["date", "type", "amount"].filter((c) => !(c in col));
++  if (missing.length) {
++    result.errors.push(`parseLedgerTable: header missing required column(s): ${missing.join(", ")}.`);
++    return result;
++  }
++  const hasId = "id" in col;
++  const unquote = (s) => {
++    const t = s.trim();
++    return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t;
++  };
++  for (let i = headerIdx + 1; i < lines.length; i++) {
++    const raw = lines[i];
++    if (!raw.trim()) continue;
++    const cells = raw.split(delim);
++    const cell = (name) => (name in col && col[name] < cells.length ? unquote(cells[col[name]]) : "");
++    const reasons = [];
++    const date = cell("date");
++    const type = cell("type");
++    const amountRaw = cell("amount");
++    const amount = Number(amountRaw.replace(/[$,\s]/g, ""));
++    let id;
++    if (hasId) {
++      const idText = cell("id");
++      if (idText === "") reasons.push("missing id");
++      else id = /^\d+$/.test(idText) ? Number(idText) : idText;
++    }
++    if (!parseDate(date)) reasons.push(`unparseable date "${date}"`);
++    if (type === "") reasons.push("missing type");
++    if (!Number.isFinite(amount) || amount <= 0) reasons.push(`invalid amount "${amountRaw}"`);
++    if (reasons.length) {
++      result.ignoredRows.push({ line: i + 1, reason: reasons.join("; "), raw });
++      continue;
++    }
++    const entry = { id: hasId ? id : result.entries.length + 1, date, type, amount };
++    if (cell("appliedto")) entry.appliedTo = cell("appliedto");
++    if (cell("note")) entry.note = cell("note");
++    if (cell("kind")) entry.kind = cell("kind");
++    for (const [colName, field] of [["ratepct", "ratePct"], ["principal", "principal"], ["days", "days"]]) {
++      const t = cell(colName);
++      if (t !== "") {
++        const n = Number(t.replace(/[$,\s]/g, ""));
++        if (Number.isFinite(n)) entry[field] = n;
++      }
++    }
++    result.entries.push(entry);
++  }
++  return result;
++}
++
+ /** Markdown dispute report.
+  * @param {ReturnType<reviewLedger>} review
+  * @returns {string} */
+@@ -443,13 +699,19 @@ export function renderReport(review) {
+   L.push(`|---:|---:|---:|`);
+   L.push(`| ${review.balance.ledgerFinal.toFixed(2)} | ${review.balance.lawfulFinal.toFixed(2)} | **${review.balance.overchargeTotal.toFixed(2)}** |`);
+   L.push("");
++  if (review.claimedBalance) {
++    const cb = review.claimedBalance;
++    L.push(`Landlord-claimed balance **${cb.claimed.toFixed(2)}** vs recomputed as-charged **${cb.recomputed.toFixed(2)}** — difference **${Math.abs(cb.delta).toFixed(2)}**.`);
++    L.push("");
++  }
+   if (review.disputes.length) {
+     L.push(`## Itemized disputes (${review.disputes.length})`);
+     L.push("");
+     L.push("| # | Issue | Month | Amount | Rule | Entry | Description |");
+     L.push("|---|---|---|---:|---|---|---|");
+     review.disputes.forEach((d, i) => {
+-      L.push(`| ${i + 1} | ${d.issue} | ${d.month ?? ""} | ${(d.amountInQuestion ?? 0).toFixed(2)} | \`${d.ruleId}\` | ${d.entryId != null ? String(d.entryId) : ""} | ${d.text.replace(/\|/g, "\\|")} |`);
++      const rule = d.citation ? `\`${d.ruleId}\` ${d.citation}` : `\`${d.ruleId}\``;
++      L.push(`| ${i + 1} | ${d.issue} | ${d.month ?? ""} | ${(d.amountInQuestion ?? 0).toFixed(2)} | ${rule} | ${d.entryId != null ? String(d.entryId) : ""} | ${d.text.replace(/\|/g, "\\|")} |`);
+     });
+   } else {
+     L.push("## Itemized disputes\n\nNone — no rule violations detected in the recomputation.");
+@@ -459,6 +721,11 @@ export function renderReport(review) {
+     L.push(`## Underpayments / shortfalls (${review.underpayments.length})`);
+     for (const u of review.underpayments) L.push(`- ${u.month} (due ${u.dueDate}): shortfall **${u.shortfall.toFixed(2)}**`);
+   }
++  if (review.ignoredEntries?.length) {
++    L.push("");
++    L.push(`## Ignored entries (${review.ignoredEntries.length})`);
++    for (const g of review.ignoredEntries) L.push(`- ${JSON.stringify(g.entry)} — ${g.reason}`);
++  }
+   if (review.errors?.length) {
+     L.push("");
+     L.push("## Input errors");
+diff --git a/open-artifacts/rent-ledger-reviewer/core/core.test.js b/open-artifacts/rent-ledger-reviewer/core/core.test.js
+index 7406b25..e024760 100644
+--- a/open-artifacts/rent-ledger-reviewer/core/core.test.js
++++ b/open-artifacts/rent-ledger-reviewer/core/core.test.js
+@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
+ import {
+   parseDate, fmtDate, addDays, daysBetween, monthKey, dueDateFor, cents,
+   getRuleset, reviewLedger, validateLateFee, toCSV, renderReport,
++  JURISDICTION_RULES, parseLedgerTable,
+ } from "./core.js";
+ 
+ const RENT = 1400;
+@@ -182,6 +183,156 @@ test("CSV export: header + row-per-entry, CRLF terminated", () => {
+   assert.match(lines[1], /^1,2026-01-01,rent,1400\.00,1400\.00,1400\.00/);
+ });
+ 
++/* ---------- wave-2 improvements ---------- */
++
++test("unknown charge type => unknown_charge_type dispute, excluded from lawful balance", () => {
++  const ledger = cleanLedger().slice(0, 2).concat([
++    e_(9, "2026-01-15", "convenience_fee", 25),
++  ]);
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
++  const d = r.disputes.find((x) => x.issue === "unknown_charge_type");
++  assert.ok(d, "unknown_charge_type dispute present");
++  assert.equal(d.amountInQuestion, 25);
++  assert.equal(r.balance.ledgerFinal, 25);   // still in the as-charged ledger
++  assert.equal(r.balance.lawfulFinal, 0);    // never counted lawful
++});
++
++test("malformed entries (bad date, non-positive amount, duplicate id) => ignoredEntries, never silent", () => {
++  const ledger = [
++    e_(1, "2026-01-01", "rent", RENT),
++    e_(2, "2026-01-03", "payment", RENT),
++    e_(3, "2026-13-01", "rent", RENT),   // impossible month
++    e_(4, "2026-01-20", "rent", 0),      // non-positive amount
++    e_(1, "2026-01-25", "rent", RENT),   // duplicate id
++  ];
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
++  assert.equal(r.ignoredEntries.length, 3);
++  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("unparseable date")));
++  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("invalid amount")));
++  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("duplicate id")));
++  assert.equal(r.rows.length, 2);
++  assert.equal(r.disputes.length, 0); // the dirty rows don't leak into the audit
++});
++
++test("claimedBalance 1870 vs recomputed 1470 => claimed_balance_mismatch of 400", () => {
++  const ledger = [
++    e_(1, "2026-01-01", "rent", RENT),
++    e_(2, "2026-01-03", "payment", RENT),
++    e_(3, "2026-02-01", "rent", RENT),
++    e_(4, "2026-02-21", "late_fee", 70, { appliedTo: "2026-02" }), // unpaid Feb: triggered, within cap
++  ];
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-02-28", lease, claimedBalance: 1870, ledger });
++  assert.equal(r.balance.ledgerFinal, 1470);
++  const d = r.disputes.find((x) => x.issue === "claimed_balance_mismatch");
++  assert.ok(d, "mismatch dispute present");
++  assert.equal(d.amountInQuestion, 400);
++  assert.equal(r.claimedBalance.delta, 400);
++});
++
++test("parseLedgerTable: CSV with dirty rows => parsed entries + ignoredRows", () => {
++  const csv = [
++    "id,date,type,amount,applied_to,note",
++    "1,2026-01-01,rent,1400,,January rent",
++    "2,2026-13-01,rent,1400,,bad month",
++    "3,2026-01-15,misc_fee,abc,,bad amount",
++    "4,2026-01-03,payment,-5,,negative",
++    "5,2026-01-03,payment,1400,,ok",
++  ].join("\n");
++  const p = parseLedgerTable(csv);
++  assert.equal(p.errors.length, 0);
++  assert.equal(p.entries.length, 2);
++  assert.equal(p.ignoredRows.length, 3);
++  assert.deepEqual(p.entries[0], { id: 1, date: "2026-01-01", type: "rent", amount: 1400, note: "January rent" });
++  assert.ok(p.ignoredRows.every((x) => x.line > 1 && x.reason.length > 0));
++  assert.ok(p.ignoredRows.some((x) => x.reason.includes("date")));
++  assert.ok(p.ignoredRows.some((x) => x.reason.includes("amount")));
++});
++
++test("parseLedgerTable: TSV sniffed, $/commas stripped, ids auto-assigned without id column", () => {
++  const tsv = "date\ttype\tamount\tnote\n2026-01-01\trent\t$1,400.00\t\"January rent\"\n2026-01-03\tpayment\t1400\t\nok";
++  const p = parseLedgerTable(tsv);
++  assert.equal(p.errors.length, 0);
++  assert.equal(p.entries.length, 2);
++  assert.equal(p.entries[0].amount, 1400);
++  assert.equal(p.entries[0].id, 1);
++  assert.equal(p.entries[0].note, "January rent");
++});
++
++test("parseLedgerTable: missing required header column => error, no entries", () => {
++  const p = parseLedgerTable("date,amount\n2026-01-01,1400");
++  assert.equal(p.errors.length, 1);
++  assert.ok(p.errors[0].includes("type"));
++  assert.equal(p.entries.length, 0);
++});
++
++test("deposit interest credited at 6%/yr vs rule's 25% => interest_miscalculation for the delta", () => {
++  const ledger = cleanLedger().slice(0, 2).concat([
++    e_(9, "2026-01-31", "interest", 60, { kind: "deposit", principal: 1000, days: 365, ratePct: 6 }),
++  ]);
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
++  const d = r.disputes.find((x) => x.issue === "interest_miscalculation");
++  assert.ok(d, "interest dispute present");
++  assert.equal(d.amountInQuestion, 190); // expected 250 at 25% − credited 60 at 6%
++  assert.equal(d.ruleId, "DC-DI");
++  assert.ok(d.citation && d.citation.includes("verify"));
++  assert.equal(r.balance.ledgerFinal, -60);  // credit as ledger stands
++  assert.equal(r.balance.lawfulFinal, -250); // credit at the ruleset rate
++});
++
++test("judgment interest charged above the rule rate => interest_miscalculation overcharge", () => {
++  const ledger = cleanLedger().slice(0, 2).concat([
++    e_(9, "2026-01-31", "interest", 250, { kind: "judgment", principal: 1000, days: 365, ratePct: 25 }),
++  ]);
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
++  const d = r.disputes.find((x) => x.issue === "interest_miscalculation");
++  assert.ok(d && d.amountInQuestion === 190); // charged 250 at 25% vs 60 lawful at 6%
++  assert.equal(d.ruleId, "DC-JI");
++  assert.equal(r.balance.ledgerFinal, 250);
++  assert.equal(r.balance.lawfulFinal, 60);
++});
++
++test("interest entry missing principal/days/ratePct => ignored, never silently recomputed", () => {
++  const ledger = cleanLedger().slice(0, 2).concat([
++    e_(9, "2026-01-31", "interest", 60),
++  ]);
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
++  assert.equal(r.ignoredEntries.length, 1);
++  assert.ok(r.ignoredEntries[0].reason.includes("principal"));
++});
++
++test("rentSchedule jump of 20% under a 10% cap => rent_increase_over_cap dispute", () => {
++  const leaseSched = {
++    ...lease,
++    rentSchedule: [{ from: "2026-01-01", amount: RENT }, { from: "2026-03-01", amount: 1680 }],
++  };
++  const ledger = [
++    e_(1, "2026-01-01", "rent", RENT), e_(2, "2026-01-03", "payment", RENT),
++    e_(3, "2026-02-01", "rent", RENT), e_(4, "2026-02-03", "payment", RENT),
++    e_(5, "2026-03-01", "rent", 1680),
++  ];
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease: leaseSched, ledger });
++  const d = r.disputes.find((x) => x.issue === "rent_increase_over_cap");
++  assert.ok(d, "cap dispute present");
++  assert.equal(d.month, "2026-03");
++  assert.equal(d.amountInQuestion, 140); // 1680 − 1400 × 1.10
++  assert.ok(d.citation && d.citation.includes("verify"));
++  assert.ok(!r.disputes.some((x) => x.issue === "rent_overcharged")); // charged at the scheduled amount
++});
++
++test("disputes carry the rule's citation; the report Rule column surfaces it", () => {
++  const ledger = cleanLedger().slice(0, 4).concat([
++    e_(9, "2026-03-01", "rent", RENT),
++    e_(10, "2026-03-02", "payment", RENT),
++    e_(11, "2026-03-02", "late_fee", 70, { appliedTo: "2026-03" }),
++  ]);
++  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease, ledger });
++  const d = r.disputes.find((x) => x.issue === "late_fee_before_grace");
++  assert.equal(d.citation, JURISDICTION_RULES.DC.citations["DC-LF"]);
++  assert.ok(d.citation.includes("[verify"));
++  const md = renderReport(r);
++  assert.ok(md.includes(d.citation)); // surfaced in the report's Rule column
++});
++
+ test("markdown report includes balances, disputes, and the verify gate", () => {
+   const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease, ledger: [
+     e_(1, "2026-01-01", "rent", RENT), e_(2, "2026-01-03", "payment", RENT),
+diff --git a/open-artifacts/rent-ledger-reviewer/demo/index.html b/open-artifacts/rent-ledger-reviewer/demo/index.html
+index 940a8cd..ea8ba30 100644
+--- a/open-artifacts/rent-ledger-reviewer/demo/index.html
++++ b/open-artifacts/rent-ledger-reviewer/demo/index.html
+@@ -20,7 +20,7 @@
+   button:hover { background: #333; }
+   .cols { display: grid; gap: 24px; margin-top: 32px; }
+   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
+-  .balances { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; }
++  .balances { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; }
+   .balances div { padding: 12px 14px; border-right: var(--hairline); }
+   .balances div:last-child { border-right: none; background: var(--flag-tint); }
+   .balances .n { font-family: var(--font-mono); font-size: 18px; font-weight: 500; }
+@@ -52,6 +52,9 @@
+       <textarea id="input" spellcheck="false"></textarea>
+       <p><button id="run">Recompute ledger</button></p>
+       <div class="err" id="err"></div>
++      <p style="margin-top:20px" class="kicker">Paste ledger table (CSV/TSV) → deterministic parse, no LLM</p>
++      <textarea id="csv" spellcheck="false" style="min-height:110px" placeholder="id,date,type,amount,applied_to,note&#10;1,2026-01-01,rent,1400,,January rent&#10;2,2026-01-03,payment,1400,,money order #4401"></textarea>
++      <p><button id="parse">Parse table → replace ledger</button></p>
+     </div>
+     <div>
+       <div class="kicker">Audit result</div>
+@@ -61,12 +64,16 @@
+ </div>
+ 
+ <script type="module">
+-import { reviewLedger, toCSV } from "../core/core.js";
++import { reviewLedger, toCSV, parseLedgerTable } from "../core/core.js";
+ 
+ const EXAMPLE = {
+   jurisdiction: "DC",
+   asOf: "2026-04-30",
+-  lease: { monthlyRent: 1400, leaseStart: "2026-01-01", rentDueDay: 1 },
++  claimedBalance: 2270, // what the landlord claims is owed (fictional) — $400 above the recomputation
++  lease: {
++    monthlyRent: 1400, leaseStart: "2026-01-01", rentDueDay: 1,
++    rentSchedule: [{ from: "2026-01-01", amount: 1400 }],
++  },
+   ledger: [
+     { id: 1, date: "2026-01-01", type: "rent", amount: 1400, note: "January rent" },
+     { id: 2, date: "2026-01-03", type: "payment", amount: 1400, note: "money order #4401 (fictional)" },
+@@ -87,8 +94,24 @@ const EXAMPLE = {
+ const $input = document.getElementById("input");
+ const $out = document.getElementById("out");
+ const $err = document.getElementById("err");
++const $csv = document.getElementById("csv");
+ $input.value = JSON.stringify(EXAMPLE, null, 2);
+ 
++document.getElementById("parse").addEventListener("click", () => {
++  $err.textContent = "";
++  try {
++    const cur = JSON.parse($input.value);
++    const p = parseLedgerTable($csv.value);
++    if (p.errors.length) { $err.textContent = p.errors.join(" "); return; }
++    cur.ledger = p.entries;
++    $input.value = JSON.stringify(cur, null, 2);
++    $err.textContent = `Parsed ${p.entries.length} entr${p.entries.length === 1 ? "y" : "ies"} into the ledger.` +
++      (p.ignoredRows.length ? ` Ignored ${p.ignoredRows.length} row(s): ` + p.ignoredRows.map((x) => `line ${x.line} (${x.reason})`).join("; ") : " No rows ignored.");
++  } catch (e) {
++    $err.textContent = "Parse error: " + e.message;
++  }
++});
++
+ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ const money = (n) => (typeof n === "number" ? n.toFixed(2) : "—");
+ 
+@@ -98,9 +121,13 @@ document.getElementById("run").addEventListener("click", () => {
+     const r = reviewLedger(JSON.parse($input.value));
+     if (r.errors?.length) { $err.textContent = r.errors.join(" "); return; }
+     const flagged = new Set(r.disputes.map((d) => String(d.entryId ?? "")));
++    const claimedCell = r.claimedBalance
++      ? `<div><div class="l">Claimed (landlord)</div><div class="n">${money(r.claimedBalance.claimed)}</div></div>`
++      : "";
+     let html = `<div class="balances">
+       <div><div class="l">Balance as ledger stands</div><div class="n">${money(r.balance.ledgerFinal)}</div></div>
+       <div><div class="l">Lawful charges only</div><div class="n">${money(r.balance.lawfulFinal)}</div></div>
++      ${claimedCell}
+       <div><div class="l">Overcharge identified</div><div class="n">${money(r.balance.overchargeTotal)}</div></div>
+     </div>`;
+     html += `<div class="scroll"><table><tr><th>#</th><th>Date</th><th>Type</th><th class="amt">Amount</th><th class="amt">Balance</th><th class="amt">Lawful bal.</th><th>Note / dispute</th></tr>`;
+@@ -108,7 +135,7 @@ document.getElementById("run").addEventListener("click", () => {
+       const ds = r.disputes.filter((d) => String(d.entryId) === String(row.entryId));
+       html += `<tr class="${ds.length ? "flag" : ""}"><td>${esc(row.entryId)}</td><td>${esc(row.date)}</td><td>${esc(row.type)}</td>
+         <td class="amt">${money(row.amount)}</td><td class="amt">${money(row.balanceAfter)}</td><td class="amt">${money(row.lawfulBalanceAfter)}</td>
+-        <td>${esc(row.note)}${ds.map((d) => ` <strong>${esc(d.issue)}</strong> <code>${esc(d.ruleId)}</code>`).join("")}</td></tr>`;
++        <td>${esc(row.note)}${ds.map((d) => ` <strong>${esc(d.issue)}</strong> <code>${esc(d.ruleId)}${d.citation ? " · " + esc(d.citation) : ""}</code>`).join("")}</td></tr>`;
+     }
+     html += `</table></div>`;
+     if (r.underpayments.length) {
+@@ -117,7 +144,7 @@ document.getElementById("run").addEventListener("click", () => {
+     if (r.disputes.some((d) => d.entryId == null)) {
+       html += `<div class="scroll" style="margin-top:12px"><table><tr><th>Issue</th><th>Month</th><th class="amt">Amount</th><th>Rule</th><th>Description</th></tr>`;
+       for (const d of r.disputes.filter((x) => x.entryId == null)) {
+-        html += `<tr><td>${esc(d.issue)}</td><td>${esc(d.month ?? "")}</td><td class="amt">${money(d.amountInQuestion)}</td><td><code>${esc(d.ruleId)}</code></td><td>${esc(d.text)}</td></tr>`;
++        html += `<tr><td>${esc(d.issue)}</td><td>${esc(d.month ?? "")}</td><td class="amt">${money(d.amountInQuestion)}</td><td><code>${esc(d.ruleId)}${d.citation ? " · " + esc(d.citation) : ""}</code></td><td>${esc(d.text)}</td></tr>`;
+       }
+       html += `</table></div>`;
+     }
+diff --git a/open-artifacts/rent-ledger-reviewer/examples/input.json b/open-artifacts/rent-ledger-reviewer/examples/input.json
+index e7a2144..8b31c5e 100644
+--- a/open-artifacts/rent-ledger-reviewer/examples/input.json
++++ b/open-artifacts/rent-ledger-reviewer/examples/input.json
+@@ -1,7 +1,12 @@
+ {
+   "jurisdiction": "DC",
+   "asOf": "2026-04-30",
+-  "lease": { "monthlyRent": 1400, "leaseStart": "2026-01-01", "rentDueDay": 1 },
++  "lease": {
++    "monthlyRent": 1400,
++    "leaseStart": "2026-01-01",
++    "rentDueDay": 1,
++    "rentSchedule": [{ "from": "2026-01-01", "amount": 1400 }]
++  },
+   "ledger": [
+     { "id": 1, "date": "2026-01-01", "type": "rent", "amount": 1400, "note": "January rent" },
+     { "id": 2, "date": "2026-01-03", "type": "payment", "amount": 1400, "note": "money order #4401 (fictional)" },
+diff --git a/open-artifacts/rent-ledger-reviewer/examples/output.json b/open-artifacts/rent-ledger-reviewer/examples/output.json
+index d8738e2..bf5616e 100644
+--- a/open-artifacts/rent-ledger-reviewer/examples/output.json
++++ b/open-artifacts/rent-ledger-reviewer/examples/output.json
+@@ -145,6 +145,7 @@
+       "month": "2026-02",
+       "amountInQuestion": 70,
+       "ruleId": "DC-LF",
++      "citation": "D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative]",
+       "text": "Fee charged for 2026-02, but rent was paid by 2026-02-04, within the 5-day grace window (due 2026-02-01)."
+     },
+     {
+@@ -154,6 +155,7 @@
+       "month": "2026-03",
+       "amountInQuestion": 80,
+       "ruleId": "DC-LF",
++      "citation": "D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative]",
+       "text": "Fee 150.00 exceeds the 5% of monthly rent cap of 70.00 for 2026-03."
+     },
+     {
+@@ -163,6 +165,7 @@
+       "month": "2026-01",
+       "amountInQuestion": 250,
+       "ruleId": "DC-ALLOWABLE",
++      "citation": "D.C. Code tit. 42 + DCMR housing regs [verify — illustrative]",
+       "text": "Charge of type \"misc_fee\" (250.00 on 2026-01-15) is not an allowable charge type in the DC example ruleset."
+     }
+   ],
+@@ -171,7 +174,9 @@
+     "lawfulFinal": 1470,
+     "overchargeTotal": 400
+   },
++  "claimedBalance": null,
+   "underpayments": [],
++  "ignoredEntries": [],
+   "gate": {
+     "required": true,
+     "message": "Recomputation uses illustrative example rulesets; figures are screening estimates for attorney review, not a determination of what is owed. Verify against the actual lease, ledger originals, and current local law."
+diff --git a/open-artifacts/rent-ledger-reviewer/examples/report.md b/open-artifacts/rent-ledger-reviewer/examples/report.md
+index 7ca9262..2c95e1b 100644
+--- a/open-artifacts/rent-ledger-reviewer/examples/report.md
++++ b/open-artifacts/rent-ledger-reviewer/examples/report.md
+@@ -11,9 +11,9 @@ As of **2026-04-30** · recomputed **13** entries across **4** expected rent mon
+ | # | Issue | Month | Amount | Rule | Entry | Description |
+ |---|---|---|---:|---|---|---|
+ | 1 | duplicate_rent_entry | 2026-03 | 1400.00 | `LEDGER-COMPLETENESS` |  | 2 rent entries recorded for 2026-03; only one monthly rent charge is expected. |
+-| 2 | late_fee_before_grace | 2026-02 | 70.00 | `DC-LF` | 6 | Fee charged for 2026-02, but rent was paid by 2026-02-04, within the 5-day grace window (due 2026-02-01). |
+-| 3 | late_fee_over_cap | 2026-03 | 80.00 | `DC-LF` | 10 | Fee 150.00 exceeds the 5% of monthly rent cap of 70.00 for 2026-03. |
+-| 4 | disallowed_charge_type | 2026-01 | 250.00 | `DC-ALLOWABLE` | 3 | Charge of type "misc_fee" (250.00 on 2026-01-15) is not an allowable charge type in the DC example ruleset. |
++| 2 | late_fee_before_grace | 2026-02 | 70.00 | `DC-LF` D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative] | 6 | Fee charged for 2026-02, but rent was paid by 2026-02-04, within the 5-day grace window (due 2026-02-01). |
++| 3 | late_fee_over_cap | 2026-03 | 80.00 | `DC-LF` D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative] | 10 | Fee 150.00 exceeds the 5% of monthly rent cap of 70.00 for 2026-03. |
++| 4 | disallowed_charge_type | 2026-01 | 250.00 | `DC-ALLOWABLE` D.C. Code tit. 42 + DCMR housing regs [verify — illustrative] | 3 | Charge of type "misc_fee" (250.00 on 2026-01-15) is not an allowable charge type in the DC example ruleset. |
+ 
+ ---
+ > ⚠️ Recomputation uses illustrative example rulesets; figures are screening estimates for attorney review, not a determination of what is owed. Verify against the actual lease, ledger originals, and current local law.
+diff --git a/open-artifacts/rent-ledger-reviewer/spec.md b/open-artifacts/rent-ledger-reviewer/spec.md
+index 16fc556..bf5c6cf 100644
+--- a/open-artifacts/rent-ledger-reviewer/spec.md
++++ b/open-artifacts/rent-ledger-reviewer/spec.md
+@@ -14,11 +14,15 @@ this: "Recalculation is arithmetic — should be pure code."
+ |---|---|
+ | Running balance recomputation, entry by entry (two ledgers: as-charged vs lawful) | core (deterministic) |
+ | Late-fee validation: grace period trigger + cap (% of rent or flat), once-per-month | core (deterministic) |
+-| Rent-schedule completeness: missing / duplicate / above-lease rent entries | core (deterministic) |
++| Rent-schedule completeness: missing / duplicate / above-schedule rent entries | core (deterministic) |
++| Rent schedule vs annual-increase cap (`rent_increase_over_cap`) | core (deterministic, rules-as-data) |
++| Interest recomputation (deposit credit / judgment charge) at ruleset rates | core (deterministic, rules-as-data) |
++| Claimed-balance check: landlord's claimed due vs recomputed ledger (`claimed_balance_mismatch`) | core (deterministic) |
+ | Oldest-first payment allocation, underpayment shortfalls, misapplication flags | core (deterministic) |
+-| Disallowed charge types per jurisdiction | core (deterministic, rules-as-data) |
++| Disallowed and unknown charge types per jurisdiction (unknown is never assumed lawful) | core (deterministic, rules-as-data) |
+ | Dispute report (Markdown) + recomputed-ledger CSV export | core (deterministic) |
+-| Structuring a scanned landlord ledger into the input JSON | LLM or human (out of core) |
++| Deterministic CSV/TSV table → entry contract (`parseLedgerTable`) | core (deterministic, LLM-free) |
++| Structuring a scanned/free-form ledger into the input JSON | LLM or human (out of core) |
+ | What is actually owed | **counsel/court only** (gate on every report) |
+ 
+ ## Input contract (`ReviewInput`, JSON)
+@@ -27,18 +31,32 @@ this: "Recalculation is arithmetic — should be pure code."
+ {
+   "jurisdiction": "DC",                 // ruleset id (DC | CA | MA examples)
+   "asOf": "2026-04-30",
+-  "lease": { "monthlyRent": 1400, "leaseStart": "2026-01-01", "rentDueDay": 1 },
++  "claimedBalance": 1870,               // optional: what the landlord/complaint says is owed
++  "lease": {
++    "monthlyRent": 1400, "leaseStart": "2026-01-01", "rentDueDay": 1,
++    "rentSchedule": [                   // optional steps; falls back to monthlyRent
++      { "from": "2026-01-01", "amount": 1400 }
++    ]
++  },
+   "ledger": [
+     { "id": 1, "date": "2026-01-01", "type": "rent",     "amount": 1400, "note": "January rent" },
+     { "id": 2, "date": "2026-01-03", "type": "payment",  "amount": 1400 },
+     { "id": 6, "date": "2026-02-05", "type": "late_fee", "amount": 70, "appliedTo": "2026-02" },
+-    { "id": 3, "date": "2026-01-15", "type": "misc_fee", "amount": 250 }
+-    // type is open-ended; anything not rent/payment/late_fee is checked
+-    // against the jurisdiction's disallowedChargeTypes
++    { "id": 3, "date": "2026-01-15", "type": "misc_fee", "amount": 250 },
++    { "id": 7, "date": "2026-06-30", "type": "interest", "amount": 60,
++      "kind": "deposit", "principal": 1000, "days": 365, "ratePct": 6 }
++    // type is open-ended; anything not rent/payment/late_fee/interest is checked
++    // against the jurisdiction's allowable + disallowed lists; unlisted types
++    // raise unknown_charge_type and are excluded from the lawful balance
+   ]
+ }
+ ```
+ 
++Entry hardening — never silent: entries with unparseable dates, non-positive
++amounts, missing/duplicate ids, missing types, or `interest` entries lacking
++`kind`/`principal`/`days`/`ratePct` are excluded from the recomputation and
++listed in `ignoredEntries[]` with a reason.
++
+ ## Output contract
+ 
+ - `rows[]`: recomputed ledger — `{ entryId, date, type, amount, balanceAfter,
+@@ -46,21 +64,37 @@ this: "Recalculation is arithmetic — should be pure code."
+ - `balance`: `{ ledgerFinal, lawfulFinal, overchargeTotal }` — the
+   as-charged balance vs. the balance using only lawful charges; the delta is
+   the identified overcharge (a negative lawful balance = tenant credit).
++- `claimedBalance`: `{ claimed, recomputed, delta }` when the input carried
++  one; a non-zero delta also raises a `claimed_balance_mismatch` dispute.
++- `ignoredEntries[]`: `{ entry, reason }` for every input entry excluded from
++  the recomputation — nothing is dropped silently.
+ - `disputes[]`: `{ issue, severity, month?, entryId?, amountInQuestion,
+-  ruleId, text }` — itemized, each line citing the rule that produced it.
+-  Issues: `late_fee_before_grace`, `late_fee_over_cap`,
+-  `late_fee_charged_twice`, `duplicate_rent_entry`, `missing_rent_entry`,
+-  `rent_overcharged`, `payment_misapplied`, `disallowed_charge_type`.
++  ruleId, citation?, text }` — itemized, each line citing the rule that
++  produced it (plus the rule's illustrative [verify]-tagged citation
++  pointer where one exists). Issues: `late_fee_before_grace`,
++  `late_fee_over_cap`, `late_fee_charged_twice`, `duplicate_rent_entry`,
++  `missing_rent_entry`, `rent_overcharged`, `rent_increase_over_cap`,
++  `interest_miscalculation`, `claimed_balance_mismatch`,
++  `payment_misapplied`, `disallowed_charge_type`, `unknown_charge_type`.
+ - `underpayments[]`: per-month shortfalls after oldest-first allocation.
+ - `gate`: verify-with-counsel message (always present).
+-- `toCSV(review)` → recomputed-ledger CSV; `renderReport(review)` → Markdown.
++- `toCSV(review)` → recomputed-ledger CSV; `renderReport(review)` → Markdown;
++  `parseLedgerTable(text)` → `{ entries, ignoredRows, errors }` from a pasted
++  CSV/TSV table (subset: header required with `date,type,amount`; optional
++  `id`/`entry_id`, `applied_to`, `note`, `kind`, `rate_pct`, `principal`,
++  `days`; no embedded-delimiter quoting; ids auto-assigned 1..n when the id
++  column is absent; rows that fail validation are listed, never dropped).
+ 
+ ## Rules-as-data
+ 
+ `JURISDICTION_RULES` (3 example US jurisdictions: DC 5-day grace / 5%-of-rent
+ cap, CA flat-cap example, MA 30-day grace / 4% cap) — illustrative shapes
+-modeled on common tenant protections, editable as plain data. Maintainers
+-add jurisdictions or correct numbers without touching engine code.
++modeled on common tenant protections, editable as plain data. Each ruleset
++also carries `depositInterestPct`, `judgmentInterestPct`, and
++`annualIncreaseCapPct` (all illustrative, [verify]-tagged) plus a
++`citations` map keyed by ruleId pointing at the statute family to verify —
++illustrative pointers, never asserted as real law. Maintainers add
++jurisdictions or correct numbers without touching engine code.
+ 
+ ## Prompt schema for the LLM part
+ 

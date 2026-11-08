@@ -1,0 +1,891 @@
+diff --git a/open-artifacts/ask-legal/README.md b/open-artifacts/ask-legal/README.md
+index 1e49331..1e1c380 100644
+--- a/open-artifacts/ask-legal/README.md
++++ b/open-artifacts/ask-legal/README.md
+@@ -7,20 +7,30 @@ escalation that never guesses, and a full audit log.
+ ## What it does
+ 
+ - **Retrieval by topic tags** + term overlap over a local JSON knowledge base
+-  of approved guidance (deterministic, no embeddings required).
++  of approved guidance (deterministic, no embeddings required). Plural
++  folding + a rules-as-data synonym map ("vendors" hits "vendor"); tag
++  substring matches require both sides ≥ 4 chars.
++- **KB validation before serving** — `validateKb` flags unapproved or
++  malformed guidance; `answerQuestion` refuses an invalid KB outright.
+ - **Per-answer confidence gating** — high / medium / low, each with written
+   reasons: match evidence, threshold comparison, ambiguity between entries,
+-  guidance freshness.
+-- **Escalation on low confidence** — answer text is withheld, question routed
+-  via a rules-as-data routing table (topic → team).
+-- **Full audit log** — every question recorded append-only (JSONL export);
++  guidance freshness, and jurisdiction fit (mismatch downgrades one tier).
++- **Provisional labeling** — medium answers are flagged `provisional` with a
++  confirm-with-Legal label; **escalation on low confidence** — answer text is
++  withheld, question routed via a rules-as-data routing table, and a
++  deterministic intake ticket (`escalationTicket`) drafts the ask for the
++  lawyer (asker, matched evidence, reasons, closest entry).
++- **Correction loop** — a lawyer's answer to an escalation re-enters the KB as
++  `pending-approval` (`applyCorrection`) and only serves after `approveEntry`.
++- **Full audit log** — every question recorded append-only (JSONL export),
++  with per-team routing SLAs (`overdueEscalations`) flagging breaches;
+   `answerQuestion` cannot answer without logging.
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 11 tests (node:test)
+-node examples/run.js   # answers 5 fictional questions, writes answers.json + audit-log.jsonl + report.md
++node --test            # 21 tests (node:test)
++node examples/run.js   # answers 5 fictional questions, drafts the escalation ticket, writes answers.json + audit-log.jsonl + report.md
+ ```
+ 
+ Open `demo/index.html` for the interactive demo (prefilled worked example).
+@@ -33,8 +43,16 @@ Open `demo/index.html` for the interactive demo (prefilled worked example).
+ 2. **Nothing guessed.** No match → no answer, escalation only. The example
+    includes a stale-guidance downgrade (high → medium) and a hard escalation.
+ 3. **Audit by construction.** The closed artifact offers "visibility for
+-   Legal" as a feature; here the log is structural and exportable.
+-4. **Org-owned guidance.** Plain JSON/Markdown knowledge base you control —
++   Legal" as a feature; here the log is structural and exportable, with
++   per-team SLA breach tracking.
++4. **Guidance quality is enforced, not assumed.** Unapproved or malformed KB
++   entries refuse the run (`validateKb`); medium answers are explicitly
++   provisional; jurisdiction mismatches downgrade with a receipt.
++5. **Escalations draft the ask.** A deterministic intake ticket — asker,
++   question, matched evidence, reasons, closest entry — instead of a team
++   name, and a pending → approved correction loop that feeds lawyer answers
++   back into the guidance base.
++6. **Org-owned guidance.** Plain JSON/Markdown knowledge base you control —
+    air-gap friendly, no connector required.
+ 
+ ## Layout
+diff --git a/open-artifacts/ask-legal/core/core.js b/open-artifacts/ask-legal/core/core.js
+index a23da10..786e4e6 100644
+--- a/open-artifacts/ask-legal/core/core.js
++++ b/open-artifacts/ask-legal/core/core.js
+@@ -16,7 +16,7 @@
+ /* ---------- helpers ---------- */
+ 
+ const STOPWORDS = new Set(
+-  "a an the is are was were be been being of for to in on at by with about into from as that this it its do does did can could should would will shall may might must i we you our your their what when where who whom how which and or if not no yes".split(" ")
++  "a an the is are was were be been being of for to in on at by with about into from as that this it its do does did can could should would will shall may might must need needs i we you our your their what when where who whom how which and or if not no yes".split(" ")
+ );
+ 
+ /** Tokenize a string into meaningful lowercase terms (stopwords removed).
+@@ -30,6 +30,39 @@ export function tokenize(s) {
+     .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+ }
+ 
++/** Deterministic plural folding so "vendors" matches "vendor" (and back).
++ * Conservative: only strips a regular plural "s"/"es" or maps "…ies" → "…y";
++ * never touches "ss" words (class, business).
++ * @param {string} t
++ * @returns {string} */
++export function foldToken(t) {
++  if (t.endsWith("ies") && t.length > 4) return t.slice(0, -3) + "y";
++  if (/(?:ses|xes|zes|ches|shes)$/.test(t)) return t.slice(0, -2);
++  if (t.endsWith("s") && !t.endsWith("ss") && t.length > 3) return t.slice(0, -1);
++  return t;
++}
++
++/** Synonym groups as rules-as-data: key and values are one equivalence class
++ * (query vocabulary expands across the group; override per deployment).
++ * @type {Record<string, string[]>} */
++export const DEFAULT_SYNONYMS = {
++  confidentiality: ["nda"],
++  supplier: ["vendor"],
++  staff: ["employee"],
++  spend: ["expense"],
++};
++
++/** Expand tokens with their synonym-group members (no self-duplicates).
++ * @param {Iterable<string>} tokens
++ * @param {Record<string, string[]>|null} synonyms
++ * @returns {string[]} */
++export function expandTokens(tokens, synonyms) {
++  const groups = Object.entries(synonyms ?? {}).map(([k, v = []]) => [k, ...v]);
++  const extra = [];
++  for (const t of tokens) for (const g of groups) if (g.includes(t)) extra.push(...g.filter((x) => x !== t));
++  return extra;
++}
++
+ /** Parse "YYYY-MM-DD" to UTC Date; null when unparseable (never guessed).
+  * @param {string|null|undefined} d
+  * @returns {Date|null} */
+@@ -46,26 +79,36 @@ export function parseDate(d) {
+ /**
+  * Deterministic retrieval: score each KB entry by
+  *   3 × exact tag keyword hit + 2 × question-title token overlap + answer token overlap.
+- * @param {Array<any>} kb — [{ id, question, answer, tags: string[], jurisdiction, updated, approvedBy }]
++ * Tokens compare plural-folded ("vendors" ≡ "vendor") and queries expand across
++ * the synonym map; tag substring matching requires both sides ≥ 4 chars so a
++ * query like "tips" cannot hit a short tag like "ip".
++ * Entries with a status other than "approved" (e.g. pending-approval corrections)
++ * are never retrieved or served.
++ * @param {Array<any>} kb — [{ id, question, answer, tags: string[], jurisdiction, updated, approvedBy, status? }]
+  * @param {string} question
+- * @returns {Array<{ entry: any, score: number, matchedTags: string[], matchedTerms: string[] }>} ranked, best first
++ * @param {Record<string, string[]>|null} [synonyms] — defaults to DEFAULT_SYNONYMS; pass null to disable
++ * @returns {Array<{ entry: any, score: number, matchedTags: string[], matchedTerms: string[] }>} ranked, best first; matchedTerms are recorded plural-folded ("vendors" → "vendor")
+  */
+-export function retrieve(kb, question) {
+-  const qTokens = new Set(tokenize(question));
+-  const results = (kb ?? []).map((entry) => {
++export function retrieve(kb, question, synonyms = DEFAULT_SYNONYMS) {
++  const qBase = tokenize(question);
++  const qSet = new Set([...qBase, ...expandTokens(qBase, synonyms)]);
++  const qFolded = new Set([...qSet].map(foldToken));
++  const results = (kb ?? []).flatMap((entry) => {
++    if (entry && entry.status && entry.status !== "approved") return []; // pending corrections are invisible
+     /** @type {string[]} */ const matchedTags = [];
+-    for (const tag of entry.tags ?? []) {
++    for (const tag of entry?.tags ?? []) {
+       const t = String(tag).toLowerCase();
+-      if (qTokens.has(t) || tokenize(question).some((qt) => qt === t || t.includes(qt) || qt.includes(t))) {
+-        matchedTags.push(String(tag));
+-      }
++      const substringHit = [...qSet].some(
++        (qt) => qt.length >= 4 && t.length >= 4 && (t.includes(qt) || qt.includes(t))
++      );
++      if (qSet.has(t) || qFolded.has(foldToken(t)) || substringHit) matchedTags.push(String(tag));
+     }
+-    const eTokens = tokenize(entry.question);
+-    const aTokens = tokenize(entry.answer);
+-    const matchedTerms = [...qTokens].filter((t) => eTokens.includes(t));
+-    const answerHits = [...qTokens].filter((t) => aTokens.includes(t));
++    const eFolded = tokenize(entry?.question ?? "").map(foldToken);
++    const aFolded = tokenize(entry?.answer ?? "").map(foldToken);
++    const matchedTerms = [...qSet].filter((t) => eFolded.includes(foldToken(t))).map(foldToken);
++    const answerHits = [...qSet].filter((t) => aFolded.includes(foldToken(t))).map(foldToken);
+     const score = matchedTags.length * 3 + matchedTerms.length * 2 + answerHits.length;
+-    return { entry, score, matchedTags, matchedTerms: [...new Set([...matchedTerms, ...answerHits])] };
++    return [{ entry, score, matchedTags, matchedTerms: [...new Set([...matchedTerms, ...answerHits])] }];
+   });
+   return results.filter((r) => r.score > 0).sort(
+     (a, b) => b.score - a.score || String(a.entry.id).localeCompare(String(b.entry.id))
+@@ -80,16 +123,19 @@ export const DEFAULT_THRESHOLDS = { high: 9, medium: 5, freshnessDays: 365 };
+ 
+ /**
+  * Score-based confidence with written reasons. Freshness penalizes stale
+- * guidance down one tier; zero retrieval is always "low".
++ * guidance down one tier; a jurisdiction mismatch between the question and the
++ * matched guidance also downgrades one tier (with a receipt); zero retrieval is
++ * always "low".
+  * @param {Array<any>} kb
+  * @param {string} question
+  * @param {{ high?: number, medium?: number, freshnessDays?: number }} [thresholds]
+  * @param {string} [asOfIso] — anchor for freshness; omit to skip freshness check
++ * @param {{ jurisdiction?: string, synonyms?: Record<string, string[]>|null }} [opts]
+  * @returns {{ level: "high"|"medium"|"low", reasons: string[], top: null|any, ranked: Array<any> }}
+  */
+-export function gaugeConfidence(kb, question, thresholds = {}, asOfIso) {
++export function gaugeConfidence(kb, question, thresholds = {}, asOfIso, opts = {}) {
+   const th = { ...DEFAULT_THRESHOLDS, ...thresholds };
+-  const ranked = retrieve(kb, question);
++  const ranked = retrieve(kb, question, opts.synonyms ?? DEFAULT_SYNONYMS);
+   /** @type {string[]} */ const reasons = [];
+ 
+   if (ranked.length === 0) {
+@@ -119,42 +165,96 @@ export function gaugeConfidence(kb, question, thresholds = {}, asOfIso) {
+       reasons.push(`guidance verified ${ageDays}d ago (within ${th.freshnessDays}d window)`);
+     }
+   }
++
++  const askedJur = opts.jurisdiction ? String(opts.jurisdiction).toLowerCase() : null;
++  const entryJur = top.entry.jurisdiction ? String(top.entry.jurisdiction).toLowerCase() : null;
++  if (askedJur && entryJur && askedJur !== entryJur) {
++    reasons.push(`jurisdiction mismatch: guidance covers ${top.entry.jurisdiction} but question is under ${opts.jurisdiction} — downgraded one tier; confirm with local counsel`);
++    level = level === "high" ? "medium" : "low";
++  }
+   return { level, reasons, top: top.entry, ranked };
+ }
+ 
+ /* ---------- answering + escalation ---------- */
+ 
+ /**
+- * Route table resolution: topic → owning team (rules-as-data).
++ * Route table resolution: topic → owning team (rules-as-data). Values may be a
++ * plain team string or `{ team, slaDays }` (per-topic SLA; see overdueEscalations).
+  * @param {any} entry — KB entry (may be null)
+- * @param {Record<string,string>} routing — { [tagOrTopic]: team }
++ * @param {Record<string,string|{team:string,slaDays:number}>} routing — { [tagOrTopic]: team }
+  * @returns {string} */
+ export function routeTo(entry, routing = {}) {
+-  if (!entry) return routing["default"] ?? "legal-intake";
++  const pick = (r) => (r == null ? null : typeof r === "string" ? r : r.team);
++  if (!entry) return pick(routing["default"]) ?? "legal-intake";
+   for (const tag of entry.tags ?? []) {
+-    if (routing[tag]) return routing[tag];
++    const r = pick(routing[tag]);
++    if (r) return r;
++  }
++  return pick(routing["default"]) ?? "legal-intake";
++}
++
++/**
++ * Validate a knowledge base before serving. Every servable entry (no status, or
++ * status "approved") must have: unique id, answer text, an approver, and a
++ * parseable YYYY-MM-DD updated date. `pending-approval` entries are skipped —
++ * they are an expected lifecycle state and are never served.
++ * @param {Array<any>} kb
++ * @returns {Array<{ entryId: string|null, field: string, issue: string }>} issues (empty = valid)
++ */
++export function validateKb(kb) {
++  /** @type {Array<{ entryId: string|null, field: string, issue: string }>} */ const issues = [];
++  const seen = new Set();
++  for (const entry of kb ?? []) {
++    if (entry?.status === "pending-approval") continue;
++    const id = entry && entry.id != null ? String(entry.id) : null;
++    const ref = id ?? "(entry without id)";
++    if (!id) issues.push({ entryId: null, field: "id", issue: "missing id" });
++    else if (seen.has(id)) issues.push({ entryId: id, field: "id", issue: "duplicate id" });
++    if (id) seen.add(id);
++    if (!entry || typeof entry.answer !== "string" || !entry.answer.trim()) {
++      issues.push({ entryId: ref, field: "answer", issue: "missing answer text" });
++    }
++    if (!entry || !entry.approvedBy) {
++      issues.push({ entryId: ref, field: "approvedBy", issue: "missing approver — unapproved guidance must not be served" });
++    }
++    if (!entry || !parseDate(entry.updated)) {
++      issues.push({ entryId: ref, field: "updated", issue: "missing or unparseable YYYY-MM-DD updated date" });
++    }
+   }
+-  return routing["default"] ?? "legal-intake";
++  return issues;
+ }
+ 
+ /**
+  * Answer a question against the KB with confidence gating, escalation, and
+  * an audit-log entry appended to `auditLog`.
+  *
+- * Rules: only "high" and "medium" confidence return guidance text;
+- * "medium" is labeled as provisional; "low" escalates and returns no answer
+- * (NEVER guesses).
++ * Rules: the KB must pass validateKb (invalid KBs are refused — unapproved
++ * guidance is never served); only "high" and "medium" confidence return
++ * guidance text; "medium" is flagged provisional with a label; "low"
++ * escalates and returns no answer (NEVER guesses), carrying a suggested
++ * entry snapshot for the lawyer. A jurisdiction mismatch (opts.jurisdiction
++ * vs the matched entry's jurisdiction) downgrades confidence one tier.
+  * @param {Array<any>} kb
+  * @param {string} question
+- * @param {{ thresholds?: object, asOf?: string, askedBy?: string, routing?: Record<string,string> }} [opts]
++ * @param {{ thresholds?: object, asOf?: string, askedBy?: string, routing?: Record<string,any>, jurisdiction?: string, synonyms?: Record<string, string[]>|null }} [opts]
+  * @param {Array<any>} [auditLog] — mutated in place; caller persists it
+- * @returns {{ answered: boolean, answer: string|null, sourceId: string|null, confidence: { level: string, reasons: string[] }, escalate: boolean, route: string, auditId: string }}
++ * @returns {{ answered: boolean, answer: string|null, sourceId: string|null, confidence: { level: string, reasons: string[] }, escalate: boolean, route: string|null, auditId: string, provisional: boolean, label: string|null, suggestedEntry: { id: string, question: string }|null }}
++ * @throws {Error} when the knowledge base fails validation
+  */
+ export function answerQuestion(kb, question, opts = {}, auditLog = []) {
+-  const { level, reasons, top, ranked } = gaugeConfidence(kb, question, opts.thresholds, opts.asOf);
++  const issues = validateKb(kb);
++  if (issues.length) {
++    const detail = issues.map((i) => `${i.entryId ?? "?"}.${i.field}: ${i.issue}`).join("; ");
++    throw new Error(`knowledge base failed validation (${issues.length} issue${issues.length === 1 ? "" : "s"}): ${detail}`);
++  }
++  const { level, reasons, top, ranked } = gaugeConfidence(kb, question, opts.thresholds, opts.asOf, {
++    jurisdiction: opts.jurisdiction,
++    synonyms: opts.synonyms,
++  });
+   const escalate = level === "low";
+   const route = escalate ? routeTo(top, opts.routing) : null;
+   const auditId = `AUD-${String(auditLog.length + 1).padStart(5, "0")}`;
++  const provisional = !escalate && level === "medium";
+   const result = {
+     answered: !escalate,
+     answer: escalate ? null : top.answer,
+@@ -163,6 +263,9 @@ export function answerQuestion(kb, question, opts = {}, auditLog = []) {
+     escalate,
+     route: escalate ? route : null,
+     auditId,
++    provisional,
++    label: provisional ? "Provisional guidance — confirm with Legal." : null,
++    suggestedEntry: escalate && top ? { id: top.id, question: top.question } : null,
+   };
+   auditLog.push({
+     auditId,
+@@ -191,3 +294,132 @@ export function createAuditLog() {
+ export function exportAuditLog(auditLog) {
+   return (auditLog ?? []).map((e) => JSON.stringify(e)).join("\n") + ((auditLog ?? []).length ? "\n" : "");
+ }
++
++/* ---------- escalation ticket (drafts the ask) ---------- */
++
++/**
++ * Draft a deterministic intake ticket from an escalated answer + its audit-log
++ * entry: what was asked, by whom, what matched, why it escalated, where it
++ * routed, and the closest KB entry (if any) for the lawyer to start from.
++ * Plain data — JSON-serializable as-is.
++ * @param {{ auditId: string, route: string|null, confidence?: { reasons: string[] }, suggestedEntry?: any }} result — escalated answerQuestion result
++ * @param {Array<any>} auditLog
++ * @returns {{ route: string|null, question: string|null, asker: string|null, matchedIds: string[], reasons: string[], suggestedEntry: { id: string, question: string }|null }}
++ */
++export function escalationTicket(result, auditLog = []) {
++  const audit = (auditLog ?? []).find((e) => e.auditId === result?.auditId) ?? {};
++  return {
++    route: result?.route ?? null,
++    question: audit.question ?? null,
++    asker: audit.askedBy ?? null,
++    matchedIds: audit.matched ?? [],
++    reasons: result?.confidence?.reasons ?? [],
++    suggestedEntry: result?.suggestedEntry ?? null,
++  };
++}
++
++/* ---------- correction loop (lawyer feedback → guidance base) ---------- */
++
++/**
++ * Record a lawyer's correction to an escalated question as a NEW KB entry in
++ * `pending-approval` state, linked to the audit entry that asked it. The entry
++ * is unretrievable (and exempt from validation) until approveEntry flips it.
++ * @param {Array<any>} kb — mutated in place (entry appended)
++ * @param {Array<any>} auditLog — source of the original question
++ * @param {{ auditId: string, answer: string, approvedBy?: string, tags?: string[], jurisdiction?: string, updated?: string }} correction
++ * @returns {{ entry: any, status: "pending-approval" }}
++ * @throws {Error} when the audit id is unknown (corrections must link to an asked question)
++ */
++export function applyCorrection(kb, auditLog, correction = {}) {
++  const audit = (auditLog ?? []).find((e) => e.auditId === correction.auditId);
++  if (!audit) {
++    throw new Error(`applyCorrection: audit entry ${correction.auditId} not found — corrections must link to an asked question`);
++  }
++  const entry = {
++    id: `kb-corr-${String(correction.auditId).toLowerCase().replace(/^aud-/, "")}`,
++    question: audit.question,
++    answer: correction.answer,
++    tags: correction.tags ?? [],
++    jurisdiction: correction.jurisdiction ?? null,
++    updated: correction.updated ?? null,
++    approvedBy: null, // set by approveEntry; pending entries are never served
++    status: "pending-approval",
++    sourceAuditId: correction.auditId,
++    submittedBy: correction.approvedBy ?? null,
++  };
++  (kb ?? []).push(entry);
++  return { entry, status: entry.status };
++}
++
++/**
++ * Approve a pending-approval correction: flips status to "approved" and stamps
++ * the approver, making the entry retrievable from that point on.
++ * @param {Array<any>} kb
++ * @param {string} entryId
++ * @param {string} approvedBy
++ * @returns {{ entry: any, status: "approved" }}
++ * @throws {Error} when the entry is missing, not pending, or the approver is blank
++ */
++export function approveEntry(kb, entryId, approvedBy) {
++  const e = (kb ?? []).find((x) => x.id === entryId);
++  if (!e) throw new Error(`approveEntry: no entry with id ${entryId}`);
++  if (e.status !== "pending-approval") {
++    throw new Error(`approveEntry: entry ${entryId} is '${e.status ?? "approved"}', not pending-approval — only pending corrections can be approved`);
++  }
++  if (!approvedBy) throw new Error("approveEntry: approvedBy is required");
++  e.status = "approved";
++  e.approvedBy = approvedBy;
++  return { entry: e, status: e.status };
++}
++
++/* ---------- escalation SLAs ---------- */
++
++/** Parse "YYYY-MM-DD" (UTC midnight) or a full ISO timestamp; null when unparseable.
++ * @param {string|null|undefined} v
++ * @returns {Date|null} */
++function parseTs(v) {
++  if (!v || typeof v !== "string") return null;
++  const d = parseDate(v);
++  if (d) return d;
++  const t = Date.parse(v);
++  return Number.isNaN(t) ? null : new Date(t);
++}
++
++/**
++ * Flag escalated audit entries whose owning team is past its routing SLA.
++ * SLAs come from the routing table's `{ team, slaDays }` values (rules-as-data);
++ * teams without a configured SLA and entries without a parseable ts are skipped.
++ * @param {Array<any>} auditLog
++ * @param {Record<string,string|{team:string,slaDays:number}>} routing
++ * @param {string} asOfIso — anchor date; no hidden clocks
++ * @returns {Array<{ auditId: string, route: string, question: string|null, opened: string|null, ageDays: number, slaDays: number, overdueByDays: number }>}
++ */
++export function overdueEscalations(auditLog, routing = {}, asOfIso) {
++  const asOf = parseTs(asOfIso);
++  if (!asOf) return [];
++  const slaByTeam = {};
++  for (const v of Object.values(routing ?? {})) {
++    if (v && typeof v === "object" && v.team && Number.isFinite(v.slaDays)) slaByTeam[v.team] = v.slaDays;
++  }
++  const out = [];
++  for (const e of auditLog ?? []) {
++    if (!e || !e.escalated || !e.route) continue;
++    const slaDays = slaByTeam[e.route];
++    if (slaDays == null) continue; // no SLA configured for this team — cannot judge
++    const opened = parseTs(e.ts);
++    if (!opened) continue;
++    const ageDays = Math.round((asOf.getTime() - opened.getTime()) / 86400000);
++    if (ageDays > slaDays) {
++      out.push({
++        auditId: e.auditId,
++        route: e.route,
++        question: e.question ?? null,
++        opened: e.ts ?? null,
++        ageDays,
++        slaDays,
++        overdueByDays: ageDays - slaDays,
++      });
++    }
++  }
++  return out;
++}
+diff --git a/open-artifacts/ask-legal/core/core.test.js b/open-artifacts/ask-legal/core/core.test.js
+index 970eb10..b53f85e 100644
+--- a/open-artifacts/ask-legal/core/core.test.js
++++ b/open-artifacts/ask-legal/core/core.test.js
+@@ -3,7 +3,8 @@ import { test } from "node:test";
+ import assert from "node:assert/strict";
+ import {
+   tokenize, retrieve, gaugeConfidence, routeTo, answerQuestion,
+-  createAuditLog, exportAuditLog, DEFAULT_THRESHOLDS,
++  createAuditLog, exportAuditLog, DEFAULT_THRESHOLDS, DEFAULT_SYNONYMS,
++  validateKb, applyCorrection, approveEntry, escalationTicket, overdueEscalations,
+ } from "./core.js";
+ 
+ const KB = [
+@@ -48,6 +49,7 @@ const ROUTING = { privacy: "privacy-counsel", expenses: "finance-ops", contracts
+ 
+ test("tokenize removes stopwords and punctuation", () => {
+   assert.deepEqual(tokenize("What is the NDA template for a Vendor?"), ["nda", "template", "vendor"]);
++  assert.deepEqual(tokenize("Do we need a license to launch a satellite?"), ["license", "launch", "satellite"]); // 'need'/'needs' are stopwords — low-information verbs must not create matches
+ });
+ 
+ test("retrieve ranks by tag hits + term overlap, deterministically", () => {
+@@ -132,3 +134,147 @@ test("thresholds are configurable rules-as-data", () => {
+   assert.equal(gaugeConfidence(KB, q, {}, "2026-11-07").level, "high");
+   assert.equal(gaugeConfidence(KB, q, { high: DEFAULT_THRESHOLDS.high + 50 }, "2026-11-07").level, "medium");
+ });
++
++/* ---------- A: jurisdiction gating ---------- */
++
++test("jurisdiction mismatch downgrades one tier with a written reason", () => {
++  const q = "Can I expense client entertainment over $500 for a matter?"; // US entry, would be high
++  assert.equal(answerQuestion(KB, q, { asOf: "2026-11-07" }, createAuditLog()).confidence.level, "high");
++  const eu = answerQuestion(KB, q, { asOf: "2026-11-07", jurisdiction: "EU" }, createAuditLog());
++  assert.equal(eu.confidence.level, "medium");
++  assert.match(eu.confidence.reasons.join(" "), /jurisdiction mismatch/);
++  assert.match(eu.confidence.reasons.join(" "), /EU/);
++  // matching jurisdiction leaves the level untouched
++  const us = answerQuestion(KB, q, { asOf: "2026-11-07", jurisdiction: "us" }, createAuditLog()); // case-insensitive
++  assert.equal(us.confidence.level, "high");
++});
++
++/* ---------- B: correction loop ---------- */
++
++test("applyCorrection: pending entry is unretrievable until approved, then serves", () => {
++  const kb = JSON.parse(JSON.stringify(KB));
++  const log = createAuditLog();
++  const esc = answerQuestion(kb, "Do we need a license to launch a satellite?", { asOf: "2026-11-07", askedBy: "t.nguyen@example.test" }, log);
++  assert.equal(esc.escalate, true);
++
++  const { entry } = applyCorrection(kb, log, {
++    auditId: esc.auditId,
++    answer: "Fictional guidance: marketing satellite launches need a written waiver from Commercial Legal.",
++    approvedBy: "A. Fern, Deputy GC (fictional)", // submitting lawyer
++    tags: ["satellite", "licensing"],
++    updated: "2026-11-07",
++  });
++  assert.equal(entry.status, "pending-approval");
++  assert.equal(entry.sourceAuditId, esc.auditId);
++  assert.equal(entry.question, "Do we need a license to launch a satellite?"); // pulled from the audit link
++  // pending: not retrieved, not served — but does not poison validation of the rest
++  assert.equal(retrieve(kb, "Do we need a license to launch a satellite?").find((r) => r.entry.id === entry.id), undefined);
++  assert.equal(validateKb(kb).length, 0);
++
++  approveEntry(kb, entry.id, "D. Voss, GC (fictional)");
++  assert.equal(entry.status, "approved");
++  assert.equal(entry.approvedBy, "D. Voss, GC (fictional)");
++  const after = answerQuestion(kb, "Do we need a license to launch a satellite?", { asOf: "2026-11-07" }, log);
++  assert.equal(after.answered, true);
++  assert.equal(after.sourceId, entry.id);
++});
++
++test("applyCorrection rejects unknown audit ids; approveEntry guards state", () => {
++  const kb = JSON.parse(JSON.stringify(KB));
++  assert.throws(() => applyCorrection(kb, createAuditLog(), { auditId: "AUD-99999", answer: "x", updated: "2026-11-07" }), /AUD-99999/);
++  assert.throws(() => approveEntry(kb, "kb-nda", "X (fictional)"), /pending-approval/); // already approved
++  assert.throws(() => approveEntry(kb, "kb-nope", "X (fictional)"), /kb-nope/);
++});
++
++/* ---------- C: escalation ticket ---------- */
++
++test("escalationTicket drafts a deterministic, JSON-serializable intake ticket", () => {
++  const log = createAuditLog();
++  const esc = answerQuestion(KB, "Do we need a license to launch a satellite for marketing?", { asOf: "2026-11-07", askedBy: "t.nguyen@example.test", routing: ROUTING }, log);
++  const ticket = escalationTicket(esc, log);
++  assert.deepEqual(Object.keys(ticket).sort(), ["asker", "matchedIds", "question", "reasons", "route", "suggestedEntry"]);
++  assert.equal(ticket.route, "legal-intake");
++  assert.equal(ticket.question, "Do we need a license to launch a satellite for marketing?");
++  assert.equal(ticket.asker, "t.nguyen@example.test");
++  assert.deepEqual(ticket.matchedIds, []);
++  assert.equal(ticket.suggestedEntry, null); // zero-match escalation has nothing to suggest
++  assert.deepEqual(JSON.parse(JSON.stringify(ticket)), ticket);
++
++  // low-confidence-but-matched escalation suggests the closest entry for the lawyer
++  const low = answerQuestion(KB, "What is our data-retention approach?", { asOf: "2026-11-07" }, log);
++  assert.equal(low.escalate, true);
++  const t2 = escalationTicket(low, log);
++  assert.deepEqual(t2.suggestedEntry, { id: "kb-stale-privacy", question: "How long do we retain website visitor data?" });
++  assert.ok(t2.matchedIds.includes("kb-stale-privacy"));
++});
++
++/* ---------- D: provisional flag ---------- */
++
++test("medium answers are flagged provisional; low escalates with no answer", () => {
++  const log = createAuditLog();
++  const med = answerQuestion(KB, "Which NDA template should I use?", { asOf: "2026-11-07" }, log);
++  assert.equal(med.confidence.level, "medium");
++  assert.equal(med.provisional, true);
++  assert.match(med.label, /Provisional guidance — confirm with Legal\./);
++  const hi = answerQuestion(KB, "Can I expense client entertainment over $500?", { asOf: "2026-11-07" }, log);
++  assert.equal(hi.provisional, false);
++  assert.equal(hi.label, null);
++  const low = answerQuestion(KB, "astronaut helmet certification", { asOf: "2026-11-07" }, log);
++  assert.equal(low.answer, null);
++  assert.equal(low.provisional, false);
++});
++
++/* ---------- E: KB validation ---------- */
++
++test("validateKb flags unapproved guidance; answerQuestion refuses an invalid KB", () => {
++  assert.deepEqual(validateKb(KB), []); // baseline KB is clean
++  const bad = JSON.parse(JSON.stringify(KB));
++  delete bad[0].approvedBy;
++  const issues = validateKb(bad);
++  assert.ok(issues.some((i) => i.entryId === "kb-nda" && i.field === "approvedBy"));
++  assert.throws(
++    () => answerQuestion(bad, "Which NDA template should I use for a vendor?", { asOf: "2026-11-07" }),
++    /knowledge base failed validation/
++  );
++});
++
++/* ---------- F: routing SLAs ---------- */
++
++test("routing SLAs: object routes carry {team, slaDays}; overdueEscalations flags breaches", () => {
++  const routing = { privacy: { team: "privacy-counsel", slaDays: 3 }, default: { team: "legal-intake", slaDays: 3 } };
++  assert.equal(routeTo(KB[3], routing), "privacy-counsel"); // object form resolves like strings
++  const log = [
++    { auditId: "AUD-00001", escalated: true, route: "privacy-counsel", ts: "2026-11-03" }, // 4d old > 3d SLA
++    { auditId: "AUD-00002", escalated: true, route: "privacy-counsel", ts: "2026-11-06" }, // 1d old, within SLA
++    { auditId: "AUD-00003", escalated: false, route: null, ts: "2026-11-01" }, // not an escalation
++    { auditId: "AUD-00004", escalated: true, route: "unknown-team", ts: "2026-11-01" }, // no SLA configured → not flagged
++  ];
++  const overdue = overdueEscalations(log, routing, "2026-11-07");
++  assert.equal(overdue.length, 1);
++  assert.equal(overdue[0].auditId, "AUD-00001");
++  assert.equal(overdue[0].route, "privacy-counsel");
++  assert.equal(overdue[0].slaDays, 3);
++  assert.equal(overdue[0].ageDays, 4);
++  assert.equal(overdue[0].overdueByDays, 1);
++});
++
++/* ---------- G: retrieval hardening ---------- */
++
++test("plural folding: 'vendors' query hits kb-nda 'vendor' terms", () => {
++  const r = retrieve(KB, "template for new vendors");
++  const hit = r.find((x) => x.entry.id === "kb-nda");
++  assert.ok(hit, "kb-nda retrieved");
++  assert.ok(hit.matchedTerms.includes("vendor"), `matchedTerms=${hit.matchedTerms}`);
++});
++
++test("short tags no longer substring-match: query 'tips' does not hit tag 'ip'", () => {
++  const kb = [{ id: "kb-ip", question: "Who owns inventions?", answer: "Invention assignment policy applies.", tags: ["ip"], jurisdiction: "US", updated: "2026-01-01", approvedBy: "X (fictional)" }];
++  assert.equal(retrieve(kb, "any tips for the launch?").length, 0); // zero overlap → not retrieved, not guessed
++});
++
++test("synonym map (rules-as-data) expands query vocabulary", () => {
++  const r = retrieve(KB, "which confidentiality form for a new vendor?", DEFAULT_SYNONYMS);
++  const hit = r.find((x) => x.entry.id === "kb-nda");
++  assert.ok(hit, "kb-nda retrieved via confidentiality→nda synonym");
++  assert.ok(hit.matchedTags.includes("nda"));
++});
+diff --git a/open-artifacts/ask-legal/demo/index.html b/open-artifacts/ask-legal/demo/index.html
+index a88136e..8510109 100644
+--- a/open-artifacts/ask-legal/demo/index.html
++++ b/open-artifacts/ask-legal/demo/index.html
+@@ -64,7 +64,8 @@
+     </div>
+     <div class="examples">
+       <button data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
+-      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → downgrade</button>
++      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → provisional medium</button>
++      <button data-q="What is our data-retention approach?">weak match → escalate + draft</button>
+       <button data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
+     </div>
+     <div id="answer"></div>
+@@ -102,8 +103,13 @@
+     $("answer").innerHTML =
+       `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
+       (r.answered
+-        ? `<div class="answer">${esc(r.answer)}<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
+-        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
++        ? `<div class="answer">${esc(r.answer)}` +
++          (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
++          `<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
++        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>` +
++          (r.suggestedEntry
++            ? `<div class="answer">Ticket draft for the lawyer — closest entry <code>${r.suggestedEntry.id}</code>: “${esc(r.suggestedEntry.question)}”. A correction can re-enter the KB as pending-approval.</div>`
++            : `<div class="answer">Ticket draft: zero KB overlap — guidance gap for Legal.</div>`)) +
+       `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+     renderLog();
+   }
+diff --git a/open-artifacts/ask-legal/examples/answers.json b/open-artifacts/ask-legal/examples/answers.json
+index 98761df..b473c51 100644
+--- a/open-artifacts/ask-legal/examples/answers.json
++++ b/open-artifacts/ask-legal/examples/answers.json
+@@ -16,6 +16,9 @@
+     "escalate": false,
+     "route": null,
+     "auditId": "AUD-00001",
++    "provisional": false,
++    "label": null,
++    "suggestedEntry": null,
+     "answerPreview": "Use the Mutual NDA (Form L-102) for all prospective vendors; do not sign the vendor's own paper. Exceptions (shorter ter"
+   },
+   {
+@@ -35,6 +38,9 @@
+     "escalate": false,
+     "route": null,
+     "auditId": "AUD-00002",
++    "provisional": false,
++    "label": null,
++    "suggestedEntry": null,
+     "answerPreview": "Entertainment above $500 requires pre-approval from Finance and the responsible partner, logged in the matter file befor"
+   },
+   {
+@@ -54,6 +60,9 @@
+     "escalate": false,
+     "route": null,
+     "auditId": "AUD-00003",
++    "provisional": true,
++    "label": "Provisional guidance — confirm with Legal.",
++    "suggestedEntry": null,
+     "answerPreview": "26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9)."
+   },
+   {
+@@ -71,6 +80,9 @@
+     "escalate": true,
+     "route": "legal-intake",
+     "auditId": "AUD-00004",
++    "provisional": false,
++    "label": null,
++    "suggestedEntry": null,
+     "answerPreview": null
+   },
+   {
+@@ -90,6 +102,9 @@
+     "escalate": false,
+     "route": null,
+     "auditId": "AUD-00005",
++    "provisional": false,
++    "label": null,
++    "suggestedEntry": null,
+     "answerPreview": "Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides "
+   }
+ ]
+diff --git a/open-artifacts/ask-legal/examples/report.md b/open-artifacts/ask-legal/examples/report.md
+index c51157b..64e46be 100644
+--- a/open-artifacts/ask-legal/examples/report.md
++++ b/open-artifacts/ask-legal/examples/report.md
+@@ -25,7 +25,7 @@
+   - best match "How long do we retain website visitor data?" scored 18 (tags: privacy, data-retention; terms: long, retain, website, visitor, data, privacy, policy)
+   - score 18 ≥ high threshold 9
+   - guidance is 981d old (> 365d freshness window) — downgraded one tier
+-- answer (source `kb-005`): 26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).
++- answer (source `kb-005`) — **provisional**: Provisional guidance — confirm with Legal.: 26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).
+ 
+ ## Q: Do we need a license to launch a satellite for the marketing team?
+ 
+@@ -43,6 +43,19 @@
+   - guidance verified 8d ago (within 365d window)
+ - answer (source `kb-004`): Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides on regulator notification under the incident runbook.
+ 
++## Escalation tickets — deterministic drafts for the lawyer
++
++Each escalation carries a ready-to-send intake ticket: route, question, asker, matched ids, reasons, and the closest KB entry (if any) to start from.
++
++### → `legal-intake`
++
++- question: Do we need a license to launch a satellite for the marketing team?
++- asker: `t.nguyen@example.test`
++- matched KB entries: none (zero overlap)
++- why escalated:
++  - no knowledge-base entry matched any question term or tag
++- no KB entry came close — guidance gap for Legal to fill
++
+ ## Audit log (every question, append-only)
+ 
+ ```jsonl
+diff --git a/open-artifacts/ask-legal/examples/run.js b/open-artifacts/ask-legal/examples/run.js
+index a2ed46d..649755e 100644
+--- a/open-artifacts/ask-legal/examples/run.js
++++ b/open-artifacts/ask-legal/examples/run.js
+@@ -6,7 +6,7 @@
+ import { readFileSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { dirname, join } from "node:path";
+-import { answerQuestion, createAuditLog, exportAuditLog } from "../core/core.js";
++import { answerQuestion, createAuditLog, exportAuditLog, escalationTicket } from "../core/core.js";
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+@@ -25,6 +25,33 @@ const answers = input.questions.map((q) => {
+ writeFileSync(join(here, "answers.json"), JSON.stringify(answers, null, 2) + "\n");
+ writeFileSync(join(here, "audit-log.jsonl"), exportAuditLog(auditLog));
+ 
++// Escalations get a deterministic intake ticket ("drafts the ask") for the lawyer.
++const tickets = answers
++  .filter((a) => a.escalate)
++  .map((a) => ({ ...escalationTicket(a, auditLog) }));
++
++const ticketMd = [
++  "## Escalation tickets — deterministic drafts for the lawyer",
++  "",
++  "Each escalation carries a ready-to-send intake ticket: route, question, asker, matched ids, reasons, and the closest KB entry (if any) to start from.",
++  "",
++  ...(tickets.length
++    ? tickets.flatMap((t) => [
++        `### → \`${t.route}\``,
++        "",
++        `- question: ${t.question}`,
++        `- asker: \`${t.asker}\``,
++        `- matched KB entries: ${t.matchedIds.length ? t.matchedIds.map((id) => `\`${id}\``).join(", ") : "none (zero overlap)"}`,
++        `- why escalated:`,
++        ...t.reasons.map((r) => `  - ${r}`),
++        t.suggestedEntry
++          ? `- closest entry for the lawyer to start from: \`${t.suggestedEntry.id}\` — “${t.suggestedEntry.question}”`
++          : "- no KB entry came close — guidance gap for Legal to fill",
++        "",
++      ])
++    : ["_(no escalations in this run)_", ""]),
++];
++
+ const md = [
+   `# ask-legal — worked example (${input.asOf}, ${input.company})`,
+   "",
+@@ -34,9 +61,10 @@ const md = [
+     `- asked by \`${a.askedBy}\` · audit \`${a.auditId}\``,
+     `- confidence: **${a.confidence.level}**`,
+     ...a.confidence.reasons.map((r) => `  - ${r}`),
+-    a.answered ? `- answer (source \`${a.sourceId}\`): ${a.answer}` : `- **escalated to \`${a.route}\`** — no answer returned, nothing guessed`,
++    a.answered ? `- answer (source \`${a.sourceId}\`)${a.provisional ? " — **provisional**: " + a.label : ""}: ${a.answer}` : `- **escalated to \`${a.route}\`** — no answer returned, nothing guessed`,
+     "",
+   ]),
++  ...ticketMd,
+   "## Audit log (every question, append-only)",
+   "",
+   "```jsonl",
+@@ -49,4 +77,4 @@ const md = [
+ writeFileSync(join(here, "report.md"), md);
+ 
+ const escalated = answers.filter((a) => a.escalate).length;
+-console.log(`answered ${answers.length - escalated}/${answers.length}, escalated ${escalated} — wrote answers.json, audit-log.jsonl, report.md`);
++console.log(`answered ${answers.length - escalated}/${answers.length}, escalated ${escalated} (${tickets.length} tickets drafted) — wrote answers.json, audit-log.jsonl, report.md`);
+diff --git a/open-artifacts/ask-legal/spec.md b/open-artifacts/ask-legal/spec.md
+index 9049766..478a3fa 100644
+--- a/open-artifacts/ask-legal/spec.md
++++ b/open-artifacts/ask-legal/spec.md
+@@ -9,30 +9,63 @@ Self-service front door for the business over a **local JSON knowledge base**
+ of approved guidance. Deterministically:
+ 
+ 1. **Retrieve** — tag hits (×3) + question-title term overlap (×2) + answer
+-   term overlap, stopword-filtered. Zero-overlap questions retrieve nothing.
+-2. **Confidence gating** — high / medium / low, each decision carrying
++   term overlap, stopword-filtered. Tokens compare **plural-folded**
++   ("vendors" ≡ "vendor") and queries expand across a **rules-as-data synonym
++   map**; tag substring matching requires both sides ≥ 4 chars ("tips" cannot
++   hit tag "ip"). Zero-overlap questions retrieve nothing.
++2. **KB validation before serving** — `validateKb(kb)` flags entries missing an
++   approver, answer text, unique id, or a parseable `updated` date;
++   `answerQuestion` **refuses an invalid KB outright** — unapproved guidance is
++   never served.
++3. **Confidence gating** — high / medium / low, each decision carrying
+    machine-readable **reasons**: score vs thresholds, ambiguity between
+-   runner-up entries, guidance freshness (anchored to caller-supplied `asOf`).
+-3. **Escalation** — low confidence escalates; the answer text is withheld
+-   (never guessed) and the question routes via a rules-as-data routing table.
+-4. **Audit log** — every question asked is recorded append-only with asker,
+-   matched KB ids, confidence level, and escalation route.
++   runner-up entries, guidance freshness (anchored to caller-supplied `asOf`),
++   and jurisdiction fit.
++4. **Jurisdiction gating** — a mismatch between the asker's `jurisdiction`
++   option and the matched entry's jurisdiction downgrades confidence one tier
++   with a written receipt ("guidance covers US but question is under EU").
++5. **Provisional labeling** — medium answers carry `provisional: true` and a
++   label ("Provisional guidance — confirm with Legal."); low escalates with
++   the answer text withheld (never guessed).
++6. **Escalation with a drafted ask** — low confidence routes via a
++   rules-as-data routing table; `escalationTicket(result, log)` drafts a
++   deterministic intake ticket (route, question, asker, matched ids, reasons,
++   closest KB entry) for the lawyer.
++7. **Audit log** — every question asked is recorded append-only with asker,
++   matched KB ids, confidence level, and escalation route; per-team routing
++   SLAs (`{ team, slaDays }`) let `overdueEscalations(log, routing, asOf)`
++   flag breaches.
++8. **Correction loop** — `applyCorrection(kb, log, { auditId, answer, … })`
++   records a lawyer's answer to an escalated question as a NEW
++   `pending-approval` KB entry linked to the audit entry; it is unretrievable
++   until `approveEntry` stamps an approver — lawyer feedback updates the
++   guidance base, nothing self-serves.
+ 
+ ## IO contract
+ 
+ ```js
+-import { answerQuestion, createAuditLog, exportAuditLog } from "./core/core.js";
++import { answerQuestion, createAuditLog, exportAuditLog, validateKb,
++         escalationTicket, applyCorrection, approveEntry, overdueEscalations } from "./core/core.js";
+ 
++validateKb(kb);            // [] — serve; non-empty — refuse (answerQuestion throws)
+ const log = createAuditLog();
+-const result = answerQuestion(kb, question, { asOf, askedBy, thresholds, routing }, log);
+-// => { answered, answer, sourceId, confidence: { level, reasons[] }, escalate, route, auditId }
+-exportAuditLog(log); // JSON-lines string for persistence
++const result = answerQuestion(kb, question, { asOf, askedBy, thresholds, routing, jurisdiction }, log);
++// => { answered, answer, sourceId, confidence: { level, reasons[] }, escalate, route, auditId,
++//      provisional, label, suggestedEntry }
++const ticket = escalationTicket(result, log);   // deterministic draft for the lawyer
++const { entry } = applyCorrection(kb, log, { auditId: result.auditId, answer, tags, updated });
++approveEntry(kb, entry.id, "Approver (fictional)");  // pending → approved, now retrievable
++overdueEscalations(log, routing, asOf);              // SLA breaches, no hidden clocks
++exportAuditLog(log);                                 // JSON-lines string for persistence
+ ```
+ 
+ - `kb`: `[{ id, question, answer, tags: string[], jurisdiction, updated, approvedBy }]`
+ - `thresholds` (rules-as-data, US-flavored defaults): `{ high: 9, medium: 5, freshnessDays: 365 }`
+-- `routing` (rules-as-data): `{ [tag]: team, default: "legal-intake" }`
++- `routing` (rules-as-data): `{ [tag]: team | { team, slaDays }, default: "legal-intake" }`
++- `jurisdiction` (optional): asker's jurisdiction — mismatch downgrades one tier
+ - `asOf`: caller-supplied ISO anchor — no hidden clocks, reproducible runs.
++- KB entries with `status: "pending-approval"` are never retrieved or served
++  and are exempt from validation (expected lifecycle state).
+ 
+ ## Deterministic vs LLM-assisted
+ 
+@@ -69,8 +102,17 @@ exportAuditLog(log); // JSON-lines string for persistence
+ - **Full audit log by construction** — `answerQuestion` cannot answer without
+   logging; the log is append-only JSONL, exportable as evidence of what the
+   business was told and when.
+-- **Org-owned guidance base** — plain JSON (or Markdown + frontmatter the
+-  org controls); no vendor lock-in, works air-gapped.
++- **Org-owned guidance base with a correction loop** — lawyer answers to
++  escalations re-enter the guidance base through explicit pending → approved
++  states; the closed artifact's guidance is vendor-curated with no org-side
++  correction path. Plain JSON (or Markdown + frontmatter the org controls);
++  no vendor lock-in, works air-gapped.
++- **Unapproved guidance cannot be served, by construction** — the KB is
++  validated on every question; missing approver or staleness dates refuse the
++  run rather than degrade silently.
++- **Escalations arrive as drafted tickets, not team names** — deterministic
++  intake drafts (asker, question, matched evidence, reasons, closest entry)
++  plus per-team SLA breach tracking on the audit log.
+ 
+ ## Privilege & deployment note
+ 

@@ -1,0 +1,2055 @@
+diff --git a/open-artifacts/renewal-calendar/README.md b/open-artifacts/renewal-calendar/README.md
+index 4908aa3..262fc34 100644
+--- a/open-artifacts/renewal-calendar/README.md
++++ b/open-artifacts/renewal-calendar/README.md
+@@ -8,20 +8,35 @@ never guessed, and notice deadlines export to a real ICS calendar.
+ ## What it does
+ 
+ - Normalizes structured clause-JSON date expressions through an explicit
+-  grammar: exact dates, `N days before/after <anchor>`, `within N days of
+-  quarter end` (ambiguous: both readings computed, earlier scheduled,
+-  flag + confirm note), bare `quarter end` (quarter-selection flag), anything
+-  else → unresolved (review list, no calendar entry).
++  grammar (rules-as-data, extendable): exact dates, `N days
++  before/after/prior to <anchor>` (renewal date, effective date, expiration,
++  quarter end, month end), `within N days of <any anchor>` (ambiguous: both
++  readings computed, earlier scheduled, flag + confirm note), bare
++  `quarter end` / `month end` (period-selection flag), anything else →
++  unresolved (review list, no calendar entry, never guessed).
+ - Computes notice deadlines from **rules-as-data lead times**
+   (`byClauseType` + default + clause-level overrides), recording which rule
+   produced each deadline.
++- Assigns every event an **urgency tier** (`overdue / 30d / 60d / 90d /
++  180d / later`) from days-until-notice-deadline, plus an **escalation
++  owner** from `rules.escalation[]` — both ride into the ICS CATEGORIES and
++  SUMMARY prefix.
++- Runs a **coverage audit**: contracts with no dated renewal/notice clause
++  are listed in `cal.coverage` — quiet is not clean.
++- Accepts optional **attorney confirmations** that pin an ambiguous
++  candidate to a date; the event is promoted to confirmed with provenance.
++  Pins that match no candidate are refused loudly, never applied.
++- Projects **recurrence** (`renewalTermMonths` on auto-renewal/evergreen
++  clauses): the next two renewal cycles with stable UIDs, deduped by
++  contract + clause + date.
+ - Exports **RFC 5545 ICS** — VEVENT per notice deadline, 14-day alarm,
+-  provenance + ambiguity warnings in the description, lines folded to spec.
++  urgency tier + escalation in CATEGORIES, provenance + ambiguity warnings
++  in the description, lines folded to spec.
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 12 tests (node:test)
++node --test            # 23 tests (node:test)
+ node examples/run.js   # 4 fictional contracts → calendar.json, renewal-calendar.ics, report.md
+ ```
+ 
+@@ -34,10 +49,17 @@ Open `demo/index.html` for the interactive timeline demo.
+    what a lawyer must confirm. Extraction errors on auto-renewal windows are
+    the expensive failure mode — this surfaces them.
+ 2. **Unresolvable expressions excluded from the calendar**, listed for human
+-   review instead.
++   review instead — and the coverage audit names contracts with no dated
++   clause at all, so a quiet calendar is never mistaken for a clean one.
+ 3. **Rules-as-data lead times with provenance** — every deadline says whether
+    it came from `rules.byClauseType[…]` or a clause override.
+-4. **ICS export with alarms** — the closed artifact finds dates but reminds
++4. **Deterministic urgency tiers + escalation owners** — overdue/30/60/90/180
++   is computed, not prompt-tuned, and ships in the ICS alongside the event.
++5. **Attorney confirmations as data** — pinning an ambiguous candidate is
++   recorded, provenance-tracked, and refused when it matches nothing.
++6. **Recurrence projection** — successive-term clauses yield the next two
++   cycles, not a calendar that goes stale after cycle one.
++7. **ICS export with alarms** — the closed artifact finds dates but reminds
+    no one; this one lands in your calendar system.
+ 
+ ## Layout
+diff --git a/open-artifacts/renewal-calendar/core/core.js b/open-artifacts/renewal-calendar/core/core.js
+index 709a78b..aff5e9f 100644
+--- a/open-artifacts/renewal-calendar/core/core.js
++++ b/open-artifacts/renewal-calendar/core/core.js
+@@ -11,6 +11,17 @@
+  * flagged, unresolvable ones are flagged and excluded from the calendar —
+  * NEVER guessed into a date.
+  *
++ * Beyond scheduling, the calendar answers the operational questions the
++ * closed counterpart leaves to prose:
++ *   - urgency tiers (overdue / 30d / 60d / 90d / 180d / later) per event
++ *   - escalation owners from rules-as-data (`rules.escalation[]`)
++ *   - a coverage audit listing contracts with NO dated renewal/notice clause
++ *     (quiet is not clean)
++ *   - attorney confirmations that pin an ambiguous candidate to a date,
++ *     promoting it to confirmed with provenance
++ *   - recurrence (`renewalTermMonths`) projecting the next two renewal
++ *     cycles with stable UIDs and dedupe
++ *
+  * Dependency-free plain-JavaScript ES module; browser + Node compatible.
+  * No hidden clocks: all math anchors to caller-supplied `asOf`.
+  * @module core
+@@ -41,6 +52,19 @@ export function daysBetween(a, b) {
+   return Math.round((b.getTime() - a.getTime()) / 86400000);
+ }
+ 
++function offsetDays(d, n) {
++  return new Date(d.getTime() + n * 86400000);
++}
++
++/** Shift a date by N months, clamping the day to the target month's end
++ * (Jan 31 + 1mo → Feb 28). @param {Date} d @param {number} n @returns {Date} */
++function addMonths(d, n) {
++  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
++  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
++  target.setUTCDate(Math.min(d.getUTCDate(), lastDay));
++  return target;
++}
++
+ /** Nearest calendar-quarter end on or after d.
+  * @param {Date} d @returns {Date} */
+ export function quarterEndOnOrAfter(d) {
+@@ -51,19 +75,146 @@ export function quarterEndOnOrAfter(d) {
+   return new Date(Date.UTC(y + 1, 2, 31)); // Q1 of next year
+ }
+ 
++/** Nearest calendar-month end on or after d.
++ * @param {Date} d @returns {Date} */
++export function monthEndOnOrAfter(d) {
++  const y = d.getUTCFullYear();
++  const m = d.getUTCMonth();
++  const thisMonth = new Date(Date.UTC(y, m + 1, 0)); // last day of d's month
++  return thisMonth.getTime() >= d.getTime() ? thisMonth : new Date(Date.UTC(y, m + 2, 0));
++}
++
+ /* ---------- date-expression normalization ---------- */
+ 
++/**
++ * Grammar is rules-as-data: PATTERNS are tried in order; each carries an
++ * ambiguity policy (see spec.md for the human-readable table). Anchors are
++ * resolved by ANCHORS; unknown anchors and unlisted phrases are unresolved —
++ * never guessed.
++ */
++
++/** @param {string} display @returns {{status:"unresolved",date:null,reason:string}} */
++function unresolvedAnchor(display) {
++  return { status: "unresolved", date: null, reason: `anchor "${display}" not available in contract context` };
++}
++
++/**
++ * @param {"renewal date"|"effective date"} name @param {string} display
++ * @returns {{status:"unresolved",date:null,reason:string}}
++ */
++function missingAnchor(name, display) {
++  return { status: "unresolved", date: null, reason: `anchor "${display}" not available in contract context (${name} missing)` };
++}
++
++/** @typedef {{date: Date, ambiguity?: {type:string,note:string}}} AnchorResult */
++
++/**
++ * Resolve a named anchor against contract context.
++ * "expiration" / "expiration date" alias the renewal date (end of the
++ * then-current term).
++ * @param {string} name @param {{asOf:string,renewalDate?:string|null,effectiveDate?:string|null}} ctx @param {Date} asOf
++ * @returns {AnchorResult|{missing:"renewal date"|"effective date"}|{unknown:true}}
++ */
++function resolveAnchor(name, ctx, asOf) {
++  switch (name) {
++    case "quarter end": {
++      const qe = quarterEndOnOrAfter(asOf);
++      return { date: qe, ambiguity: { type: "quarter-selection", note: `Assumed nearest quarter end ${fmtDate(qe)} on/after ${ctx.asOf}.` } };
++    }
++    case "month end": {
++      const me = monthEndOnOrAfter(asOf);
++      return { date: me, ambiguity: { type: "month-selection", note: `Assumed nearest month end ${fmtDate(me)} on/after ${ctx.asOf}.` } };
++    }
++    case "renewal date":
++    case "expiration":
++    case "expiration date": {
++      const d = parseDate(ctx.renewalDate ?? null);
++      return d ? { date: d } : { missing: "renewal date" };
++    }
++    case "effective date": {
++      const d = parseDate(ctx.effectiveDate ?? null);
++      return d ? { date: d } : { missing: "effective date" };
++    }
++    default:
++      return { unknown: true };
++  }
++}
++
++/** @type {{name:string, regex:RegExp, ambiguityPolicy:string, resolve:(m:RegExpExecArray, ctx:any, asOf:Date)=>any}[]} */
++const PATTERNS = [
++  {
++    name: "within-n-days-of-anchor",
++    regex: /^within\s+(\d+)\s+days?\s+of\s+(.+)$/i,
++    ambiguityPolicy: "window-direction: both readings computed, EARLIER (conservative) scheduled, confirm with counsel",
++    resolve: (m, ctx, asOf) => {
++      const n = +m[1];
++      const anchorName = m[2].trim().toLowerCase();
++      const a = resolveAnchor(anchorName, ctx, asOf);
++      if (a.unknown) return unresolvedAnchor(m[2].trim());
++      if (a.missing) return missingAnchor(a.missing, m[2].trim());
++      const candidates = [fmtDate(offsetDays(a.date, -n)), fmtDate(offsetDays(a.date, n))];
++      const flagType = a.ambiguity ? `window-direction-and-${a.ambiguity.type.split("-")[0]}` : "window-direction";
++      const note = `${a.ambiguity ? a.ambiguity.note + " " : ""}Direction unstated; using the EARLIER candidate (conservative). Confirm clause intent with a lawyer.`;
++      return {
++        status: "ambiguous",
++        date: candidates[0],
++        reason: `"within ${n} days of ${anchorName}" — direction unstated; conservatively using the EARLIER candidate (${anchorName} − ${n}d)`,
++        candidates,
++        ambiguityFlag: { type: flagType, note },
++      };
++    },
++  },
++  {
++    name: "n-days-offset",
++    regex: /^(\d+)\s+days?\s+(before|after|prior\s+to)\s+(.+)$/i,
++    ambiguityPolicy: "computed; if the anchor itself is a selection (quarter/month end) its flag is inherited",
++    resolve: (m, ctx, asOf) => {
++      const n = +m[1];
++      const dir = /after/i.test(m[2]) ? "after" : "before";
++      const anchorName = m[3].trim().toLowerCase();
++      const a = resolveAnchor(anchorName, ctx, asOf);
++      if (a.unknown) return unresolvedAnchor(m[3].trim());
++      if (a.missing) return missingAnchor(a.missing, m[3].trim());
++      const date = fmtDate(offsetDays(a.date, dir === "before" ? -n : n));
++      const out = { status: "computed", date, reason: `${n} days ${dir} ${anchorName} (${fmtDate(a.date)})` };
++      if (a.ambiguity) {
++        out.status = "ambiguous";
++        out.ambiguityFlag = a.ambiguity;
++        out.candidates = [date];
++      }
++      return out;
++    },
++  },
++  {
++    name: "bare-anchor",
++    regex: /^(quarter|month)\s+end$/i,
++    ambiguityPolicy: "anchor-selection: nearest period end on/after as-of assumed, flag emitted",
++    resolve: (m, ctx, asOf) => {
++      const anchorName = m[1].toLowerCase() + " end";
++      const a = resolveAnchor(anchorName, ctx, asOf);
++      return {
++        status: "ambiguous",
++        date: fmtDate(a.date),
++        reason: `bare '${anchorName}' — assumed nearest ${anchorName} on/after as-of date`,
++        candidates: [fmtDate(a.date)],
++        ambiguityFlag: a.ambiguity,
++      };
++    },
++  },
++];
++
+ /**
+  * Normalize a date expression against contract context.
+  *
+- * Supported grammar (rules-as-data — extend by adding patterns):
+- *   - "YYYY-MM-DD"                          → exact date
+- *   - "N days before <anchor>" / "N days after <anchor>"
+- *       anchors: "renewal date", "quarter end", "effective date"
+- *   - "within N days of quarter end"        → treated as "on or before quarter end − N days"? NO —
+- *       flagged ambiguous: interpreted as quarter-end anchor, both directions listed as candidates
+- *   - "quarter end"                         → nearest quarter end on/after context date, ambiguous
+- *   - anything else                         → unresolved with reason (never guessed)
++ * Supported grammar (rules-as-data — extend by adding a PATTERNS entry):
++ *   - "YYYY-MM-DD"                                → exact date
++ *   - "within N days of <anchor>"                 → ambiguous (both readings; earlier scheduled)
++ *   - "N days before/after <anchor>"              → computed
++ *   - "N days prior to <anchor>"                  → synonym of "before"
++ *   - "quarter end" | "month end"                 → ambiguous (period-selection flag)
++ *   anchors: renewal date, effective date, quarter end, month end,
++ *            expiration (aliases renewal date)
++ *   - anything else                               → unresolved with reason (never guessed)
+  *
+  * @param {string} expr
+  * @param {{ asOf: string, renewalDate?: string|null, effectiveDate?: string|null }} ctx
+@@ -83,102 +234,108 @@ export function normalizeDateExpression(expr, ctx) {
+   if (parseDate(raw)) return { status: "exact", date: raw, reason: "explicit ISO date" };
+ 
+   const asOf = parseDate(ctx.asOf) ?? new Date(Date.UTC(2026, 0, 1));
+-  const renewal = parseDate(ctx.renewalDate ?? null);
+-  const effective = parseDate(ctx.effectiveDate ?? null);
+-
+-  // 2. "within N days of quarter end" — the classic ambiguity: before or after? which quarter?
+-  let m = /^within\s+(\d+)\s+days?\s+of\s+quarter\s+end$/i.exec(raw);
+-  if (m) {
+-    const n = +m[1];
+-    const qe = quarterEndOnOrAfter(asOf);
+-    const candidates = [fmtDate(new Date(qe.getTime() - n * 86400000)), fmtDate(new Date(qe.getTime() + n * 86400000))];
+-    return {
+-      status: "ambiguous",
+-      date: candidates[0],
+-      reason: `"within ${n} days of quarter end" — direction unstated; conservatively using the EARLIER candidate (quarter end − ${n}d)`,
+-      candidates,
+-      ambiguityFlag: {
+-        type: "window-direction-and-quarter",
+-        note: `Assumed nearest quarter end ${fmtDate(qe)} on/after ${ctx.asOf} and "before" reading (conservative). Confirm clause intent with a lawyer.`,
+-      },
+-    };
+-  }
+-
+-  // 3. "N days before/after <anchor>"
+-  m = /^(\d+)\s+days?\s+(before|after)\s+(.+)$/i.exec(raw);
+-  if (m) {
+-    const n = +m[1];
+-    const dir = m[2].toLowerCase();
+-    const anchorName = m[3].trim().toLowerCase();
+-    let anchor = null;
+-    let ambiguity = null;
+-    if (anchorName === "quarter end") {
+-      anchor = quarterEndOnOrAfter(asOf);
+-      ambiguity = { type: "quarter-selection", note: `Assumed nearest quarter end ${fmtDate(anchor)} on/after ${ctx.asOf}.` };
+-    } else if (anchorName === "renewal date") {
+-      anchor = renewal;
+-    } else if (anchorName === "effective date") {
+-      anchor = effective;
+-    }
+-    if (!anchor) {
+-      return {
+-        status: "unresolved",
+-        date: null,
+-        reason: `anchor "${m[3].trim()}" not available in contract context${anchorName === "renewal date" || anchorName === "effective date" ? " (date missing)" : ""}`,
+-      };
+-    }
+-    const date = new Date(anchor.getTime() + (dir === "before" ? -n : n) * 86400000);
+-    const out = { status: "computed", date: fmtDate(date), reason: `${n} days ${dir} ${anchorName} (${fmtDate(anchor)})` };
+-    if (ambiguity) {
+-      out.status = "ambiguous";
+-      out.ambiguityFlag = ambiguity;
+-      out.candidates = [out.date];
+-    }
+-    return out;
+-  }
+ 
+-  // 4. Bare "quarter end"
+-  if (/^quarter\s+end$/i.test(raw)) {
+-    const qe = quarterEndOnOrAfter(asOf);
+-    return {
+-      status: "ambiguous",
+-      date: fmtDate(qe),
+-      reason: "bare 'quarter end' — assumed nearest quarter end on/after as-of date",
+-      candidates: [fmtDate(qe)],
+-      ambiguityFlag: { type: "quarter-selection", note: `Assumed ${fmtDate(qe)}; confirm which quarter the clause means.` },
+-    };
++  // 2. Pattern table
++  for (const p of PATTERNS) {
++    const m = p.regex.exec(raw);
++    if (m) return p.resolve(m, ctx, asOf);
+   }
+ 
+-  // 5. Unresolvable — never guessed
++  // 3. Unresolvable — never guessed
+   return { status: "unresolved", date: null, reason: `expression "${raw}" not in the supported grammar — human review required` };
+ }
+ 
++/* ---------- urgency tiers & escalation ---------- */
++
++/** Urgency tiers as data: days between asOf and the notice deadline.
++ * @type {{maxDaysOut:number, tier:string}[]} */
++export const URGENCY_TIERS = [
++  { maxDaysOut: 30, tier: "30d" },
++  { maxDaysOut: 60, tier: "60d" },
++  { maxDaysOut: 90, tier: "90d" },
++  { maxDaysOut: 180, tier: "180d" },
++];
++
++/** Tier for a days-until value; negative = deadline already passed.
++ * @param {number} daysUntil @returns {"overdue"|"30d"|"60d"|"90d"|"180d"|"later"} */
++export function urgencyTier(daysUntil) {
++  if (!Number.isFinite(daysUntil)) return "later";
++  if (daysUntil < 0) return "overdue";
++  for (const t of URGENCY_TIERS) if (daysUntil <= t.maxDaysOut) return t.tier;
++  return "later";
++}
++
++/**
++ * First escalation rule (array order = urgency order; list the most urgent
++ * owner first — an overdue deadline matches every rule) whose maxDaysOut
++ * covers the event; null when nothing matches.
++ * @param {{maxDaysOut:number, owner:string}[]} rules @param {number} daysUntil
++ */
++function pickEscalation(rules, daysUntil) {
++  for (const r of rules) if (daysUntil <= r.maxDaysOut) return { owner: r.owner, maxDaysOut: r.maxDaysOut };
++  return null;
++}
++
+ /* ---------- calendar ---------- */
+ 
+ /** Default lead-time rules (rules-as-data; override per portfolio).
++ * `escalation` (optional) is a list of { maxDaysOut, owner }, most urgent first.
+  * @type {{ defaultLeadTimeDays: number, byClauseType: Record<string, number> }} */
+ export const DEFAULT_RULES = {
+   defaultLeadTimeDays: 60,
+   byClauseType: { "auto-renewal": 90, "evergreen": 90, "termination-for-convenience": 30, "price-adjustment": 120 },
+ };
+ 
++const RENEWAL_TYPES = /^(auto-renewal|evergreen)$/;
++
++/**
++ * Occurrence dates for a clause: single, or — for renewal clause types with
++ * `renewalTermMonths` — the first two cycles on/after asOf (past cycles have
++ * already renewed; the actionable deadline is the next one).
++ * @param {any} clause @param {Date} baseDate @param {Date} asOf
++ * @returns {{date:string, recurrence:null|{termMonths:number, cycle:number}}[]}
++ */
++function projectOccurrences(clause, baseDate, asOf) {
++  const term = clause.renewalTermMonths;
++  if (!RENEWAL_TYPES.test(String(clause.type)) || !Number.isFinite(term) || term <= 0) {
++    return [{ date: fmtDate(baseDate), recurrence: null }];
++  }
++  let d = baseDate;
++  while (d.getTime() < asOf.getTime()) d = addMonths(d, term);
++  return [0, 1].map((i) => ({ date: fmtDate(addMonths(d, i * term)), recurrence: { termMonths: term, cycle: i + 1 } }));
++}
++
+ /**
+  * Build the renewal calendar from structured clause JSON.
+  *
+- * Clause shape: { contractId?, type, dateExpression | date, quote?, leadTimeDaysOverride? }
+- * Emits renewal/notice events with provenance, ambiguity flags, and
+- * status: confirmed | ambiguous | unresolved (unresolved events are listed
+- * for review but produce no calendar entry).
++ * Clause shape: { contractId?, type, date | dateExpression, quote?, leadTimeDaysOverride?, renewalTermMonths? }
++ * Emits renewal/notice events with provenance, ambiguity flags, urgency tier,
++ * escalation owner and recurrence metadata; status: confirmed | ambiguous |
++ * unresolved (unresolved events are listed for review but produce no calendar
++ * entry). Contracts with no dated clause at all land in `coverage` — quiet is
++ * not clean.
+  *
+  * @param {{ asOf: string, contracts: Array<{ id: string, name: string, counterparty?: string, effectiveDate?: string, clauses: any[] }> }} input
+- * @param {{ defaultLeadTimeDays?: number, byClauseType?: Record<string, number> }} [rules]
+- * @returns {{ asOf: string, events: any[], unresolved: any[], summary: { total: number, confirmed: number, ambiguous: number, unresolved: number } }}
++ * @param {{ defaultLeadTimeDays?: number, byClauseType?: Record<string, number>, escalation?: {maxDaysOut:number, owner:string}[] }} [rules]
++ * @param {{ contractId: string, clauseType: string, date: string, confirmedBy?: string, on?: string }[]} [confirmations]
++ *   attorney pins: a pinned date must be one of the event's candidates (or its
++ *   current date); it then promotes the event to `confirmed` and is recorded
++ *   as provenance. Pins that match nothing are reported in
++ *   `unappliedConfirmations`, never silently applied.
++ * @returns {{
++ *   asOf: string, events: any[], unresolved: any[], coverage: any[], unappliedConfirmations: any[],
++ *   summary: { total: number, confirmed: number, ambiguous: number, unresolved: number, coverageGaps: number }
++ * }}
+  */
+-export function buildCalendar(input, rules = {}) {
++export function buildCalendar(input, rules = {}, confirmations = []) {
+   const r = { ...DEFAULT_RULES, ...rules };
+   const rByType = { ...DEFAULT_RULES.byClauseType, ...(rules.byClauseType ?? {}) };
++  const escalationRules = Array.isArray(rules.escalation) ? rules.escalation : [];
++  const asOf = parseDate(input.asOf) ?? new Date(Date.UTC(2026, 0, 1));
+   /** @type {any[]} */ const events = [];
+   /** @type {any[]} */ const unresolved = [];
++  /** @type {any[]} */ const coverage = [];
++  /** @type {Set<string>} */ const seen = new Set(); // dedupe key: contractId|clauseType|date
+ 
+   for (const contract of input.contracts ?? []) {
+     const renewalClause = (contract.clauses ?? []).find((c) => /renew/i.test(String(c.type)));
+@@ -187,6 +344,7 @@ export function buildCalendar(input, rules = {}) {
+       renewalDate: renewalClause && (renewalClause.date ?? null),
+       effectiveDate: contract.effectiveDate ?? null,
+     };
++    let datedClauses = 0;
+ 
+     for (const clause of contract.clauses ?? []) {
+       const expr = clause.date ?? clause.dateExpression ?? null;
+@@ -209,23 +367,75 @@ export function buildCalendar(input, rules = {}) {
+         unresolved.push({ ...base, status: "unresolved", reason: norm.reason });
+         continue;
+       }
++      datedClauses++;
+ 
+       const leadTime = clause.leadTimeDaysOverride ?? rByType[clause.type] ?? r.defaultLeadTimeDays;
+       const hasOverride = clause.leadTimeDaysOverride !== undefined && clause.leadTimeDaysOverride !== null;
+-      const anchorDate = parseDate(norm.date);
+-      const noticeDate = fmtDate(new Date(anchorDate.getTime() - leadTime * 86400000));
+-
+-      events.push({
+-        ...base,
+-        status: norm.status === "exact" ? "confirmed" : "ambiguous",
+-        date: norm.date,
+-        noticeDeadline: noticeDate,
+-        leadTimeDays: leadTime,
+-        leadTimeSource: hasOverride ? "clause override" : rByType[clause.type] ? `rules.byClauseType[${clause.type}]` : "rules.defaultLeadTimeDays",
+-        reason: norm.reason,
+-        ...(norm.ambiguityFlag ? { ambiguityFlag: norm.ambiguityFlag } : {}),
++
++      for (const occ of projectOccurrences(clause, parseDate(norm.date), asOf)) {
++        const key = `${contract.id}|${clause.type}|${occ.date}`;
++        if (seen.has(key)) continue; // recurrence dedupe: same contract+clause+date collapses
++        seen.add(key);
++
++        const noticeDate = fmtDate(new Date(parseDate(occ.date).getTime() - leadTime * 86400000));
++        const daysUntil = daysBetween(asOf, parseDate(noticeDate));
++        events.push({
++          ...base,
++          status: norm.status === "exact" ? "confirmed" : "ambiguous",
++          date: occ.date,
++          noticeDeadline: noticeDate,
++          leadTimeDays: leadTime,
++          leadTimeSource: hasOverride ? "clause override" : rByType[clause.type] ? `rules.byClauseType[${clause.type}]` : "rules.defaultLeadTimeDays",
++          reason: norm.reason,
++          daysUntil,
++          urgency: { tier: urgencyTier(daysUntil), daysUntil },
++          escalation: pickEscalation(escalationRules, daysUntil),
++          recurrence: occ.recurrence,
++          ...(norm.ambiguityFlag ? { ambiguityFlag: norm.ambiguityFlag } : {}),
++        });
++      }
++    }
++
++    if (datedClauses === 0) {
++      const clauseCount = (contract.clauses ?? []).length;
++      coverage.push({
++        contractId: contract.id,
++        contractName: contract.name,
++        clauseCount,
++        datedClauses: 0,
++        reason: clauseCount === 0
++          ? "no clauses found in the structured input — confirm extraction, quiet is not clean"
++          : `no dated renewal/notice clause — ${clauseCount} clause(s) found, none resolvable to a date; human review required`,
++      });
++    }
++  }
++
++  // attorney confirmations: pin ambiguous candidates to a date
++  /** @type {any[]} */ const unappliedConfirmations = [];
++  for (const conf of confirmations ?? []) {
++    const targets = events.filter((e) => e.contractId === conf.contractId && e.clauseType === conf.clauseType && e.ambiguityFlag);
++    const target = targets.find((e) => (e.normalized?.candidates ?? [e.date]).includes(conf.date));
++    if (!target) {
++      const candidates = [...new Set(targets.flatMap((e) => e.normalized?.candidates ?? [e.date]))];
++      unappliedConfirmations.push({
++        ...conf,
++        reason: targets.length === 0
++          ? `no ambiguous ${conf.clauseType} event found for contract ${conf.contractId}`
++          : `pinned date ${conf.date} is not among candidates [${candidates.join(", ")}] for ${conf.contractId}/${conf.clauseType} — refusing to apply`,
+       });
++      continue;
+     }
++    const flag = target.ambiguityFlag;
++    const noticeDate = fmtDate(new Date(parseDate(conf.date).getTime() - target.leadTimeDays * 86400000));
++    const daysUntil = daysBetween(asOf, parseDate(noticeDate));
++    target.date = conf.date;
++    target.noticeDeadline = noticeDate;
++    target.daysUntil = daysUntil;
++    target.urgency = { tier: urgencyTier(daysUntil), daysUntil };
++    target.escalation = pickEscalation(escalationRules, daysUntil);
++    target.status = "confirmed";
++    delete target.ambiguityFlag;
++    target.confirmation = { date: conf.date, confirmedBy: conf.confirmedBy ?? null, on: conf.on ?? null, resolvedFlag: flag.type };
+   }
+ 
+   events.sort((a, b) => String(a.noticeDeadline).localeCompare(String(b.noticeDeadline)));
+@@ -233,11 +443,14 @@ export function buildCalendar(input, rules = {}) {
+     asOf: input.asOf,
+     events,
+     unresolved,
++    coverage,
++    unappliedConfirmations,
+     summary: {
+       total: events.length + unresolved.length,
+       confirmed: events.filter((e) => e.status === "confirmed").length,
+       ambiguous: events.filter((e) => e.status === "ambiguous").length,
+       unresolved: unresolved.length,
++      coverageGaps: coverage.length,
+     },
+   };
+ }
+@@ -276,9 +489,10 @@ function ymdNoDashes(d) {
+ 
+ /**
+  * ICS (RFC 5545) export. Only confirmed/ambiguous events with dates become
+- * VEVENTs; each event carries an alarm 14 days ahead and full provenance in
+- * the description. Unresolved items are appended as a comment header —
+- * they are never silently dropped.
++ * VEVENTs; each event carries an alarm 14 days ahead, its urgency tier as a
++ * SUMMARY prefix + CATEGORIES entry (plus the escalation owner when set),
++ * and full provenance in the description. Unresolved items are appended as a
++ * comment header — they are never silently dropped.
+  * @param {any} calendar — output of buildCalendar
+  * @returns {string}
+  */
+@@ -294,16 +508,23 @@ export function toICS(calendar) {
+       e.quote ? `Clause: "${icsEscape(e.quote)}"` : `Expression: ${icsEscape(e.expression)}`,
+       `Normalization: ${icsEscape(e.reason)}`,
+       `Notice lead time: ${e.leadTimeDays}d (${e.leadTimeSource})`,
++      `Urgency: ${e.urgency?.tier ?? "?"}${e.urgency ? (e.urgency.daysUntil < 0 ? ` — ${Math.abs(e.urgency.daysUntil)}d past deadline` : ` (${e.urgency.daysUntil}d out)`) : ""}`,
++      e.escalation ? `Escalation owner: ${icsEscape(e.escalation.owner)} (${e.escalation.maxDaysOut}d rule)` : null,
++      e.recurrence ? `Recurrence: every ${e.recurrence.termMonths}mo — cycle ${e.recurrence.cycle} of 2` : null,
++      e.confirmation ? `Confirmed by ${icsEscape(e.confirmation.confirmedBy ?? "counsel")}${e.confirmation.on ? ` on ${e.confirmation.on}` : ""} — resolved ${e.confirmation.resolvedFlag} flag` : null,
+       e.ambiguityFlag ? `AMBIGUOUS (${e.ambiguityFlag.type}): ${icsEscape(e.ambiguityFlag.note)}` : "Status: confirmed",
+       `Contract: ${icsEscape(e.contractName)} [${e.contractId}]` + (e.counterparty ? ` c/o ${icsEscape(e.counterparty)}` : ""),
+       "Fictional example data. Human confirmation required — not legal advice.",
+-    ].join("\\n");
+-    lines.push(
++    ].filter(Boolean).join("\\n");
++    const categories = [e.urgency?.tier, e.escalation?.owner].filter(Boolean).map(icsEscape).join(",");
++    const summaryPrefix = `[${e.urgency?.tier ?? "?"}]${e.ambiguityFlag ? " [?]" : ""} `;
++    lines.push([
+       "BEGIN:VEVENT",
+       `UID:${e.contractId}-${e.clauseType}-${ymdNoDashes(e.date)}@open-legal-artifacts`,
+       `DTSTAMP:${ymdNoDashes(calendar.asOf)}T000000Z`,
+       `DTSTART;VALUE=DATE:${ymdNoDashes(e.noticeDeadline)}`,
+-      `SUMMARY:${icsEscape((e.ambiguityFlag ? "[?] " : "") + "NOTICE DEADLINE — " + e.contractName + " (" + e.clauseType + ")")}`,
++      `SUMMARY:${icsEscape(summaryPrefix + "NOTICE DEADLINE — " + e.contractName + " (" + e.clauseType + ")")}`,
++      categories ? `CATEGORIES:${categories}` : null,
+       `DESCRIPTION:${desc}`,
+       "BEGIN:VALARM",
+       "TRIGGER:-P14D",
+@@ -311,7 +532,7 @@ export function toICS(calendar) {
+       `DESCRIPTION:${icsEscape("Notice window opening — " + e.contractName)}`,
+       "END:VALARM",
+       "END:VEVENT"
+-    );
++    ].filter(Boolean));
+   }
+   lines.push("END:VCALENDAR");
+   return lines.map(fold).join("\r\n") + "\r\n";
+diff --git a/open-artifacts/renewal-calendar/core/core.test.js b/open-artifacts/renewal-calendar/core/core.test.js
+index 562a773..62320c6 100644
+--- a/open-artifacts/renewal-calendar/core/core.test.js
++++ b/open-artifacts/renewal-calendar/core/core.test.js
+@@ -1,10 +1,12 @@
+-/** Tests for renewal-calendar core. Run: node --test (from artifact root) */
++/** Tests for renewal-calendar core. Run: node --test core/core.test.js (from artifact root) */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { parseDate, fmtDate, quarterEndOnOrAfter, normalizeDateExpression, buildCalendar, toICS, DEFAULT_RULES } from "./core.js";
++import { parseDate, fmtDate, daysBetween, quarterEndOnOrAfter, monthEndOnOrAfter, normalizeDateExpression, buildCalendar, toICS, DEFAULT_RULES } from "./core.js";
+ 
+ const AS_OF = "2026-11-07";
+ 
++/* ---------- date helpers ---------- */
++
+ test("quarterEndOnOrAfter picks the right quarter boundary", () => {
+   assert.equal(fmtDate(quarterEndOnOrAfter(parseDate("2026-11-07"))), "2026-12-31");
+   assert.equal(fmtDate(quarterEndOnOrAfter(parseDate("2026-12-31"))), "2026-12-31");
+@@ -12,6 +14,20 @@ test("quarterEndOnOrAfter picks the right quarter boundary", () => {
+   assert.equal(fmtDate(quarterEndOnOrAfter(parseDate("2026-04-15"))), "2026-06-30");
+ });
+ 
++test("monthEndOnOrAfter picks the right month boundary", () => {
++  assert.equal(fmtDate(monthEndOnOrAfter(parseDate("2026-11-07"))), "2026-11-30");
++  assert.equal(fmtDate(monthEndOnOrAfter(parseDate("2026-11-30"))), "2026-11-30");
++  assert.equal(fmtDate(monthEndOnOrAfter(parseDate("2026-12-31"))), "2026-12-31");
++  assert.equal(fmtDate(monthEndOnOrAfter(parseDate("2027-02-10"))), "2027-02-28");
++});
++
++test("parseDate rejects impossible dates", () => {
++  assert.equal(parseDate("2027-02-29"), null);
++  assert.ok(parseDate("2028-02-29")); // leap year ok
++});
++
++/* ---------- date-expression normalization ---------- */
++
+ test("normalizeDateExpression: exact ISO passes through as exact", () => {
+   const n = normalizeDateExpression("2027-03-31", { asOf: AS_OF });
+   assert.deepEqual({ status: n.status, date: n.date }, { status: "exact", date: "2027-03-31" });
+@@ -26,6 +42,18 @@ test("normalizeDateExpression: 'within 60 days of quarter end' is ambiguous with
+   assert.match(n.ambiguityFlag.note, /Confirm clause intent/);
+ });
+ 
++test("normalizeDateExpression: 'within N days of' generalizes to any anchor (renewal date)", () => {
++  const n = normalizeDateExpression("within 30 days of renewal date", { asOf: AS_OF, renewalDate: "2027-04-01" });
++  assert.equal(n.status, "ambiguous");
++  assert.deepEqual(n.candidates, ["2027-03-02", "2027-05-01"]);
++  assert.equal(n.date, "2027-03-02"); // conservative earlier candidate
++  assert.equal(n.ambiguityFlag.type, "window-direction"); // anchor itself is unambiguous
++  // anchor missing in context → unresolved, never guessed
++  const u = normalizeDateExpression("within 30 days of renewal date", { asOf: AS_OF, renewalDate: null });
++  assert.equal(u.status, "unresolved");
++  assert.equal(u.date, null);
++});
++
+ test("normalizeDateExpression: N days before/after computed anchors", () => {
+   const ctx = { asOf: AS_OF, renewalDate: "2027-03-31" };
+   assert.deepEqual(pick(normalizeDateExpression("90 days before renewal date", ctx)), { status: "computed", date: "2026-12-31", ambiguity: null });
+@@ -37,9 +65,23 @@ test("normalizeDateExpression: N days before/after computed anchors", () => {
+   assert.equal(q.ambiguityFlag.type, "quarter-selection");
+ });
+ 
+-function pick(n) {
+-  return { status: n.status, date: n.date, ambiguity: n.ambiguityFlag ?? null };
+-}
++test("normalizeDateExpression: month-end anchor is supported and flagged month-selection", () => {
++  const ctx = { asOf: AS_OF };
++  const m = normalizeDateExpression("15 days before month end", ctx);
++  assert.equal(m.status, "ambiguous");
++  assert.equal(m.date, "2026-11-15"); // 2026-11-30 − 15d
++  assert.equal(m.ambiguityFlag.type, "month-selection");
++  const bare = normalizeDateExpression("month end", ctx);
++  assert.equal(bare.status, "ambiguous");
++  assert.equal(bare.date, "2026-11-30");
++  assert.equal(bare.ambiguityFlag.type, "month-selection");
++});
++
++test("normalizeDateExpression: 'N days prior to expiration' reads as N days before the renewal date", () => {
++  const n = normalizeDateExpression("60 days prior to expiration", { asOf: AS_OF, renewalDate: "2027-04-01" });
++  assert.deepEqual({ status: n.status, date: n.date }, { status: "computed", date: "2027-01-31" });
++  assert.equal(normalizeDateExpression("90 days prior to expiration date", { asOf: AS_OF, renewalDate: "2027-04-01" }).date, "2027-01-01");
++});
+ 
+ test("normalizeDateExpression: unknown anchors and free text are unresolved, never guessed", () => {
+   const ctx = { asOf: AS_OF, renewalDate: null };
+@@ -48,10 +90,16 @@ test("normalizeDateExpression: unknown anchors and free text are unresolved, nev
+   assert.equal(u1.date, null);
+   const u2 = normalizeDateExpression("upon mutual agreement of the parties", ctx);
+   assert.equal(u2.status, "unresolved");
+-  assert.match(u2.reason, /not in the supported grammar/);
++  assert.match(u2.reason, /not in the supported grammar|not available in contract context/);
+   assert.equal(normalizeDateExpression("", ctx).date, null);
+ });
+ 
++function pick(n) {
++  return { status: n.status, date: n.date, ambiguity: n.ambiguityFlag ?? null };
++}
++
++/* ---------- buildCalendar ---------- */
++
+ test("buildCalendar: explicit dates → confirmed events with computed notice deadlines", () => {
+   const cal = buildCalendar({
+     asOf: AS_OF,
+@@ -74,7 +122,8 @@ test("buildCalendar: explicit dates → confirmed events with computed notice de
+   assert.equal(auto.leadTimeSource, "rules.byClauseType[auto-renewal]");
+   const term = cal.events.find((e) => e.clauseType === "termination-for-convenience");
+   assert.equal(term.noticeDeadline, "2027-03-02"); // 30d lead
+-  assert.ok(String(term.noticeDeadline) >= String(term.date) || true);
++  // REAL assert (replaces a former vacuous assert): a 30d lead means the notice deadline is exactly 30 days before the event date
++  assert.equal(daysBetween(parseDate(term.noticeDeadline), parseDate(term.date)), 30);
+ });
+ 
+ test("buildCalendar: ambiguous expressions are flagged but scheduled (conservatively); unresolved are excluded", () => {
+@@ -128,7 +177,158 @@ test("buildCalendar sorts events by notice deadline", () => {
+   assert.deepEqual(cal.events.map((e) => e.contractId), ["B", "A"]);
+ });
+ 
+-test("toICS: RFC-5545 skeleton, provenance in description, ambiguous marker, folding", () => {
++test("urgency tiers: every event carries daysUntil + tier; past deadlines are overdue, not plain events", () => {
++  const cal = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{
++      id: "C", name: "X",
++      clauses: [
++        { type: "price-adjustment", dateExpression: "within 60 days of quarter end" }, // notice 2026-07-04 → overdue
++        { type: "notice", date: "2027-02-01" },        // notice 2026-12-03, +26d → 30d
++        { type: "auto-renewal", date: "2027-04-01" },  // notice 2027-01-01, +55d → 60d
++        { type: "notice", date: "2027-03-15" },        // notice 2027-01-14, +68d → 90d
++        { type: "evergreen", date: "2028-06-15" },     // notice 2028-03-30, +509d → later
++      ],
++    }],
++  });
++  const pd = cal.events.find((e) => e.clauseType === "price-adjustment");
++  assert.equal(pd.daysUntil, -126);
++  assert.equal(pd.urgency.tier, "overdue");
++  assert.equal(pd.urgency.daysUntil, -126);
++  assert.equal(cal.events.find((e) => e.clauseType === "notice" && e.date === "2027-02-01").urgency.tier, "30d");
++  assert.equal(cal.events.find((e) => e.clauseType === "auto-renewal").urgency.tier, "60d");
++  assert.equal(cal.events.find((e) => e.date === "2027-03-15").urgency.tier, "90d");
++  assert.equal(cal.events.find((e) => e.clauseType === "evergreen").urgency.tier, "later");
++  assert.ok(cal.events.every((e) => typeof e.daysUntil === "number"));
++});
++
++test("escalation: rules.escalation[] assigns an owner by days-out; overdue hits the most-urgent owner", () => {
++  const rules = {
++    escalation: [
++      { maxDaysOut: 7, owner: "general-counsel" },
++      { maxDaysOut: 30, owner: "procurement-lead" },
++      { maxDaysOut: 90, owner: "contract-owner" },
++    ],
++  };
++  const cal = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{
++      id: "C", name: "X",
++      clauses: [
++        { type: "notice", date: "2027-02-01" },        // +26d → procurement-lead
++        { type: "auto-renewal", date: "2027-04-01" },  // +55d → contract-owner
++        { type: "price-adjustment", dateExpression: "within 60 days of quarter end" }, // −126d overdue → general-counsel
++        { type: "evergreen", date: "2028-06-15" },     // +509d → no owner
++      ],
++    }],
++  }, rules);
++  assert.equal(cal.events.find((e) => e.date === "2027-02-01").escalation.owner, "procurement-lead");
++  assert.equal(cal.events.find((e) => e.clauseType === "auto-renewal").escalation.owner, "contract-owner");
++  assert.equal(cal.events.find((e) => e.clauseType === "price-adjustment").escalation.owner, "general-counsel");
++  assert.equal(cal.events.find((e) => e.clauseType === "evergreen").escalation, null);
++  // no escalation rules configured → no owner anywhere
++  const bare = buildCalendar({ asOf: AS_OF, contracts: [{ id: "C", name: "X", clauses: [{ type: "notice", date: "2026-12-01" }] }] });
++  assert.ok(!bare.events[0].escalation);
++});
++
++test("coverage audit: contracts with no dated renewal/notice clause are listed, not silent", () => {
++  const cal = buildCalendar({
++    asOf: AS_OF,
++    contracts: [
++      { id: "COVERED", name: "Has dates", clauses: [{ type: "auto-renewal", date: "2027-04-01" }] },
++      { id: "BARE", name: "Mutual agreement only", clauses: [{ type: "notice", dateExpression: "on mutual agreement" }] },
++      { id: "EMPTY", name: "No clauses at all", clauses: [] },
++    ],
++  });
++  assert.deepEqual(cal.coverage.map((c) => c.contractId), ["BARE", "EMPTY"]);
++  assert.equal(cal.coverage[0].datedClauses, 0);
++  assert.match(cal.coverage[0].reason, /no dated/);
++  assert.match(cal.coverage[1].reason, /no clauses/);
++  assert.equal(cal.summary.coverageGaps, 2);
++  // a covered contract never appears
++  const ok = buildCalendar({ asOf: AS_OF, contracts: [{ id: "COVERED", name: "Y", clauses: [{ type: "notice", date: "2026-12-01" }] }] });
++  assert.deepEqual(ok.coverage, []);
++});
++
++test("confirmations: pinning a candidate promotes ambiguous → confirmed with provenance", () => {
++  const input = {
++    asOf: AS_OF,
++    contracts: [{ id: "CTR-002", name: "Lantern Lease", clauses: [{ type: "price-adjustment", dateExpression: "within 60 days of quarter end" }] }],
++  };
++  const bare = buildCalendar(input);
++  assert.equal(bare.events[0].status, "ambiguous");
++  assert.ok(bare.events[0].ambiguityFlag);
++
++  const cal = buildCalendar(input, {}, [
++    { contractId: "CTR-002", clauseType: "price-adjustment", date: "2027-03-01", confirmedBy: "K. Alvarez, outside counsel", on: "2026-11-06" },
++  ]);
++  assert.equal(cal.events[0].status, "confirmed");
++  assert.equal(cal.events[0].date, "2027-03-01"); // pinned LATER candidate replaces the conservative pick
++  assert.equal(cal.events[0].noticeDeadline, "2026-11-01"); // 120d lead recomputed from the pinned date
++  assert.equal(cal.events[0].daysUntil, -6); // 2026-11-01 vs asOf 2026-11-07
++  assert.ok(!cal.events[0].ambiguityFlag);
++  assert.equal(cal.events[0].confirmation.confirmedBy, "K. Alvarez, outside counsel");
++  assert.equal(cal.events[0].confirmation.on, "2026-11-06");
++  assert.match(cal.events[0].confirmation.resolvedFlag, /window-direction/);
++  assert.equal(cal.summary.confirmed, 1);
++  assert.equal(cal.summary.ambiguous, 0);
++
++  // pinning a date that is NOT a candidate is refused loudly, not silently applied
++  const miss = buildCalendar(input, {}, [
++    { contractId: "CTR-002", clauseType: "price-adjustment", date: "2020-01-01", confirmedBy: "x" },
++  ]);
++  assert.equal(miss.events[0].status, "ambiguous");
++  assert.equal(miss.unappliedConfirmations.length, 1);
++  assert.match(miss.unappliedConfirmations[0].reason, /not among/);
++});
++
++test("recurrence: renewalTermMonths projects the next two cycles, dedupes, and advances past cycles", () => {
++  const cal = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{ id: "R", name: "X", clauses: [{ type: "auto-renewal", date: "2027-04-01", renewalTermMonths: 12 }] }],
++  });
++  assert.deepEqual(cal.events.map((e) => e.date), ["2027-04-01", "2028-04-01"]);
++  assert.deepEqual(cal.events.map((e) => e.recurrence.cycle), [1, 2]);
++  assert.equal(cal.events[0].recurrence.termMonths, 12);
++  // dedupe: a second clause already listing a projected date collapses (same id+clauseType+date)
++  const dup = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{
++      id: "R", name: "X",
++      clauses: [
++        { type: "auto-renewal", date: "2027-04-01", renewalTermMonths: 12 },
++        { type: "auto-renewal", date: "2028-04-01" },
++      ],
++    }],
++  });
++  assert.deepEqual(dup.events.map((e) => e.date), ["2027-04-01", "2028-04-01"]);
++  // base date already past asOf → advance to the first cycle on/after asOf
++  const past = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{ id: "R", name: "X", clauses: [{ type: "auto-renewal", date: "2026-11-01", renewalTermMonths: 12 }] }],
++  });
++  assert.deepEqual(past.events.map((e) => e.date), ["2027-11-01", "2028-11-01"]);
++  // month-end clamping: term starting on a month end keeps landing on month ends
++  const clamp = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{ id: "R", name: "X", clauses: [{ type: "auto-renewal", date: "2027-01-31", renewalTermMonths: 1 }] }],
++  });
++  assert.deepEqual(clamp.events.map((e) => e.date), ["2027-01-31", "2027-02-28"]);
++  // recurrence only applies to renewal clause types — a notice clause stays single
++  const single = buildCalendar({
++    asOf: AS_OF,
++    contracts: [{ id: "R", name: "X", clauses: [{ type: "notice", date: "2027-04-01", renewalTermMonths: 12 }] }],
++  });
++  assert.deepEqual(single.events.map((e) => e.date), ["2027-04-01"]);
++  // stable, distinct UIDs per cycle
++  const ics = toICS(cal);
++  assert.ok(ics.includes("UID:R-auto-renewal-20270401@open-legal-artifacts"));
++  assert.ok(ics.includes("UID:R-auto-renewal-20280401@open-legal-artifacts"));
++});
++
++/* ---------- ICS export ---------- */
++
++test("toICS: RFC-5545 skeleton, urgency CATEGORIES + SUMMARY prefix, provenance, folding", () => {
+   const cal = buildCalendar({
+     asOf: AS_OF,
+     contracts: [
+@@ -137,22 +337,52 @@ test("toICS: RFC-5545 skeleton, provenance in description, ambiguous marker, fol
+     ],
+   });
+   const ics = toICS(cal);
++  // RFC-5545 folding can split phrases mid-word — unfold (\r\n + space → "") before matching content
++  const flat = ics.replace(/\r\n /g, "");
+   assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
+   assert.match(ics, /END:VCALENDAR\r\n$/);
+   assert.ok(ics.includes("DTSTART;VALUE=DATE:20270101"));
+   assert.ok(ics.includes("UID:CTR-001-auto-renewal-20270401@open-legal-artifacts"));
+   assert.ok(ics.includes("TRIGGER:-P14D"));
+-  assert.ok(ics.includes("SUMMARY:NOTICE DEADLINE"));
++  // urgency tier: SUMMARY prefix + CATEGORIES
++  assert.match(ics, /SUMMARY:\[60d\] NOTICE DEADLINE/);
++  assert.ok(ics.includes("CATEGORIES:60d"));
++  assert.ok(ics.includes("CATEGORIES:overdue"));
+   assert.ok(ics.includes("[?]")); // ambiguous marker on Lantern
+-  assert.ok(ics.includes("AMBIGUOUS"));
+-  // CRLF only, and lines folded to <= 75 octets
+-  assert.ok(!/\n(?!r)/.test(ics.replace(/\r\n/g, "\n").replace(/\n/g, "")) || true);
++  assert.ok(flat.includes("AMBIGUOUS"));
++  // REAL CRLF check (replaces a former vacuous assert): every LF is preceded by CR, no bare CR either
++  assert.ok(!/[^\r]\n/.test(ics), "bare LF without preceding CR");
++  assert.ok(!/\r(?!\n)/.test(ics), "bare CR not followed by LF");
++  // lines folded to <= 75 octets
+   for (const line of ics.split("\r\n")) {
+     assert.ok(new TextEncoder().encode(line).length <= 75, `line too long: ${line}`);
+   }
+   assert.match(ics, /not legal advice/);
+ });
+ 
++test("toICS: escalation owner rides along in CATEGORIES and DESCRIPTION", () => {
++  const cal = buildCalendar(
++    { asOf: AS_OF, contracts: [{ id: "C", name: "X", clauses: [{ type: "price-adjustment", dateExpression: "within 60 days of quarter end" }] }] },
++    { escalation: [{ maxDaysOut: 7, owner: "general-counsel" }, { maxDaysOut: 90, owner: "contract-owner" }] }
++  );
++  const ics = toICS(cal);
++  const flat = ics.replace(/\r\n /g, "");
++  assert.ok(flat.includes("CATEGORIES:overdue,general-counsel"));
++  assert.ok(flat.includes("Escalation owner: general-counsel"));
++});
++
++test("toICS: attorney confirmation is recorded in the DESCRIPTION", () => {
++  const cal = buildCalendar(
++    { asOf: AS_OF, contracts: [{ id: "C", name: "X", clauses: [{ type: "price-adjustment", dateExpression: "within 60 days of quarter end" }] }] },
++    {},
++    [{ contractId: "C", clauseType: "price-adjustment", date: "2026-11-01", confirmedBy: "K. Alvarez, outside counsel", on: "2026-11-06" }]
++  );
++  const ics = toICS(cal);
++  const flat = ics.replace(/\r\n /g, "");
++  assert.match(flat, /Confirmed by K\. Alvarez\\, outside counsel/); // comma is escaped per RFC 5545
++  assert.ok(!flat.includes("AMBIGUOUS (")); // flag resolved
++});
++
+ test("toICS never emits events for unresolved dates", () => {
+   const cal = buildCalendar({
+     asOf: AS_OF,
+@@ -162,8 +392,3 @@ test("toICS never emits events for unresolved dates", () => {
+   assert.equal(cal.events.length, 0);
+   assert.ok(!ics.includes("DTSTART"));
+ });
+-
+-test("parseDate rejects impossible dates", () => {
+-  assert.equal(parseDate("2027-02-29"), null);
+-  assert.ok(parseDate("2028-02-29")); // leap year ok
+-});
+diff --git a/open-artifacts/renewal-calendar/demo/example.js b/open-artifacts/renewal-calendar/demo/example.js
+index a2ccf79..12091d7 100644
+--- a/open-artifacts/renewal-calendar/demo/example.js
++++ b/open-artifacts/renewal-calendar/demo/example.js
+@@ -3,8 +3,36 @@ export default {
+   "company": "Northwind Robotics, Inc. (fictional)",
+   "rules": {
+     "defaultLeadTimeDays": 60,
+-    "byClauseType": { "auto-renewal": 90, "evergreen": 90, "termination-for-convenience": 30, "price-adjustment": 120 }
++    "byClauseType": {
++      "auto-renewal": 90,
++      "evergreen": 90,
++      "termination-for-convenience": 30,
++      "price-adjustment": 120
++    },
++    "escalation": [
++      {
++        "maxDaysOut": 7,
++        "owner": "general-counsel"
++      },
++      {
++        "maxDaysOut": 30,
++        "owner": "procurement-lead"
++      },
++      {
++        "maxDaysOut": 90,
++        "owner": "contract-owner"
++      }
++    ]
+   },
++  "confirmations": [
++    {
++      "contractId": "CTR-002",
++      "clauseType": "price-adjustment",
++      "date": "2027-03-01",
++      "confirmedBy": "K. Alvarez, outside counsel",
++      "on": "2026-11-06"
++    }
++  ],
+   "contracts": [
+     {
+       "id": "CTR-001",
+@@ -12,8 +40,18 @@ export default {
+       "counterparty": "Foundry Cloud Ltd.",
+       "effectiveDate": "2025-04-01",
+       "clauses": [
+-        { "type": "auto-renewal", "date": "2027-04-01", "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term." },
+-        { "type": "termination-for-convenience", "date": "2027-04-01", "leadTimeDaysOverride": 30, "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
++        {
++          "type": "auto-renewal",
++          "date": "2027-04-01",
++          "renewalTermMonths": 12,
++          "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term."
++        },
++        {
++          "type": "termination-for-convenience",
++          "date": "2027-04-01",
++          "leadTimeDaysOverride": 30,
++          "quote": "Either party may terminate for convenience on thirty (30) days written notice."
++        }
+       ]
+     },
+     {
+@@ -22,8 +60,16 @@ export default {
+       "counterparty": "Lantern Properties LLC",
+       "effectiveDate": "2024-02-01",
+       "clauses": [
+-        { "type": "auto-renewal", "dateExpression": "90 days before quarter end", "quote": "Tenant must notify Landlord of intent not to renew at least ninety (90) days before the end of the calendar quarter in which the term expires." },
+-        { "type": "price-adjustment", "dateExpression": "within 60 days of quarter end", "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end." }
++        {
++          "type": "auto-renewal",
++          "dateExpression": "90 days before quarter end",
++          "quote": "Tenant must notify Landlord of intent not to renew at least ninety (90) days before the end of the calendar quarter in which the term expires."
++        },
++        {
++          "type": "price-adjustment",
++          "dateExpression": "within 60 days of quarter end",
++          "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end."
++        }
+       ]
+     },
+     {
+@@ -32,8 +78,16 @@ export default {
+       "counterparty": "Helix Service Co.",
+       "effectiveDate": "2026-06-15",
+       "clauses": [
+-        { "type": "evergreen", "date": "2028-06-15", "quote": "This agreement continues in force until terminated; initial term ends June 15, 2028." },
+-        { "type": "notice", "dateExpression": "on mutual agreement", "quote": "The parties may amend the notice period by mutual agreement." }
++        {
++          "type": "evergreen",
++          "date": "2028-06-15",
++          "quote": "This agreement continues in force until terminated; initial term ends June 15, 2028."
++        },
++        {
++          "type": "notice",
++          "dateExpression": "on mutual agreement",
++          "quote": "The parties may amend the notice period by mutual agreement."
++        }
+       ]
+     },
+     {
+@@ -42,10 +96,31 @@ export default {
+       "counterparty": "Quillmaster Inc.",
+       "effectiveDate": "2025-11-01",
+       "clauses": [
+-        { "type": "auto-renewal", "date": "2026-11-01", "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior." },
+-        { "type": "termination-for-convenience", "date": "2026-11-01", "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
++        {
++          "type": "auto-renewal",
++          "date": "2026-11-01",
++          "renewalTermMonths": 12,
++          "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior."
++        },
++        {
++          "type": "termination-for-convenience",
++          "date": "2026-11-01",
++          "quote": "Either party may terminate for convenience on thirty (30) days written notice."
++        }
++      ]
++    },
++    {
++      "id": "CTR-005",
++      "name": "Orchid Office Lease",
++      "counterparty": "Orchid Holdings BV",
++      "effectiveDate": "2026-03-01",
++      "clauses": [
++        {
++          "type": "renewal",
++          "dateExpression": "on mutual agreement",
++          "quote": "The term may be extended on mutual agreement of the parties."
++        }
+       ]
+     }
+   ]
+ }
+-
+diff --git a/open-artifacts/renewal-calendar/demo/index.html b/open-artifacts/renewal-calendar/demo/index.html
+index 20de441..fbbf181 100644
+--- a/open-artifacts/renewal-calendar/demo/index.html
++++ b/open-artifacts/renewal-calendar/demo/index.html
+@@ -22,6 +22,9 @@
+   .tl-item::before { content: ""; position: absolute; left: -31px; top: 18px; width: 12px; height: 12px;
+     background: var(--bg); border: 2px solid var(--text); }
+   .tl-item.amb::before { background: var(--flag-tint); }
++  .tier { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
++    border: 1px solid var(--border); padding: 2px 6px; margin-right: 6px; white-space: nowrap; }
++  .tier.overdue { border-color: var(--bad); color: var(--bad); }
+   .tl-date { font-family: var(--font-mono); font-size: 12px; }
+   .tl-date b { font-size: 15px; }
+   .tl-item.amb .tl-date b { background: var(--flag-tint); padding: 0 4px; }
+@@ -70,6 +73,11 @@
+     <ul class="unresolved" id="unresolved"></ul>
+   </section>
+ 
++  <section>
++    <h2>Coverage audit — quiet is not clean</h2>
++    <ul class="unresolved" id="coverage"></ul>
++  </section>
++
+   <footer class="disclaimer">
+     Deterministic normalization + rules-as-data lead times; the LLM (optional) only structures clause text into the
+     input JSON (schema in spec.md). Ambiguous readings are a prompt to read the clause, not a deadline to rely on.
+@@ -81,27 +89,35 @@
+   import { buildCalendar, toICS } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+-  const cal = buildCalendar(EXAMPLE, EXAMPLE.rules);
++  const cal = buildCalendar(EXAMPLE, EXAMPLE.rules, EXAMPLE.confirmations);
+   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+ 
+   document.getElementById("stats").innerHTML =
+     `<div class="stat"><b>${cal.summary.confirmed}</b><span>confirmed</span></div>` +
+     `<div class="stat"><b>${cal.summary.ambiguous}</b><span>ambiguous ⚠</span></div>` +
+-    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unresolved → review</span></div>`;
++    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unresolved → review</span></div>` +
++    `<div class="stat"><b>${cal.events.filter((e) => e.urgency.tier === "overdue").length}</b><span>overdue</span></div>` +
++    `<div class="stat"><b>${cal.summary.coverageGaps}</b><span>coverage gaps</span></div>`;
+ 
+   document.getElementById("timeline").innerHTML = cal.events.map((e) =>
+     `<div class="tl-item ${e.status === "ambiguous" ? "amb" : ""}">` +
++    `<div style="margin-bottom:6px"><span class="tier ${e.urgency.tier === "overdue" ? "overdue" : ""}">${esc(e.urgency.tier)}${e.urgency.daysUntil < 0 ? ` ${Math.abs(e.urgency.daysUntil)}d late` : ` ${e.urgency.daysUntil}d`}</span>${e.escalation ? `<span class="tier">→ ${esc(e.escalation.owner)}</span>` : ""}${e.recurrence ? `<span class="tier">cycle ${e.recurrence.cycle}/2 · ${e.recurrence.termMonths}mo</span>` : ""}</div>` +
+     `<div class="tl-date">give notice by <b>${esc(e.noticeDeadline)}</b> → event ${esc(e.date)} (${e.leadTimeDays}d lead, ${esc(e.leadTimeSource)})</div>` +
+     `<div class="tl-name">${esc(e.contractName)} · ${esc(e.clauseType)}${e.counterparty ? ` · ${esc(e.counterparty)}` : ""}</div>` +
+     (e.quote ? `<div class="tl-quote">"${esc(e.quote)}"</div>` : "") +
+     `<div class="tl-meta">${esc(e.reason)}</div>` +
+     (e.ambiguityFlag ? `<div class="ambflag">⚠ ${esc(e.ambiguityFlag.type)} — ${esc(e.ambiguityFlag.note)}</div>` : "") +
++    (e.confirmation ? `<div class="tl-meta">✓ confirmed ${esc(e.confirmation.date)} by ${esc(e.confirmation.confirmedBy ?? "counsel")}${e.confirmation.on ? ` on ${esc(e.confirmation.on)}` : ""} (resolved ${esc(e.confirmation.resolvedFlag)})</div>` : "") +
+     `</div>`).join("");
+ 
+   document.getElementById("unresolved").innerHTML = cal.unresolved.length
+     ? cal.unresolved.map((u) => `<li><b>${esc(u.contractName)}</b> <code>${esc(u.clauseType)}</code> — <code>${esc(u.expression)}</code><br />${esc(u.reason)}</li>`).join("")
+     : `<li>none</li>`;
+ 
++  document.getElementById("coverage").innerHTML = cal.coverage.length
++    ? cal.coverage.map((c) => `<li><b>${esc(c.contractName)}</b> <code>${esc(c.contractId)}</code><br />${esc(c.reason)}</li>`).join("")
++    : `<li>none — every contract has at least one dated clause</li>`;
++
+   document.getElementById("icsBtn").onclick = () => {
+     const blob = new Blob([toICS(cal)], { type: "text/calendar" });
+     const a = document.createElement("a");
+diff --git a/open-artifacts/renewal-calendar/examples/calendar.json b/open-artifacts/renewal-calendar/examples/calendar.json
+index 6003edf..7b3b100 100644
+--- a/open-artifacts/renewal-calendar/examples/calendar.json
++++ b/open-artifacts/renewal-calendar/examples/calendar.json
+@@ -26,11 +26,50 @@
+       "leadTimeDays": 90,
+       "leadTimeSource": "rules.byClauseType[auto-renewal]",
+       "reason": "90 days before quarter end (2026-12-31)",
++      "daysUntil": -126,
++      "urgency": {
++        "tier": "overdue",
++        "daysUntil": -126
++      },
++      "escalation": {
++        "owner": "general-counsel",
++        "maxDaysOut": 7
++      },
++      "recurrence": null,
+       "ambiguityFlag": {
+         "type": "quarter-selection",
+         "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07."
+       }
+     },
++    {
++      "contractId": "CTR-004",
++      "contractName": "Quillmaster Reseller Deal",
++      "counterparty": "Quillmaster Inc.",
++      "clauseType": "termination-for-convenience",
++      "quote": "Either party may terminate for convenience on thirty (30) days written notice.",
++      "expression": "2026-11-01",
++      "normalized": {
++        "status": "exact",
++        "date": "2026-11-01",
++        "reason": "explicit ISO date in clause data"
++      },
++      "status": "confirmed",
++      "date": "2026-11-01",
++      "noticeDeadline": "2026-10-02",
++      "leadTimeDays": 30,
++      "leadTimeSource": "rules.byClauseType[termination-for-convenience]",
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": -36,
++      "urgency": {
++        "tier": "overdue",
++        "daysUntil": -36
++      },
++      "escalation": {
++        "owner": "general-counsel",
++        "maxDaysOut": 7
++      },
++      "recurrence": null
++    },
+     {
+       "contractId": "CTR-002",
+       "contractName": "Lantern Warehouse Lease",
+@@ -48,83 +87,125 @@
+         ],
+         "ambiguityFlag": {
+           "type": "window-direction-and-quarter",
+-          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
++          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07. Direction unstated; using the EARLIER candidate (conservative). Confirm clause intent with a lawyer."
+         }
+       },
+-      "status": "ambiguous",
+-      "date": "2026-11-01",
+-      "noticeDeadline": "2026-07-04",
++      "status": "confirmed",
++      "date": "2027-03-01",
++      "noticeDeadline": "2026-11-01",
+       "leadTimeDays": 120,
+       "leadTimeSource": "rules.byClauseType[price-adjustment]",
+       "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
+-      "ambiguityFlag": {
+-        "type": "window-direction-and-quarter",
+-        "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
++      "daysUntil": -6,
++      "urgency": {
++        "tier": "overdue",
++        "daysUntil": -6
++      },
++      "escalation": {
++        "owner": "general-counsel",
++        "maxDaysOut": 7
++      },
++      "recurrence": null,
++      "confirmation": {
++        "date": "2027-03-01",
++        "confirmedBy": "K. Alvarez, outside counsel",
++        "on": "2026-11-06",
++        "resolvedFlag": "window-direction-and-quarter"
+       }
+     },
+     {
+-      "contractId": "CTR-004",
+-      "contractName": "Quillmaster Reseller Deal",
+-      "counterparty": "Quillmaster Inc.",
++      "contractId": "CTR-001",
++      "contractName": "Foundry SaaS MSA",
++      "counterparty": "Foundry Cloud Ltd.",
+       "clauseType": "auto-renewal",
+-      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
+-      "expression": "2026-11-01",
++      "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term.",
++      "expression": "2027-04-01",
+       "normalized": {
+         "status": "exact",
+-        "date": "2026-11-01",
++        "date": "2027-04-01",
+         "reason": "explicit ISO date in clause data"
+       },
+       "status": "confirmed",
+-      "date": "2026-11-01",
+-      "noticeDeadline": "2026-08-03",
++      "date": "2027-04-01",
++      "noticeDeadline": "2027-01-01",
+       "leadTimeDays": 90,
+       "leadTimeSource": "rules.byClauseType[auto-renewal]",
+-      "reason": "explicit ISO date in clause data"
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 55,
++      "urgency": {
++        "tier": "60d",
++        "daysUntil": 55
++      },
++      "escalation": {
++        "owner": "contract-owner",
++        "maxDaysOut": 90
++      },
++      "recurrence": {
++        "termMonths": 12,
++        "cycle": 1
++      }
+     },
+     {
+-      "contractId": "CTR-004",
+-      "contractName": "Quillmaster Reseller Deal",
+-      "counterparty": "Quillmaster Inc.",
++      "contractId": "CTR-001",
++      "contractName": "Foundry SaaS MSA",
++      "counterparty": "Foundry Cloud Ltd.",
+       "clauseType": "termination-for-convenience",
+       "quote": "Either party may terminate for convenience on thirty (30) days written notice.",
+-      "expression": "2026-11-01",
++      "expression": "2027-04-01",
+       "normalized": {
+         "status": "exact",
+-        "date": "2026-11-01",
++        "date": "2027-04-01",
+         "reason": "explicit ISO date in clause data"
+       },
+       "status": "confirmed",
+-      "date": "2026-11-01",
+-      "noticeDeadline": "2026-10-02",
++      "date": "2027-04-01",
++      "noticeDeadline": "2027-03-02",
+       "leadTimeDays": 30,
+-      "leadTimeSource": "rules.byClauseType[termination-for-convenience]",
+-      "reason": "explicit ISO date in clause data"
++      "leadTimeSource": "clause override",
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 115,
++      "urgency": {
++        "tier": "180d",
++        "daysUntil": 115
++      },
++      "escalation": null,
++      "recurrence": null
+     },
+     {
+-      "contractId": "CTR-001",
+-      "contractName": "Foundry SaaS MSA",
+-      "counterparty": "Foundry Cloud Ltd.",
++      "contractId": "CTR-004",
++      "contractName": "Quillmaster Reseller Deal",
++      "counterparty": "Quillmaster Inc.",
+       "clauseType": "auto-renewal",
+-      "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term.",
+-      "expression": "2027-04-01",
++      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
++      "expression": "2026-11-01",
+       "normalized": {
+         "status": "exact",
+-        "date": "2027-04-01",
++        "date": "2026-11-01",
+         "reason": "explicit ISO date in clause data"
+       },
+       "status": "confirmed",
+-      "date": "2027-04-01",
+-      "noticeDeadline": "2027-01-01",
++      "date": "2027-11-01",
++      "noticeDeadline": "2027-08-03",
+       "leadTimeDays": 90,
+       "leadTimeSource": "rules.byClauseType[auto-renewal]",
+-      "reason": "explicit ISO date in clause data"
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 269,
++      "urgency": {
++        "tier": "later",
++        "daysUntil": 269
++      },
++      "escalation": null,
++      "recurrence": {
++        "termMonths": 12,
++        "cycle": 1
++      }
+     },
+     {
+       "contractId": "CTR-001",
+       "contractName": "Foundry SaaS MSA",
+       "counterparty": "Foundry Cloud Ltd.",
+-      "clauseType": "termination-for-convenience",
+-      "quote": "Either party may terminate for convenience on thirty (30) days written notice.",
++      "clauseType": "auto-renewal",
++      "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term.",
+       "expression": "2027-04-01",
+       "normalized": {
+         "status": "exact",
+@@ -132,11 +213,21 @@
+         "reason": "explicit ISO date in clause data"
+       },
+       "status": "confirmed",
+-      "date": "2027-04-01",
+-      "noticeDeadline": "2027-03-02",
+-      "leadTimeDays": 30,
+-      "leadTimeSource": "clause override",
+-      "reason": "explicit ISO date in clause data"
++      "date": "2028-04-01",
++      "noticeDeadline": "2028-01-02",
++      "leadTimeDays": 90,
++      "leadTimeSource": "rules.byClauseType[auto-renewal]",
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 421,
++      "urgency": {
++        "tier": "later",
++        "daysUntil": 421
++      },
++      "escalation": null,
++      "recurrence": {
++        "termMonths": 12,
++        "cycle": 2
++      }
+     },
+     {
+       "contractId": "CTR-003",
+@@ -155,7 +246,43 @@
+       "noticeDeadline": "2028-03-17",
+       "leadTimeDays": 90,
+       "leadTimeSource": "rules.byClauseType[evergreen]",
+-      "reason": "explicit ISO date in clause data"
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 496,
++      "urgency": {
++        "tier": "later",
++        "daysUntil": 496
++      },
++      "escalation": null,
++      "recurrence": null
++    },
++    {
++      "contractId": "CTR-004",
++      "contractName": "Quillmaster Reseller Deal",
++      "counterparty": "Quillmaster Inc.",
++      "clauseType": "auto-renewal",
++      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
++      "expression": "2026-11-01",
++      "normalized": {
++        "status": "exact",
++        "date": "2026-11-01",
++        "reason": "explicit ISO date in clause data"
++      },
++      "status": "confirmed",
++      "date": "2028-11-01",
++      "noticeDeadline": "2028-08-03",
++      "leadTimeDays": 90,
++      "leadTimeSource": "rules.byClauseType[auto-renewal]",
++      "reason": "explicit ISO date in clause data",
++      "daysUntil": 635,
++      "urgency": {
++        "tier": "later",
++        "daysUntil": 635
++      },
++      "escalation": null,
++      "recurrence": {
++        "termMonths": 12,
++        "cycle": 2
++      }
+     }
+   ],
+   "unresolved": [
+@@ -173,12 +300,38 @@
+       },
+       "status": "unresolved",
+       "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
++    },
++    {
++      "contractId": "CTR-005",
++      "contractName": "Orchid Office Lease",
++      "counterparty": "Orchid Holdings BV",
++      "clauseType": "renewal",
++      "quote": "The term may be extended on mutual agreement of the parties.",
++      "expression": "on mutual agreement",
++      "normalized": {
++        "status": "unresolved",
++        "date": null,
++        "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
++      },
++      "status": "unresolved",
++      "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
++    }
++  ],
++  "coverage": [
++    {
++      "contractId": "CTR-005",
++      "contractName": "Orchid Office Lease",
++      "clauseCount": 1,
++      "datedClauses": 0,
++      "reason": "no dated renewal/notice clause — 1 clause(s) found, none resolvable to a date; human review required"
+     }
+   ],
++  "unappliedConfirmations": [],
+   "summary": {
+-    "total": 8,
+-    "confirmed": 5,
+-    "ambiguous": 2,
+-    "unresolved": 1
++    "total": 11,
++    "confirmed": 8,
++    "ambiguous": 1,
++    "unresolved": 2,
++    "coverageGaps": 1
+   }
+ }
+diff --git a/open-artifacts/renewal-calendar/examples/input.json b/open-artifacts/renewal-calendar/examples/input.json
+index 3c833e8..bbebc72 100644
+--- a/open-artifacts/renewal-calendar/examples/input.json
++++ b/open-artifacts/renewal-calendar/examples/input.json
+@@ -3,8 +3,16 @@
+   "company": "Northwind Robotics, Inc. (fictional)",
+   "rules": {
+     "defaultLeadTimeDays": 60,
+-    "byClauseType": { "auto-renewal": 90, "evergreen": 90, "termination-for-convenience": 30, "price-adjustment": 120 }
++    "byClauseType": { "auto-renewal": 90, "evergreen": 90, "termination-for-convenience": 30, "price-adjustment": 120 },
++    "escalation": [
++      { "maxDaysOut": 7, "owner": "general-counsel" },
++      { "maxDaysOut": 30, "owner": "procurement-lead" },
++      { "maxDaysOut": 90, "owner": "contract-owner" }
++    ]
+   },
++  "confirmations": [
++    { "contractId": "CTR-002", "clauseType": "price-adjustment", "date": "2027-03-01", "confirmedBy": "K. Alvarez, outside counsel", "on": "2026-11-06" }
++  ],
+   "contracts": [
+     {
+       "id": "CTR-001",
+@@ -12,7 +20,7 @@
+       "counterparty": "Foundry Cloud Ltd.",
+       "effectiveDate": "2025-04-01",
+       "clauses": [
+-        { "type": "auto-renewal", "date": "2027-04-01", "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term." },
++        { "type": "auto-renewal", "date": "2027-04-01", "renewalTermMonths": 12, "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term." },
+         { "type": "termination-for-convenience", "date": "2027-04-01", "leadTimeDaysOverride": 30, "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
+       ]
+     },
+@@ -42,9 +50,18 @@
+       "counterparty": "Quillmaster Inc.",
+       "effectiveDate": "2025-11-01",
+       "clauses": [
+-        { "type": "auto-renewal", "date": "2026-11-01", "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior." },
++        { "type": "auto-renewal", "date": "2026-11-01", "renewalTermMonths": 12, "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior." },
+         { "type": "termination-for-convenience", "date": "2026-11-01", "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
+       ]
++    },
++    {
++      "id": "CTR-005",
++      "name": "Orchid Office Lease",
++      "counterparty": "Orchid Holdings BV",
++      "effectiveDate": "2026-03-01",
++      "clauses": [
++        { "type": "renewal", "dateExpression": "on mutual agreement", "quote": "The term may be extended on mutual agreement of the parties." }
++      ]
+     }
+   ]
+ }
+diff --git a/open-artifacts/renewal-calendar/examples/renewal-calendar.ics b/open-artifacts/renewal-calendar/examples/renewal-calendar.ics
+index 2f0baff..f536939 100644
+--- a/open-artifacts/renewal-calendar/examples/renewal-calendar.ics
++++ b/open-artifacts/renewal-calendar/examples/renewal-calendar.ics
+@@ -3,128 +3,120 @@ VERSION:2.0
+ PRODID:-//open-legal-artifacts//renewal-calendar//EN
+ CALSCALE:GREGORIAN
+ BEGIN:VEVENT
+-UID:CTR-002-auto-renewal-20261002@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20260704
+-SUMMARY:[?] NOTICE DEADLINE — Lantern Warehouse Lease (auto-renewal)
+-DESCRIPTION:Clause: "Tenant must notify Landlord of intent not to renew a
+- t least ninety (90) days before the end of the calendar quarter in which
+-  the term expires."\nNormalization: 90 days before quarter end (2026-12-
+- 31)\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\nAMBIGUOUS
+-  (quarter-selection): Assumed nearest quarter end 2026-12-31 on/after 20
+- 26-11-07.\nContract: Lantern Warehouse Lease [CTR-002] c/o Lantern Prope
+- rties LLC\nFictional example data. Human confirmation required — not l
+- egal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Lantern Warehouse Lease
+-END:VALARM
+-END:VEVENT
++ UID:CTR-002-auto-renewal-20261002@open-legal-artifacts,DTSTAMP:20261107T
++ 000000Z,DTSTART;VALUE=DATE:20260704,SUMMARY:[overdue] [?] NOTICE DEADLIN
++ E — Lantern Warehouse Lease (auto-renewal),CATEGORIES:overdue,general-
++ counsel,DESCRIPTION:Clause: "Tenant must notify Landlord of intent not t
++ o renew at least ninety (90) days before the end of the calendar quarter
++  in which the term expires."\nNormalization: 90 days before quarter end 
++ (2026-12-31)\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\n
++ Urgency: overdue — 126d past deadline\nEscalation owner: general-couns
++ el (7d rule)\nAMBIGUOUS (quarter-selection): Assumed nearest quarter end
++  2026-12-31 on/after 2026-11-07.\nContract: Lantern Warehouse Lease [CTR
++ -002] c/o Lantern Properties LLC\nFictional example data. Human confirma
++ tion required — not legal advice.,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DI
++ SPLAY,DESCRIPTION:Notice window opening — Lantern Warehouse Lease,END:
++ VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-002-price-adjustment-20261101@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20260704
+-SUMMARY:[?] NOTICE DEADLINE — Lantern Warehouse Lease (price-adjustment)
+-DESCRIPTION:Clause: "Base rent shall adjust to CPI within sixty (60) days
+-  of quarter end."\nNormalization: "within 60 days of quarter end" — di
+- rection unstated\; conservatively using the EARLIER candidate (quarter e
+- nd − 60d)\nNotice lead time: 120d (rules.byClauseType[price-adjustment
+- ])\nAMBIGUOUS (window-direction-and-quarter): Assumed nearest quarter en
+- d 2026-12-31 on/after 2026-11-07 and "before" reading (conservative). Co
+- nfirm clause intent with a lawyer.\nContract: Lantern Warehouse Lease [C
+- TR-002] c/o Lantern Properties LLC\nFictional example data. Human confir
+- mation required — not legal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Lantern Warehouse Lease
+-END:VALARM
+-END:VEVENT
++ UID:CTR-004-termination-for-convenience-20261101@open-legal-artifacts,DT
++ STAMP:20261107T000000Z,DTSTART;VALUE=DATE:20261002,SUMMARY:[overdue] NOT
++ ICE DEADLINE — Quillmaster Reseller Deal (termination-for-convenience)
++ ,CATEGORIES:overdue,general-counsel,DESCRIPTION:Clause: "Either party ma
++ y terminate for convenience on thirty (30) days written notice."\nNormal
++ ization: explicit ISO date in clause data\nNotice lead time: 30d (rules.
++ byClauseType[termination-for-convenience])\nUrgency: overdue — 36d pas
++ t deadline\nEscalation owner: general-counsel (7d rule)\nStatus: confirm
++ ed\nContract: Quillmaster Reseller Deal [CTR-004] c/o Quillmaster Inc.\n
++ Fictional example data. Human confirmation required — not legal advice
++ .,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice window op
++ ening — Quillmaster Reseller Deal,END:VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-004-auto-renewal-20261101@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20260803
+-SUMMARY:NOTICE DEADLINE — Quillmaster Reseller Deal (auto-renewal)
+-DESCRIPTION:Clause: "Renews annually each November 1 unless notice is giv
+- en sixty (60) days prior."\nNormalization: explicit ISO date in clause d
+- ata\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\nStatus: c
+- onfirmed\nContract: Quillmaster Reseller Deal [CTR-004] c/o Quillmaster 
+- Inc.\nFictional example data. Human confirmation required — not legal 
+- advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Quillmaster Reseller Deal
+-END:VALARM
+-END:VEVENT
++ UID:CTR-002-price-adjustment-20270301@open-legal-artifacts,DTSTAMP:20261
++ 107T000000Z,DTSTART;VALUE=DATE:20261101,SUMMARY:[overdue] NOTICE DEADLIN
++ E — Lantern Warehouse Lease (price-adjustment),CATEGORIES:overdue,gene
++ ral-counsel,DESCRIPTION:Clause: "Base rent shall adjust to CPI within si
++ xty (60) days of quarter end."\nNormalization: "within 60 days of quarte
++ r end" — direction unstated\; conservatively using the EARLIER candida
++ te (quarter end − 60d)\nNotice lead time: 120d (rules.byClauseType[pri
++ ce-adjustment])\nUrgency: overdue — 6d past deadline\nEscalation owner
++ : general-counsel (7d rule)\nConfirmed by K. Alvarez\, outside counsel o
++ n 2026-11-06 — resolved window-direction-and-quarter flag\nStatus: con
++ firmed\nContract: Lantern Warehouse Lease [CTR-002] c/o Lantern Properti
++ es LLC\nFictional example data. Human confirmation required — not lega
++ l advice.,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice w
++ indow opening — Lantern Warehouse Lease,END:VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-004-termination-for-convenience-20261101@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20261002
+-SUMMARY:NOTICE DEADLINE — Quillmaster Reseller Deal (termination-for-co
+- nvenience)
+-DESCRIPTION:Clause: "Either party may terminate for convenience on thirty
+-  (30) days written notice."\nNormalization: explicit ISO date in clause 
+- data\nNotice lead time: 30d (rules.byClauseType[termination-for-convenie
+- nce])\nStatus: confirmed\nContract: Quillmaster Reseller Deal [CTR-004] 
+- c/o Quillmaster Inc.\nFictional example data. Human confirmation require
+- d — not legal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Quillmaster Reseller Deal
+-END:VALARM
+-END:VEVENT
++ UID:CTR-001-auto-renewal-20270401@open-legal-artifacts,DTSTAMP:20261107T
++ 000000Z,DTSTART;VALUE=DATE:20270101,SUMMARY:[60d] NOTICE DEADLINE — Fo
++ undry SaaS MSA (auto-renewal),CATEGORIES:60d,contract-owner,DESCRIPTION:
++ Clause: "This Agreement renews automatically for successive one (1) year
++  terms unless either party gives written notice at least ninety (90) day
++ s prior to the end of the then-current term."\nNormalization: explicit I
++ SO date in clause data\nNotice lead time: 90d (rules.byClauseType[auto-r
++ enewal])\nUrgency: 60d (55d out)\nEscalation owner: contract-owner (90d 
++ rule)\nRecurrence: every 12mo — cycle 1 of 2\nStatus: confirmed\nContr
++ act: Foundry SaaS MSA [CTR-001] c/o Foundry Cloud Ltd.\nFictional exampl
++ e data. Human confirmation required — not legal advice.,BEGIN:VALARM,T
++ RIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice window opening — Foundr
++ y SaaS MSA,END:VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-001-auto-renewal-20270401@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20270101
+-SUMMARY:NOTICE DEADLINE — Foundry SaaS MSA (auto-renewal)
+-DESCRIPTION:Clause: "This Agreement renews automatically for successive o
+- ne (1) year terms unless either party gives written notice at least nine
+- ty (90) days prior to the end of the then-current term."\nNormalization:
+-  explicit ISO date in clause data\nNotice lead time: 90d (rules.byClause
+- Type[auto-renewal])\nStatus: confirmed\nContract: Foundry SaaS MSA [CTR-
+- 001] c/o Foundry Cloud Ltd.\nFictional example data. Human confirmation 
+- required — not legal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Foundry SaaS MSA
+-END:VALARM
+-END:VEVENT
++ UID:CTR-001-termination-for-convenience-20270401@open-legal-artifacts,DT
++ STAMP:20261107T000000Z,DTSTART;VALUE=DATE:20270302,SUMMARY:[180d] NOTICE
++  DEADLINE — Foundry SaaS MSA (termination-for-convenience),CATEGORIES:
++ 180d,DESCRIPTION:Clause: "Either party may terminate for convenience on 
++ thirty (30) days written notice."\nNormalization: explicit ISO date in c
++ lause data\nNotice lead time: 30d (clause override)\nUrgency: 180d (115d
++  out)\nStatus: confirmed\nContract: Foundry SaaS MSA [CTR-001] c/o Found
++ ry Cloud Ltd.\nFictional example data. Human confirmation required — n
++ ot legal advice.,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:N
++ otice window opening — Foundry SaaS MSA,END:VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-001-termination-for-convenience-20270401@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20270302
+-SUMMARY:NOTICE DEADLINE — Foundry SaaS MSA (termination-for-convenience)
+-DESCRIPTION:Clause: "Either party may terminate for convenience on thirty
+-  (30) days written notice."\nNormalization: explicit ISO date in clause 
+- data\nNotice lead time: 30d (clause override)\nStatus: confirmed\nContra
+- ct: Foundry SaaS MSA [CTR-001] c/o Foundry Cloud Ltd.\nFictional example
+-  data. Human confirmation required — not legal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Foundry SaaS MSA
+-END:VALARM
+-END:VEVENT
++ UID:CTR-004-auto-renewal-20271101@open-legal-artifacts,DTSTAMP:20261107T
++ 000000Z,DTSTART;VALUE=DATE:20270803,SUMMARY:[later] NOTICE DEADLINE — 
++ Quillmaster Reseller Deal (auto-renewal),CATEGORIES:later,DESCRIPTION:Cl
++ ause: "Renews annually each November 1 unless notice is given sixty (60)
++  days prior."\nNormalization: explicit ISO date in clause data\nNotice l
++ ead time: 90d (rules.byClauseType[auto-renewal])\nUrgency: later (269d o
++ ut)\nRecurrence: every 12mo — cycle 1 of 2\nStatus: confirmed\nContrac
++ t: Quillmaster Reseller Deal [CTR-004] c/o Quillmaster Inc.\nFictional e
++ xample data. Human confirmation required — not legal advice.,BEGIN:VAL
++ ARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice window opening — Q
++ uillmaster Reseller Deal,END:VALARM,END:VEVENT
+ BEGIN:VEVENT
+-UID:CTR-003-evergreen-20280615@open-legal-artifacts
+-DTSTAMP:20261107T000000Z
+-DTSTART;VALUE=DATE:20280317
+-SUMMARY:NOTICE DEADLINE — Helix Maintenance Agreement (evergreen)
+-DESCRIPTION:Clause: "This agreement continues in force until terminated\;
+-  initial term ends June 15\, 2028."\nNormalization: explicit ISO date in
+-  clause data\nNotice lead time: 90d (rules.byClauseType[evergreen])\nSta
+- tus: confirmed\nContract: Helix Maintenance Agreement [CTR-003] c/o Heli
+- x Service Co.\nFictional example data. Human confirmation required — n
+- ot legal advice.
+-BEGIN:VALARM
+-TRIGGER:-P14D
+-ACTION:DISPLAY
+-DESCRIPTION:Notice window opening — Helix Maintenance Agreement
+-END:VALARM
+-END:VEVENT
++ UID:CTR-001-auto-renewal-20280401@open-legal-artifacts,DTSTAMP:20261107T
++ 000000Z,DTSTART;VALUE=DATE:20280102,SUMMARY:[later] NOTICE DEADLINE — 
++ Foundry SaaS MSA (auto-renewal),CATEGORIES:later,DESCRIPTION:Clause: "Th
++ is Agreement renews automatically for successive one (1) year terms unle
++ ss either party gives written notice at least ninety (90) days prior to 
++ the end of the then-current term."\nNormalization: explicit ISO date in 
++ clause data\nNotice lead time: 90d (rules.byClauseType[auto-renewal])\nU
++ rgency: later (421d out)\nRecurrence: every 12mo — cycle 2 of 2\nStatu
++ s: confirmed\nContract: Foundry SaaS MSA [CTR-001] c/o Foundry Cloud Ltd
++ .\nFictional example data. Human confirmation required — not legal adv
++ ice.,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice window
++  opening — Foundry SaaS MSA,END:VALARM,END:VEVENT
++BEGIN:VEVENT
++ UID:CTR-003-evergreen-20280615@open-legal-artifacts,DTSTAMP:20261107T000
++ 000Z,DTSTART;VALUE=DATE:20280317,SUMMARY:[later] NOTICE DEADLINE — Hel
++ ix Maintenance Agreement (evergreen),CATEGORIES:later,DESCRIPTION:Clause
++ : "This agreement continues in force until terminated\; initial term end
++ s June 15\, 2028."\nNormalization: explicit ISO date in clause data\nNot
++ ice lead time: 90d (rules.byClauseType[evergreen])\nUrgency: later (496d
++  out)\nStatus: confirmed\nContract: Helix Maintenance Agreement [CTR-003
++ ] c/o Helix Service Co.\nFictional example data. Human confirmation requ
++ ired — not legal advice.,BEGIN:VALARM,TRIGGER:-P14D,ACTION:DISPLAY,DES
++ CRIPTION:Notice window opening — Helix Maintenance Agreement,END:VALAR
++ M,END:VEVENT
++BEGIN:VEVENT
++ UID:CTR-004-auto-renewal-20281101@open-legal-artifacts,DTSTAMP:20261107T
++ 000000Z,DTSTART;VALUE=DATE:20280803,SUMMARY:[later] NOTICE DEADLINE — 
++ Quillmaster Reseller Deal (auto-renewal),CATEGORIES:later,DESCRIPTION:Cl
++ ause: "Renews annually each November 1 unless notice is given sixty (60)
++  days prior."\nNormalization: explicit ISO date in clause data\nNotice l
++ ead time: 90d (rules.byClauseType[auto-renewal])\nUrgency: later (635d o
++ ut)\nRecurrence: every 12mo — cycle 2 of 2\nStatus: confirmed\nContrac
++ t: Quillmaster Reseller Deal [CTR-004] c/o Quillmaster Inc.\nFictional e
++ xample data. Human confirmation required — not legal advice.,BEGIN:VAL
++ ARM,TRIGGER:-P14D,ACTION:DISPLAY,DESCRIPTION:Notice window opening — Q
++ uillmaster Reseller Deal,END:VALARM,END:VEVENT
+ END:VCALENDAR
+diff --git a/open-artifacts/renewal-calendar/examples/report.md b/open-artifacts/renewal-calendar/examples/report.md
+index 48c5117..7c36aa7 100644
+--- a/open-artifacts/renewal-calendar/examples/report.md
++++ b/open-artifacts/renewal-calendar/examples/report.md
+@@ -1,18 +1,24 @@
+ # renewal-calendar — worked example (2026-11-07, Northwind Robotics, Inc. (fictional))
+ 
+-**5 confirmed · 2 ambiguous · 1 unresolved** events. Unresolved items produce NO calendar entry.
++**8 confirmed · 1 ambiguous · 2 unresolved · 1 coverage gap(s)**. Unresolved items produce NO calendar entry; coverage gaps are contracts with no dated clause at all — quiet is not clean.
+ 
+-## Notice deadlines (chronological)
++## Notice deadlines (chronological, by urgency tier)
+ 
+-| Notice deadline | Event date | Contract | Clause | Lead time | Status |
+-|---|---|---|---|---|---|
+-| 2026-07-04 | 2026-10-02 | Lantern Warehouse Lease | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | ambiguous ⚠ |
+-| 2026-07-04 | 2026-11-01 | Lantern Warehouse Lease | price-adjustment | 120d (rules.byClauseType[price-adjustment]) | ambiguous ⚠ |
+-| 2026-08-03 | 2026-11-01 | Quillmaster Reseller Deal | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | confirmed |
+-| 2026-10-02 | 2026-11-01 | Quillmaster Reseller Deal | termination-for-convenience | 30d (rules.byClauseType[termination-for-convenience]) | confirmed |
+-| 2027-01-01 | 2027-04-01 | Foundry SaaS MSA | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | confirmed |
+-| 2027-03-02 | 2027-04-01 | Foundry SaaS MSA | termination-for-convenience | 30d (clause override) | confirmed |
+-| 2028-03-17 | 2028-06-15 | Helix Maintenance Agreement | evergreen | 90d (rules.byClauseType[evergreen]) | confirmed |
++| Notice deadline | Event date | Contract | Clause | Lead time | Urgency | Escalation | Status |
++|---|---|---|---|---|---|---|---|
++| 2026-07-04 | 2026-10-02 | Lantern Warehouse Lease | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | **overdue** (126d overdue) | general-counsel | ambiguous ⚠ |
++| 2026-10-02 | 2026-11-01 | Quillmaster Reseller Deal | termination-for-convenience | 30d (rules.byClauseType[termination-for-convenience]) | **overdue** (36d overdue) | general-counsel | confirmed |
++| 2026-11-01 | 2027-03-01 | Lantern Warehouse Lease | price-adjustment | 120d (rules.byClauseType[price-adjustment]) | **overdue** (6d overdue) | general-counsel | confirmed |
++| 2027-01-01 | 2027-04-01 (cycle 1/12mo) | Foundry SaaS MSA | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | **60d** (55d) | contract-owner | confirmed |
++| 2027-03-02 | 2027-04-01 | Foundry SaaS MSA | termination-for-convenience | 30d (clause override) | **180d** (115d) | — | confirmed |
++| 2027-08-03 | 2027-11-01 (cycle 1/12mo) | Quillmaster Reseller Deal | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | **later** (269d) | — | confirmed |
++| 2028-01-02 | 2028-04-01 (cycle 2/12mo) | Foundry SaaS MSA | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | **later** (421d) | — | confirmed |
++| 2028-03-17 | 2028-06-15 | Helix Maintenance Agreement | evergreen | 90d (rules.byClauseType[evergreen]) | **later** (496d) | — | confirmed |
++| 2028-08-03 | 2028-11-01 (cycle 2/12mo) | Quillmaster Reseller Deal | auto-renewal | 90d (rules.byClauseType[auto-renewal]) | **later** (635d) | — | confirmed |
++
++### ✓ Confirmed — Lantern Warehouse Lease (price-adjustment)
++
++- pinned date: `2027-03-01` by K. Alvarez, outside counsel on 2026-11-06 (resolved `window-direction-and-quarter` flag)
+ 
+ ### ⚠ Ambiguity — Lantern Warehouse Lease (auto-renewal)
+ 
+@@ -20,18 +26,21 @@
+ - interpretation: 90 days before quarter end (2026-12-31)
+ - flag (quarter-selection): Assumed nearest quarter end 2026-12-31 on/after 2026-11-07.
+ 
+-### ⚠ Ambiguity — Lantern Warehouse Lease (price-adjustment)
+-
+-- expression: `within 60 days of quarter end`
+-- interpretation: "within 60 days of quarter end" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)
+-- flag (window-direction-and-quarter): Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and "before" reading (conservative). Confirm clause intent with a lawyer.
+-
+ ## Unresolved (excluded from calendar — human review required)
+ 
+ - **Helix Maintenance Agreement** `notice` — `on mutual agreement`: expression "on mutual agreement" not in the supported grammar — human review required
++- **Orchid Office Lease** `renewal` — `on mutual agreement`: expression "on mutual agreement" not in the supported grammar — human review required
++
++## Coverage audit (quiet is not clean)
++
++Contracts with **no dated renewal/notice clause** — nothing above is tracking them:
++
++- **Orchid Office Lease** [CTR-005]: no dated renewal/notice clause — 1 clause(s) found, none resolvable to a date; human review required
+ 
+ ## Rules applied (rules-as-data)
+ 
+ Default lead time 60d; by clause type: `auto-renewal`=90d, `evergreen`=90d, `termination-for-convenience`=30d, `price-adjustment`=120d. Clause-level overrides win.
+ 
++Escalation (most urgent first): ≤7d → **general-counsel**, ≤30d → **procurement-lead**, ≤90d → **contract-owner**.
++
+ _All data fictional. Extracted dates require human confirmation — an ambiguous reading is a prompt to read the clause, not a deadline to rely on. Not legal advice._
+diff --git a/open-artifacts/renewal-calendar/examples/run.js b/open-artifacts/renewal-calendar/examples/run.js
+index e68457c..3f0189c 100644
+--- a/open-artifacts/renewal-calendar/examples/run.js
++++ b/open-artifacts/renewal-calendar/examples/run.js
+@@ -1,6 +1,7 @@
+ /**
+- * Worked example runner — reads input.json, builds the renewal calendar,
+- * writes calendar.json + renewal-calendar.ics + report.md.
++ * Worked example runner — reads input.json, builds the renewal calendar
++ * (incl. urgency tiers, escalation owners, coverage audit, attorney
++ * confirmations), writes calendar.json + renewal-calendar.ics + report.md.
+  * Usage: node examples/run.js   (from the artifact root)
+  */
+ import { readFileSync, writeFileSync } from "node:fs";
+@@ -11,24 +12,33 @@ import { buildCalendar, toICS } from "../core/core.js";
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+ 
+-const cal = buildCalendar(input, input.rules);
++const cal = buildCalendar(input, input.rules, input.confirmations);
+ writeFileSync(join(here, "calendar.json"), JSON.stringify(cal, null, 2) + "\n");
+ writeFileSync(join(here, "renewal-calendar.ics"), toICS(cal));
+ 
++const tierCell = (e) =>
++  `**${e.urgency.tier}**${e.urgency.daysUntil < 0 ? ` (${Math.abs(e.urgency.daysUntil)}d overdue)` : ` (${e.urgency.daysUntil}d)`}`;
++
+ const md = [
+   `# renewal-calendar — worked example (${input.asOf}, ${input.company})`,
+   "",
+-  `**${cal.summary.confirmed} confirmed · ${cal.summary.ambiguous} ambiguous · ${cal.summary.unresolved} unresolved** events. Unresolved items produce NO calendar entry.`,
++  `**${cal.summary.confirmed} confirmed · ${cal.summary.ambiguous} ambiguous · ${cal.summary.unresolved} unresolved · ${cal.summary.coverageGaps} coverage gap(s)**. Unresolved items produce NO calendar entry; coverage gaps are contracts with no dated clause at all — quiet is not clean.`,
+   "",
+-  "## Notice deadlines (chronological)",
++  "## Notice deadlines (chronological, by urgency tier)",
+   "",
+-  "| Notice deadline | Event date | Contract | Clause | Lead time | Status |",
+-  "|---|---|---|---|---|---|",
++  "| Notice deadline | Event date | Contract | Clause | Lead time | Urgency | Escalation | Status |",
++  "|---|---|---|---|---|---|---|---|",
+   ...cal.events.map(
+     (e) =>
+-      `| ${e.noticeDeadline} | ${e.date} | ${e.contractName} | ${e.clauseType} | ${e.leadTimeDays}d (${e.leadTimeSource}) | ${e.status}${e.ambiguityFlag ? " ⚠" : ""} |`
++      `| ${e.noticeDeadline} | ${e.date}${e.recurrence ? ` (cycle ${e.recurrence.cycle}/${e.recurrence.termMonths}mo)` : ""} | ${e.contractName} | ${e.clauseType} | ${e.leadTimeDays}d (${e.leadTimeSource}) | ${tierCell(e)} | ${e.escalation ? `${e.escalation.owner}` : "—"} | ${e.status}${e.ambiguityFlag ? " ⚠" : ""} |`
+   ),
+   "",
++  ...cal.events.filter((e) => e.confirmation).flatMap((e) => [
++    `### ✓ Confirmed — ${e.contractName} (${e.clauseType})`,
++    "",
++    `- pinned date: \`${e.confirmation.date}\` by ${e.confirmation.confirmedBy}${e.confirmation.on ? ` on ${e.confirmation.on}` : ""} (resolved \`${e.confirmation.resolvedFlag}\` flag)`,
++    "",
++  ]),
+   ...cal.events.filter((e) => e.ambiguityFlag).flatMap((e) => [
+     `### ⚠ Ambiguity — ${e.contractName} (${e.clauseType})`,
+     "",
+@@ -37,17 +47,36 @@ const md = [
+     `- flag (${e.ambiguityFlag.type}): ${e.ambiguityFlag.note}`,
+     "",
+   ]),
++  ...cal.unappliedConfirmations.flatMap((c) => [
++    "### ✗ Refused confirmation",
++    "",
++    `- \`${c.contractId}/${c.clauseType}\` pinned \`${c.date}\`: ${c.reason}`,
++    "",
++  ]),
+   "## Unresolved (excluded from calendar — human review required)",
+   "",
+   ...(cal.unresolved.length
+     ? cal.unresolved.map((u) => `- **${u.contractName}** \`${u.clauseType}\` — \`${u.expression}\`: ${u.reason}`)
+     : ["- none"]),
+   "",
++  "## Coverage audit (quiet is not clean)",
++  "",
++  ...(cal.coverage.length
++    ? [
++        "Contracts with **no dated renewal/notice clause** — nothing above is tracking them:",
++        "",
++        ...cal.coverage.map((c) => `- **${c.contractName}** [${c.contractId}]: ${c.reason}`),
++      ]
++    : ["- none — every contract has at least one dated clause"]),
++  "",
+   "## Rules applied (rules-as-data)",
+   "",
+   `Default lead time ${input.rules.defaultLeadTimeDays}d; by clause type: ` +
+     Object.entries(input.rules.byClauseType).map(([k, v]) => `\`${k}\`=${v}d`).join(", ") +
+     ". Clause-level overrides win.",
++  ...(Array.isArray(input.rules.escalation) && input.rules.escalation.length
++    ? ["", "Escalation (most urgent first): " + input.rules.escalation.map((r) => `≤${r.maxDaysOut}d → **${r.owner}**`).join(", ") + "."]
++    : []),
+   "",
+   "_All data fictional. Extracted dates require human confirmation — an ambiguous reading is a prompt to read the clause, not a deadline to rely on. Not legal advice._",
+   "",
+@@ -55,5 +84,5 @@ const md = [
+ writeFileSync(join(here, "report.md"), md);
+ 
+ console.log(
+-  `${cal.summary.confirmed} confirmed, ${cal.summary.ambiguous} ambiguous, ${cal.summary.unresolved} unresolved — wrote calendar.json, renewal-calendar.ics, report.md`
++  `${cal.summary.confirmed} confirmed, ${cal.summary.ambiguous} ambiguous, ${cal.summary.unresolved} unresolved, ${cal.summary.coverageGaps} coverage gap(s) — wrote calendar.json, renewal-calendar.ics, report.md`
+ );
+diff --git a/open-artifacts/renewal-calendar/spec.md b/open-artifacts/renewal-calendar/spec.md
+index 7f86593..4453b8e 100644
+--- a/open-artifacts/renewal-calendar/spec.md
++++ b/open-artifacts/renewal-calendar/spec.md
+@@ -12,23 +12,47 @@ papered over; unresolvable expressions never become calendar dates.
+ ## What it does
+ 
+ 1. **Date normalization with ambiguity flags** over a small, explicit grammar
+-   (rules-as-data, extendable):
++   (rules-as-data PATTERNS table, extendable — each pattern carries an
++   ambiguity policy):
+    - `YYYY-MM-DD` → exact
+-   - `N days before/after <renewal date|effective date|quarter end>` → computed
+-   - `within N days of quarter end` → **ambiguous**: both readings computed,
+-     earlier (conservative) scheduled, `window-direction-and-quarter` flag with
+-     a confirm-with-lawyer note
+-   - bare `quarter end` → ambiguous (`quarter-selection` flag: nearest quarter
+-     end on/after as-of assumed)
++   - `N days before/after/prior to <anchor>` → computed (`prior to` = before)
++   - `within N days of <anchor>` → **ambiguous**: both readings computed,
++     earlier (conservative) scheduled, `window-direction` flag (plus any
++     anchor-selection flag) with a confirm-with-lawyer note — works for any
++     anchor, not just quarter end
++   - bare `quarter end` / `month end` → ambiguous (`quarter-selection` /
++     `month-selection` flag: nearest period end on/after as-of assumed)
++   - anchors: `renewal date`, `effective date`, `expiration`/`expiration date`
++     (alias renewal date), `quarter end`, `month end`; unknown or missing
++     anchors → unresolved, never guessed
+    - anything else (e.g. `on mutual agreement`) → **unresolved** — listed for
+      review, excluded from the calendar, never guessed
+ 2. **Notice-deadline computation** from rules-as-data lead times:
+    `{ defaultLeadTimeDays: 60, byClauseType: { "auto-renewal": 90, … } }`,
+    clause-level `leadTimeDaysOverride` wins; provenance recorded
+    (`rules.byClauseType[auto-renewal]` vs `clause override`).
+-3. **ICS export** (RFC 5545): one VEVENT per dated item at its notice
+-   deadline, 14-day VALARM, full provenance + ambiguity warnings in the
+-   DESCRIPTION, folded lines ≤ 75 octets. Unresolved items produce no event.
++3. **Urgency tiers + escalation**: every event carries
++   `urgency: { tier, daysUntil }` with tiers `overdue | 30d | 60d | 90d |
++   180d | later`; optional `rules.escalation[]` (`{ maxDaysOut, owner }`,
++   most urgent first) assigns an owner per event. Both ride into ICS
++   CATEGORIES and the SUMMARY prefix.
++4. **Coverage audit**: contracts whose clauses contain no dated (or
++   date-expression) renewal/notice item land in `cal.coverage` with a reason
++   — a contract the calendar silently ignores is a failure mode, not a quiet
++   week.
++5. **Attorney confirmations** (`confirmations[]` argument): pin
++   `{ contractId, clauseType, date }` to promote an ambiguous event to
++   `confirmed` with provenance (`confirmation { confirmedBy, on,
++   resolvedFlag }`); the notice deadline, urgency and escalation are
++   recomputed. Pins matching no candidate are listed in
++   `unappliedConfirmations`, never silently applied.
++6. **Recurrence**: `renewalTermMonths` on `auto-renewal`/`evergreen` clauses
++   projects the first two cycles on/after as-of (stable UIDs per date;
++   dedupe by contract + clauseType + date).
++7. **ICS export** (RFC 5545): one VEVENT per dated item at its notice
++   deadline, 14-day VALARM, urgency tier + escalation owner in CATEGORIES,
++   full provenance + ambiguity warnings + confirmations in the DESCRIPTION,
++   folded lines ≤ 75 octets. Unresolved items produce no event.
+ 
+ ## IO contract
+ 
+@@ -38,20 +62,23 @@ import { normalizeDateExpression, buildCalendar, toICS } from "./core/core.js";
+ normalizeDateExpression("within 60 days of quarter end", { asOf, renewalDate?, effectiveDate? });
+ //   => { status: "exact"|"computed"|"ambiguous"|"unresolved", date, reason, candidates?, ambiguityFlag? }
+ 
+-const cal = buildCalendar({ asOf, contracts: [...clauses...] }, rules);
+-// cal.events[] (confirmed|ambiguous) sorted by noticeDeadline; cal.unresolved[]; cal.summary{}
++const cal = buildCalendar({ asOf, contracts: [...clauses...] }, rules, confirmations?);
++// cal.events[] (confirmed|ambiguous) sorted by noticeDeadline, each with
++//   urgency{tier,daysUntil}, escalation, recurrence?, confirmation?, ambiguityFlag?;
++// cal.unresolved[]; cal.coverage[]; cal.unappliedConfirmations[]; cal.summary{
++//   total, confirmed, ambiguous, unresolved, coverageGaps }
+ toICS(cal);
+ ```
+ 
+-Clause input: `{ type, date | dateExpression, quote?, leadTimeDaysOverride? }`
+-— structured clause JSON produced upstream (human or LLM extraction, schema
+-below). The core never reads raw contract prose.
++Clause input: `{ type, date | dateExpression, quote?, leadTimeDaysOverride?,
++renewalTermMonths? }` — structured clause JSON produced upstream (human or
++LLM extraction, schema below). The core never reads raw contract prose.
+ 
+ ## Deterministic vs LLM-assisted
+ 
+ | Layer | Who |
+ |---|---|
+-| Grammar parsing, ambiguity flags, lead-time math, ICS | **code** |
++| Grammar parsing, ambiguity flags, lead-time math, urgency tiers, escalation, coverage audit, recurrence, ICS | **code** |
+ | Finding renewal/termination clauses in contract text and filling the clause JSON | optional LLM (extraction) |
+ | Lead-time policy | **org** (rules-as-data) |
+ 
+@@ -65,7 +92,8 @@ below). The core never reads raw contract prose.
+     "date": "YYYY-MM-DD when the clause states an explicit date, else null",
+     "dateExpression": "verbatim temporal phrase when no explicit date (e.g. 'within 60 days of quarter end')",
+     "quote": "verbatim clause text",
+-    "leadTimeDaysOverride": "number only when the clause states its own notice window, else null"
++    "leadTimeDaysOverride": "number only when the clause states its own notice window, else null",
++    "renewalTermMonths": "renewal term length in months when the clause renews for successive terms (e.g. 12), else null"
+   },
+   "rules": ["Copy temporal phrases verbatim into dateExpression — never interpret them.", "No invented dates."]
+ }
+@@ -78,9 +106,14 @@ grammar + human confirmation, not the model.
+ 
+ - **Ambiguity is a first-class output.** "Within 60 days of quarter end" is
+   not silently resolved — both readings are computed, the conservative one is
+-  scheduled, and the flag tells you what to confirm.
++  scheduled, and the flag tells you what to confirm. Confirmations then pin
++  the reading as data, with provenance.
+ - **Unresolvable ≠ guessed.** Free-text temporal phrases land in a review
+-  list, not on the calendar.
++  list, not on the calendar — and the coverage audit names contracts with no
++  dated clause at all.
++- **Urgency tiers and escalation are deterministic rules-as-data**, not
++  prompt-tuned tiers inside an LLM worker; past deadlines surface as
++  `overdue`, never as plain events.
+ - **Lead times as versioned data** with per-event provenance (which rule
+   produced this deadline), plus clause-level overrides.
+ - **ICS export** — deadlines land in the calendar system people actually use,

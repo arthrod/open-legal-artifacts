@@ -1,0 +1,2402 @@
+diff --git a/open-artifacts/entity-compliance-calendar/README.md b/open-artifacts/entity-compliance-calendar/README.md
+index 8ea1920..c6a9c19 100644
+--- a/open-artifacts/entity-compliance-calendar/README.md
++++ b/open-artifacts/entity-compliance-calendar/README.md
+@@ -9,21 +9,39 @@ computed by code, and delinquency surfaces at the true age of the miss.
+ 
+ - Entities × obligations matrix: each cell carries next due date, period,
+   computation rule, and status (`delinquent / due-soon / scheduled /
+-  satisfied / n/a` with reasons).
++  satisfied / unknown / n/a` with reasons — `unknown` = missing entity
++  data, `n/a` = rule provably inapplicable).
+ - Recurring scheduling: annual & biennial formation-anniversary or fixed
+-  calendar dates (biennial honors formation-year parity; Feb-29 anchors roll
++  calendar dates (biennial honors anchor-year parity; Feb-29 anchors roll
+   correctly; impossible dates produce none), plus event-driven obligations
+   (e.g. initial report 90 days after formation).
++- **Foreign qualifications** — obligations bind through
++  `entity.qualifications[].qualifiedOn`; foreign deadlines are computed
++  from the qualification date, not flagged in prose.
++- **Rule provenance & staleness** — obligations carry
++  `effectiveFrom`/`verifiedOn`; cells flag `ruleStale` when verification is
++  >365d old (surfaced in CSV + ICS).
++- **Health audit** — deterministic flags: dormant >5y dissolution
++  candidates, missing formation dates, stale/unknown good standing,
++  footprint-vs-qualified gaps.
++- **Agent-report ingestion** — fictional registered-agent CSV matched by
++  normalized entity name ("Acme Holdings LLC" ≡ "Acme Holdings, LLC") with
++  matched/unmatched/notInReport diff and a confirm-gated pure apply.
++- **Fees & good standing** — filing fees totaled per entity; standing
++  states (ok/stale/unknown) carried into CSV and ICS.
++- **Filing windows** — `report(matrix, [30, 60, 90, 180])` buckets
++  actionable filings cumulatively (overdue always included); the demo adds
++  a window filter.
+ - **Earliest-unfiled-period semantics** — a missed 2021 filing is delinquent
+   since 2021; filings skip satisfied periods; gaps never disappear.
+-- Exports: CSV (full audit trail incl. statute cites) and ICS with
+-  recurrence rules (`RRULE:FREQ=YEARLY;INTERVAL=2`) and alarms.
++- Exports: CSV (full audit trail incl. cites, provenance, standing, fees)
++  and ICS with recurrence rules (`RRULE:FREQ=YEARLY;INTERVAL=2`) and alarms.
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 13 tests (node:test)
+-node examples/run.js   # 5 fictional entities × 5 obligations → matrix.json, compliance.csv, compliance.ics, report.md
++node --test            # 22 tests (node:test)
++node examples/run.js   # 7 fictional entities × 5 obligations → matrix.json, compliance.csv, compliance.ics, report.md
+ ```
+ 
+ Open `demo/index.html` for the interactive matrix.
+@@ -34,13 +52,21 @@ Open `demo/index.html` for the interactive matrix.
+    cite (fictional in examples); every computed deadline states its rule.
+    Deadline rules are statutory and change — a maintained open dataset
+    beats a product-internal one.
+-2. **True delinquency ages** — the worked example surfaces a biennial
++2. **Computed staleness, not vibes** — rules carry `verifiedOn` and cells
++   flag `ruleStale` past 365d; the counterpart's "verify the law" caveat
++   becomes a per-cell tested signal.
++3. **True delinquency ages** — the worked example surfaces a biennial
+    statement 2,032 days overdue, not "this year's filing".
+-3. **Recurrence-aware ICS export** — calendar systems keep scheduling
++4. **Foreign qualifications computed** — qualification-anniversary math
++   produces real foreign deadlines; the counterpart flags them in prose.
++5. **Auditable ingestion + deterministic audit** — agent reports match by
++   normalized name with an explicit diff and confirm-gated apply; health
++   flags (dormancy, standing, gaps) are computed, not LLM-judged.
++6. **Recurrence-aware ICS export** — calendar systems keep scheduling
+    future cycles automatically.
+-4. **No fabricated dates, ever** — dissolved entities, off-type
+-   obligations, missing formation dates, and impossible fixed dates all
+-   resolve to explicit `n/a` with reasons.
++7. **No fabricated dates, ever** — dissolved entities, off-type
++   obligations, and impossible fixed dates resolve to explicit `n/a` with
++   reasons; missing entity data resolves to `unknown`; both are counted.
+ 
+ ## Layout
+ 
+diff --git a/open-artifacts/entity-compliance-calendar/core/core.js b/open-artifacts/entity-compliance-calendar/core/core.js
+index cc027f9..9c85a96 100644
+--- a/open-artifacts/entity-compliance-calendar/core/core.js
++++ b/open-artifacts/entity-compliance-calendar/core/core.js
+@@ -56,33 +56,58 @@ function fixedDate(month, day, y) {
+ /**
+  * Compute the next (unfiled) due date for one obligation × entity.
+  *
+- * @param {any} ob — obligation rule: { id, jurisdiction, entityTypes?, recurring: "annual"|"biennial"|"event", anchor: "formationAnniversary"|"calendarFixed"|"formation", dueMonth?, dueDay?, dueWithinDays?, name, statuteCite? }
+- * @param {any} entity — { id, jurisdiction, type, formedOn, status? }
+- * @param {Array<any>} filings — [{ entityId, obligationId, period: number|"once", filedOn }]
++ * Applicability: an obligation binds a home entity by formation jurisdiction,
++ * or a foreign entity that holds a qualification in the obligation's
++ * jurisdiction (`entity.qualifications: [{ jurisdiction, qualifiedOn }]`); in
++ * that case all anchor math uses `qualifiedOn` instead of `formedOn`.
++ *
++ * Missing anchor data (no formation / qualification date) resolves to the
++ * `unknown` status — distinct from `n/a`, which means the rule provably does
++ * not apply (wrong jurisdiction/type, inactive entity, impossible rule data).
++ *
++ * @param {any} ob — obligation rule: { id, jurisdiction, entityTypes?, recurring: "annual"|"biennial"|"event", anchor: "formationAnniversary"|"calendarFixed"|"formation", dueMonth?, dueDay?, dueWithinDays?, name, statuteCite?, effectiveFrom?, verifiedOn? }
++ * @param {any} entity — { id, jurisdiction, type, formedOn, status?, qualifications?: [{ jurisdiction, qualifiedOn }] }
++ * @param {Array<any>} filings — [{ entityId, obligationId, period: number|"once", filedOn, fee? }]
+  * @param {string} asOfIso
+- * @returns {{ applies: boolean, skipReason?: string, dueOn: string|null, period: number|"once"|null, status: "delinquent"|"due-soon"|"scheduled"|"satisfied"|"n/a", ruleNote: string }}
++ * @returns {{ applies: boolean, skipReason?: string, dueOn: string|null, period: number|"once"|null, status: "delinquent"|"due-soon"|"scheduled"|"satisfied"|"unknown"|"n/a", ruleNote: string, ruleStale: boolean }}
+  */
+ export function nextDue(ob, entity, filings, asOfIso) {
++  const r = computeNextDue(ob, entity, filings, asOfIso);
++  // Rule provenance: verifiedOn older than 365d before asOf flags the cell as
++  // riding on a stale rule. Metadata only — never changes the computed status.
++  const v = parseDate(ob?.verifiedOn);
++  const asOf = parseDate(asOfIso);
++  const ruleStale = r.applies && !!v && !!asOf && (asOf.getTime() - v.getTime()) / 86400000 > 365;
++  return { ...r, ruleStale };
++}
++
++function computeNextDue(ob, entity, filings, asOfIso) {
+   const asOf = parseDate(asOfIso);
+ 
+   // Applicability
+   if ((ob.entityTypes ?? []).length && !(ob.entityTypes ?? []).includes(entity.type))
+     return { applies: false, skipReason: `entity type "${entity.type}" not in [${ob.entityTypes.join(", ")}]`, dueOn: null, period: null, status: "n/a", ruleNote: "" };
+-  if (ob.jurisdiction !== entity.jurisdiction)
+-    return { applies: false, skipReason: `obligation jurisdiction ${ob.jurisdiction} ≠ entity jurisdiction ${entity.jurisdiction}`, dueOn: null, period: null, status: "n/a", ruleNote: "" };
++  const isHome = ob.jurisdiction === entity.jurisdiction;
++  const qual = !isHome ? (entity.qualifications ?? []).find((q) => q.jurisdiction === ob.jurisdiction) : null;
++  if (!isHome && !qual)
++    return { applies: false, skipReason: `obligation jurisdiction ${ob.jurisdiction} ≠ entity jurisdiction ${entity.jurisdiction} and no foreign qualification there`, dueOn: null, period: null, status: "n/a", ruleNote: "" };
+   if (String(entity.status ?? "active") !== "active")
+     return { applies: false, skipReason: `entity status "${entity.status}" — tracking paused`, dueOn: null, period: null, status: "n/a", ruleNote: "" };
+ 
++  // Anchor: formation date at home, qualification date abroad.
++  const anchorIso = isHome ? entity.formedOn : qual.qualifiedOn;
++  const anchorKind = isHome ? "formation" : `foreign qualification in ${ob.jurisdiction}`;
++
+   const filed = new Set(
+     (filings ?? [])
+       .filter((f) => f.entityId === entity.id && f.obligationId === ob.id)
+       .map((f) => String(f.period))
+   );
+ 
+-  // Event-driven (e.g. initial report within N days of formation)
++  // Event-driven (e.g. initial report within N days of the anchor event)
+   if (ob.recurring === "event") {
+-    const anchor = parseDate(entity.formedOn);
+-    if (!anchor) return { applies: true, dueOn: null, period: null, status: "n/a", ruleNote: "formation date missing — cannot compute event obligation" };
++    const anchor = parseDate(anchorIso);
++    if (!anchor) return { applies: true, dueOn: null, period: null, status: "unknown", ruleNote: `${anchorKind} date missing — cannot compute event obligation` };
+     const due = new Date(anchor.getTime() + (ob.dueWithinDays ?? 90) * 86400000);
+     const period = "once";
+     if (filed.has(period)) return { applies: true, dueOn: fmtDate(due), period, status: "satisfied", ruleNote: `event obligation satisfied (filing recorded)` };
+@@ -92,34 +117,35 @@ export function nextDue(ob, entity, filings, asOfIso) {
+       dueOn: fmtDate(due),
+       period,
+       status: overdue ? "delinquent" : "scheduled",
+-      ruleNote: `event: ${ob.dueWithinDays ?? 90}d after formation (${fmtDate(anchor)})`,
++      ruleNote: `event: ${ob.dueWithinDays ?? 90}d after ${anchorKind} (${fmtDate(anchor)})`,
+     };
+   }
+ 
+-  // Recurring: annual or biennial
+-  const formed = parseDate(entity.formedOn);
+-  if (!formed) return { applies: true, dueOn: null, period: null, status: "n/a", ruleNote: "formation date missing" };
++  // Recurring: annual or biennial, anchored to formation (home) or qualification (abroad)
++  const formed = parseDate(anchorIso);
++  if (!formed) return { applies: true, dueOn: null, period: null, status: "unknown", ruleNote: `${anchorKind} date missing` };
+   const formationYear = formed.getUTCFullYear();
+   const interval = ob.recurring === "biennial" ? 2 : 1;
+ 
+-  /** due date for period year y, or null if the year is off-cycle / before formation / fixed date impossible */
++  /** due date for period year y, or null if the year is off-cycle / before anchor / fixed date impossible */
+   const dueInYear = (y) => {
+     let due = null;
+     if (ob.anchor === "calendarFixed") {
+-      if (interval === 2 && (y - formationYear) % 2 !== 0) return null; // fixed biennial honors formation-year parity
++      if (interval === 2 && (y - formationYear) % 2 !== 0) return null; // fixed biennial honors anchor-year parity
+       due = fixedDate(ob.dueMonth, ob.dueDay, y);
+     } else {
+       if ((y - formationYear) % interval !== 0) return null; // off-cycle year
+-      due = anniversary(entity.formedOn, y);
++      due = anniversary(anchorIso, y);
+     }
+     if (!due) return null;
+-    if (due.getTime() < formed.getTime()) return null; // first cycle always falls on/after formation
++    if (due.getTime() < formed.getTime()) return null; // first cycle always falls on/after the anchor
+     return due;
+   };
++  const anchorLabel = isHome ? "formation" : "qualification";
+   const ruleNote =
+     ob.anchor === "calendarFixed"
+       ? `${ob.recurring}, fixed ${ob.dueMonth}/${ob.dueDay}`
+-      : `${ob.recurring}, formation anniversary (${fmtDate(formed).slice(5)})${interval === 2 ? ", even-cycle from formation year" : ""}`;
++      : `${ob.recurring}, ${anchorLabel} anniversary (${fmtDate(formed).slice(5)})${interval === 2 ? ", even-cycle from anchor year" : ""}`;
+ 
+   // Scan from first eligible year forward; the EARLIEST UNFILED period decides
+   // (an unfiled 2020 obligation in 2026 is delinquent since 2020, not "current year").
+@@ -143,36 +169,57 @@ export function nextDue(ob, entity, filings, asOfIso) {
+     return { applies: true, dueOn: null, period: null, status: "n/a", ruleNote: `recurring rule produced no valid due date (${ruleNote}) — verify rule data` };
+   // every period through asOf+interval filed → next cycle
+   const y = asOf.getUTCFullYear() + interval;
+-  const due = dueInYear(y) ?? anniversary(entity.formedOn, y);
++  const due = dueInYear(y) ?? anniversary(anchorIso, y);
+   return { applies: true, dueOn: fmtDate(due), period: y, status: "scheduled", ruleNote };
+ }
+ 
+ /* ---------- matrix ---------- */
+ 
++/** Good-standing state for one entity: confirmed recently → ok, >365d → stale, never → unknown.
++ * @param {any} entity @param {Date} asOf @returns {"ok"|"stale"|"unknown"} */
++function standingState(entity, asOf) {
++  const gs = parseDate(entity.goodStandingConfirmedOn);
++  if (!gs) return "unknown";
++  return (asOf.getTime() - gs.getTime()) / 86400000 > 365 ? "stale" : "ok";
++}
++
++/** Fee of the LATEST filing (max filedOn; ties → later in list) recorded for one entity × obligation.
++ * @param {Array<any>} filings @param {string} entityId @param {string} obligationId @returns {number|null} */
++function lastFilingFee(filings, entityId, obligationId) {
++  let best = null;
++  for (const f of filings)
++    if (f.entityId === entityId && f.obligationId === obligationId && f.fee != null)
++      if (!best || String(f.filedOn ?? "") >= String(best.filedOn ?? "")) best = f;
++  return best ? best.fee : null;
++}
++
+ /**
+  * Build the entities × obligations compliance matrix.
+  * @param {{ asOf: string, entities: any[], obligations: any[], filings?: any[], soonDays?: number }} input
+  * @returns {{ asOf: string, grid: Array<Array<any>>, entities: any[], obligations: any[],
+  *             delinquent: Array<{entityId:string,entityName:string,obligationId:string,obligationName:string,dueOn:string,overdueDays:number}>,
+- *             counts: { cells: number, delinquent: number, "due-soon": number, scheduled: number, satisfied: number, "n/a": number } }}
++ *             counts: { cells: number, delinquent: number, "due-soon": number, scheduled: number, satisfied: number, unknown: number, "n/a": number },
++ *             feeTotals: { recorded: number, byEntity: Record<string, number> },
++ *             goodStanding: Array<{entityId:string,entityName:string,jurisdiction:string,confirmedOn:string|null,state:"ok"|"stale"|"unknown"}> }}
+  */
+ export function buildMatrix(input) {
+   const soonDays = input.soonDays ?? 45;
++  const filings = input.filings ?? [];
+   const grid = (input.entities ?? []).map((entity) =>
+     (input.obligations ?? []).map((ob) => {
+-      const r = nextDue(ob, entity, input.filings ?? [], input.asOf);
++      const r = nextDue(ob, entity, filings, input.asOf);
+       // re-evaluate due-soon with configurable window
+       if (r.status === "scheduled" && r.dueOn) {
+         const due = parseDate(r.dueOn);
+         const asOf = parseDate(input.asOf);
+         if (due.getTime() - asOf.getTime() <= soonDays * 86400000) r.status = "due-soon";
+       }
+-      return { entity: entity.id, obligation: ob.id, ...r };
++      return { entity: entity.id, obligation: ob.id, fee: lastFilingFee(filings, entity.id, ob.id), ...r };
+     })
+   );
+ 
+   const delinquent = [];
+-  const counts = { cells: 0, delinquent: 0, "due-soon": 0, scheduled: 0, satisfied: 0, "n/a": 0 };
++  const counts = { cells: 0, delinquent: 0, "due-soon": 0, scheduled: 0, satisfied: 0, unknown: 0, "n/a": 0 };
+   (input.entities ?? []).forEach((entity, r) => {
+     (input.obligations ?? []).forEach((ob, c) => {
+       const cell = grid[r][c];
+@@ -192,7 +239,215 @@ export function buildMatrix(input) {
+     });
+   });
+   delinquent.sort((a, b) => b.overdueDays - a.overdueDays);
+-  return { asOf: input.asOf, grid, entities: input.entities, obligations: input.obligations, delinquent, counts };
++  const asOfDate = parseDate(input.asOf);
++  const feeTotals = { recorded: 0, byEntity: Object.fromEntries((input.entities ?? []).map((e) => [e.id, 0])) };
++  for (const f of filings)
++    if (typeof f.fee === "number" && f.entityId in feeTotals.byEntity) {
++      feeTotals.byEntity[f.entityId] += f.fee;
++      feeTotals.recorded += f.fee;
++    }
++  const goodStanding = (input.entities ?? []).map((e) => ({
++    entityId: e.id,
++    entityName: e.name,
++    jurisdiction: e.jurisdiction,
++    confirmedOn: e.goodStandingConfirmedOn ?? null,
++    state: standingState(e, asOfDate),
++  }));
++  return { asOf: input.asOf, grid, entities: input.entities, obligations: input.obligations, delinquent, counts, feeTotals, goodStanding };
++}
++
++/* ---------- filing-window report ---------- */
++
++/**
++ * Bucket actionable cells (delinquent / due-soon / scheduled) into cumulative
++ * filing windows (default 30/60/90/180 days). Overdue items (negative daysOut)
++ * appear in every bucket. `satisfied`, `n/a`, and `unknown` cells are excluded.
++ * @param {any} matrix — output of buildMatrix
++ * @param {number[]} [windows]
++ * @returns {{ asOf: string, actionable: Array<any>, windows: Array<{ days: number, count: number, items: Array<any> }> }}
++ */
++export function report(matrix, windows = [30, 60, 90, 180]) {
++  const asOf = parseDate(matrix.asOf);
++  const actionable = [];
++  matrix.entities.forEach((e, r) =>
++    matrix.obligations.forEach((o, c) => {
++      const cell = matrix.grid[r][c];
++      if (!cell.dueOn || cell.status === "satisfied" || cell.status === "n/a" || cell.status === "unknown") return;
++      const due = parseDate(cell.dueOn);
++      actionable.push({
++        entityId: e.id,
++        entityName: e.name,
++        obligationId: o.id,
++        obligationName: o.name,
++        dueOn: cell.dueOn,
++        status: cell.status,
++        daysOut: Math.round((due.getTime() - asOf.getTime()) / 86400000),
++      });
++    })
++  );
++  actionable.sort((a, b) => a.daysOut - b.daysOut);
++  const wins = [...new Set(windows)].sort((a, b) => a - b).map((days) => {
++    const items = actionable.filter((x) => x.daysOut <= days);
++    return { days, count: items.length, items };
++  });
++  return { asOf: matrix.asOf, actionable, windows: wins };
++}
++
++/* ---------- health audit ---------- */
++
++/**
++ * Deterministic portfolio health audit. Flags (all fictional heuristics, [verify] before operational use):
++ * - `missing-formedOn` — no parseable formation date;
++ * - `dormant-dissolution-candidate` — status "dormant" and dormant (dormantSince ?? formedOn) > 5 years;
++ * - `good-standing-unknown` / `good-standing-stale` — no / >365d-old goodStandingConfirmedOn (skipped for dissolved entities);
++ * - `foreign-qualification-gap` — entity.footprint lists a jurisdiction ≠ formation state with no qualification there.
++ * @param {{ asOf: string, entities: any[], obligations?: any[] }} input
++ * @returns {{ asOf: string, flags: Array<{code:string,entityId:string,entityName:string,jurisdiction?:string,detail:string}>, counts: { flags: number, byCode: Record<string,number> } }}
++ */
++export function auditHealth(input) {
++  const asOf = parseDate(input.asOf);
++  const flags = [];
++  for (const e of input.entities ?? []) {
++    const formed = parseDate(e.formedOn);
++    if (!formed)
++      flags.push({ code: "missing-formedOn", entityId: e.id, entityName: e.name, jurisdiction: e.jurisdiction, detail: "no parseable formation date — deadlines and entity age cannot be computed" });
++    if (String(e.status ?? "active") === "dormant") {
++      const since = parseDate(e.dormantSince) ?? formed;
++      const days = since ? Math.round((asOf.getTime() - since.getTime()) / 86400000) : null;
++      if (days !== null && days > 5 * 365)
++        flags.push({ code: "dormant-dissolution-candidate", entityId: e.id, entityName: e.name, jurisdiction: e.jurisdiction, detail: `dormant ${days}d (>5y since ${fmtDate(since)}) — dissolution candidate [verify with agent]` });
++    }
++    if (String(e.status ?? "active") !== "dissolved") {
++      const gs = parseDate(e.goodStandingConfirmedOn);
++      if (!gs)
++        flags.push({ code: "good-standing-unknown", entityId: e.id, entityName: e.name, jurisdiction: e.jurisdiction, detail: "no good-standing confirmation on record (goodStandingConfirmedOn missing)" });
++      else {
++        const days = Math.round((asOf.getTime() - gs.getTime()) / 86400000);
++        if (days > 365)
++          flags.push({ code: "good-standing-stale", entityId: e.id, entityName: e.name, jurisdiction: e.jurisdiction, detail: `last good-standing confirmation ${fmtDate(gs)} (${days}d old, >365d)` });
++      }
++    }
++    const quals = new Set((e.qualifications ?? []).map((q) => q.jurisdiction));
++    for (const j of e.footprint ?? [])
++      if (j !== e.jurisdiction && !quals.has(j))
++        flags.push({ code: "foreign-qualification-gap", entityId: e.id, entityName: e.name, jurisdiction: j, detail: `footprint includes ${j} but entity holds no qualification there [verify with agent]` });
++  }
++  const byCode = {};
++  for (const f of flags) byCode[f.code] = (byCode[f.code] ?? 0) + 1;
++  return { asOf: input.asOf, flags, counts: { flags: flags.length, byCode } };
++}
++
++/* ---------- registered-agent report ingestion (fictional CSV format) ---------- */
++
++/** Minimal CSV parser: quoted fields, embedded commas/quotes, CRLF. @param {string} text @returns {string[][]} */
++function parseCsv(text) {
++  const rows = [];
++  let row = [], field = "", inQ = false;
++  const s = String(text ?? "");
++  for (let i = 0; i < s.length; i++) {
++    const ch = s[i];
++    if (inQ) {
++      if (ch === '"') {
++        if (s[i + 1] === '"') { field += '"'; i++; } else inQ = false;
++      } else field += ch;
++    } else if (ch === '"') inQ = true;
++    else if (ch === ",") { row.push(field); field = ""; }
++    else if (ch === "\n") { row.push(field); field = ""; rows.push(row); row = []; }
++    else if (ch !== "\r") field += ch;
++  }
++  if (field !== "" || row.length) { row.push(field); rows.push(row); }
++  return rows.filter((r) => r.length > 1 || (r[0] ?? "") !== "");
++}
++
++/** Normalize an entity name for matching: lowercase, punctuation → spaces, collapsed.
++ * "Acme Holdings, LLC" ≡ "ACME Holdings LLC". @param {string} s @returns {string} */
++function normName(s) {
++  return String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
++}
++
++/**
++ * Ingest a fictional registered-agent report CSV (header required):
++ * `Report Date,Entity Name,Jurisdiction,Status,Good Standing` with Yes/No standing.
++ * Matches entities by normalized name (case/punctuation-insensitive), disambiguated
++ * by jurisdiction when several entities share a name. Returns an auditable diff —
++ * nothing is applied here; pair with applyFilingUpdates.
++ * @param {any[]} entities @param {string} csvText
++ * @returns {{ reportDate: string|null, matched: any[], unmatched: any[], notInReport: any[] }}
++ */
++export function ingestAgentReport(entities, csvText) {
++  const rows = parseCsv(csvText);
++  const none = { reportDate: null, matched: [], unmatched: [], notInReport: (entities ?? []).map((e) => ({ entityId: e.id, entityName: e.name })) };
++  if (!rows.length) return none;
++  const header = rows[0].map((h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, ""));
++  const idx = (names) => header.findIndex((h) => names.includes(h));
++  const iDate = idx(["reportdate", "date"]), iName = idx(["entityname", "name", "entity"]);
++  const iJur = idx(["jurisdiction", "domicile"]), iStatus = idx(["status"]), iGs = idx(["goodstanding", "standing"]);
++  if (iName < 0) throw new Error("agent report CSV must have an Entity Name column");
++  const byName = new Map();
++  for (const e of entities ?? []) {
++    const k = normName(e.name);
++    if (!byName.has(k)) byName.set(k, []);
++    byName.get(k).push(e);
++  }
++  const matched = [], unmatched = [];
++  let reportDate = null;
++  for (const r of rows.slice(1)) {
++    const reportName = String(r[iName] ?? "");
++    const jur = String((iJur >= 0 ? r[iJur] : "") ?? "");
++    if (iDate >= 0 && r[iDate] && !reportDate) reportDate = String(r[iDate]);
++    let cands = byName.get(normName(reportName)) ?? [];
++    if (cands.length > 1 && jur) cands = cands.filter((e) => e.jurisdiction === jur);
++    if (cands.length === 1)
++      matched.push({
++        entityId: cands[0].id,
++        entityName: cands[0].name,
++        reportName,
++        jurisdiction: jur || cands[0].jurisdiction,
++        status: String((iStatus >= 0 ? r[iStatus] : "") ?? "").trim(),
++        goodStanding: /^(yes|true|1|good)$/i.test(String(iGs >= 0 ? r[iGs] : "")),
++        reportDate: (iDate >= 0 ? r[iDate] : null) ?? null,
++      });
++    else
++      unmatched.push({ reportName, jurisdiction: jur, reason: cands.length === 0 ? "no entity matched by normalized name" : "ambiguous name match (same normalized name and jurisdiction)" });
++  }
++  const matchedIds = new Set(matched.map((m) => m.entityId));
++  return {
++    reportDate,
++    matched,
++    unmatched,
++    notInReport: (entities ?? []).filter((e) => !matchedIds.has(e.id)).map((e) => ({ entityId: e.id, entityName: e.name })),
++  };
++}
++
++/**
++ * Apply an ingest diff to entities — pure, two-phase. Default is a dry run that
++ * only proposes updates (`{ entityId, field, from, to }`); `{ confirm: true }`
++ * returns a new entities array with goodStandingConfirmedOn (= report date) and
++ * status aligned to the report. The input array is never mutated; a second run
++ * is a no-op (idempotent).
++ * @param {any[]} entities @param {any} ingest — output of ingestAgentReport
++ * @param {{ confirm?: boolean }} [opts]
++ * @returns {{ entities: any[], updates: Array<{entityId:string,field:string,from:any,to:any}>, applied: boolean }}
++ */
++export function applyFilingUpdates(entities, ingest, { confirm = false } = {}) {
++  const list = entities ?? [];
++  const updates = [];
++  for (const m of ingest?.matched ?? []) {
++    const e = list.find((x) => x.id === m.entityId);
++    if (!e) continue;
++    const rd = ingest.reportDate ?? m.reportDate ?? null;
++    if (m.goodStanding && rd && e.goodStandingConfirmedOn !== rd)
++      updates.push({ entityId: e.id, field: "goodStandingConfirmedOn", from: e.goodStandingConfirmedOn ?? null, to: rd });
++    const st = String(m.status ?? "").toLowerCase();
++    if (st && st !== String(e.status ?? "active").toLowerCase())
++      updates.push({ entityId: e.id, field: "status", from: e.status ?? "active", to: st });
++  }
++  if (!confirm) return { entities: list, updates, applied: false };
++  const next = list.map((e) => {
++    const us = updates.filter((u) => u.entityId === e.id);
++    return us.length ? { ...e, ...Object.fromEntries(us.map((u) => [u.field, u.to])) } : e;
++  });
++  return { entities: next, updates, applied: true };
+ }
+ 
+ /* ---------- exports ---------- */
+@@ -203,16 +458,19 @@ function csvEscape(v) {
+ }
+ 
+ /**
+- * CSV export of the matrix (entity × obligation rows).
++ * CSV export of the matrix (entity × obligation rows) with rule provenance
++ * (verifiedOn, ruleStale), entity good-standing state, and the latest filing
++ * fee per cell.
+  * @param {any} matrix — output of buildMatrix
+  * @returns {string} */
+ export function toCsv(matrix) {
+-  const header = ["entityId", "entity", "jurisdiction", "obligationId", "obligation", "recurring", "status", "nextDue", "period", "statuteCite", "ruleNote", "skipReason"];
++  const header = ["entityId", "entity", "jurisdiction", "obligationId", "obligation", "recurring", "status", "nextDue", "period", "statuteCite", "ruleNote", "skipReason", "goodStanding", "fee", "verifiedOn", "ruleStale"];
++  const gsByEntity = Object.fromEntries((matrix.goodStanding ?? []).map((g) => [g.entityId, g.state]));
+   const rows = [];
+   matrix.entities.forEach((e, r) => {
+     matrix.obligations.forEach((o, c) => {
+       const cell = matrix.grid[r][c];
+-      rows.push([e.id, e.name, e.jurisdiction, o.id, o.name, o.recurring, cell.status, cell.dueOn ?? "", cell.period ?? "", o.statuteCite ?? "", cell.ruleNote, cell.skipReason ?? ""]);
++      rows.push([e.id, e.name, e.jurisdiction, o.id, o.name, o.recurring, cell.status, cell.dueOn ?? "", cell.period ?? "", o.statuteCite ?? "", cell.ruleNote, cell.skipReason ?? "", gsByEntity[e.id] ?? "", cell.fee ?? "", o.verifiedOn ?? "", cell.ruleStale ? "true" : ""]);
+     });
+   });
+   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+@@ -241,22 +499,27 @@ function ymd(d) {
+ /**
+  * ICS export: one VEVENT per actionable cell (delinquent, due-soon,
+  * scheduled) at its next due date, with RRULE for annual/biennial
+- * recurrence, statutory cite in the description, and a 30-day alarm.
++ * recurrence, statutory cite, good-standing state, rule-staleness caveat,
++ * and a 30-day alarm.
+  * @param {any} matrix
+  * @returns {string} */
+ export function toICS(matrix) {
+   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//open-legal-artifacts//entity-compliance-calendar//EN", "CALSCALE:GREGORIAN"];
++  const gsByEntity = Object.fromEntries((matrix.goodStanding ?? []).map((g) => [g.entityId, g]));
+   matrix.entities.forEach((e, r) => {
+     matrix.obligations.forEach((o, c) => {
+       const cell = matrix.grid[r][c];
+-      if (!cell.dueOn || cell.status === "satisfied" || cell.status === "n/a") return;
++      if (!cell.dueOn || cell.status === "satisfied" || cell.status === "n/a" || cell.status === "unknown") return;
++      const gs = gsByEntity[e.id];
+       const desc = [
+         `${e.name} [${e.id}] — ${o.name}`,
+         `Statute (fictional): ${o.statuteCite ?? "n/a"}`,
+         `Rule: ${cell.ruleNote}`,
++        o.verifiedOn ? `Rule verified: ${o.verifiedOn}${cell.ruleStale ? " — STALE (>365d): re-verify before relying" : ""}` : "Rule verified: unknown",
++        gs ? `Good standing: ${gs.state}${gs.confirmedOn ? ` (confirmed ${gs.confirmedOn})` : ""}` : "",
+         cell.status === "delinquent" ? "STATUS: DELINQUENT — cure immediately (fictional data)" : `Status: ${cell.status}`,
+         "Rules-as-data defaults; verify against current statute. Not legal advice.",
+-      ].join("\\n");
++      ].filter(Boolean).join("\\n");
+       lines.push(
+         "BEGIN:VEVENT",
+         `UID:${e.id}-${o.id}-${ymd(cell.dueOn)}@open-legal-artifacts`,
+diff --git a/open-artifacts/entity-compliance-calendar/core/core.test.js b/open-artifacts/entity-compliance-calendar/core/core.test.js
+index adc75ef..9907d89 100644
+--- a/open-artifacts/entity-compliance-calendar/core/core.test.js
++++ b/open-artifacts/entity-compliance-calendar/core/core.test.js
+@@ -1,7 +1,7 @@
+ /** Tests for entity-compliance-calendar core. Run: node --test (from artifact root) */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { parseDate, nextDue, buildMatrix, toCsv, toICS } from "./core.js";
++import { parseDate, nextDue, buildMatrix, toCsv, toICS, report, auditHealth, ingestAgentReport, applyFilingUpdates } from "./core.js";
+ 
+ const AS_OF = "2026-11-07";
+ 
+@@ -174,3 +174,158 @@ test("parseDate rejects malformed dates", () => {
+   assert.equal(parseDate("2026-11-31"), null);
+   assert.ok(parseDate("2026-11-30"));
+ });
++
++/* ---------- Wave 2 (plans-v2): provenance, qualifications, health, ingestion ---------- */
++
++test("rule staleness: verifiedOn >365d before asOf → ruleStale true, status unchanged", () => {
++  const ob = { ...OBS[0], effectiveFrom: "2020-01-01", verifiedOn: "2025-10-01" }; // 402d before asOf
++  const r = nextDue(ob, ENT(), [], AS_OF);
++  assert.equal(r.ruleStale, true);
++  assert.equal(r.status, "delinquent"); // staleness is metadata, never a verdict change
++  assert.equal(nextDue({ ...OBS[0], verifiedOn: "2026-10-01" }, ENT(), [], AS_OF).ruleStale, false); // 37d → fresh
++  assert.equal(nextDue(OBS[0], ENT(), [], AS_OF).ruleStale, false); // no verifiedOn → not asserted stale
++});
++
++test("rule staleness + good standing + fees surface in CSV and ICS", () => {
++  const m = buildMatrix({
++    asOf: AS_OF,
++    entities: [ENT({ goodStandingConfirmedOn: "2026-10-01" })],
++    obligations: [{ ...OBS[0], verifiedOn: "2025-10-01" }],
++    filings: [{ entityId: "E-1", obligationId: "de-franchise", period: 2020, filedOn: "2020-03-10", fee: 400 }],
++  });
++  const csv = toCsv(m);
++  assert.match(csv.split("\n")[0], /goodStanding,fee,verifiedOn,ruleStale$/);
++  assert.match(csv.split("\n")[1], /,true$/);
++  assert.match(csv.split("\n")[1], /,ok,400,/); // standing state + latest filing fee carried per row
++  assert.match(toICS(m), /STALE/);
++  assert.match(toICS(m), /Good standing: ok/);
++});
++
++test("foreign qualifications: obligation binds via qualification, anchored to qualifiedOn", () => {
++  const e = ENT({ qualifications: [{ jurisdiction: "US-CA", qualifiedOn: "2022-08-01" }] });
++  const filings = [2022, 2024].map((p) => ({ entityId: "E-1", obligationId: "ca-sos-biennial", period: p, filedOn: "x" }));
++  const r = nextDue(OBS[1], e, filings, AS_OF); // biennial from 2022-08-01 → next unfiled 2026-08-01, 98d overdue
++  assert.equal(r.dueOn, "2026-08-01");
++  assert.equal(r.status, "delinquent");
++  assert.match(r.ruleNote, /qualification/);
++  const r2 = nextDue(OBS[1], e, [...filings, { entityId: "E-1", obligationId: "ca-sos-biennial", period: 2026, filedOn: "x" }], AS_OF);
++  assert.deepEqual({ s: r2.status, d: r2.dueOn }, { s: "scheduled", d: "2028-08-01" });
++  // not qualified there → n/a with reason
++  const na = nextDue(OBS[1], ENT(), [], AS_OF);
++  assert.equal(na.status, "n/a");
++  assert.match(na.skipReason, /foreign/);
++  // qualified but no date → unknown, never guessed
++  const nodate = nextDue(OBS[1], ENT({ qualifications: [{ jurisdiction: "US-CA" }] }), [], AS_OF);
++  assert.equal(nodate.status, "unknown");
++  assert.equal(nodate.dueOn, null);
++});
++
++test("unknown status: missing anchor data splits from n/a and is counted", () => {
++  assert.equal(nextDue(OBS[0], ENT({ formedOn: null }), [], AS_OF).status, "unknown");
++  assert.equal(nextDue(OBS[3], ENT({ jurisdiction: "US-TX", formedOn: null }), [], AS_OF).status, "unknown");
++  const m = buildMatrix({ asOf: AS_OF, entities: [ENT({ formedOn: null }), ENT()], obligations: [OBS[0]], filings: [] });
++  assert.equal(m.counts.unknown, 1);
++  assert.equal(m.counts.delinquent, 1);
++  assert.equal(m.counts["n/a"], 0);
++  // impossible fixed dates remain n/a — that is bad RULE data, not missing ENTITY data
++  assert.equal(nextDue({ ...OBS[2], dueDay: 30, dueMonth: 2 }, ENT({ jurisdiction: "US-NY" }), [], AS_OF).status, "n/a");
++});
++
++test("fees + good standing: matrix totals, standing states, CSV columns", () => {
++  const m = buildMatrix({
++    asOf: AS_OF,
++    entities: [
++      ENT({ goodStandingConfirmedOn: "2026-10-01" }), // ok
++      ENT({ id: "E-2", jurisdiction: "US-CA", formedOn: "2021-06-01", goodStandingConfirmedOn: "2025-01-01" }), // stale
++      ENT({ id: "E-3", jurisdiction: "US-TX", type: "llc", formedOn: "2026-06-01" }), // unknown
++    ],
++    obligations: OBS,
++    filings: [
++      { entityId: "E-1", obligationId: "de-franchise", period: 2020, filedOn: "x", fee: 400 },
++      { entityId: "E-1", obligationId: "de-franchise", period: 2021, filedOn: "x", fee: 400 },
++      { entityId: "E-2", obligationId: "ca-sos-biennial", period: 2021, filedOn: "x", fee: 20 },
++    ],
++  });
++  assert.equal(m.feeTotals.recorded, 820);
++  assert.deepEqual(m.feeTotals.byEntity, { "E-1": 800, "E-2": 20, "E-3": 0 });
++  const st = Object.fromEntries(m.goodStanding.map((g) => [g.entityId, g.state]));
++  assert.deepEqual(st, { "E-1": "ok", "E-2": "stale", "E-3": "unknown" });
++  const e1row = toCsv(m).split("\n").find((l) => l.startsWith("E-1,") && l.includes("de-franchise"));
++  assert.ok(e1row.endsWith(",ok,400,,"), e1row); // standing, latest filing fee, no verifiedOn, not stale
++});
++
++test("report(): 30/60/90/180 windows bucket actionable cells cumulatively", () => {
++  const ob = (id, month, day) => ({ ...OBS[2], id, recurring: "annual", dueMonth: month, dueDay: day });
++  const obligations = [ob("a35", 12, 12), ob("b75", 1, 21), ob("c100", 2, 15), ob("dOver", 6, 1)];
++  const m = buildMatrix({
++    asOf: AS_OF,
++    entities: [ENT({ jurisdiction: "US-NY", formedOn: "2025-12-12" })],
++    obligations,
++    filings: [
++      { entityId: "E-1", obligationId: "a35", period: 2025, filedOn: "x" }, // next 2026-12-12, +35d
++      { entityId: "E-1", obligationId: "b75", period: 2026, filedOn: "x" }, // next 2027-01-21, +75d
++      { entityId: "E-1", obligationId: "c100", period: 2026, filedOn: "x" }, // next 2027-02-15, +100d
++    ],
++  });
++  const rep = report(m);
++  assert.deepEqual(rep.windows.map((w) => w.days), [30, 60, 90, 180]);
++  assert.deepEqual(rep.windows.map((w) => w.count), [1, 2, 3, 4]); // overdue always in; +35 @60; +75 @90; +100 @180
++  assert.equal(rep.windows[0].items[0].obligationId, "dOver"); // 159d overdue sorts first
++  assert.equal(rep.actionable.length, 4);
++  // custom windows are honored
++  assert.deepEqual(report(m, [45, 120]).windows.map((w) => w.days), [45, 120]);
++});
++
++test("auditHealth: each flag fires exactly once on its fixture; clean and dissolved entities stay clean", () => {
++  const entities = [
++    ENT({ goodStandingConfirmedOn: "2026-10-01" }), // clean
++    ENT({ id: "E-2", formedOn: null, goodStandingConfirmedOn: "2026-10-01" }), // missing formedOn
++    ENT({ id: "E-3", formedOn: "2018-03-01", status: "dormant", goodStandingConfirmedOn: "2026-10-01" }), // dormant >5y
++    ENT({ id: "E-4", goodStandingConfirmedOn: "2025-01-01" }), // stale standing (675d)
++    ENT({ id: "E-5" }), // unknown standing
++    ENT({ id: "E-6", footprint: ["US-WA"], qualifications: [{ jurisdiction: "US-CA", qualifiedOn: "2022-01-01" }], goodStandingConfirmedOn: "2026-10-01" }), // WA gap, CA covered
++    ENT({ id: "E-7", status: "dissolved" }), // standing checks skipped for dissolved
++  ];
++  const h = auditHealth({ asOf: AS_OF, entities, obligations: OBS });
++  const codes = h.flags.map((f) => f.code).sort();
++  assert.deepEqual(codes, ["dormant-dissolution-candidate", "foreign-qualification-gap", "good-standing-stale", "good-standing-unknown", "missing-formedOn"]);
++  assert.equal(h.counts.flags, 5);
++  assert.equal(h.counts.byCode["good-standing-stale"], 1);
++  assert.ok(!h.flags.some((f) => f.entityId === "E-1" || f.entityId === "E-7"), "clean/dissolved entities must not flag");
++});
++
++const AGENT_CSV = [
++  "Report Date,Entity Name,Jurisdiction,Status,Good Standing",
++  '2026-10-31,"Acme Holdings, LLC",US-DE,Active,Yes',
++  "2026-10-31,Borealis Craft LLC,US-CO,Active,No",
++  "2026-10-31,Zephyr Ghost Inc,US-TX,Active,Yes",
++].join("\n");
++
++test("ingestAgentReport: case/punctuation-insensitive matching with matched/unmatched/notInReport diff", () => {
++  const entities = [
++    ENT({ name: "ACME Holdings LLC" }), // ≡ "Acme Holdings, LLC" modulo case + comma
++    ENT({ id: "E-2", name: "Northwind Robotics NY LLC", jurisdiction: "US-NY", formedOn: "2019-07-01" }),
++  ];
++  const r = ingestAgentReport(entities, AGENT_CSV);
++  assert.equal(r.reportDate, "2026-10-31");
++  assert.equal(r.matched.length, 1);
++  assert.equal(r.matched[0].entityId, "E-1");
++  assert.equal(r.matched[0].reportName, "Acme Holdings, LLC");
++  assert.equal(r.matched[0].goodStanding, true);
++  assert.deepEqual(r.unmatched.map((u) => u.reportName), ["Borealis Craft LLC", "Zephyr Ghost Inc"]);
++  assert.deepEqual(r.notInReport.map((u) => u.entityId), ["E-2"]);
++});
++
++test("applyFilingUpdates: dry-run proposes only; confirm applies without mutating input; idempotent", () => {
++  const entities = [ENT({ name: "ACME Holdings LLC", goodStandingConfirmedOn: "2025-05-01" })];
++  const ing = ingestAgentReport(entities, AGENT_CSV);
++  const dry = applyFilingUpdates(entities, ing);
++  assert.equal(dry.applied, false);
++  assert.ok(dry.updates.some((u) => u.entityId === "E-1" && u.field === "goodStandingConfirmedOn" && u.to === "2026-10-31"));
++  assert.equal(entities[0].goodStandingConfirmedOn, "2025-05-01"); // untouched by dry run
++  const done = applyFilingUpdates(entities, ing, { confirm: true });
++  assert.equal(done.applied, true);
++  assert.equal(done.entities.find((e) => e.id === "E-1").goodStandingConfirmedOn, "2026-10-31");
++  assert.equal(entities[0].goodStandingConfirmedOn, "2025-05-01"); // original array never mutated
++  assert.equal(applyFilingUpdates(done.entities, ing).updates.length, 0); // idempotent
++});
+diff --git a/open-artifacts/entity-compliance-calendar/demo/example.js b/open-artifacts/entity-compliance-calendar/demo/example.js
+index 4439127..f51a547 100644
+--- a/open-artifacts/entity-compliance-calendar/demo/example.js
++++ b/open-artifacts/entity-compliance-calendar/demo/example.js
+@@ -3,38 +3,297 @@ export default {
+   "company": "Northwind Robotics group (fictional)",
+   "soonDays": 45,
+   "entities": [
+-    { "id": "E-1", "name": "Northwind Robotics, Inc.", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2020-03-15", "status": "active" },
+-    { "id": "E-2", "name": "Northwind Robotics California, Inc.", "jurisdiction": "US-CA", "type": "corp", "formedOn": "2021-06-01", "status": "active" },
+-    { "id": "E-3", "name": "Northwind Robotics NY LLC", "jurisdiction": "US-NY", "type": "llc", "formedOn": "2019-07-01", "status": "active" },
+-    { "id": "E-4", "name": "Northwind Robotics Texas LLC", "jurisdiction": "US-TX", "type": "llc", "formedOn": "2026-06-01", "status": "active" },
+-    { "id": "E-5", "name": "Gale Force Labs, Inc. (dormant sub)", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2018-09-10", "status": "dissolved" }
++    {
++      "id": "E-1",
++      "name": "Northwind Robotics, Inc.",
++      "jurisdiction": "US-DE",
++      "type": "corp",
++      "formedOn": "2020-03-15",
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-10-15",
++      "qualifications": [
++        {
++          "jurisdiction": "US-CA",
++          "qualifiedOn": "2022-08-01"
++        }
++      ],
++      "footprint": [
++        "US-CA"
++      ]
++    },
++    {
++      "id": "E-2",
++      "name": "Northwind Robotics California, Inc.",
++      "jurisdiction": "US-CA",
++      "type": "corp",
++      "formedOn": "2021-06-01",
++      "status": "active",
++      "goodStandingConfirmedOn": "2024-11-01"
++    },
++    {
++      "id": "E-3",
++      "name": "Northwind Robotics NY LLC",
++      "jurisdiction": "US-NY",
++      "type": "llc",
++      "formedOn": "2019-07-01",
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-08-01"
++    },
++    {
++      "id": "E-4",
++      "name": "Northwind Robotics Texas LLC",
++      "jurisdiction": "US-TX",
++      "type": "llc",
++      "formedOn": "2026-06-01",
++      "status": "active",
++      "footprint": [
++        "US-WA"
++      ]
++    },
++    {
++      "id": "E-5",
++      "name": "Gale Force Labs, Inc. (dormant sub)",
++      "jurisdiction": "US-DE",
++      "type": "corp",
++      "formedOn": "2018-09-10",
++      "status": "dissolved"
++    },
++    {
++      "id": "E-6",
++      "name": "Petrel Systems, Inc.",
++      "jurisdiction": "US-DE",
++      "type": "corp",
++      "formedOn": "2018-03-01",
++      "status": "dormant",
++      "dormantSince": "2019-04-01",
++      "goodStandingConfirmedOn": "2026-06-01"
++    },
++    {
++      "id": "E-7",
++      "name": "Kestrel Labs LLC",
++      "jurisdiction": "US-CA",
++      "type": "llc",
++      "formedOn": null,
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-10-01"
++    }
+   ],
+   "obligations": [
+-    { "id": "de-franchise", "name": "DE franchise tax", "jurisdiction": "US-DE", "entityTypes": ["corp"], "recurring": "annual", "anchor": "formationAnniversary", "statuteCite": "fictional 8 Del. C. § 391-analog" },
+-    { "id": "ca-sos-biennial", "name": "CA statement of information", "jurisdiction": "US-CA", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "formationAnniversary", "statuteCite": "fictional Cal. Corp. Code § 6210-analog" },
+-    { "id": "ny-annual-report", "name": "NY biennial statement", "jurisdiction": "US-NY", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "calendarFixed", "dueMonth": 4, "dueDay": 15, "statuteCite": "fictional NY LLC Law § 301-analog" },
+-    { "id": "tx-initial-report", "name": "TX initial information report", "jurisdiction": "US-TX", "entityTypes": ["corp", "llc"], "recurring": "event", "anchor": "formation", "dueWithinDays": 90, "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog" },
+-    { "id": "de-registered-agent", "name": "DE registered agent renewal", "jurisdiction": "US-DE", "entityTypes": ["corp", "llc"], "recurring": "annual", "anchor": "calendarFixed", "dueMonth": 6, "dueDay": 1, "statuteCite": "fictional 8 Del. C. § 132-analog" }
++    {
++      "id": "de-franchise",
++      "name": "DE franchise tax",
++      "jurisdiction": "US-DE",
++      "entityTypes": [
++        "corp"
++      ],
++      "recurring": "annual",
++      "anchor": "formationAnniversary",
++      "statuteCite": "fictional 8 Del. C. § 391-analog",
++      "effectiveFrom": "2020-01-01",
++      "verifiedOn": "2025-06-01"
++    },
++    {
++      "id": "ca-sos-biennial",
++      "name": "CA statement of information",
++      "jurisdiction": "US-CA",
++      "entityTypes": [
++        "corp",
++        "llc"
++      ],
++      "recurring": "biennial",
++      "anchor": "formationAnniversary",
++      "statuteCite": "fictional Cal. Corp. Code § 6210-analog",
++      "effectiveFrom": "2021-01-01",
++      "verifiedOn": "2026-09-15"
++    },
++    {
++      "id": "ny-annual-report",
++      "name": "NY biennial statement",
++      "jurisdiction": "US-NY",
++      "entityTypes": [
++        "corp",
++        "llc"
++      ],
++      "recurring": "biennial",
++      "anchor": "calendarFixed",
++      "dueMonth": 4,
++      "dueDay": 15,
++      "statuteCite": "fictional NY LLC Law § 301-analog",
++      "effectiveFrom": "2019-01-01",
++      "verifiedOn": "2026-08-20"
++    },
++    {
++      "id": "tx-initial-report",
++      "name": "TX initial information report",
++      "jurisdiction": "US-TX",
++      "entityTypes": [
++        "corp",
++        "llc"
++      ],
++      "recurring": "event",
++      "anchor": "formation",
++      "dueWithinDays": 90,
++      "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog",
++      "effectiveFrom": "2024-01-01",
++      "verifiedOn": "2026-10-01"
++    },
++    {
++      "id": "de-registered-agent",
++      "name": "DE registered agent renewal",
++      "jurisdiction": "US-DE",
++      "entityTypes": [
++        "corp",
++        "llc"
++      ],
++      "recurring": "annual",
++      "anchor": "calendarFixed",
++      "dueMonth": 6,
++      "dueDay": 1,
++      "statuteCite": "fictional 8 Del. C. § 132-analog",
++      "effectiveFrom": "2020-01-01",
++      "verifiedOn": "2026-07-10"
++    }
+   ],
+   "filings": [
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2020, "filedOn": "2020-03-10" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2021, "filedOn": "2021-03-08" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2022, "filedOn": "2022-03-12" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2023, "filedOn": "2023-03-09" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2024, "filedOn": "2024-03-11" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2025, "filedOn": "2025-03-10" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2026, "filedOn": "2026-03-09" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2020, "filedOn": "2020-05-30" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2021, "filedOn": "2021-05-27" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2022, "filedOn": "2022-06-01" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2023, "filedOn": "2023-05-25" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2024, "filedOn": "2024-05-30" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2025, "filedOn": "2025-05-29" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2026, "filedOn": "2026-05-28" },
+-    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2021, "filedOn": "2021-06-15" },
+-    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2023, "filedOn": "2023-06-20" },
+-    { "entityId": "E-3", "obligationId": "ny-annual-report", "period": 2019, "filedOn": "2019-07-30" },
+-    { "entityId": "E-4", "obligationId": "tx-initial-report", "period": "once", "filedOn": "2026-07-15" }
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2020,
++      "filedOn": "2020-03-10",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2021,
++      "filedOn": "2021-03-08",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2022,
++      "filedOn": "2022-03-12",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2023,
++      "filedOn": "2023-03-09",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2024,
++      "filedOn": "2024-03-11",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2025,
++      "filedOn": "2025-03-10",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-franchise",
++      "period": 2026,
++      "filedOn": "2026-03-09",
++      "fee": 400
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2020,
++      "filedOn": "2020-05-30",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2021,
++      "filedOn": "2021-05-27",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2022,
++      "filedOn": "2022-06-01",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2023,
++      "filedOn": "2023-05-25",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2024,
++      "filedOn": "2024-05-30",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2025,
++      "filedOn": "2025-05-29",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "de-registered-agent",
++      "period": 2026,
++      "filedOn": "2026-05-28",
++      "fee": 120
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "ca-sos-biennial",
++      "period": 2022,
++      "filedOn": "2022-08-05",
++      "fee": 20
++    },
++    {
++      "entityId": "E-1",
++      "obligationId": "ca-sos-biennial",
++      "period": 2024,
++      "filedOn": "2024-08-02",
++      "fee": 20
++    },
++    {
++      "entityId": "E-2",
++      "obligationId": "ca-sos-biennial",
++      "period": 2021,
++      "filedOn": "2021-06-15",
++      "fee": 20
++    },
++    {
++      "entityId": "E-2",
++      "obligationId": "ca-sos-biennial",
++      "period": 2023,
++      "filedOn": "2023-06-20",
++      "fee": 20
++    },
++    {
++      "entityId": "E-3",
++      "obligationId": "ny-annual-report",
++      "period": 2019,
++      "filedOn": "2019-07-30",
++      "fee": 9
++    },
++    {
++      "entityId": "E-4",
++      "obligationId": "tx-initial-report",
++      "period": "once",
++      "filedOn": "2026-07-15",
++      "fee": 30
++    }
+   ]
+-}
+-
++};
+diff --git a/open-artifacts/entity-compliance-calendar/demo/index.html b/open-artifacts/entity-compliance-calendar/demo/index.html
+index 75da78b..6741715 100644
+--- a/open-artifacts/entity-compliance-calendar/demo/index.html
++++ b/open-artifacts/entity-compliance-calendar/demo/index.html
+@@ -31,6 +31,9 @@
+   .pill.scheduled { background: #fff; }
+   .pill.satisfied { background: #fff; color: var(--text-secondary); border-color: var(--border); }
+   .pill.na { background: var(--hover); color: var(--text-secondary); border-color: var(--border); }
++  .pill.unknown { background: var(--flag-tint); color: var(--text-secondary); border-color: var(--border); border-style: dashed; }
++  .flag li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
++  .flag code { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+   .delinq li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
+   .delinq .days { font-family: var(--font-mono); background: var(--flag-tint); padding: 0 4px; color: var(--warn); border-color: var(--warn);}
+   .row { display: flex; gap: 12px; flex-wrap: wrap; }
+@@ -65,6 +68,11 @@
+     </div>
+   </section>
+ 
++  <section>
++    <h2>Health audit</h2>
++    <ul class="flag" id="health"></ul>
++  </section>
++
+   <section>
+     <h2>Delinquency flags</h2>
+     <ul class="delinq" id="delinq"></ul>
+@@ -72,6 +80,9 @@
+ 
+   <section>
+     <h2>Entities × obligations matrix</h2>
++    <div class="row" style="margin-bottom:16px" id="winBtns">
++      <span style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);align-self:center">Filing window:</span>
++    </div>
+     <div style="overflow-x:auto"><table id="matrix">
+       <thead><tr><th>Entity</th><th>Obligation</th><th>Next due</th><th>Period</th><th>Rule</th><th>Status</th></tr></thead>
+       <tbody></tbody>
+@@ -87,10 +98,12 @@
+ </div>
+ 
+ <script type="module">
+-  import { buildMatrix, toCsv, toICS } from "../core/core.js";
++  import { buildMatrix, toCsv, toICS, report, auditHealth } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+   const m = buildMatrix(EXAMPLE);
++  const rep = report(m);
++  const health = auditHealth(EXAMPLE);
+   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+ 
+   document.getElementById("stats").innerHTML =
+@@ -98,29 +111,75 @@
+     `<div class="stat"><b>${m.counts["due-soon"]}</b><span>due soon</span></div>` +
+     `<div class="stat"><b>${m.counts.scheduled}</b><span>scheduled</span></div>` +
+     `<div class="stat"><b>${m.counts.satisfied}</b><span>satisfied</span></div>` +
+-    `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>`;
++    `<div class="stat"><b>${m.counts.unknown}</b><span>unknown</span></div>` +
++    `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>` +
++    `<div class="stat"><b>$${m.feeTotals.recorded}</b><span>fees recorded</span></div>` +
++    `<div class="stat"><b>${health.counts.flags}</b><span>health flags</span></div>`;
++
++  document.getElementById("health").innerHTML = health.flags.length
++    ? health.flags.map((f) => `<li>⚠️ <code>${esc(f.code)}</code> <b>${esc(f.entityName)}</b>${f.jurisdiction ? ` (${esc(f.jurisdiction)})` : ""} — ${esc(f.detail)}</li>`).join("")
++    : `<li>no health flags 🎉</li>`;
+ 
+   document.getElementById("delinq").innerHTML = m.delinquent.length
+     ? m.delinquent.map((d) => `<li>🔴 <b>${esc(d.entityName)}</b> — ${esc(d.obligationName)}: due ${esc(d.dueOn)}, overdue <span class="days">${d.overdueDays}d</span></li>`).join("")
+     : `<li>none — no delinquent obligations 🎉</li>`;
+ 
++  // Filing-window filter: bucket actionable cells into 30/60/90/180d windows (overdue always included).
++  const asOfMs = Date.parse(m.asOf + "T00:00:00Z");
++  const daysOut = (cell) => Math.round((Date.parse(cell.dueOn + "T00:00:00Z") - asOfMs) / 86400000);
++  let winFilter = Infinity; // "all" by default
+   const tb = document.getElementById("matrix").querySelector("tbody");
+-  m.entities.forEach((e, r) => {
+-    m.obligations.forEach((o, c) => {
+-      const cell = m.grid[r][c];
+-      const tr = document.createElement("tr");
+-      const due = cell.dueOn
+-        ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
+-        : esc(cell.skipReason ?? cell.ruleNote ?? "—");
+-      tr.innerHTML =
+-        `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn)}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
+-        `<td>${esc(o.name)}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
+-        `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
+-        `<td>${esc(cell.ruleNote ?? "")}</td>` +
+-        `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
+-      tb.appendChild(tr);
++
++  function renderMatrix() {
++    tb.innerHTML = "";
++    let shown = 0;
++    m.entities.forEach((e, r) => {
++      m.obligations.forEach((o, c) => {
++        const cell = m.grid[r][c];
++        const d = cell.dueOn ? daysOut(cell) : null;
++        if (winFilter !== Infinity && (!cell.dueOn || !["delinquent", "due-soon", "scheduled"].includes(cell.status) || d > winFilter)) return;
++        shown++;
++        const tr = document.createElement("tr");
++        const due = cell.dueOn
++          ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
++          : esc(cell.skipReason ?? cell.ruleNote ?? "—");
++        tr.innerHTML =
++          `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn ?? "?")}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
++          `<td>${esc(o.name)}${o.verifiedOn ? `<div class="sub">verified ${esc(o.verifiedOn)}</div>` : ""}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
++          `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
++          `<td>${esc(cell.ruleNote ?? "")}${cell.ruleStale ? `<div class="sub" style="color:var(--warn)">rule stale — verified &gt;365d ago</div>` : ""}</td>` +
++          `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
++        tb.appendChild(tr);
++      });
+     });
+-  });
++    return shown;
++  }
++
++  const winBtns = document.getElementById("winBtns");
++  const mkBtn = (label, value) => {
++    const b = document.createElement("button");
++    b.className = "ghost";
++    b.textContent = label;
++    b.onclick = () => {
++      winFilter = value;
++      const n = renderMatrix();
++      [...winBtns.querySelectorAll("button")].forEach((x) => {
++        const on = x === b;
++        x.style.background = on ? "var(--text)" : "";
++        x.style.color = on ? "var(--bg)" : "";
++      });
++      countSpan.textContent = value === Infinity ? `${n} of ${m.counts.cells} cells` : `${n} filing${n === 1 ? "" : "s"} due ≤${value}d (overdue included)`;
++    };
++    winBtns.appendChild(b);
++    return b;
++  };
++  mkBtn("All", Infinity);
++  rep.windows.forEach((w) => mkBtn(`≤${w.days}d (${w.count})`, w.days));
++  const countSpan = document.createElement("span");
++  countSpan.id = "matrixCount";
++  countSpan.style.cssText = "font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);align-self:center;margin-left:4px";
++  winBtns.appendChild(countSpan);
++  countSpan.textContent = `${renderMatrix()} of ${m.counts.cells} cells`;
+ 
+   function download(name, content, type) {
+     const blob = new Blob([content], { type });
+diff --git a/open-artifacts/entity-compliance-calendar/examples/compliance.csv b/open-artifacts/entity-compliance-calendar/examples/compliance.csv
+index db0bb3e..4e4a509 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/compliance.csv
++++ b/open-artifacts/entity-compliance-calendar/examples/compliance.csv
+@@ -1,26 +1,36 @@
+-entityId,entity,jurisdiction,obligationId,obligation,recurring,status,nextDue,period,statuteCite,ruleNote,skipReason
+-E-1,"Northwind Robotics, Inc.",US-DE,de-franchise,DE franchise tax,annual,scheduled,2027-03-15,2027,fictional 8 Del. C. § 391-analog,"annual, formation anniversary (03-15)",
+-E-1,"Northwind Robotics, Inc.",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE
+-E-1,"Northwind Robotics, Inc.",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE
+-E-1,"Northwind Robotics, Inc.",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE
+-E-1,"Northwind Robotics, Inc.",US-DE,de-registered-agent,DE registered agent renewal,annual,scheduled,2027-06-01,2027,fictional 8 Del. C. § 132-analog,"annual, fixed 6/1",
+-E-2,"Northwind Robotics California, Inc.",US-CA,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA
+-E-2,"Northwind Robotics California, Inc.",US-CA,ca-sos-biennial,CA statement of information,biennial,delinquent,2025-06-01,2025,fictional Cal. Corp. Code § 6210-analog,"biennial, formation anniversary (06-01), even-cycle from formation year",
+-E-2,"Northwind Robotics California, Inc.",US-CA,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-CA
+-E-2,"Northwind Robotics California, Inc.",US-CA,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-CA
+-E-2,"Northwind Robotics California, Inc.",US-CA,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA
+-E-3,Northwind Robotics NY LLC,US-NY,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]"
+-E-3,Northwind Robotics NY LLC,US-NY,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-NY
+-E-3,Northwind Robotics NY LLC,US-NY,ny-annual-report,NY biennial statement,biennial,delinquent,2021-04-15,2021,fictional NY LLC Law § 301-analog,"biennial, fixed 4/15",
+-E-3,Northwind Robotics NY LLC,US-NY,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-NY
+-E-3,Northwind Robotics NY LLC,US-NY,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-NY
+-E-4,Northwind Robotics Texas LLC,US-TX,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]"
+-E-4,Northwind Robotics Texas LLC,US-TX,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-TX
+-E-4,Northwind Robotics Texas LLC,US-TX,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-TX
+-E-4,Northwind Robotics Texas LLC,US-TX,tx-initial-report,TX initial information report,event,satisfied,2026-08-30,once,fictional Tex. Bus. Orgs. Code § 5.257-analog,event obligation satisfied (filing recorded),
+-E-4,Northwind Robotics Texas LLC,US-TX,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-TX
+-E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity status ""dissolved"" — tracking paused"
+-E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE
+-E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE
+-E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE
+-E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,"entity status ""dissolved"" — tracking paused"
++entityId,entity,jurisdiction,obligationId,obligation,recurring,status,nextDue,period,statuteCite,ruleNote,skipReason,goodStanding,fee,verifiedOn,ruleStale
++E-1,"Northwind Robotics, Inc.",US-DE,de-franchise,DE franchise tax,annual,scheduled,2027-03-15,2027,fictional 8 Del. C. § 391-analog,"annual, formation anniversary (03-15)",,ok,400,2025-06-01,true
++E-1,"Northwind Robotics, Inc.",US-DE,ca-sos-biennial,CA statement of information,biennial,delinquent,2026-08-01,2026,fictional Cal. Corp. Code § 6210-analog,"biennial, qualification anniversary (08-01), even-cycle from anchor year",,ok,20,2026-09-15,
++E-1,"Northwind Robotics, Inc.",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there,ok,,2026-08-20,
++E-1,"Northwind Robotics, Inc.",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there,ok,,2026-10-01,
++E-1,"Northwind Robotics, Inc.",US-DE,de-registered-agent,DE registered agent renewal,annual,scheduled,2027-06-01,2027,fictional 8 Del. C. § 132-analog,"annual, fixed 6/1",,ok,120,2026-07-10,
++E-2,"Northwind Robotics California, Inc.",US-CA,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there,stale,,2025-06-01,
++E-2,"Northwind Robotics California, Inc.",US-CA,ca-sos-biennial,CA statement of information,biennial,delinquent,2025-06-01,2025,fictional Cal. Corp. Code § 6210-analog,"biennial, formation anniversary (06-01), even-cycle from anchor year",,stale,20,2026-09-15,
++E-2,"Northwind Robotics California, Inc.",US-CA,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-CA and no foreign qualification there,stale,,2026-08-20,
++E-2,"Northwind Robotics California, Inc.",US-CA,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-CA and no foreign qualification there,stale,,2026-10-01,
++E-2,"Northwind Robotics California, Inc.",US-CA,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there,stale,,2026-07-10,
++E-3,Northwind Robotics NY LLC,US-NY,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]",ok,,2025-06-01,
++E-3,Northwind Robotics NY LLC,US-NY,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-NY and no foreign qualification there,ok,,2026-09-15,
++E-3,Northwind Robotics NY LLC,US-NY,ny-annual-report,NY biennial statement,biennial,delinquent,2021-04-15,2021,fictional NY LLC Law § 301-analog,"biennial, fixed 4/15",,ok,9,2026-08-20,
++E-3,Northwind Robotics NY LLC,US-NY,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-NY and no foreign qualification there,ok,,2026-10-01,
++E-3,Northwind Robotics NY LLC,US-NY,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-NY and no foreign qualification there,ok,,2026-07-10,
++E-4,Northwind Robotics Texas LLC,US-TX,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]",unknown,,2025-06-01,
++E-4,Northwind Robotics Texas LLC,US-TX,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-TX and no foreign qualification there,unknown,,2026-09-15,
++E-4,Northwind Robotics Texas LLC,US-TX,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-TX and no foreign qualification there,unknown,,2026-08-20,
++E-4,Northwind Robotics Texas LLC,US-TX,tx-initial-report,TX initial information report,event,satisfied,2026-08-30,once,fictional Tex. Bus. Orgs. Code § 5.257-analog,event obligation satisfied (filing recorded),,unknown,30,2026-10-01,
++E-4,Northwind Robotics Texas LLC,US-TX,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-TX and no foreign qualification there,unknown,,2026-07-10,
++E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity status ""dissolved"" — tracking paused",unknown,,2025-06-01,
++E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE and no foreign qualification there,unknown,,2026-09-15,
++E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there,unknown,,2026-08-20,
++E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there,unknown,,2026-10-01,
++E-5,"Gale Force Labs, Inc. (dormant sub)",US-DE,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,"entity status ""dissolved"" — tracking paused",unknown,,2026-07-10,
++E-6,"Petrel Systems, Inc.",US-DE,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity status ""dormant"" — tracking paused",ok,,2025-06-01,
++E-6,"Petrel Systems, Inc.",US-DE,ca-sos-biennial,CA statement of information,biennial,n/a,,,fictional Cal. Corp. Code § 6210-analog,,obligation jurisdiction US-CA ≠ entity jurisdiction US-DE and no foreign qualification there,ok,,2026-09-15,
++E-6,"Petrel Systems, Inc.",US-DE,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there,ok,,2026-08-20,
++E-6,"Petrel Systems, Inc.",US-DE,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there,ok,,2026-10-01,
++E-6,"Petrel Systems, Inc.",US-DE,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,"entity status ""dormant"" — tracking paused",ok,,2026-07-10,
++E-7,Kestrel Labs LLC,US-CA,de-franchise,DE franchise tax,annual,n/a,,,fictional 8 Del. C. § 391-analog,,"entity type ""llc"" not in [corp]",ok,,2025-06-01,
++E-7,Kestrel Labs LLC,US-CA,ca-sos-biennial,CA statement of information,biennial,unknown,,,fictional Cal. Corp. Code § 6210-analog,formation date missing,,ok,,2026-09-15,
++E-7,Kestrel Labs LLC,US-CA,ny-annual-report,NY biennial statement,biennial,n/a,,,fictional NY LLC Law § 301-analog,,obligation jurisdiction US-NY ≠ entity jurisdiction US-CA and no foreign qualification there,ok,,2026-08-20,
++E-7,Kestrel Labs LLC,US-CA,tx-initial-report,TX initial information report,event,n/a,,,fictional Tex. Bus. Orgs. Code § 5.257-analog,,obligation jurisdiction US-TX ≠ entity jurisdiction US-CA and no foreign qualification there,ok,,2026-10-01,
++E-7,Kestrel Labs LLC,US-CA,de-registered-agent,DE registered agent renewal,annual,n/a,,,fictional 8 Del. C. § 132-analog,,obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there,ok,,2026-07-10,
+diff --git a/open-artifacts/entity-compliance-calendar/examples/compliance.ics b/open-artifacts/entity-compliance-calendar/examples/compliance.ics
+index f3bce60..24a45d8 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/compliance.ics
++++ b/open-artifacts/entity-compliance-calendar/examples/compliance.ics
+@@ -11,9 +11,13 @@ DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE franchise tax\nStatute
+  
+  (fictional): fictional 8 Del. C. § 391-analog\nRule: annual, formati
+  on 
+- anniversary (03-15)\nStatus: scheduled\nRules-as-data defaults; ve
+- rify a
+- gainst current statute. Not legal advice.
++ anniversary (03-15)\nRule verified: 2025-06-01 — STALE (>365d): 
++ re-ver
++ ify before relying\nGood standing: ok (confirmed 2026-10-15)\nS
++ tatus: sc
++ heduled\nRules-as-data defaults; verify against current stat
++ ute. Not leg
++ al advice.
+ RRULE:FREQ=YEARLY
+ BEGIN:VALARM
+ TRIGGER:-P30D
+@@ -22,6 +26,32 @@ DESCRIPTION:Filing window — DE franchise tax (Northwind Robotics\, Inc.)
+ END:VALARM
+ END:VEVENT
+ BEGIN:VEVENT
++UID:E-1-ca-sos-biennial-20260801@open-legal-artifacts
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20260801
++SUMMARY:[DELINQUENT] CA statement of information — Northwind Robotics\,
++  Inc. (US-DE)
++DESCRIPTION:Northwind Robotics, Inc. [E-1] — CA statement of informatio
++ 
++ n\nStatute (fictional): fictional Cal. Corp. Code § 6210-analog\nRul
++ e: 
++ biennial, qualification anniversary (08-01), even-cycle from ancho
++ r year
++ \nRule verified: 2026-09-15\nGood standing: ok (confirmed 2026-
++ 10-15)\nS
++ TATUS: DELINQUENT — cure immediately (fictional data)\nRul
++ es-as-data d
++ efaults; verify against current statute. Not legal advice.
++RRULE:FREQ=YEARLY;INTERVAL=2
++BEGIN:VALARM
++TRIGGER:-P30D
++ACTION:DISPLAY
++DESCRIPTION:Filing window — CA statement of information (Northwind Robo
++ 
++ tics\, Inc.)
++END:VALARM
++END:VEVENT
++BEGIN:VEVENT
+ UID:E-1-de-registered-agent-20270601@open-legal-artifacts
+ DTSTAMP:20261107T000000Z
+ DTSTART;VALUE=DATE:20270601
+@@ -30,9 +60,11 @@ DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE registered agent renewa
+  
+  l\nStatute (fictional): fictional 8 Del. C. § 132-analog\nRule: annu
+  al,
+-  fixed 6/1\nStatus: scheduled\nRules-as-data defaults; verify agai
+- nst cu
+- rrent statute. Not legal advice.
++  fixed 6/1\nRule verified: 2026-07-10\nGood standing: ok (confirme
++ d 2026
++ -10-15)\nStatus: scheduled\nRules-as-data defaults; verify agai
++ nst curre
++ nt statute. Not legal advice.
+ RRULE:FREQ=YEARLY
+ BEGIN:VALARM
+ TRIGGER:-P30D
+@@ -53,10 +85,12 @@ DESCRIPTION:Northwind Robotics California, Inc. [E-2] — CA statement of
+   information\nStatute (fictional): fictional Cal. Corp. Code § 6210-
+  ana
+  log\nRule: biennial, formation anniversary (06-01), even-cycle fro
+- m form
+- ation year\nSTATUS: DELINQUENT — cure immediately (fictional 
+- data)\nRu
+- les-as-data defaults; verify against current statute. Not le
++ m anch
++ or year\nRule verified: 2026-09-15\nGood standing: stale (confi
++ rmed 2024
++ -11-01)\nSTATUS: DELINQUENT — cure immediately (fictional 
++ data)\nRules
++ -as-data defaults; verify against current statute. Not le
+  gal advice.
+ RRULE:FREQ=YEARLY;INTERVAL=2
+ BEGIN:VALARM
+@@ -77,9 +111,11 @@ DESCRIPTION:Northwind Robotics NY LLC [E-3] — NY biennial statement\nSt
+  
+  atute (fictional): fictional NY LLC Law § 301-analog\nRule: biennial
+  , f
+- ixed 4/15\nSTATUS: DELINQUENT — cure immediately (fictional data
+- )\nRul
+- es-as-data defaults; verify against current statute. Not legal 
++ ixed 4/15\nRule verified: 2026-08-20\nGood standing: ok (confirmed
++  2026-
++ 08-01)\nSTATUS: DELINQUENT — cure immediately (fictional data
++ )\nRules-
++ as-data defaults; verify against current statute. Not legal 
+  advice.
+ RRULE:FREQ=YEARLY;INTERVAL=2
+ BEGIN:VALARM
+diff --git a/open-artifacts/entity-compliance-calendar/examples/input.json b/open-artifacts/entity-compliance-calendar/examples/input.json
+index b708fd9..8e180f4 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/input.json
++++ b/open-artifacts/entity-compliance-calendar/examples/input.json
+@@ -3,37 +3,41 @@
+   "company": "Northwind Robotics group (fictional)",
+   "soonDays": 45,
+   "entities": [
+-    { "id": "E-1", "name": "Northwind Robotics, Inc.", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2020-03-15", "status": "active" },
+-    { "id": "E-2", "name": "Northwind Robotics California, Inc.", "jurisdiction": "US-CA", "type": "corp", "formedOn": "2021-06-01", "status": "active" },
+-    { "id": "E-3", "name": "Northwind Robotics NY LLC", "jurisdiction": "US-NY", "type": "llc", "formedOn": "2019-07-01", "status": "active" },
+-    { "id": "E-4", "name": "Northwind Robotics Texas LLC", "jurisdiction": "US-TX", "type": "llc", "formedOn": "2026-06-01", "status": "active" },
+-    { "id": "E-5", "name": "Gale Force Labs, Inc. (dormant sub)", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2018-09-10", "status": "dissolved" }
++    { "id": "E-1", "name": "Northwind Robotics, Inc.", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2020-03-15", "status": "active", "goodStandingConfirmedOn": "2026-10-15", "qualifications": [{ "jurisdiction": "US-CA", "qualifiedOn": "2022-08-01" }], "footprint": ["US-CA"] },
++    { "id": "E-2", "name": "Northwind Robotics California, Inc.", "jurisdiction": "US-CA", "type": "corp", "formedOn": "2021-06-01", "status": "active", "goodStandingConfirmedOn": "2024-11-01" },
++    { "id": "E-3", "name": "Northwind Robotics NY LLC", "jurisdiction": "US-NY", "type": "llc", "formedOn": "2019-07-01", "status": "active", "goodStandingConfirmedOn": "2026-08-01" },
++    { "id": "E-4", "name": "Northwind Robotics Texas LLC", "jurisdiction": "US-TX", "type": "llc", "formedOn": "2026-06-01", "status": "active", "footprint": ["US-WA"] },
++    { "id": "E-5", "name": "Gale Force Labs, Inc. (dormant sub)", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2018-09-10", "status": "dissolved" },
++    { "id": "E-6", "name": "Petrel Systems, Inc.", "jurisdiction": "US-DE", "type": "corp", "formedOn": "2018-03-01", "status": "dormant", "dormantSince": "2019-04-01", "goodStandingConfirmedOn": "2026-06-01" },
++    { "id": "E-7", "name": "Kestrel Labs LLC", "jurisdiction": "US-CA", "type": "llc", "formedOn": null, "status": "active", "goodStandingConfirmedOn": "2026-10-01" }
+   ],
+   "obligations": [
+-    { "id": "de-franchise", "name": "DE franchise tax", "jurisdiction": "US-DE", "entityTypes": ["corp"], "recurring": "annual", "anchor": "formationAnniversary", "statuteCite": "fictional 8 Del. C. § 391-analog" },
+-    { "id": "ca-sos-biennial", "name": "CA statement of information", "jurisdiction": "US-CA", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "formationAnniversary", "statuteCite": "fictional Cal. Corp. Code § 6210-analog" },
+-    { "id": "ny-annual-report", "name": "NY biennial statement", "jurisdiction": "US-NY", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "calendarFixed", "dueMonth": 4, "dueDay": 15, "statuteCite": "fictional NY LLC Law § 301-analog" },
+-    { "id": "tx-initial-report", "name": "TX initial information report", "jurisdiction": "US-TX", "entityTypes": ["corp", "llc"], "recurring": "event", "anchor": "formation", "dueWithinDays": 90, "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog" },
+-    { "id": "de-registered-agent", "name": "DE registered agent renewal", "jurisdiction": "US-DE", "entityTypes": ["corp", "llc"], "recurring": "annual", "anchor": "calendarFixed", "dueMonth": 6, "dueDay": 1, "statuteCite": "fictional 8 Del. C. § 132-analog" }
++    { "id": "de-franchise", "name": "DE franchise tax", "jurisdiction": "US-DE", "entityTypes": ["corp"], "recurring": "annual", "anchor": "formationAnniversary", "statuteCite": "fictional 8 Del. C. § 391-analog", "effectiveFrom": "2020-01-01", "verifiedOn": "2025-06-01" },
++    { "id": "ca-sos-biennial", "name": "CA statement of information", "jurisdiction": "US-CA", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "formationAnniversary", "statuteCite": "fictional Cal. Corp. Code § 6210-analog", "effectiveFrom": "2021-01-01", "verifiedOn": "2026-09-15" },
++    { "id": "ny-annual-report", "name": "NY biennial statement", "jurisdiction": "US-NY", "entityTypes": ["corp", "llc"], "recurring": "biennial", "anchor": "calendarFixed", "dueMonth": 4, "dueDay": 15, "statuteCite": "fictional NY LLC Law § 301-analog", "effectiveFrom": "2019-01-01", "verifiedOn": "2026-08-20" },
++    { "id": "tx-initial-report", "name": "TX initial information report", "jurisdiction": "US-TX", "entityTypes": ["corp", "llc"], "recurring": "event", "anchor": "formation", "dueWithinDays": 90, "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog", "effectiveFrom": "2024-01-01", "verifiedOn": "2026-10-01" },
++    { "id": "de-registered-agent", "name": "DE registered agent renewal", "jurisdiction": "US-DE", "entityTypes": ["corp", "llc"], "recurring": "annual", "anchor": "calendarFixed", "dueMonth": 6, "dueDay": 1, "statuteCite": "fictional 8 Del. C. § 132-analog", "effectiveFrom": "2020-01-01", "verifiedOn": "2026-07-10" }
+   ],
+   "filings": [
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2020, "filedOn": "2020-03-10" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2021, "filedOn": "2021-03-08" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2022, "filedOn": "2022-03-12" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2023, "filedOn": "2023-03-09" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2024, "filedOn": "2024-03-11" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2025, "filedOn": "2025-03-10" },
+-    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2026, "filedOn": "2026-03-09" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2020, "filedOn": "2020-05-30" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2021, "filedOn": "2021-05-27" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2022, "filedOn": "2022-06-01" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2023, "filedOn": "2023-05-25" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2024, "filedOn": "2024-05-30" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2025, "filedOn": "2025-05-29" },
+-    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2026, "filedOn": "2026-05-28" },
+-    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2021, "filedOn": "2021-06-15" },
+-    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2023, "filedOn": "2023-06-20" },
+-    { "entityId": "E-3", "obligationId": "ny-annual-report", "period": 2019, "filedOn": "2019-07-30" },
+-    { "entityId": "E-4", "obligationId": "tx-initial-report", "period": "once", "filedOn": "2026-07-15" }
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2020, "filedOn": "2020-03-10", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2021, "filedOn": "2021-03-08", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2022, "filedOn": "2022-03-12", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2023, "filedOn": "2023-03-09", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2024, "filedOn": "2024-03-11", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2025, "filedOn": "2025-03-10", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-franchise", "period": 2026, "filedOn": "2026-03-09", "fee": 400 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2020, "filedOn": "2020-05-30", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2021, "filedOn": "2021-05-27", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2022, "filedOn": "2022-06-01", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2023, "filedOn": "2023-05-25", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2024, "filedOn": "2024-05-30", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2025, "filedOn": "2025-05-29", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "de-registered-agent", "period": 2026, "filedOn": "2026-05-28", "fee": 120 },
++    { "entityId": "E-1", "obligationId": "ca-sos-biennial", "period": 2022, "filedOn": "2022-08-05", "fee": 20 },
++    { "entityId": "E-1", "obligationId": "ca-sos-biennial", "period": 2024, "filedOn": "2024-08-02", "fee": 20 },
++    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2021, "filedOn": "2021-06-15", "fee": 20 },
++    { "entityId": "E-2", "obligationId": "ca-sos-biennial", "period": 2023, "filedOn": "2023-06-20", "fee": 20 },
++    { "entityId": "E-3", "obligationId": "ny-annual-report", "period": 2019, "filedOn": "2019-07-30", "fee": 9 },
++    { "entityId": "E-4", "obligationId": "tx-initial-report", "period": "once", "filedOn": "2026-07-15", "fee": 30 }
+   ]
+ }
+diff --git a/open-artifacts/entity-compliance-calendar/examples/matrix.json b/open-artifacts/entity-compliance-calendar/examples/matrix.json
+index 3b9b9b0..1b46220 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/matrix.json
++++ b/open-artifacts/entity-compliance-calendar/examples/matrix.json
+@@ -5,255 +5,427 @@
+       {
+         "entity": "E-1",
+         "obligation": "de-franchise",
++        "fee": 400,
+         "applies": true,
+         "dueOn": "2027-03-15",
+         "period": 2027,
+         "status": "scheduled",
+-        "ruleNote": "annual, formation anniversary (03-15)"
++        "ruleNote": "annual, formation anniversary (03-15)",
++        "ruleStale": true
+       },
+       {
+         "entity": "E-1",
+         "obligation": "ca-sos-biennial",
+-        "applies": false,
+-        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE",
+-        "dueOn": null,
+-        "period": null,
+-        "status": "n/a",
+-        "ruleNote": ""
++        "fee": 20,
++        "applies": true,
++        "dueOn": "2026-08-01",
++        "period": 2026,
++        "status": "delinquent",
++        "ruleNote": "biennial, qualification anniversary (08-01), even-cycle from anchor year",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-1",
+         "obligation": "ny-annual-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE",
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-1",
+         "obligation": "tx-initial-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE",
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-1",
+         "obligation": "de-registered-agent",
++        "fee": 120,
+         "applies": true,
+         "dueOn": "2027-06-01",
+         "period": 2027,
+         "status": "scheduled",
+-        "ruleNote": "annual, fixed 6/1"
++        "ruleNote": "annual, fixed 6/1",
++        "ruleStale": false
+       }
+     ],
+     [
+       {
+         "entity": "E-2",
+         "obligation": "de-franchise",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA",
++        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-2",
+         "obligation": "ca-sos-biennial",
++        "fee": 20,
+         "applies": true,
+         "dueOn": "2025-06-01",
+         "period": 2025,
+         "status": "delinquent",
+-        "ruleNote": "biennial, formation anniversary (06-01), even-cycle from formation year"
++        "ruleNote": "biennial, formation anniversary (06-01), even-cycle from anchor year",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-2",
+         "obligation": "ny-annual-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-CA",
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-CA and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-2",
+         "obligation": "tx-initial-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-CA",
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-CA and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-2",
+         "obligation": "de-registered-agent",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA",
++        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       }
+     ],
+     [
+       {
+         "entity": "E-3",
+         "obligation": "de-franchise",
++        "fee": null,
+         "applies": false,
+         "skipReason": "entity type \"llc\" not in [corp]",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-3",
+         "obligation": "ca-sos-biennial",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-NY",
++        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-NY and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-3",
+         "obligation": "ny-annual-report",
++        "fee": 9,
+         "applies": true,
+         "dueOn": "2021-04-15",
+         "period": 2021,
+         "status": "delinquent",
+-        "ruleNote": "biennial, fixed 4/15"
++        "ruleNote": "biennial, fixed 4/15",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-3",
+         "obligation": "tx-initial-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-NY",
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-NY and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-3",
+         "obligation": "de-registered-agent",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-NY",
++        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-NY and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       }
+     ],
+     [
+       {
+         "entity": "E-4",
+         "obligation": "de-franchise",
++        "fee": null,
+         "applies": false,
+         "skipReason": "entity type \"llc\" not in [corp]",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-4",
+         "obligation": "ca-sos-biennial",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-TX",
++        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-TX and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-4",
+         "obligation": "ny-annual-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-TX",
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-TX and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-4",
+         "obligation": "tx-initial-report",
++        "fee": 30,
+         "applies": true,
+         "dueOn": "2026-08-30",
+         "period": "once",
+         "status": "satisfied",
+-        "ruleNote": "event obligation satisfied (filing recorded)"
++        "ruleNote": "event obligation satisfied (filing recorded)",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-4",
+         "obligation": "de-registered-agent",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-TX",
++        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-TX and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       }
+     ],
+     [
+       {
+         "entity": "E-5",
+         "obligation": "de-franchise",
++        "fee": null,
+         "applies": false,
+         "skipReason": "entity status \"dissolved\" — tracking paused",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-5",
+         "obligation": "ca-sos-biennial",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE",
++        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-5",
+         "obligation": "ny-annual-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE",
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-5",
+         "obligation": "tx-initial-report",
++        "fee": null,
+         "applies": false,
+-        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE",
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
+       },
+       {
+         "entity": "E-5",
+         "obligation": "de-registered-agent",
++        "fee": null,
+         "applies": false,
+         "skipReason": "entity status \"dissolved\" — tracking paused",
+         "dueOn": null,
+         "period": null,
+         "status": "n/a",
+-        "ruleNote": ""
++        "ruleNote": "",
++        "ruleStale": false
++      }
++    ],
++    [
++      {
++        "entity": "E-6",
++        "obligation": "de-franchise",
++        "fee": null,
++        "applies": false,
++        "skipReason": "entity status \"dormant\" — tracking paused",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-6",
++        "obligation": "ca-sos-biennial",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-CA ≠ entity jurisdiction US-DE and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-6",
++        "obligation": "ny-annual-report",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-DE and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-6",
++        "obligation": "tx-initial-report",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-DE and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-6",
++        "obligation": "de-registered-agent",
++        "fee": null,
++        "applies": false,
++        "skipReason": "entity status \"dormant\" — tracking paused",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      }
++    ],
++    [
++      {
++        "entity": "E-7",
++        "obligation": "de-franchise",
++        "fee": null,
++        "applies": false,
++        "skipReason": "entity type \"llc\" not in [corp]",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-7",
++        "obligation": "ca-sos-biennial",
++        "fee": null,
++        "applies": true,
++        "dueOn": null,
++        "period": null,
++        "status": "unknown",
++        "ruleNote": "formation date missing",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-7",
++        "obligation": "ny-annual-report",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-NY ≠ entity jurisdiction US-CA and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-7",
++        "obligation": "tx-initial-report",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-TX ≠ entity jurisdiction US-CA and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
++      },
++      {
++        "entity": "E-7",
++        "obligation": "de-registered-agent",
++        "fee": null,
++        "applies": false,
++        "skipReason": "obligation jurisdiction US-DE ≠ entity jurisdiction US-CA and no foreign qualification there",
++        "dueOn": null,
++        "period": null,
++        "status": "n/a",
++        "ruleNote": "",
++        "ruleStale": false
+       }
+     ]
+   ],
+@@ -264,7 +436,17 @@
+       "jurisdiction": "US-DE",
+       "type": "corp",
+       "formedOn": "2020-03-15",
+-      "status": "active"
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-10-15",
++      "qualifications": [
++        {
++          "jurisdiction": "US-CA",
++          "qualifiedOn": "2022-08-01"
++        }
++      ],
++      "footprint": [
++        "US-CA"
++      ]
+     },
+     {
+       "id": "E-2",
+@@ -272,7 +454,8 @@
+       "jurisdiction": "US-CA",
+       "type": "corp",
+       "formedOn": "2021-06-01",
+-      "status": "active"
++      "status": "active",
++      "goodStandingConfirmedOn": "2024-11-01"
+     },
+     {
+       "id": "E-3",
+@@ -280,7 +463,8 @@
+       "jurisdiction": "US-NY",
+       "type": "llc",
+       "formedOn": "2019-07-01",
+-      "status": "active"
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-08-01"
+     },
+     {
+       "id": "E-4",
+@@ -288,7 +472,10 @@
+       "jurisdiction": "US-TX",
+       "type": "llc",
+       "formedOn": "2026-06-01",
+-      "status": "active"
++      "status": "active",
++      "footprint": [
++        "US-WA"
++      ]
+     },
+     {
+       "id": "E-5",
+@@ -297,6 +484,25 @@
+       "type": "corp",
+       "formedOn": "2018-09-10",
+       "status": "dissolved"
++    },
++    {
++      "id": "E-6",
++      "name": "Petrel Systems, Inc.",
++      "jurisdiction": "US-DE",
++      "type": "corp",
++      "formedOn": "2018-03-01",
++      "status": "dormant",
++      "dormantSince": "2019-04-01",
++      "goodStandingConfirmedOn": "2026-06-01"
++    },
++    {
++      "id": "E-7",
++      "name": "Kestrel Labs LLC",
++      "jurisdiction": "US-CA",
++      "type": "llc",
++      "formedOn": null,
++      "status": "active",
++      "goodStandingConfirmedOn": "2026-10-01"
+     }
+   ],
+   "obligations": [
+@@ -309,7 +515,9 @@
+       ],
+       "recurring": "annual",
+       "anchor": "formationAnniversary",
+-      "statuteCite": "fictional 8 Del. C. § 391-analog"
++      "statuteCite": "fictional 8 Del. C. § 391-analog",
++      "effectiveFrom": "2020-01-01",
++      "verifiedOn": "2025-06-01"
+     },
+     {
+       "id": "ca-sos-biennial",
+@@ -321,7 +529,9 @@
+       ],
+       "recurring": "biennial",
+       "anchor": "formationAnniversary",
+-      "statuteCite": "fictional Cal. Corp. Code § 6210-analog"
++      "statuteCite": "fictional Cal. Corp. Code § 6210-analog",
++      "effectiveFrom": "2021-01-01",
++      "verifiedOn": "2026-09-15"
+     },
+     {
+       "id": "ny-annual-report",
+@@ -335,7 +545,9 @@
+       "anchor": "calendarFixed",
+       "dueMonth": 4,
+       "dueDay": 15,
+-      "statuteCite": "fictional NY LLC Law § 301-analog"
++      "statuteCite": "fictional NY LLC Law § 301-analog",
++      "effectiveFrom": "2019-01-01",
++      "verifiedOn": "2026-08-20"
+     },
+     {
+       "id": "tx-initial-report",
+@@ -348,7 +560,9 @@
+       "recurring": "event",
+       "anchor": "formation",
+       "dueWithinDays": 90,
+-      "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog"
++      "statuteCite": "fictional Tex. Bus. Orgs. Code § 5.257-analog",
++      "effectiveFrom": "2024-01-01",
++      "verifiedOn": "2026-10-01"
+     },
+     {
+       "id": "de-registered-agent",
+@@ -362,7 +576,9 @@
+       "anchor": "calendarFixed",
+       "dueMonth": 6,
+       "dueDay": 1,
+-      "statuteCite": "fictional 8 Del. C. § 132-analog"
++      "statuteCite": "fictional 8 Del. C. § 132-analog",
++      "effectiveFrom": "2020-01-01",
++      "verifiedOn": "2026-07-10"
+     }
+   ],
+   "delinquent": [
+@@ -381,14 +597,86 @@
+       "obligationName": "CA statement of information",
+       "dueOn": "2025-06-01",
+       "overdueDays": 524
++    },
++    {
++      "entityId": "E-1",
++      "entityName": "Northwind Robotics, Inc.",
++      "obligationId": "ca-sos-biennial",
++      "obligationName": "CA statement of information",
++      "dueOn": "2026-08-01",
++      "overdueDays": 98
+     }
+   ],
+   "counts": {
+-    "cells": 25,
+-    "delinquent": 2,
++    "cells": 35,
++    "delinquent": 3,
+     "due-soon": 0,
+     "scheduled": 2,
+     "satisfied": 1,
+-    "n/a": 20
+-  }
++    "unknown": 1,
++    "n/a": 28
++  },
++  "feeTotals": {
++    "recorded": 3759,
++    "byEntity": {
++      "E-1": 3680,
++      "E-2": 40,
++      "E-3": 9,
++      "E-4": 30,
++      "E-5": 0,
++      "E-6": 0,
++      "E-7": 0
++    }
++  },
++  "goodStanding": [
++    {
++      "entityId": "E-1",
++      "entityName": "Northwind Robotics, Inc.",
++      "jurisdiction": "US-DE",
++      "confirmedOn": "2026-10-15",
++      "state": "ok"
++    },
++    {
++      "entityId": "E-2",
++      "entityName": "Northwind Robotics California, Inc.",
++      "jurisdiction": "US-CA",
++      "confirmedOn": "2024-11-01",
++      "state": "stale"
++    },
++    {
++      "entityId": "E-3",
++      "entityName": "Northwind Robotics NY LLC",
++      "jurisdiction": "US-NY",
++      "confirmedOn": "2026-08-01",
++      "state": "ok"
++    },
++    {
++      "entityId": "E-4",
++      "entityName": "Northwind Robotics Texas LLC",
++      "jurisdiction": "US-TX",
++      "confirmedOn": null,
++      "state": "unknown"
++    },
++    {
++      "entityId": "E-5",
++      "entityName": "Gale Force Labs, Inc. (dormant sub)",
++      "jurisdiction": "US-DE",
++      "confirmedOn": null,
++      "state": "unknown"
++    },
++    {
++      "entityId": "E-6",
++      "entityName": "Petrel Systems, Inc.",
++      "jurisdiction": "US-DE",
++      "confirmedOn": "2026-06-01",
++      "state": "ok"
++    },
++    {
++      "entityId": "E-7",
++      "entityName": "Kestrel Labs LLC",
++      "jurisdiction": "US-CA",
++      "confirmedOn": "2026-10-01",
++      "state": "ok"
++    }
++  ]
+ }
+diff --git a/open-artifacts/entity-compliance-calendar/examples/report.md b/open-artifacts/entity-compliance-calendar/examples/report.md
+index c35639a..829a4bb 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/report.md
++++ b/open-artifacts/entity-compliance-calendar/examples/report.md
+@@ -1,11 +1,59 @@
+ # entity-compliance-calendar — worked example (2026-11-07, Northwind Robotics group (fictional))
+ 
+-**2 delinquent · 0 due soon (≤45d) · 2 scheduled · 1 satisfied · 20 n/a** across 25 entity × obligation cells.
++**3 delinquent · 0 due soon (≤45d) · 2 scheduled · 1 satisfied · 1 unknown · 28 n/a** across 35 entity × obligation cells.
++
++Fees recorded on filings: **$3759** (E-1 $3680, E-2 $40, E-3 $9, E-4 $30).
+ 
+ ## Delinquency flags (most overdue first)
+ 
+ - 🔴 **Northwind Robotics NY LLC** — NY biennial statement: due **2021-04-15**, overdue 2032d
+ - 🔴 **Northwind Robotics California, Inc.** — CA statement of information: due **2025-06-01**, overdue 524d
++- 🔴 **Northwind Robotics, Inc.** — CA statement of information: due **2026-08-01**, overdue 98d
++
++## Filing windows (cumulative; overdue always included)
++
++### ≤30d — 3 filings
++
++- 2021-04-15 (2032d overdue) · **Northwind Robotics NY LLC** — NY biennial statement [delinquent]
++- 2025-06-01 (524d overdue) · **Northwind Robotics California, Inc.** — CA statement of information [delinquent]
++- 2026-08-01 (98d overdue) · **Northwind Robotics, Inc.** — CA statement of information [delinquent]
++
++### ≤60d — 3 filings
++
++- 2021-04-15 (2032d overdue) · **Northwind Robotics NY LLC** — NY biennial statement [delinquent]
++- 2025-06-01 (524d overdue) · **Northwind Robotics California, Inc.** — CA statement of information [delinquent]
++- 2026-08-01 (98d overdue) · **Northwind Robotics, Inc.** — CA statement of information [delinquent]
++
++### ≤90d — 3 filings
++
++- 2021-04-15 (2032d overdue) · **Northwind Robotics NY LLC** — NY biennial statement [delinquent]
++- 2025-06-01 (524d overdue) · **Northwind Robotics California, Inc.** — CA statement of information [delinquent]
++- 2026-08-01 (98d overdue) · **Northwind Robotics, Inc.** — CA statement of information [delinquent]
++
++### ≤180d — 4 filings
++
++- 2021-04-15 (2032d overdue) · **Northwind Robotics NY LLC** — NY biennial statement [delinquent]
++- 2025-06-01 (524d overdue) · **Northwind Robotics California, Inc.** — CA statement of information [delinquent]
++- 2026-08-01 (98d overdue) · **Northwind Robotics, Inc.** — CA statement of information [delinquent]
++- 2027-03-15 (in 128d) · **Northwind Robotics, Inc.** — DE franchise tax [scheduled]
++
++## Health audit
++
++- ⚠️ `good-standing-stale` — **Northwind Robotics California, Inc.**: last good-standing confirmation 2024-11-01 (736d old, >365d)
++- ⚠️ `good-standing-unknown` — **Northwind Robotics Texas LLC**: no good-standing confirmation on record (goodStandingConfirmedOn missing)
++- ⚠️ `foreign-qualification-gap` — **Northwind Robotics Texas LLC**: footprint includes US-WA but entity holds no qualification there [verify with agent]
++- ⚠️ `dormant-dissolution-candidate` — **Petrel Systems, Inc.**: dormant 2777d (>5y since 2019-04-01) — dissolution candidate [verify with agent]
++- ⚠️ `missing-formedOn` — **Kestrel Labs LLC**: no parseable formation date — deadlines and entity age cannot be computed
++
++### Good standing (fictional confirmations)
++
++- ✅ **Northwind Robotics, Inc.** — ok (confirmed 2026-10-15)
++- 🟡 **Northwind Robotics California, Inc.** — stale (confirmed 2024-11-01)
++- ✅ **Northwind Robotics NY LLC** — ok (confirmed 2026-08-01)
++- ❓ **Northwind Robotics Texas LLC** — unknown
++- ❓ **Gale Force Labs, Inc. (dormant sub)** — unknown
++- ✅ **Petrel Systems, Inc.** — ok (confirmed 2026-06-01)
++- ✅ **Kestrel Labs LLC** — ok (confirmed 2026-10-01)
+ 
+ ## Upcoming filings (next-due, chronological, actionable cells only)
+ 
+@@ -14,10 +62,10 @@
+ 
+ ## Rules applied (rules-as-data)
+ 
+-- `de-franchise` DE franchise tax — US-DE, corp, annual [fictional 8 Del. C. § 391-analog]
+-- `ca-sos-biennial` CA statement of information — US-CA, corp/llc, biennial [fictional Cal. Corp. Code § 6210-analog]
+-- `ny-annual-report` NY biennial statement — US-NY, corp/llc, biennial fixed 4/15 [fictional NY LLC Law § 301-analog]
+-- `tx-initial-report` TX initial information report — US-TX, corp/llc, event [fictional Tex. Bus. Orgs. Code § 5.257-analog]
+-- `de-registered-agent` DE registered agent renewal — US-DE, corp/llc, annual fixed 6/1 [fictional 8 Del. C. § 132-analog]
++- `de-franchise` DE franchise tax — US-DE, corp, annual [effective 2020-01-01] [verified 2025-06-01] [fictional 8 Del. C. § 391-analog]
++- `ca-sos-biennial` CA statement of information — US-CA, corp/llc, biennial [effective 2021-01-01] [verified 2026-09-15] [fictional Cal. Corp. Code § 6210-analog]
++- `ny-annual-report` NY biennial statement — US-NY, corp/llc, biennial fixed 4/15 [effective 2019-01-01] [verified 2026-08-20] [fictional NY LLC Law § 301-analog]
++- `tx-initial-report` TX initial information report — US-TX, corp/llc, event [effective 2024-01-01] [verified 2026-10-01] [fictional Tex. Bus. Orgs. Code § 5.257-analog]
++- `de-registered-agent` DE registered agent renewal — US-DE, corp/llc, annual fixed 6/1 [effective 2020-01-01] [verified 2026-07-10] [fictional 8 Del. C. § 132-analog]
+ 
+ _All entities, obligations, and statutory cites fictional (US-flavored defaults). Obligation rules change — maintain the rule base with effective dates before operational use. Not legal advice._
+diff --git a/open-artifacts/entity-compliance-calendar/examples/run.js b/open-artifacts/entity-compliance-calendar/examples/run.js
+index 6325760..43024d7 100644
+--- a/open-artifacts/entity-compliance-calendar/examples/run.js
++++ b/open-artifacts/entity-compliance-calendar/examples/run.js
+@@ -6,20 +6,25 @@
+ import { readFileSync, writeFileSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { dirname, join } from "node:path";
+-import { buildMatrix, toCsv, toICS } from "../core/core.js";
++import { buildMatrix, toCsv, toICS, report, auditHealth } from "../core/core.js";
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, "input.json"), "utf8"));
+ 
+ const m = buildMatrix(input);
++const rep = report(m);
++const health = auditHealth(input);
+ writeFileSync(join(here, "matrix.json"), JSON.stringify(m, null, 2) + "\n");
+ writeFileSync(join(here, "compliance.csv"), toCsv(m));
+ writeFileSync(join(here, "compliance.ics"), toICS(m));
+ 
++const feeList = Object.entries(m.feeTotals.byEntity).filter(([, v]) => v > 0).map(([id, v]) => `${id} $${v}`).join(", ");
+ const md = [
+   `# entity-compliance-calendar — worked example (${input.asOf}, ${input.company})`,
+   "",
+-  `**${m.counts.delinquent} delinquent · ${m.counts["due-soon"]} due soon (≤${input.soonDays}d) · ${m.counts.scheduled} scheduled · ${m.counts.satisfied} satisfied · ${m.counts["n/a"]} n/a** across ${m.counts.cells} entity × obligation cells.`,
++  `**${m.counts.delinquent} delinquent · ${m.counts["due-soon"]} due soon (≤${input.soonDays}d) · ${m.counts.scheduled} scheduled · ${m.counts.satisfied} satisfied · ${m.counts.unknown} unknown · ${m.counts["n/a"]} n/a** across ${m.counts.cells} entity × obligation cells.`,
++  "",
++  `Fees recorded on filings: **$${m.feeTotals.recorded}** (${feeList}).`,
+   "",
+   "## Delinquency flags (most overdue first)",
+   "",
+@@ -29,6 +34,26 @@ const md = [
+       )
+     : ["- none"]),
+   "",
++  "## Filing windows (cumulative; overdue always included)",
++  "",
++  ...rep.windows.flatMap((w) => [
++    `### ≤${w.days}d — ${w.count} filing${w.count === 1 ? "" : "s"}`,
++    "",
++    ...(w.items.length
++      ? w.items.map((x) => `- ${x.dueOn} (${x.daysOut < 0 ? `${-x.daysOut}d overdue` : `in ${x.daysOut}d`}) · **${x.entityName}** — ${x.obligationName} [${x.status}]`)
++      : ["- none"]),
++    "",
++  ]),
++  "## Health audit",
++  "",
++  ...(health.flags.length
++    ? health.flags.map((f) => `- ⚠️ \`${f.code}\` — **${f.entityName}**: ${f.detail}`)
++    : ["- no health flags"]),
++  "",
++  "### Good standing (fictional confirmations)",
++  "",
++  ...m.goodStanding.map((g) => `- ${g.state === "ok" ? "✅" : g.state === "stale" ? "🟡" : "❓"} **${g.entityName}** — ${g.state}${g.confirmedOn ? ` (confirmed ${g.confirmedOn})` : ""}`),
++  "",
+   "## Upcoming filings (next-due, chronological, actionable cells only)",
+   "",
+   ...m.entities.flatMap((e, r) =>
+@@ -41,7 +66,7 @@ const md = [
+   "",
+   "## Rules applied (rules-as-data)",
+   "",
+-  ...m.obligations.map((o) => `- \`${o.id}\` ${o.name} — ${o.jurisdiction}, ${(o.entityTypes ?? ["any"]).join("/")}, ${o.recurring}${o.anchor === "calendarFixed" ? ` fixed ${o.dueMonth}/${o.dueDay}` : ""} [${o.statuteCite}]`),
++  ...m.obligations.map((o) => `- \`${o.id}\` ${o.name} — ${o.jurisdiction}, ${(o.entityTypes ?? ["any"]).join("/")}, ${o.recurring}${o.anchor === "calendarFixed" ? ` fixed ${o.dueMonth}/${o.dueDay}` : ""}${o.effectiveFrom ? ` [effective ${o.effectiveFrom}]` : ""}${o.verifiedOn ? ` [verified ${o.verifiedOn}]` : ""} [${o.statuteCite}]`),
+   "",
+   "_All entities, obligations, and statutory cites fictional (US-flavored defaults). Obligation rules change — maintain the rule base with effective dates before operational use. Not legal advice._",
+   "",
+@@ -49,5 +74,5 @@ const md = [
+ writeFileSync(join(here, "report.md"), md);
+ 
+ console.log(
+-  `${m.counts.cells} cells: ${m.counts.delinquent} delinquent, ${m.counts["due-soon"]} due-soon, ${m.counts.scheduled} scheduled — wrote matrix.json, compliance.csv, compliance.ics, report.md`
++  `${m.counts.cells} cells: ${m.counts.delinquent} delinquent, ${m.counts["due-soon"]} due-soon, ${m.counts.scheduled} scheduled, ${m.counts.unknown} unknown — ${health.counts.flags} health flags, $${m.feeTotals.recorded} fees recorded — wrote matrix.json, compliance.csv, compliance.ics, report.md`
+ );
+diff --git a/open-artifacts/entity-compliance-calendar/spec.md b/open-artifacts/entity-compliance-calendar/spec.md
+index 46b472f..e32d6b9 100644
+--- a/open-artifacts/entity-compliance-calendar/spec.md
++++ b/open-artifacts/entity-compliance-calendar/spec.md
+@@ -14,7 +14,11 @@ model.
+ 
+ - **Entities × obligations matrix** where each cell states its next due
+   date, period, computation rule, and status:
+-  `delinquent | due-soon | scheduled | satisfied | n/a`.
++  `delinquent | due-soon | scheduled | satisfied | unknown | n/a`.
++  `unknown` means required entity data is missing (no formation or
++  qualification date — the cell never guesses); `n/a` means the rule
++  provably does not apply (wrong jurisdiction/type, inactive entity,
++  impossible rule data), with the reason recorded.
+ - **Recurring scheduling**:
+   - `annual` + `formationAnniversary` — anniversary of formation (Feb-29
+     anchors roll to Feb-28 in non-leap years);
+@@ -23,29 +27,74 @@ model.
+     skipped; impossible fixed dates (Feb 30) produce no date;
+   - `event` — one-shot, N days after the anchor event (e.g. initial report
+     90 days after formation), satisfied permanently by one filing.
++- **Foreign qualifications** — `entity.qualifications:
++  [{ jurisdiction, qualifiedOn }]`; an obligation whose jurisdiction is not
++  the entity's formation state binds through a matching qualification, and
++  all anchor math (anniversaries, parity, event offsets) uses `qualifiedOn`
++  instead of `formedOn` (fictional simplified semantics).
+ - **Earliest-unfiled-period semantics** — a missed 2021 biennial statement
+   surfaces as delinquent *since 2021*, not as "current year"; filings skip
+   satisfied periods; gaps never disappear.
++- **Rule provenance & staleness** — obligations carry `effectiveFrom` and
++  `verifiedOn`; a cell whose rule was verified >365 days before `asOf` is
++  flagged `ruleStale: true` (metadata only — the computed status never
++  changes). Surfaced in the CSV columns and the ICS description.
++- **Fees & good standing** — filings carry optional `fee`; the matrix
++  reports `feeTotals` (recorded spend, total and per entity) and a
++  `goodStanding` list per entity (`ok` / `stale` >365d / `unknown` from
++  `entity.goodStandingConfirmedOn`); CSV rows and ICS descriptions carry
++  both.
++- **Filing-window report** — `report(matrix, windows = [30, 60, 90, 180])`
++  buckets actionable cells into cumulative windows (overdue items always
++  included).
++- **Health audit** — `auditHealth({ asOf, entities })` flags
++  `missing-formedOn`, `dormant-dissolution-candidate` (status `dormant` and
++  dormant — `dormantSince ?? formedOn` — >5y), `good-standing-unknown` /
++  `good-standing-stale` (skipped for dissolved entities), and
++  `foreign-qualification-gap` (`entity.footprint` jurisdiction with no
++  qualification). All fictional heuristics — [verify] with the registered
++  agent before acting.
++- **Agent-report ingestion** — `ingestAgentReport(entities, csv)` matches a
++  fictional registered-agent CSV (`Report Date,Entity Name,Jurisdiction,
++  Status,Good Standing`) by case/punctuation-insensitive name
++  ("Acme Holdings LLC" ≡ "Acme Holdings, LLC"), jurisdiction-disambiguated,
++  returning `{ matched, unmatched, notInReport }`;
++  `applyFilingUpdates(entities, ingest, { confirm })` is a pure two-phase
++  apply (dry-run proposals → confirmed new array; idempotent; never
++  mutates input).
+ - **Delinquency flags** ranked by overdue days, plus due-soon window
+   (default 45d, configurable).
+-- **Exports**: CSV (full matrix incl. statutory cites and skip reasons) and
+-  RFC 5545 ICS (VEVENT per actionable cell, `RRULE:FREQ=YEARLY[;INTERVAL=2]`
+-  for recurring obligations, 30-day alarm, delinquency marker).
++- **Exports**: CSV (full matrix incl. statutory cites, provenance,
++  standing, fees, skip reasons) and RFC 5545 ICS (VEVENT per actionable
++  cell, `RRULE:FREQ=YEARLY[;INTERVAL=2]` for recurring obligations,
++  30-day alarm, delinquency marker, staleness caveat).
+ 
+ ## IO contract
+ 
+ ```js
+-import { nextDue, buildMatrix, toCsv, toICS } from "./core/core.js";
++import { nextDue, buildMatrix, report, auditHealth, ingestAgentReport, applyFilingUpdates, toCsv, toICS } from "./core/core.js";
+ 
+ nextDue(obligation, entity, filings, asOfIso);
+-//   => { applies, skipReason?, dueOn, period, status, ruleNote }
++//   => { applies, skipReason?, dueOn, period, status, ruleNote, ruleStale }
+ const matrix = buildMatrix({ asOf, entities, obligations, filings, soonDays? });
++//   => { grid, delinquent, counts, feeTotals, goodStanding, … }
++report(matrix, windows = [30, 60, 90, 180]); // cumulative filing windows
++auditHealth({ asOf, entities });            // deterministic health flags
++const ingest = ingestAgentReport(entities, agentCsv); // matched/unmatched/notInReport
++applyFilingUpdates(entities, ingest, { confirm: true }); // pure two-phase apply
+ toCsv(matrix); toICS(matrix);
+ ```
+ 
+-- `entities`: `[{ id, name, jurisdiction, type, formedOn, status }]`
+-- `obligations` (rules-as-data): `[{ id, name, jurisdiction, entityTypes?, recurring, anchor, dueMonth?, dueDay?, dueWithinDays?, statuteCite }]`
+-- `filings`: `[{ entityId, obligationId, period: number|"once", filedOn }]`
++- `entities`: `[{ id, name, jurisdiction, type, formedOn, status?,
++  goodStandingConfirmedOn?, qualifications?: [{ jurisdiction, qualifiedOn }],
++  footprint?: string[], dormantSince? }]`
++- `obligations` (rules-as-data): `[{ id, name, jurisdiction, entityTypes?,
++  recurring, anchor, dueMonth?, dueDay?, dueWithinDays?, statuteCite?,
++  effectiveFrom?, verifiedOn? }]`
++- `filings`: `[{ entityId, obligationId, period: number|"once", filedOn, fee? }]`
++- agent-report CSV (fictional format): header
++  `Report Date,Entity Name,Jurisdiction,Status,Good Standing`; standing
++  `Yes|No`.
+ - `asOf` caller-supplied; no hidden clocks.
+ 
+ ## Deterministic vs LLM-assisted
+@@ -74,15 +123,26 @@ data with statutory cites.
+ - **The rule base is inspectable data with cites** — every cell can say
+   which statute (fictional here) imposes it and which rule computed the
+   date; Anthropic's tracker keeps that logic inside the product.
++- **Computed rule staleness** — rules carry `effectiveFrom`/`verifiedOn`
++  and cells flag `ruleStale` when the verification is >365d old; the
++  counterpart's caveat becomes a tested, per-cell signal.
++- **Foreign-qualification math** — obligations bind through
++  `qualifications[].qualifiedOn`, so foreign filing deadlines are
++  computed, not prose-flagged.
+ - **Earliest-unfiled-period delinquency** — gaps surface at their true age
+   (the worked example flags a biennial statement 2032 days overdue), not
+   rolled into "this year's task".
++- **Deterministic health audit + auditable ingestion** — dormant
++  candidates, stale good standing, and qualification gaps are computed
++  flags; agent reports match by normalized name with a matched/unmatched
++  diff and a confirm-gated apply, where the counterpart relies on an LLM
++  reading the report.
+ - **Recurrence in the export** — ICS events carry `RRULE` so the calendar
+   system keeps scheduling future cycles; CSV carries cites for the audit
+   trail.
+-- **Honest edge handling** — impossible fixed dates, missing formation
+-  dates, dissolved entities, and off-type obligations all resolve to `n/a`
+-  with reasons instead of fabricated deadlines.
++- **Honest edge handling** — impossible fixed dates, dissolved entities,
++  and off-type obligations resolve to `n/a` with reasons; missing anchor
++  data resolves to `unknown`; neither ever fabricates a deadline.
+ 
+ ## Disclaimer
+ 

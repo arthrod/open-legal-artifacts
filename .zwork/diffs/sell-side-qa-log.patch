@@ -1,0 +1,2114 @@
+diff --git a/open-artifacts/sell-side-qa-log/README.md b/open-artifacts/sell-side-qa-log/README.md
+index e93e63a..3ed6715 100644
+--- a/open-artifacts/sell-side-qa-log/README.md
++++ b/open-artifacts/sell-side-qa-log/README.md
+@@ -2,48 +2,71 @@
+ 
+ Open reimplementation of Anthropic's **Sell-side Q&A log** artifact — buyer
+ questions during diligence — where **contradiction detection is the core**:
+-deterministic heuristics cross-examine every answer (numbers by unit, terms
+-by antonym pairs) and quote the evidence for each flag.
++deterministic heuristics cross-examine every answer (numbers by canonical
++unit and magnitude, terms by antonym pairs) and quote the evidence for each
++flag. Answers carry data-room citations, the approve→send release gate is
++code with an audit trail, and buyer isolation is a function.
+ 
+ ## What it does
+ 
+ - Workflow state per item: answer history (`draft` / `sent` with dates) →
+   canonical answer (latest sent), pending draft (newer than the sent answer),
+   status `open → draft → sent → draft-pending`.
+-- `detectContradictions(input)` — pairwise within each category, across
+-  buyers: `number_conflict` (disjoint values in the same unit; bare counts
+-  need a shared keyword anchor) and `antonym_conflict` (rules-as-data pairs
+-  like `permitted`/`prohibited`, `yes`/`no`). Pending drafts are compared
+-  against every sent answer in the category — inconsistencies surface before
+-  they are sent. Same-item answers are never compared (revision ≠
+-  contradiction). Every flag carries verbatim evidence quotes.
+-- `readinessScore(input, contradictions)` — coverage (sent answers, ×0.5) +
+-  pipeline (no open items, ×0.2) + consistency (no contradicted items, ×0.3);
++- **Citations on answers** — `citations: [{ docId, locator, quote }]` are
++  structured source links that survive CSV/JSON/report export and feed the
++  readiness score's provenance component.
++- `detectContradictions(input)` — pairwise within each category (opt-in
++  cross-category, keyword-anchored), across buyers:
++  `number_conflict` (disjoint values in the same canonical unit;
++  `$3.5 million` ≡ `$3,500,000`; bare counts need a shared keyword anchor)
++  and `antonym_conflict` (rules-as-data pairs like `permitted`/`prohibited`,
++  `yes`/`no`; quotes ≥3 words). Every conflicting unit and pair fires;
++  pending drafts are compared against everything already sent in scope;
++  same-item answers are never compared (revision ≠ contradiction). Every
++  flag carries verbatim evidence quotes.
++- **Release gate as code** — `transition(item, { type: "approve",
++  approver, at })` records the approval audit trail; `transition(item,
++  { type: "send" })` throws on an unapproved draft.
++  `releaseBlockers(item, contradictions)` lists unapproved drafts and every
++  contradiction involving the item.
++- `buyerView(log, buyerId)` — buyer-safe projection: only that buyer's
++  items appear, cross-buyer contradictions are redacted, summary and
++  readiness recomputed; feeds `qaLogToCsv`/`qaLogToJson` directly.
++- **SLA aging** — `receivedAt` + `settings.asOf` → `daysOpen` (date math,
++  no clock) and SLA bands (default warn 3d / breach 5d); overdue count in
++  summary and report.
++- `readinessScore(input, contradictions)` — coverage (×0.4) + pipeline
++  (×0.15) + consistency (×0.25) + provenance (cited sent answers, ×0.2);
+   weights and bands are rules-as-data.
+ - Export **JSON** (version-control friendly) and **CSV** (whole log with
+-  flags).
++  citations, aging, flags).
+ 
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"   # 16 tests (node:test)
++node --test "core/*.test.js"   # 30 tests (node:test)
+ node examples/run.js           # builds the example log → output.json, qa-log.csv, report.md
+ ```
+ 
+ Open `demo/index.html` for the interactive demo (readiness score,
+-contradiction cards with evidence, buyer filter, exports).
++contradiction cards with evidence, a live pre-send gate on Q-005's pending
++draft, buyer filter with scoped CSV export).
+ 
+ ## What's better than the closed counterpart
+ 
+ 1. **Contradictions as a first-class output.** The closed artifact tracks
+-   answers; this core cross-examines them and quotes the evidence — before an
+-   inconsistent statement reaches a second buyer.
+-2. **Drafts checked pre-send.** A pending draft is compared against
+-   everything already sent in its category while it is still editable.
+-3. **Auditable readiness score** — formula, weights, and bands are
++   answers; this core cross-examines them and quotes the evidence — before
++   an inconsistent statement reaches a second buyer.
++2. **Source links that survive export.** Citations are structured data on
++   the answer, not product-internal links.
++3. **Drafts checked pre-send.** A pending draft is compared against
++   everything already sent while it is still editable.
++4. **Release gate as code** — approve→send is a testable function with a
++   named-approver audit trail; unapproved sends throw.
++5. **Auditable readiness score** — formula, weights, and bands are
+    rules-as-data, not a black box.
+-4. **Buyer-isolated by construction** — the log is plain JSON you host;
+-   per-buyer views are a `buyerId` filter, no vendor access control.
++6. **Ethical wall as a function** — `buyerView` is a redacted projection
++   you control; sharing between teams is not a vendor setting.
+ 
+ ## Layout
+ 
+@@ -54,6 +77,5 @@ contradiction cards with evidence, buyer filter, exports).
+ - `demo/index.html` — standalone demo using the shared design tokens
+ 
+ ## Disclaimer
+-
+ All example data fictional. Conflict flags are keyword/number heuristics for
+ attorney review, not legal conclusions. Not legal advice.
+diff --git a/open-artifacts/sell-side-qa-log/core/core.js b/open-artifacts/sell-side-qa-log/core/core.js
+index 88e7054..7bccaed 100644
+--- a/open-artifacts/sell-side-qa-log/core/core.js
++++ b/open-artifacts/sell-side-qa-log/core/core.js
+@@ -3,12 +3,16 @@
+  *
+  * M&A sell-side diligence Q&A log: question/buyer/answer/status workflow,
+  * deterministic contradiction detection between answers (number conflicts by
+- * unit + antonym-term conflicts, each with verbatim evidence quotes), a
+- * disclosure-readiness score computed from the log, and CSV/JSON exports.
++ * canonical unit/magnitude + antonym-term conflicts, each with verbatim
++ * evidence quotes), an approve→send release gate with an audit trail
++ * (transition/releaseBlockers), per-buyer projections with cross-buyer
++ * redaction (buyerView), SLA aging (receivedAt + asOf → daysOpen, no clock),
++ * a disclosure-readiness score computed from the log (coverage, pipeline,
++ * consistency, provenance), and CSV/JSON exports.
+  *
+  * Dependency-free plain-JavaScript ES module; browser + Node compatible.
+  * No timestamps, no randomness, no network: same input → byte-identical
+- * output. Antonym pairs, unit vocabulary, and score weights are
++ * output. Antonym pairs, unit vocabulary, SLA bands, and score weights are
+  * rules-as-data. Conflicts are heuristics for attorney review — never legal
+  * conclusions.
+  * @module core
+@@ -36,13 +40,24 @@ export const DEFAULT_ANTONYM_PAIRS = [
+  * @type {string[]} */
+ export const DEFAULT_UNITS = ["%", "percent", "$", "usd", "million", "mm", "billion", "bn", "x", "days", "months", "years", "employees", "customers", "locations", "stores", "shares"];
+ 
++/** Magnitude multipliers normalized to a canonical base (e.g. $3.5 million ≡
++ * $3,500,000). Applied when a currency marker ($ / usd) is present.
++ * @type {Object<string, number>} */
++export const MULTIPLIERS = { million: 1e6, mm: 1e6, billion: 1e9, bn: 1e9 };
++
+ /** Readiness weights + bands (rules-as-data; override via input.settings).
+- * @type {{ weights: { coverage: number, pipeline: number, consistency: number }, bands: { ready: number, nearly: number } }} */
++ * Provenance = sent answers carrying at least one citation.
++ * @type {{ weights: { coverage: number, pipeline: number, consistency: number, provenance: number }, bands: { ready: number, nearly: number } }} */
+ export const DEFAULT_READINESS = {
+-  weights: { coverage: 0.5, pipeline: 0.2, consistency: 0.3 },
++  weights: { coverage: 0.4, pipeline: 0.15, consistency: 0.25, provenance: 0.2 },
+   bands: { nearly: 60, ready: 85 },
+ };
+ 
++/** Default SLA bands (rules-as-data; override via input.settings.sla).
++ * daysOpen ≥ breachDays → "overdue"; ≥ warnDays → "due-soon".
++ * @type {{ warnDays: number, breachDays: number }} */
++export const DEFAULT_SLA = { warnDays: 3, breachDays: 5 };
++
+ /** Stopwords stripped before keyword-anchor comparison.
+  * @type {string[]} */
+ export const STOPWORDS = new Set([
+@@ -58,15 +73,15 @@ export const STOPWORDS = new Set([
+  * Canonical answer for an item: the latest `sent` answer (by `at`, ties by
+  * array order). Null when nothing has been sent.
+  *
+- * @param {{ answers?: Array<{ text: string, status: string, at: string }> }} item
+- * @returns {{ text: string, at: string, index: number } | null}
++ * @param {{ answers?: Array<{ text: string, status: string, at: string, citations?: any[], approvedBy?: string }> }} item
++ * @returns {{ text: string, at: string, index: number, citations: any[] | null, approvedBy: string | null } | null}
+  */
+ export function currentAnswer(item) {
+   const answers = item.answers ?? [];
+   let best = null;
+   answers.forEach((a, index) => {
+     if (a.status !== "sent") return;
+-    if (!best || String(a.at).localeCompare(String(best.at)) >= 0) best = { text: a.text, at: a.at, index };
++    if (!best || String(a.at).localeCompare(String(best.at)) >= 0) best = { text: a.text, at: a.at, index, citations: a.citations ?? null, approvedBy: a.approvedBy ?? null };
+   });
+   return best;
+ }
+@@ -76,7 +91,7 @@ export function currentAnswer(item) {
+  * answer (or any draft when nothing is sent yet). Null when none.
+  *
+  * @param {any} item
+- * @returns {{ text: string, at: string, index: number } | null}
++ * @returns {{ text: string, at: string, index: number, citations: any[] | null, approvedBy: string | null } | null}
+  */
+ export function pendingDraft(item) {
+   const answers = item.answers ?? [];
+@@ -85,7 +100,7 @@ export function pendingDraft(item) {
+   answers.forEach((a, index) => {
+     if (a.status !== "draft") return;
+     if (cur && String(a.at).localeCompare(String(cur.at)) < 0) return; // stale draft, already superseded
+-    if (!best || String(a.at).localeCompare(String(best.at)) >= 0) best = { text: a.text, at: a.at, index };
++    if (!best || String(a.at).localeCompare(String(best.at)) >= 0) best = { text: a.text, at: a.at, index, citations: a.citations ?? null, approvedBy: a.approvedBy ?? null };
+   });
+   return best;
+ }
+@@ -105,6 +120,61 @@ export function itemStatus(item) {
+   return pendingDraft(item) ? "draft-pending" : "sent";
+ }
+ 
++/* ---------- release gate (approve → send) ---------- */
++
++/**
++ * Release gate as code: apply one workflow event to an item and return the
++ * NEW item (input never mutated). Events:
++ *  - `{ type: "approve", approver, at }` — record approval (audit trail:
++ *    `approvedBy`/`approvedAt`) on the pending draft.
++ *  - `{ type: "send" }` — mark the pending draft `sent`. Requires a prior
++ *    approve; sending without approval throws.
++ *
++ * @param {any} item
++ * @param {{ type: "approve"|"send", approver?: string, at?: string }} event
++ * @returns {any} new item with updated answers
++ */
++export function transition(item, event) {
++  const type = event?.type;
++  const answers = [...(item?.answers ?? [])];
++  const dr = pendingDraft(item);
++  if (type === "approve") {
++    if (!dr) throw new Error(`transition(approve): no pending draft on ${item?.id ?? "(no id)"}`);
++    answers[dr.index] = { ...answers[dr.index], approvedBy: event.approver ?? "unspecified approver", approvedAt: event.at ?? null };
++    return { ...item, answers };
++  }
++  if (type === "send") {
++    if (!dr) throw new Error(`transition(send): no pending draft on ${item?.id ?? "(no id)"}`);
++    if (!answers[dr.index].approvedBy) throw new Error(`transition(send): pending draft on ${item.id} is not approved — approve first (approvedBy/approvedAt is the audit trail)`);
++    answers[dr.index] = { ...answers[dr.index], status: "sent" };
++    return { ...item, answers };
++  }
++  throw new Error(`transition: unknown event type ${JSON.stringify(type)}`);
++}
++
++/**
++ * Blockers that prevent releasing (sending) an item's pending draft:
++ * an unapproved draft, and every detected contradiction that involves this
++ * item. Accepts full items (with `answers`) or buildQaLog projections.
++ *
++ * @param {any} item
++ * @param {any[]} [contradictions] — output of detectContradictions
++ * @returns {Array<{ code: string, detail: string }>}
++ */
++export function releaseBlockers(item, contradictions = []) {
++  const blockers = [];
++  const live = Array.isArray(item?.answers);
++  const dr = live ? pendingDraft(item) : item?.pendingDraft != null ? { approvedBy: item.draftApproved ? "approved" : null } : null;
++  if (!dr) return blockers;
++  if (!dr.approvedBy) blockers.push({ code: "unapproved", detail: `pending draft on ${item.id} has no approval recorded — transition(item, { type: "approve", approver, at }) first` });
++  for (const c of contradictions) {
++    if (!Array.isArray(c.between) || !c.between.includes(item.id)) continue;
++    const other = c.between.find((x) => x !== item.id) ?? "?";
++    blockers.push({ code: c.kind, detail: `${c.kind} (${c.category}) between ${item.id} and ${other} — ${c.detail}` });
++  }
++  return blockers;
++}
++
+ /* ---------- text utilities ---------- */
+ 
+ /** Split text into sentences (deterministic: on . ! ? followed by space/end).
+@@ -130,11 +200,13 @@ export function keywords(text) {
+  * Extract numbers with their unit from a text. `$3.5 million` → {value:3.5,
+  * unit:"million"} (currency + multiplier merge to the multiplier unit);
+  * `12%` → {value:12, unit:"%"}; `five employees` is NOT matched (digits
+- * only — never guessed from words).
++ * only — never guessed from words). Every number also carries a canonical
++ * base for magnitude normalization: `$3.5 million` and `$3,500,000` both →
++ * { baseValue: 3500000, baseUnit: "usd" }.
+  *
+  * @param {string} text
+  * @param {string[]} [units] — normalized unit vocabulary (default DEFAULT_UNITS)
+- * @returns {Array<{ value: number, unit: string, raw: string, sentence: string }>}
++ * @returns {Array<{ value: number, unit: string, baseValue: number, baseUnit: string, raw: string, sentence: string }>}
+  */
+ export function extractNumbers(text, units = DEFAULT_UNITS) {
+   const unitAlt = units.filter((u) => u !== "").map((u) => u.replace(/[$%]/g, (c) => `\\${c}`)).join("|");
+@@ -147,21 +219,43 @@ export function extractNumbers(text, units = DEFAULT_UNITS) {
+     let unit = (m[3] ?? "").toLowerCase();
+     if (unit === "percent") unit = "%";
+     if (!unit && (m[1] ?? "") !== "") unit = "$"; // "$3.5" with no multiplier → currency unit
++    // canonical base: currency amounts (with or without a magnitude word) → usd
++    let baseValue = value;
++    let baseUnit = unit;
++    if (unit !== "%" && (m[1] ?? "") !== "") {
++      if (MULTIPLIERS[unit]) baseValue = value * MULTIPLIERS[unit];
++      baseUnit = "usd";
++    }
+     const raw = m[0].trim();
+     const sentence = sents.find((s) => s.includes(raw)) ?? "";
+-    out.push({ value, unit, raw, sentence });
++    out.push({ value, unit, baseValue, baseUnit, raw, sentence });
+   }
+   return out;
+ }
+ 
++/**
++ * Evidence quote containing `term`: the matched sentence, extended to the
++ * next sentence (or the full text) when the match is under 3 words — so
++ * "Yes." never ships as standalone evidence.
++ * @param {string} text @param {string} term @returns {string} */
++function quoteFor(text, term) {
++  const sents = sentences(text);
++  const i = sents.findIndex((s) => s.toLowerCase().includes(term));
++  if (i === -1) return text;
++  if (sents[i].split(/\s+/).filter(Boolean).length >= 3) return sents[i];
++  return i + 1 < sents.length ? `${sents[i]} ${sents[i + 1]}` : text;
++}
++
+ /* ---------- contradiction detection ---------- */
+ 
+ /**
+  * Compare two answers for contradictions. Returns conflicts (possibly
+- * multiple). Numbers: conflict when both answers state numbers in the same
+- * unit and the value sets are disjoint; bare (unitless) numbers additionally
+- * require a shared keyword in their evidence sentences. Antonyms: conflict
+- * when one answer contains a term and the other its opposing pair member.
++ * multiple — every conflicting unit and every matching antonym pair fires).
++ * Numbers: conflict when both answers state numbers in the same canonical
++ * base unit and the value sets are disjoint; bare (unitless) numbers
++ * additionally require a shared keyword in their evidence sentences.
++ * Antonyms: conflict when one answer contains a term and the other its
++ * opposing pair member; quotes are ≥3 words.
+  *
+  * @param {{ id: string, statusLabel?: string }} a — {text, ...}
+  * @param {{ id: string, statusLabel?: string }} b
+@@ -174,18 +268,20 @@ export function compareAnswers(a, b, aText, bText, settings = {}) {
+   const units = settings.units ?? DEFAULT_UNITS;
+   const conflicts = [];
+ 
+-  // --- number conflicts ---
++  // --- number conflicts (canonical base unit/magnitude) ---
+   const na = extractNumbers(aText, units);
+   const nb = extractNumbers(bText, units);
+-  const unitsOf = (ns) => [...new Set(ns.map((n) => n.unit))];
++  const unitsOf = (ns) => [...new Set(ns.map((n) => n.baseUnit))];
+   for (const unit of unitsOf(na)) {
+-    if (!nb.some((n) => n.unit === unit)) continue;
+-    const va = new Set(na.filter((n) => n.unit === unit).map((n) => n.value));
+-    const vb = new Set(nb.filter((n) => n.unit === unit).map((n) => n.value));
++    if (!nb.some((n) => n.baseUnit === unit)) continue;
++    const la = na.filter((n) => n.baseUnit === unit);
++    const lb = nb.filter((n) => n.baseUnit === unit);
++    const va = new Set(la.map((n) => n.baseValue));
++    const vb = new Set(lb.map((n) => n.baseValue));
+     const common = [...va].filter((v) => vb.has(v));
+     if (common.length > 0) continue; // some agreed value in this unit
+-    const ea = na.find((n) => n.unit === unit);
+-    const eb = nb.find((n) => n.unit === unit);
++    const ea = la[0];
++    const eb = lb[0];
+     if (unit === "") {
+       // bare counts: require a shared keyword anchor between evidence sentences
+       const shared = [...keywords(ea.sentence)].filter((k) => keywords(eb.sentence).has(k));
+@@ -200,10 +296,9 @@ export function compareAnswers(a, b, aText, bText, settings = {}) {
+         { itemId: b.id, answerStatus: b.statusLabel ?? "answer", quote: eb.sentence || bText },
+       ],
+     });
+-    break; // one number conflict per answer pair (first conflicting unit)
+   }
+ 
+-  // --- antonym conflicts ---
++  // --- antonym conflicts (all matching pairs, quotes ≥3 words) ---
+   const wordsA = new Set((aText.toLowerCase().match(/[a-z-]+/g)) ?? []);
+   const wordsB = new Set((bText.toLowerCase().match(/[a-z-]+/g)) ?? []);
+   for (const [x, y] of pairs) {
+@@ -216,81 +311,139 @@ export function compareAnswers(a, b, aText, bText, settings = {}) {
+         kind: "antonym_conflict",
+         detail: `${a.id} says "${wa}" where ${b.id} says "${wb}"`,
+         evidence: [
+-          { itemId: a.id, answerStatus: a.statusLabel ?? "answer", quote: sentences(aText).find((s) => s.toLowerCase().includes(wa)) ?? aText },
+-          { itemId: b.id, answerStatus: b.statusLabel ?? "answer", quote: sentences(bText).find((s) => s.toLowerCase().includes(wb)) ?? bText },
++          { itemId: a.id, answerStatus: a.statusLabel ?? "answer", quote: quoteFor(aText, wa) },
++          { itemId: b.id, answerStatus: b.statusLabel ?? "answer", quote: quoteFor(bText, wb) },
+         ],
+       });
+-      break; // one antonym conflict per answer pair (first matching pair)
+     }
+   }
+   return conflicts;
+ }
+ 
+ /**
+- * Detect contradictions across the log: within each category, compare the
+- * canonical sent answer (and any pending draft) of each item against those of
+- * every other item. Answers of the SAME item are never compared (revision is
+- * workflow, not contradiction). Deterministic order: category, then input
+- * order of items.
++ * Detect contradictions across the log. Within each category (and, when
++ * `settings.crossCategory` is on, across categories anchored on a shared
++ * answer keyword), compare the canonical sent answer (and any pending draft)
++ * of each item against those of every other item. Answers of the SAME item
++ * are never compared (revision is workflow, not contradiction). Deterministic
++ * order: category, then input order of items; cross-category conflicts come
++ * last and carry `crossCategory: true`.
+  *
+  * @param {{ items?: any[], settings?: any }} input
+- * @returns {Array<{ category: string, kind: string, between: [string, string], detail: string, evidence: Array<{ itemId: string, answerStatus: string, quote: string }> }>}
++ * @returns {Array<{ category: string, kind: string, between: [string, string], detail: string, evidence: Array<{ itemId: string, answerStatus: string, quote: string }>, crossCategory?: boolean }>}
+  */
+ export function detectContradictions(input) {
+   const items = input.items ?? [];
+   const settings = input.settings ?? {};
+   const out = [];
+-  const categories = [...new Set(items.map((it) => it.category ?? "uncategorized"))];
+-  for (const category of categories.sort((a, b) => a.localeCompare(b))) {
+-    const inCat = items.filter((it) => (it.category ?? "uncategorized") === category);
+-    // candidate answers: canonical sent + pending draft per item
+-    const candidates = [];
+-    for (const it of inCat) {
+-      const cur = currentAnswer(it);
+-      if (cur) candidates.push({ itemId: it.id, statusLabel: "sent", text: cur.text, order: cur.index });
+-      const dr = pendingDraft(it);
+-      if (dr) candidates.push({ itemId: it.id, statusLabel: "draft", text: dr.text, order: 1000 + dr.index });
++
++  // candidate answers: canonical sent + pending draft per item (input order, sent before draft)
++  const candidates = [];
++  items.forEach((it, itemIndex) => {
++    const category = it.category ?? "uncategorized";
++    const cur = currentAnswer(it);
++    if (cur) candidates.push({ itemId: it.id, category, statusLabel: "sent", text: cur.text, itemIndex, slot: 0 });
++    const dr = pendingDraft(it);
++    if (dr) candidates.push({ itemId: it.id, category, statusLabel: "draft", text: dr.text, itemIndex, slot: 1 });
++  });
++  const byOrder = (a, b) => a.category.localeCompare(b.category) || a.itemIndex - b.itemIndex || a.slot - b.slot;
++  const sorted = [...candidates].sort(byOrder);
++
++  const compare = (A, B, extra) => {
++    for (const c of compareAnswers({ id: A.itemId, statusLabel: A.statusLabel }, { id: B.itemId, statusLabel: B.statusLabel }, A.text, B.text, settings)) {
++      out.push({ category: extra?.category ?? A.category, kind: c.kind, between: [A.itemId, B.itemId], detail: c.detail, evidence: c.evidence, ...(extra?.crossCategory ? { crossCategory: true } : {}) });
+     }
+-    for (let i = 0; i < candidates.length; i++) {
+-      for (let j = i + 1; j < candidates.length; j++) {
+-        const A = candidates[i];
+-        const B = candidates[j];
+-        if (A.itemId === B.itemId) continue; // same item = revision, not contradiction
+-        for (const c of compareAnswers({ id: A.itemId, statusLabel: A.statusLabel }, { id: B.itemId, statusLabel: B.statusLabel }, A.text, B.text, settings)) {
+-          out.push({ category, kind: c.kind, between: [A.itemId, B.itemId], detail: c.detail, evidence: c.evidence });
+-        }
++  };
++
++  // pass 1: within-category pairs (category-sorted, input order)
++  const categories = [...new Set(sorted.map((c) => c.category))];
++  for (const category of categories) {
++    const inCat = sorted.filter((c) => c.category === category);
++    for (let i = 0; i < inCat.length; i++) {
++      for (let j = i + 1; j < inCat.length; j++) {
++        if (inCat[i].itemId === inCat[j].itemId) continue; // same item = revision, not contradiction
++        compare(inCat[i], inCat[j]);
++      }
++    }
++  }
++
++  // pass 2: cross-category pairs (opt-in, keyword-anchored on the two answers)
++  if (settings.crossCategory) {
++    for (let i = 0; i < sorted.length; i++) {
++      for (let j = i + 1; j < sorted.length; j++) {
++        const A = sorted[i], B = sorted[j];
++        if (A.category === B.category || A.itemId === B.itemId) continue;
++        const anchored = [...keywords(A.text)].some((k) => keywords(B.text).has(k));
++        if (!anchored) continue;
++        compare(A, B, { category: [A.category, B.category].sort().join(" × "), crossCategory: true });
+       }
+     }
+   }
+   return out;
+ }
+ 
++/* ---------- SLA aging ---------- */
++
++/**
++ * Aging for one item: `daysOpen` = days from `receivedAt` to
++ * `settings.asOf` (dates only — no wall clock), SLA band per
++ * warn/breach days. Null when either date is missing or unparseable.
++ *
++ * @param {{ receivedAt?: string }} item
++ * @param {{ asOf?: string, sla?: { warnDays?: number, breachDays?: number } }} [settings]
++ * @returns {{ daysOpen: number | null, sla: "on-track"|"due-soon"|"overdue"|null }}
++ */
++export function itemAging(item, settings = {}) {
++  const sla = { ...DEFAULT_SLA, ...(settings.sla ?? {}) };
++  const asOf = settings.asOf ?? null;
++  if (!item?.receivedAt || !asOf) return { daysOpen: null, sla: null };
++  const ms = Date.parse(asOf) - Date.parse(item.receivedAt);
++  if (Number.isNaN(ms)) return { daysOpen: null, sla: null };
++  const daysOpen = Math.round(ms / 86400000);
++  const band = daysOpen >= sla.breachDays ? "overdue" : daysOpen >= sla.warnDays ? "due-soon" : "on-track";
++  return { daysOpen, sla: band };
++}
++
+ /* ---------- readiness score ---------- */
+ 
++/** Canonical sent answer from a live item (answers[]) or a log projection. */
++function canonicalSent(item) {
++  if (Array.isArray(item?.answers)) return currentAnswer(item);
++  return item?.currentAnswer != null ? { citations: item.citations ?? null } : null;
++}
++
++/** Open-item test from a live item (answers[]) or a log projection. */
++function isOpen(item) {
++  return Array.isArray(item?.answers) ? itemStatus(item) === "open" : item?.status === "open";
++}
++
+ /**
+  * Disclosure-readiness score from the log itself. Components (weights are
+  * rules-as-data): coverage = items with a canonical sent answer / total;
+  * pipeline = 1 − open items / total; consistency = 1 − items appearing in
+- * contradictions / total. Score = round(100 × Σ weight × component).
++ * contradictions / total; provenance = sent answers carrying ≥1 citation /
++ * total. Score = round(100 × Σ weight × component).
+  *
+  * @param {{ items?: any[] }} input @param {any[]} contradictions
+- * @param {{ weights?: { coverage: number, pipeline: number, consistency: number }, bands?: { nearly: number, ready: number } }} [settings]
+- * @returns {{ score: number, band: string, components: { coverage: number, pipeline: number, consistency: number }, weights: any, bands: any, contradictedItems: string[] }}
++ * @param {{ weights?: { coverage: number, pipeline: number, consistency: number, provenance: number }, bands?: { nearly: number, ready: number } }} [settings]
++ * @returns {{ score: number, band: string, components: { coverage: number, pipeline: number, consistency: number, provenance: number }, weights: any, bands: any, contradictedItems: string[] }}
+  */
+ export function readinessScore(input, contradictions, settings = {}) {
+   const items = input.items ?? [];
+   const weights = { ...DEFAULT_READINESS.weights, ...settings.weights };
+   const bands = { ...DEFAULT_READINESS.bands, ...settings.bands };
+   const total = items.length || 1;
+-  const sent = items.filter((it) => currentAnswer(it)).length;
+-  const open = items.filter((it) => itemStatus(it) === "open").length;
++  const sent = items.filter((it) => canonicalSent(it)).length;
++  const open = items.filter((it) => isOpen(it)).length;
++  const cited = items.filter((it) => (canonicalSent(it)?.citations?.length ?? 0) > 0).length;
+   const contradicted = [...new Set(contradictions.flatMap((c) => c.between))].sort();
+   const components = {
+     coverage: sent / total,
+     pipeline: 1 - open / total,
+     consistency: 1 - contradicted.length / total,
++    provenance: cited / total,
+   };
+-  const score = Math.round(100 * (weights.coverage * components.coverage + weights.pipeline * components.pipeline + weights.consistency * components.consistency));
++  const score = Math.round(100 * (weights.coverage * components.coverage + weights.pipeline * components.pipeline + weights.consistency * components.consistency + weights.provenance * components.provenance));
+   const band = score >= bands.ready ? "ready" : score >= bands.nearly ? "nearly ready" : "not ready";
+   return { score, band, components, weights, bands, contradictedItems: contradicted };
+ }
+@@ -298,20 +451,22 @@ export function readinessScore(input, contradictions, settings = {}) {
+ /* ---------- log assembly + exports ---------- */
+ 
+ /**
+- * Build the full Q&A log: derived workflow state per item, contradictions,
+- * readiness score, summary.
++ * Build the full Q&A log: derived workflow state, citations, aging, release
++ * blockers, contradictions, readiness score, summary.
+  *
+  * @param {{ deal?: { name?: string }, buyers?: any[], items?: any[], settings?: any }} input
+  * @returns {any}
+  */
+ export function buildQaLog(input) {
++  const settings = input.settings ?? {};
+   const buyers = new Map((input.buyers ?? []).map((b) => [b.id, b.name]));
+   const contradictions = detectContradictions(input);
+-  const readiness = readinessScore(input, contradictions, input.settings ?? {});
++  const readiness = readinessScore(input, contradictions, settings);
+   const contradicted = new Set(readiness.contradictedItems);
+   const items = (input.items ?? []).map((it) => {
+     const cur = currentAnswer(it);
+     const dr = pendingDraft(it);
++    const age = itemAging(it, settings);
+     return {
+       id: it.id,
+       buyerId: it.buyerId,
+@@ -321,11 +476,17 @@ export function buildQaLog(input) {
+       status: itemStatus(it),
+       currentAnswer: cur ? cur.text : null,
+       currentAnswerAt: cur ? cur.at : null,
++      citations: cur?.citations ?? null,
+       pendingDraft: dr ? dr.text : null,
++      draftApproved: dr ? Boolean(dr.approvedBy) : false,
+       answersCount: (it.answers ?? []).length,
++      daysOpen: age.daysOpen,
++      sla: age.sla,
+       contradicted: contradicted.has(it.id),
++      blockers: releaseBlockers(it, contradictions),
+     };
+   });
++  const sla = { ...DEFAULT_SLA, ...(settings.sla ?? {}) };
+   return {
+     deal: input.deal ?? { name: "Unnamed deal" },
+     summary: {
+@@ -335,26 +496,63 @@ export function buildQaLog(input) {
+       open: items.filter((i) => i.status === "open").length,
+       pendingDrafts: items.filter((i) => i.status === "draft-pending").length,
+       contradictions: contradictions.length,
++      overdue: items.filter((i) => i.sla === "overdue").length,
+     },
++    aging: settings.asOf ? { asOf: settings.asOf, sla } : null,
+     items,
+     contradictions,
+     readiness,
+   };
+ }
+ 
++/**
++ * Buyer-safe projection of a built log: only `buyerId`'s items appear, and
++ * contradictions involving any other buyer's items are dropped entirely
++ * (cross-buyer evidence never leaves the wall). Summary and readiness are
++ * recomputed from the projected view; works with qaLogToCsv/qaLogToJson.
++ *
++ * @param {any} log — output of buildQaLog
++ * @param {string} buyerId
++ * @returns {any}
++ */
++export function buyerView(log, buyerId) {
++  const items = log.items.filter((i) => i.buyerId === buyerId);
++  const ids = new Set(items.map((i) => i.id));
++  const contradictions = log.contradictions.filter((c) => c.between.every((id) => ids.has(id)));
++  const scoped = items.map((i) => ({ ...i, blockers: releaseBlockers(i, contradictions) }));
++  const readiness = readinessScore({ items: scoped }, contradictions, { weights: log.readiness?.weights, bands: log.readiness?.bands });
++  return {
++    deal: log.deal,
++    buyerId,
++    summary: {
++      items: scoped.length,
++      sent: scoped.filter((i) => i.status === "sent" || i.status === "draft-pending").length,
++      draftOnly: scoped.filter((i) => i.status === "draft").length,
++      open: scoped.filter((i) => i.status === "open").length,
++      pendingDrafts: scoped.filter((i) => i.status === "draft-pending").length,
++      contradictions: contradictions.length,
++      overdue: scoped.filter((i) => i.sla === "overdue").length,
++    },
++    aging: log.aging ?? null,
++    items: scoped,
++    contradictions,
++    readiness,
++  };
++}
++
+ function csvEscape(v) {
+   const s = String(v ?? "");
+   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+ }
+ 
+ /**
+- * CSV export of the log — one row per item with workflow state and
+- * contradiction flags.
+- * @param {any} log — output of buildQaLog
++ * CSV export of the log — one row per item with workflow state, aging,
++ * citations, and contradiction flags.
++ * @param {any} log — output of buildQaLog (or buyerView)
+  * @returns {string}
+  */
+ export function qaLogToCsv(log) {
+-  const header = ["id", "buyer", "category", "status", "question", "currentAnswer", "pendingDraft", "contradiction", "answers"];
++  const header = ["id", "buyer", "category", "status", "question", "currentAnswer", "pendingDraft", "contradiction", "daysOpen", "sla", "citations", "answers"];
+   const contraOf = new Map();
+   for (const c of log.contradictions) {
+     for (const id of c.between) {
+@@ -372,6 +570,9 @@ export function qaLogToCsv(log) {
+     it.currentAnswer ?? "",
+     it.pendingDraft ?? "",
+     it.contradicted ? [...new Set(contraOf.get(it.id) ?? [])].join("; ") : "",
++    it.daysOpen ?? "",
++    it.sla ?? "",
++    it.citations?.length ?? 0,
+     it.answersCount,
+   ]);
+   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+@@ -393,12 +594,18 @@ export function renderReport(log) {
+   lines.push("");
+   lines.push(`**${s.items} questions:** ${s.sent} sent · ${s.draftOnly} draft-only · ${s.open} open · ${s.pendingDrafts} draft-pending · **${s.contradictions} contradiction(s)**`);
+   lines.push("");
+-  lines.push(`Disclosure readiness: **${log.readiness.score}/100 (${log.readiness.band})** — coverage ${Math.round(log.readiness.components.coverage * 100)}%, pipeline ${Math.round(log.readiness.components.pipeline * 100)}%, consistency ${Math.round(log.readiness.components.consistency * 100)}%.`);
++  const r = log.readiness;
++  lines.push(`Disclosure readiness: **${r.score}/100 (${r.band})** — coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}, pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}, consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}, provenance ${Math.round(r.components.provenance * 100)}% × ${r.weights.provenance}.`);
++  if (log.aging) {
++    lines.push("");
++    lines.push(`Aging as of ${log.aging.asOf} (SLA: warn ${log.aging.sla.warnDays}d, breach ${log.aging.sla.breachDays}d): **${s.overdue} of ${s.items} overdue**.`);
++  }
+   lines.push("");
+-  lines.push("| Id | Buyer | Category | Status | Contradicted |");
+-  lines.push("|---|---|---|---|---|");
++  lines.push("| Id | Buyer | Category | Status | Aging | Contradicted |");
++  lines.push("|---|---|---|---|---|---|");
+   for (const it of log.items) {
+-    lines.push(`| ${it.id} | ${it.buyer} | ${it.category} | ${it.status} | ${it.contradicted ? "**yes**" : "—"} |`);
++    const aging = it.daysOpen == null ? "—" : `${it.daysOpen}d${it.sla === "overdue" ? " (overdue)" : it.sla === "due-soon" ? " (due soon)" : ""}`;
++    lines.push(`| ${it.id} | ${it.buyer} | ${it.category} | ${it.status} | ${aging} | ${it.contradicted ? "**yes**" : "—"} |`);
+   }
+   lines.push("");
+   if (log.contradictions.length) {
+@@ -418,7 +625,11 @@ export function renderReport(log) {
+     lines.push(`> ${it.question}`);
+     lines.push("");
+     lines.push(it.currentAnswer ? it.currentAnswer : "_no sent answer yet_");
++    if (it.citations?.length) {
++      for (const c of it.citations) lines.push(`\n- source: \`${c.docId}\` ${c.locator} — "${c.quote}"`);
++    }
+     if (it.pendingDraft) lines.push(`\n_Pending draft (not sent):_ "${it.pendingDraft}"`);
++    if (it.blockers?.length) lines.push(`\n_Release blockers:_ ${it.blockers.map((b) => `\`${b.code}\``).join(", ")}`);
+     lines.push("");
+   }
+   lines.push("_All data fictional. Contradiction flags are keyword/number heuristics for human review, not legal conclusions. Not legal advice._");
+diff --git a/open-artifacts/sell-side-qa-log/core/core.test.js b/open-artifacts/sell-side-qa-log/core/core.test.js
+index 487fca4..27e3acd 100644
+--- a/open-artifacts/sell-side-qa-log/core/core.test.js
++++ b/open-artifacts/sell-side-qa-log/core/core.test.js
+@@ -5,64 +5,70 @@ import {
+   currentAnswer, pendingDraft, itemStatus, sentences, keywords, extractNumbers,
+   compareAnswers, detectContradictions, readinessScore, buildQaLog,
+   qaLogToCsv, qaLogToJson, renderReport, DEFAULT_ANTONYM_PAIRS,
++  transition, releaseBlockers, buyerView, itemAging, DEFAULT_SLA,
+ } from "./core.js";
+ 
+ const ITEMS = [
+   {
+-    id: "Q-001", buyerId: "B1", category: "litigation",
++    id: "Q-001", buyerId: "B1", category: "litigation", receivedAt: "2026-09-28",
+     question: "Are there any pending lawsuits against the target?",
+     answers: [
+       { text: "Yes. There are 3 pending lawsuits, all employment-related.", status: "draft", at: "2026-10-01" },
+-      { text: "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", status: "sent", at: "2026-10-03" },
++      { text: "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", status: "sent", at: "2026-10-03",
++        citations: [{ docId: "DR-014", locator: "§2.1", quote: "Three actions pending: two employment, one commercial." }] },
+     ],
+   },
+   {
+-    id: "Q-002", buyerId: "B2", category: "litigation",
++    id: "Q-002", buyerId: "B2", category: "litigation", receivedAt: "2026-10-10",
+     question: "Does the target have any active litigation exposure?",
+     answers: [
+-      { text: "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", status: "sent", at: "2026-10-05" },
++      { text: "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", status: "sent", at: "2026-10-05",
++        citations: [{ docId: "DR-014", locator: "§2.2", quote: "All 2024 matters settled and dismissed with prejudice." }] },
+     ],
+   },
+   {
+-    id: "Q-003", buyerId: "B1", category: "customers",
++    id: "Q-003", buyerId: "B1", category: "customers", receivedAt: "2026-10-16",
+     question: "How many customers does the target have?",
+     answers: [
+       { text: "The target serves 1,200 active customers across 14 locations.", status: "sent", at: "2026-10-04" },
+     ],
+   },
+   {
+-    id: "Q-004", buyerId: "B3", category: "customers",
++    id: "Q-004", buyerId: "B3", category: "customers", receivedAt: "2026-10-19",
+     question: "What is the customer base?",
+     answers: [
+       { text: "Approximately 950 active customers as of the latest quarter.", status: "sent", at: "2026-10-06" },
+     ],
+   },
+   {
+-    id: "Q-005", buyerId: "B2", category: "financials",
++    id: "Q-005", buyerId: "B2", category: "financials", receivedAt: "2026-10-02",
+     question: "What was 2025 revenue growth?",
+     answers: [
+-      { text: "Revenue grew 12% in 2025.", status: "sent", at: "2026-10-02" },
++      { text: "Revenue grew 12% in 2025.", status: "sent", at: "2026-10-02",
++        citations: [{ docId: "DR-002", locator: "p. 7", quote: "FY2025 revenue growth of 12 percent." }] },
+       // pending draft that contradicts the sent answer in the same category as Q-006
+       { text: "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.", status: "draft", at: "2026-10-20" },
+     ],
+   },
+   {
+-    id: "Q-006", buyerId: "B1", category: "financials",
++    id: "Q-006", buyerId: "B1", category: "financials", receivedAt: "2026-10-18",
+     question: "How did profitability trend in 2025?",
+     answers: [
+-      { text: "EBITDA increased 4% year over year in 2025.", status: "sent", at: "2026-10-08" },
++      { text: "EBITDA increased 4% year over year in 2025.", status: "sent", at: "2026-10-08",
++        citations: [{ docId: "DR-002", locator: "p. 9", quote: "EBITDA increased 4 percent year over year in FY2025." }] },
+     ],
+   },
+   {
+-    id: "Q-007", buyerId: "B2", category: "ip",
++    id: "Q-007", buyerId: "B2", category: "ip", receivedAt: "2026-10-20",
+     question: "Is the IP exclusively licensed?",
+     answers: [], // open
+   },
+   {
+-    id: "Q-008", buyerId: "B3", category: "ip",
++    id: "Q-008", buyerId: "B3", category: "ip", receivedAt: "2026-10-22",
+     question: "Are any licenses exclusive?",
+     answers: [
+-      { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", status: "sent", at: "2026-10-09" },
++      { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", status: "sent", at: "2026-10-09",
++        citations: [{ docId: "DR-021", locator: "Exhibit C", quote: "Core patent portfolio licensed exclusively to Meridian Manufacturing." }] },
+       { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.", status: "draft", at: "2026-10-22" }, // pending draft, same item → not a contradiction
+     ],
+   },
+@@ -76,19 +82,23 @@ const INPUT = {
+     { id: "B3", name: "Fairwind Industrials" },
+   ],
+   items: ITEMS,
++  settings: { asOf: "2026-10-23", sla: { warnDays: 3, breachDays: 5 } },
+ };
+ 
+-test("currentAnswer picks the latest sent answer; stale drafts ignored", () => {
++test("currentAnswer picks the latest sent answer; stale drafts ignored; citations carried", () => {
+   const cur = currentAnswer(ITEMS[0]);
+   assert.equal(cur.text, "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.");
+   assert.equal(cur.at, "2026-10-03");
++  assert.equal(cur.citations.length, 1);
++  assert.equal(cur.citations[0].docId, "DR-014");
+   assert.equal(currentAnswer(ITEMS[6]), null);
+ });
+ 
+-test("pendingDraft only counts drafts on/after the canonical answer", () => {
++test("pendingDraft only counts drafts on/after the canonical answer; approval carried", () => {
+   assert.equal(pendingDraft(ITEMS[0]), null); // draft predates the sent answer
+   const dr = pendingDraft(ITEMS[4]);
+   assert.match(dr.text, /EBITDA declined/);
++  assert.equal(dr.approvedBy, null); // not yet approved
+   assert.equal(pendingDraft(ITEMS[7]).text.includes("non-exclusive"), true); // same-item draft is pending
+ });
+ 
+@@ -101,7 +111,7 @@ test("itemStatus derives the full workflow ladder", () => {
+   assert.equal(st["Q-008"], "draft-pending");
+ });
+ 
+-test("extractNumbers parses units, commas, currency, and bare counts", () => {
++test("extractNumbers parses units, commas, currency, bare counts + canonical base", () => {
+   const ns = extractNumbers("Revenue grew 12% while $3.5 million was spent across 1,200 active customers.");
+   // note: "active customers" has an adjective between number and noun, so the
+   // count parses as a bare number (units must directly follow the number)
+@@ -110,6 +120,13 @@ test("extractNumbers parses units, commas, currency, and bare counts", () => {
+   assert.equal(all[0].unit, "%");
+   const bare = extractNumbers("There are 3 pending lawsuits against the company.");
+   assert.deepEqual(bare.map((n) => [n.value, n.unit]), [[3, ""]]);
++  // magnitude normalization: $3.5 million and $3,500,000 share a canonical base
++  const a = extractNumbers("The reserve is $3.5 million.")[0];
++  const b = extractNumbers("The reserve is $3,500,000.")[0];
++  assert.equal(a.baseUnit, "usd");
++  assert.equal(b.baseUnit, "usd");
++  assert.equal(a.baseValue, b.baseValue);
++  assert.equal(a.baseValue, 3500000);
+ });
+ 
+ test("sentences and keywords behave deterministically", () => {
+@@ -141,6 +158,28 @@ test("number agreement in the same unit is not a conflict", () => {
+   assert.equal(conflicts.filter((c) => c.kind === "number_conflict").length, 0);
+ });
+ 
++test("magnitude normalization: $3.5 million vs $3,500,000 agrees", () => {
++  const conflicts = compareAnswers(
++    { id: "A" }, { id: "B" },
++    "The litigation reserve is $3.5 million.",
++    "The litigation reserve is $3,500,000.",
++  );
++  assert.equal(conflicts.length, 0);
++});
++
++test("magnitude normalization: $2 million vs $3,500,000 conflicts in canonical usd", () => {
++  const conflicts = compareAnswers(
++    { id: "A" }, { id: "B" },
++    "The litigation reserve is $2 million.",
++    "The litigation reserve is $3,500,000.",
++  );
++  const num = conflicts.filter((c) => c.kind === "number_conflict");
++  assert.equal(num.length, 1);
++  assert.match(num[0].detail, /usd/);
++  assert.match(num[0].detail, /2000000/);
++  assert.match(num[0].detail, /3500000/);
++});
++
+ test("bare-count conflict requires a shared keyword anchor", () => {
+   const anchored = compareAnswers(
+     { id: "A" }, { id: "B" },
+@@ -168,13 +207,73 @@ test("antonym conflict fires on permitted/prohibited with sentence evidence", ()
+   assert.match(a.evidence[1].quote, /prohibited/);
+ });
+ 
++test("multiple conflicts per pair: no break after first unit or first antonym", () => {
++  const multi = compareAnswers(
++    { id: "A" }, { id: "B" },
++    "Revenue grew 12% and $2 million was reserved.",
++    "Revenue grew 10% and $3 million was reserved.",
++  );
++  const numUnits = new Set(multi.filter((c) => c.kind === "number_conflict").map((c) => c.detail.match(/"([^"]+)"/)?.[1] ?? "bare-count"));
++  assert.equal(multi.filter((c) => c.kind === "number_conflict").length, 2);
++  assert.ok(numUnits.has("%") && numUnits.has("usd"));
++  const ants = compareAnswers(
++    { id: "A" }, { id: "B" },
++    "The deal is binding and exclusive.",
++    "The deal is non-binding and non-exclusive.",
++  );
++  assert.equal(ants.filter((c) => c.kind === "antonym_conflict").length, 2);
++});
++
++test("antonym quotes are at least 3 words (fall back to fuller sentence)", () => {
++  const conflicts = compareAnswers(
++    { id: "A" }, { id: "B" },
++    "Yes. The assignment is permitted.",
++    "No. The assignment is prohibited.",
++  );
++  const a = conflicts.find((c) => c.kind === "antonym_conflict");
++  assert.ok(a);
++  for (const e of a.evidence) {
++    assert.ok(e.quote.trim().split(/\s+/).length >= 3, `quote too short: "${e.quote}"`);
++  }
++  assert.match(a.evidence[0].quote, /permitted/);
++  assert.match(a.evidence[1].quote, /prohibited/);
++});
++
++test("crossCategory is off by default; keyword-anchored when enabled", () => {
++  const CROSS = {
++    items: [
++      { id: "C-1", category: "financials", question: "What are the litigation reserves?",
++        answers: [{ text: "We have reserved $3.5 million for pending lawsuits.", status: "sent", at: "2026-10-01" }] },
++      { id: "C-2", category: "litigation", question: "Detail the pending litigation.",
++        answers: [{ text: "There are 3 pending lawsuits with reserves of $4 million.", status: "sent", at: "2026-10-02" }] },
++    ],
++  };
++  assert.deepEqual(detectContradictions(CROSS), []); // default: category-siloed only
++  const cs = detectContradictions({ ...CROSS, settings: { crossCategory: true } });
++  assert.equal(cs.length, 1);
++  assert.equal(cs[0].crossCategory, true);
++  assert.equal(cs[0].category, "financials × litigation");
++  assert.deepEqual(cs[0].between, ["C-1", "C-2"]);
++  // unanchored cross-category pairs stay quiet even when enabled
++  const LOOSE = {
++    items: [
++      { id: "L-1", category: "financials", question: "Revenue?",
++        answers: [{ text: "Revenue grew 12%.", status: "sent", at: "2026-10-01" }] },
++      { id: "L-2", category: "hr", question: "Headcount?",
++        answers: [{ text: "The team grew by 40 people.", status: "sent", at: "2026-10-02" }] },
++    ],
++  };
++  assert.deepEqual(detectContradictions({ ...LOOSE, settings: { crossCategory: true } }), []);
++});
++
+ test("detectContradictions groups by category, compares drafts vs sent, skips same-item", () => {
+   const cs = detectContradictions(INPUT);
+-  // litigation: Q-001 (3 pending) vs Q-002 (2 settled, none pending) → number + yes/no antonym
++  // litigation: Q-001 (3 pending) vs Q-002 (2 settled, none pending) → number + yes/no + settled/pending
+   const lit = cs.filter((c) => c.category === "litigation");
+-  assert.equal(lit.length, 2);
++  assert.equal(lit.length, 3);
+   assert.ok(lit.some((c) => c.kind === "number_conflict" && c.between.join() === "Q-001,Q-002"));
+-  assert.ok(lit.some((c) => c.kind === "antonym_conflict"));
++  assert.ok(lit.some((c) => c.kind === "antonym_conflict" && c.detail.includes('"yes"')));
++  assert.ok(lit.some((c) => c.kind === "antonym_conflict" && c.detail.includes("settled")));
+   // customers: 1200 vs 950 (both bare counts — "active customers" is not a
+   // direct unit) anchored on shared keyword "customers" → number conflict
+   const cust = cs.filter((c) => c.category === "customers");
+@@ -192,33 +291,42 @@ test("detectContradictions groups by category, compares drafts vs sent, skips sa
+   assert.deepEqual(ip, []);
+ });
+ 
+-test("readinessScore weights coverage, pipeline, consistency", () => {
++test("readinessScore weights coverage, pipeline, consistency, provenance", () => {
+   const cs = detectContradictions(INPUT);
+   const r = readinessScore(INPUT, cs);
+-  // sent items: Q-001..Q-006, Q-008 (7/8); open: 1; contradicted: Q-001..Q-006 (6)
++  // sent items: Q-001..Q-006, Q-008 (7/8); open: 1; contradicted: Q-001..Q-006 (6); cited sent: 5/8
+   assert.equal(Math.round(r.components.coverage * 100), 88);
+   assert.equal(Math.round(r.components.pipeline * 100), 88);
+   assert.equal(Math.round(r.components.consistency * 100), 25);
+-  assert.equal(r.score, Math.round(100 * (0.5 * 7 / 8 + 0.2 * 7 / 8 + 0.3 * 2 / 8)));
++  assert.equal(Math.round(r.components.provenance * 100), 63);
++  assert.equal(r.score, Math.round(100 * (0.4 * 7 / 8 + 0.15 * 7 / 8 + 0.25 * 2 / 8 + 0.2 * 5 / 8)));
++  assert.equal(r.score, 67);
+   assert.equal(r.band, "nearly ready");
+   assert.deepEqual(r.contradictedItems, ["Q-001", "Q-002", "Q-003", "Q-004", "Q-005", "Q-006"]);
+ });
+ 
+ test("readinessScore accepts custom weights and bands", () => {
+   const cs = detectContradictions(INPUT);
+-  const r = readinessScore(INPUT, cs, { weights: { coverage: 1, pipeline: 0, consistency: 0 }, bands: { nearly: 10, ready: 50 } });
++  const r = readinessScore(INPUT, cs, { weights: { coverage: 1, pipeline: 0, consistency: 0, provenance: 0 }, bands: { nearly: 10, ready: 50 } });
+   assert.equal(r.score, 88);
+   assert.equal(r.band, "ready");
+ });
+ 
+-test("buildQaLog assembles summary, items, contradictions, readiness", () => {
++test("buildQaLog assembles summary, items, contradictions, readiness, aging", () => {
+   const log = buildQaLog(INPUT);
+   assert.equal(log.deal.name.includes("Copperfield"), true);
+-  assert.deepEqual(log.summary, { items: 8, sent: 7, draftOnly: 0, open: 1, pendingDrafts: 2, contradictions: 4 });
++  assert.deepEqual(log.summary, { items: 8, sent: 7, draftOnly: 0, open: 1, pendingDrafts: 2, contradictions: 5, overdue: 5 });
++  assert.equal(log.aging.asOf, "2026-10-23");
++  assert.equal(log.aging.sla.breachDays, 5);
+   const q3 = log.items.find((i) => i.id === "Q-003");
+   assert.equal(q3.buyer, "Oryx Growth Partners");
+   assert.equal(q3.status, "sent");
+   assert.equal(q3.contradicted, true);
++  assert.equal(q3.citations, null); // uncited sent answer → provenance gap
++  const q1 = log.items.find((i) => i.id === "Q-001");
++  assert.equal(q1.citations.length, 1);
++  assert.equal(q1.daysOpen, 25);
++  assert.equal(q1.sla, "overdue");
+   assert.equal(log.readiness.score >= 0 && log.readiness.score <= 100, true);
+ });
+ 
+@@ -228,19 +336,25 @@ test("qaLogToCsv exports one row per item with flags; qaLogToJson round-trips",
+   const lines = csv.trim().split("\n");
+   assert.equal(lines.length, 9); // header + 8 items
+   assert.match(lines[0], /^id,buyer,category,status/);
++  assert.match(lines[0], /daysOpen,sla,citations,answers/);
+   const q2 = lines.find((l) => l.startsWith("Q-002"));
+   assert.match(q2, /number_conflict; antonym_conflict/);
+   const q7 = lines.find((l) => l.startsWith("Q-007"));
+   assert.match(q7, /,open,/);
++  const q1 = lines.find((l) => l.startsWith("Q-001"));
++  assert.match(q1, /25,overdue,1,/);
+   const j = JSON.parse(qaLogToJson(log));
+   assert.equal(j.summary.items, 8);
+   assert.equal(j.contradictions.length, log.contradictions.length);
+ });
+ 
+-test("renderReport includes readiness, contradictions with quotes, and answers", () => {
++test("renderReport includes readiness, provenance, aging, citations, contradictions, answers", () => {
+   const md = renderReport(buildQaLog(INPUT));
+   assert.match(md, /# Sell-side Q&A log — Project Copperfield/);
+   assert.match(md, /Disclosure readiness: \*\*\d+\/100/);
++  assert.match(md, /provenance/);
++  assert.match(md, /5 of 8 overdue/);
++  assert.match(md, /DR-014` §2\.1/);
+   assert.match(md, /number_conflict/);
+   assert.match(md, /there are no pending lawsuits against the target/);
+   assert.match(md, /All data fictional/);
+@@ -250,3 +364,96 @@ test("DEFAULT_ANTONYM_PAIRS is non-empty rules-as-data", () => {
+   assert.ok(DEFAULT_ANTONYM_PAIRS.length >= 8);
+   assert.ok(DEFAULT_ANTONYM_PAIRS.some(([a, b]) => a === "permitted" && b === "prohibited"));
+ });
++
++test("transition approve→send records approver+date and moves draft to sent", () => {
++  const approved = transition(ITEMS[4], { type: "approve", approver: "A. Reyes (GC)", at: "2026-10-23" });
++  const dr = approved.answers.find((a) => a.status === "draft");
++  assert.equal(dr.approvedBy, "A. Reyes (GC)");
++  assert.equal(dr.approvedAt, "2026-10-23");
++  const sent = transition(approved, { type: "send" });
++  assert.equal(sent.answers.some((a) => a.status === "draft"), false);
++  assert.equal(itemStatus(sent), "sent");
++  // immutability: the original item is untouched
++  assert.equal(itemStatus(ITEMS[4]), "draft-pending");
++  assert.equal(ITEMS[4].answers.some((a) => a.approvedBy), false);
++});
++
++test("transition refuses send without approve; validates events", () => {
++  assert.throws(() => transition(ITEMS[4], { type: "send" }), /not approved/);
++  assert.throws(() => transition(ITEMS[6], { type: "approve", approver: "x", at: "2026-10-23" }), /no pending draft/);
++  assert.throws(() => transition(ITEMS[4], { type: "shred" }), /unknown event/);
++});
++
++test("releaseBlockers lists unapproved drafts and contradictions involving the item", () => {
++  const cs = detectContradictions(INPUT);
++  const b5 = releaseBlockers(ITEMS[4], cs); // Q-005: unapproved draft + conflicts with Q-006
++  assert.ok(b5.some((b) => b.code === "unapproved"));
++  assert.ok(b5.some((b) => b.detail.includes("Q-006")));
++  const b8 = releaseBlockers(ITEMS[7], cs); // Q-008: unapproved draft, no contradictions
++  assert.equal(b8.length, 1);
++  assert.equal(b8[0].code, "unapproved");
++  assert.deepEqual(releaseBlockers(ITEMS[2], cs), []); // Q-003: contradicted but nothing pending to release
++});
++
++test("buyerView projects one buyer's log; cross-buyer evidence redacted; scoped CSV", () => {
++  const log = buildQaLog(INPUT);
++  const v = buyerView(log, "B1");
++  assert.deepEqual(v.items.map((i) => i.id), ["Q-001", "Q-003", "Q-006"]);
++  assert.equal(v.summary.items, 3);
++  assert.equal(v.summary.overdue, 3); // Q-001 25d, Q-003 7d, Q-006 5d — all past the 5-day breach
++  assert.equal(v.contradictions.length, 0); // Q-001's conflicts were vs B2's Q-002 → redacted
++  const j = JSON.stringify(v);
++  assert.ok(!j.includes("Lantern Harbor") && !j.includes("Fairwind") && !j.includes("Q-002"));
++  assert.equal(v.readiness.components.consistency, 1); // no within-view contradictions
++  const csv = qaLogToCsv(v);
++  assert.equal(csv.trim().split("\n").length, 4); // header + 3 items
++});
++
++test("itemAging: daysOpen vs SLA bands; null without receivedAt/asOf", () => {
++  assert.deepEqual(itemAging({ receivedAt: "2026-10-13" }, { asOf: "2026-10-23", sla: { warnDays: 3, breachDays: 5 } }), { daysOpen: 10, sla: "overdue" });
++  assert.equal(itemAging({ receivedAt: "2026-10-20" }, { asOf: "2026-10-23", sla: { warnDays: 3, breachDays: 5 } }).sla, "due-soon");
++  assert.equal(itemAging({ receivedAt: "2026-10-22" }, { asOf: "2026-10-23" }).sla, "on-track"); // default SLA
++  assert.deepEqual(itemAging({}, { asOf: "2026-10-23" }), { daysOpen: null, sla: null });
++  assert.deepEqual(itemAging({ receivedAt: "2026-10-01" }, {}), { daysOpen: null, sla: null });
++  assert.equal(DEFAULT_SLA.breachDays, 5);
++});
++
++test("aging absent asOf: no daysOpen, no overdue", () => {
++  const log = buildQaLog({ ...INPUT, settings: {} });
++  assert.equal(log.aging, null);
++  assert.equal(log.items[0].daysOpen, null);
++  assert.equal(log.items[0].sla, null);
++  assert.equal(log.summary.overdue, 0);
++});
++
++test("determinism: byte-identical output on rerun (deep-cloned input)", () => {
++  const a = qaLogToJson(buildQaLog(INPUT));
++  const b = qaLogToJson(buildQaLog(JSON.parse(JSON.stringify(INPUT))));
++  assert.equal(a, b);
++  const c = renderReport(buildQaLog(JSON.parse(JSON.stringify(INPUT))));
++  assert.equal(c, renderReport(buildQaLog(JSON.parse(JSON.stringify(INPUT)))));
++});
++
++test("robustness: buildQaLog({}) returns a valid empty log", () => {
++  const empty = buildQaLog({});
++  assert.deepEqual(empty.summary, { items: 0, sent: 0, draftOnly: 0, open: 0, pendingDrafts: 0, contradictions: 0, overdue: 0 });
++  assert.deepEqual(empty.items, []);
++  assert.deepEqual(empty.contradictions, []);
++  assert.ok(Number.isFinite(empty.readiness.score));
++  assert.match(qaLogToCsv(empty).trim().split("\n")[0], /^id,buyer,/);
++});
++
++test("robustness: duplicate ids and malformed items do not throw; deterministic", () => {
++  const dup = {
++    items: [
++      { id: "D-1", category: "x", question: "a?", answers: [{ text: "Yes. One breach occurred.", status: "sent", at: "2026-01-01" }] },
++      { id: "D-1", category: "x", question: "a?", answers: [{ text: "No breaches occurred.", status: "sent", at: "2026-01-02" }] },
++      {},
++    ],
++  };
++  const log = buildQaLog(dup);
++  assert.equal(log.summary.items, 3);
++  assert.equal(log.contradictions.length, 0); // same-id pairs are treated as the same item → skipped
++  const again = buildQaLog(JSON.parse(JSON.stringify(dup)));
++  assert.equal(qaLogToJson(log), qaLogToJson(again));
++});
+diff --git a/open-artifacts/sell-side-qa-log/demo/example.js b/open-artifacts/sell-side-qa-log/demo/example.js
+index e31cc59..0f8f6db 100644
+--- a/open-artifacts/sell-side-qa-log/demo/example.js
++++ b/open-artifacts/sell-side-qa-log/demo/example.js
+@@ -6,61 +6,67 @@ export default {
+     { id: "B2", name: "Lantern Harbor Capital" },
+     { id: "B3", name: "Fairwind Industrials" },
+   ],
++  settings: { asOf: "2026-10-23", sla: { warnDays: 3, breachDays: 5 } },
+   items: [
+     {
+-      id: "Q-001", buyerId: "B1", category: "litigation",
++      id: "Q-001", buyerId: "B1", category: "litigation", receivedAt: "2026-09-28",
+       question: "Are there any pending lawsuits against the target?",
+       answers: [
+         { text: "Yes. There are 3 pending lawsuits, all employment-related.", status: "draft", at: "2026-10-01" },
+-        { text: "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", status: "sent", at: "2026-10-03" },
++        { text: "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", status: "sent", at: "2026-10-03",
++          citations: [{ docId: "DR-014", locator: "§2.1", quote: "Three actions pending: two employment, one commercial." }] },
+       ],
+     },
+     {
+-      id: "Q-002", buyerId: "B2", category: "litigation",
++      id: "Q-002", buyerId: "B2", category: "litigation", receivedAt: "2026-10-10",
+       question: "Does the target have any active litigation exposure?",
+       answers: [
+-        { text: "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", status: "sent", at: "2026-10-05" },
++        { text: "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", status: "sent", at: "2026-10-05",
++          citations: [{ docId: "DR-014", locator: "§2.2", quote: "All 2024 matters settled and dismissed with prejudice." }] },
+       ],
+     },
+     {
+-      id: "Q-003", buyerId: "B1", category: "customers",
++      id: "Q-003", buyerId: "B1", category: "customers", receivedAt: "2026-10-16",
+       question: "How many customers does the target have?",
+       answers: [
+         { text: "The target serves 1,200 active customers across 14 locations.", status: "sent", at: "2026-10-04" },
+       ],
+     },
+     {
+-      id: "Q-004", buyerId: "B3", category: "customers",
++      id: "Q-004", buyerId: "B3", category: "customers", receivedAt: "2026-10-19",
+       question: "What is the customer base?",
+       answers: [
+         { text: "Approximately 950 active customers as of the latest quarter.", status: "sent", at: "2026-10-06" },
+       ],
+     },
+     {
+-      id: "Q-005", buyerId: "B2", category: "financials",
++      id: "Q-005", buyerId: "B2", category: "financials", receivedAt: "2026-10-02",
+       question: "What was 2025 revenue growth?",
+       answers: [
+-        { text: "Revenue grew 12% in 2025.", status: "sent", at: "2026-10-02" },
++        { text: "Revenue grew 12% in 2025.", status: "sent", at: "2026-10-02",
++          citations: [{ docId: "DR-002", locator: "p. 7", quote: "FY2025 revenue growth of 12 percent." }] },
+         { text: "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.", status: "draft", at: "2026-10-20" },
+       ],
+     },
+     {
+-      id: "Q-006", buyerId: "B1", category: "financials",
++      id: "Q-006", buyerId: "B1", category: "financials", receivedAt: "2026-10-18",
+       question: "How did profitability trend in 2025?",
+       answers: [
+-        { text: "EBITDA increased 4% year over year in 2025.", status: "sent", at: "2026-10-08" },
++        { text: "EBITDA increased 4% year over year in 2025.", status: "sent", at: "2026-10-08",
++          citations: [{ docId: "DR-002", locator: "p. 9", quote: "EBITDA increased 4 percent year over year in FY2025." }] },
+       ],
+     },
+     {
+-      id: "Q-007", buyerId: "B2", category: "ip",
++      id: "Q-007", buyerId: "B2", category: "ip", receivedAt: "2026-10-20",
+       question: "Is the IP exclusively licensed?",
+       answers: [],
+     },
+     {
+-      id: "Q-008", buyerId: "B3", category: "ip",
++      id: "Q-008", buyerId: "B3", category: "ip", receivedAt: "2026-10-22",
+       question: "Are any licenses exclusive?",
+       answers: [
+-        { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", status: "sent", at: "2026-10-09" },
++        { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", status: "sent", at: "2026-10-09",
++          citations: [{ docId: "DR-021", locator: "Exhibit C", quote: "Core patent portfolio licensed exclusively to Meridian Manufacturing." }] },
+         { text: "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.", status: "draft", at: "2026-10-22" },
+       ],
+     },
+diff --git a/open-artifacts/sell-side-qa-log/demo/index.html b/open-artifacts/sell-side-qa-log/demo/index.html
+index 6a2d3b3..87e8f04 100644
+--- a/open-artifacts/sell-side-qa-log/demo/index.html
++++ b/open-artifacts/sell-side-qa-log/demo/index.html
+@@ -39,6 +39,8 @@
+   .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+   .pill.open { background: var(--text); color: var(--bg); }
+   .pill.draft, .pill.draft-pending { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
++  .pill.overdue { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
++  .pill.due-soon { border-color: var(--warn); color: var(--warn); }
+   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+     background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+@@ -46,10 +48,18 @@
+   button.ghost { background: transparent; color: var(--text); }
+   button.chip { background: transparent; color: var(--text); padding: 6px 12px; font-size: 12px; }
+   button.chip.active { background: var(--text); color: var(--bg); }
++  button:disabled { opacity: .35; cursor: not-allowed; }
++  button:disabled:hover { background: var(--text); color: var(--bg); }
++  .gate textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12.5px; padding: 8px 10px;
++    border: var(--hairline); background: var(--bg); color: var(--text); margin-top: 10px; }
++  .gate input { font-family: var(--font-mono); font-size: 12.5px; padding: 6px 10px; border: var(--hairline);
++    background: var(--bg); color: var(--text); }
++  .gate .blockers .conflict { margin-top: 10px; }
+   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+   .scroll { overflow-x: auto; }
+   .q { color: var(--text-secondary); font-size: 12px; }
++  .cite { color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono); }
+ </style>
+ </head>
+ <body>
+@@ -60,9 +70,10 @@
+     <div class="rule"></div>
+     <p class="lede">A diligence Q&amp;A log whose core <b>cross-examines the answers</b>: questions carry
+       buyer, category, and answer history (draft/sent); deterministic heuristics detect contradictions
+-      between answers — numbers by unit, terms by antonym pairs — each flagged with verbatim evidence
+-      quotes; and a disclosure-readiness score is computed from the log itself. Open reimplementation
+-      of Anthropic's closed artifact.</p>
++      between answers — numbers by canonical unit and magnitude, terms by antonym pairs — each flagged
++      with verbatim evidence quotes; sent answers carry data-room citations; an approve→send release
++      gate is code, not convention; and a disclosure-readiness score is computed from the log itself.
++      Open reimplementation of Anthropic's closed artifact.</p>
+     <p class="lede" style="font-size:13px">Worked example (fictional): Project Copperfield, three buyers,
+       eight questions — including a pending draft that quietly changes the EBITDA story.</p>
+   </header>
+@@ -82,6 +93,11 @@
+     </div>
+   </section>
+ 
++  <section>
++    <h2>Pre-send gate — release blockers, live</h2>
++    <div class="conflict gate" id="gate"></div>
++  </section>
++
+   <section>
+     <h2>Q&amp;A log</h2>
+     <div class="row" id="filterChips" style="margin: 0 0 12px"></div>
+@@ -90,77 +106,86 @@
+ 
+   <footer class="disclaimer">
+     Deterministic heuristics — an optional LLM may draft answers from data-room excerpts (schema in spec.md),
+-    but workflow state, contradiction detection, and the readiness score are pure code. Flags are for human
+-    review, never legal conclusions. All example data fictional. Not legal advice.
++    but workflow state, contradiction detection, citations, the release gate, and the readiness score are pure
++    code. Flags are for human review, never legal conclusions. All example data fictional. Not legal advice.
+     <code>anthropic counterpart: Sell-side Q&amp;A log (closed)</code>
+   </footer>
+ </div>
+ 
+ <script type="module">
+-  import { buildQaLog, qaLogToCsv, qaLogToJson } from "../core/core.js";
++  import { buildQaLog, qaLogToCsv, qaLogToJson, detectContradictions, releaseBlockers, transition, buyerView } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+-  const log = buildQaLog(EXAMPLE);
+   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
++  let currentFilter = "all";
++  let currentLog = null;
++
++  function render() {
++    const log = buildQaLog(EXAMPLE);
++    currentLog = log;
++    const s = log.summary;
++    document.getElementById("counts").innerHTML =
++      `<div><b>${s.items}</b><span>questions</span></div>` +
++      `<div><b>${s.sent}</b><span>sent</span></div>` +
++      `<div><b>${s.open}</b><span>open</span></div>` +
++      `<div><b>${s.pendingDrafts}</b><span>draft-pending</span></div>` +
++      `<div><b>${s.contradictions}</b><span>contradictions</span></div>` +
++      `<div><b>${s.overdue}</b><span>overdue</span></div>`;
+ 
+-  const s = log.summary;
+-  document.getElementById("counts").innerHTML =
+-    `<div><b>${s.items}</b><span>questions</span></div>` +
+-    `<div><b>${s.sent}</b><span>sent</span></div>` +
+-    `<div><b>${s.open}</b><span>open</span></div>` +
+-    `<div><b>${s.pendingDrafts}</b><span>draft-pending</span></div>` +
+-    `<div><b>${s.contradictions}</b><span>contradictions</span></div>`;
+-
+-  const r = log.readiness;
+-  document.getElementById("readiness").innerHTML =
+-    `<div><span class="score">${r.score}</span><span class="band">${r.band}</span></div>` +
+-    `<div class="comp">coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}<br>` +
+-    `pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}<br>` +
+-    `consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}</div>` +
+-    `<div class="bar"><i style="width:${r.score}%"></i></div>`;
+-
+-  document.getElementById("contradictions").innerHTML = log.contradictions.length
+-    ? log.contradictions
+-        .map(
+-          (c) =>
+-            `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.between.join(" vs "))}</b> · ${esc(c.category)} — ${esc(c.detail)}.` +
+-            c.evidence.map((e) => `<blockquote><b>${esc(e.itemId)} (${e.answerStatus}):</b> ${esc(e.quote)}</blockquote>`).join("") +
+-            `</div>`
+-        )
+-        .join("")
+-    : `<div class="conflict">No contradictions detected within categories.</div>`;
+-
+-  // log table with buyer filter
+-  const buyers = ["all", ...new Set(log.items.map((i) => i.buyer))];
+-  const chips = document.getElementById("filterChips");
+-  chips.innerHTML = buyers.map((b, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-b="${esc(b)}">${esc(b)}</button>`).join("");
+-  function renderLog(filter) {
+-    const rows = log.items.filter((i) => filter === "all" || i.buyer === filter);
++    const r = log.readiness;
++    document.getElementById("readiness").innerHTML =
++      `<div><span class="score">${r.score}</span><span class="band">${r.band}</span></div>` +
++      `<div class="comp">coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}<br>` +
++      `pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}<br>` +
++      `consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}<br>` +
++      `provenance ${Math.round(r.components.provenance * 100)}% × ${r.weights.provenance}</div>` +
++      `<div class="bar"><i style="width:${r.score}%"></i></div>` +
++      (log.aging ? `<div class="comp">aging as of ${esc(log.aging.asOf)}<br>SLA warn ${log.aging.sla.warnDays}d · breach ${log.aging.sla.breachDays}d</div>` : "");
++
++    document.getElementById("contradictions").innerHTML = log.contradictions.length
++      ? log.contradictions
++          .map(
++            (c) =>
++              `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.between.join(" vs "))}</b> · ${esc(c.category)} — ${esc(c.detail)}.` +
++              c.evidence.map((e) => `<blockquote><b>${esc(e.itemId)} (${e.answerStatus}):</b> ${esc(e.quote)}</blockquote>`).join("") +
++              `</div>`
++          )
++          .join("")
++      : `<div class="conflict">No contradictions detected within categories.</div>`;
++
++    // log table with buyer filter
++    const buyers = ["all", ...new Set(log.items.map((i) => i.buyer))];
++    const chips = document.getElementById("filterChips");
++    chips.innerHTML = buyers.map((b) => `<button class="chip ${b === currentFilter ? "active" : ""}" data-b="${esc(b)}">${esc(b)}</button>`).join("");
++    const rows = log.items.filter((i) => currentFilter === "all" || i.buyer === currentFilter);
+     document.getElementById("log").innerHTML =
+-      `<tr><th>Id</th><th>Buyer</th><th>Category</th><th>Status</th><th>Question / current answer</th><th>Answers</th></tr>` +
++      `<tr><th>Id</th><th>Buyer</th><th>Category</th><th>Status</th><th>Question / current answer</th><th>Aging</th><th>Answers</th></tr>` +
+       rows
+         .map((it) => {
+           const status = it.status === "draft-pending" ? "draft-pending" : it.status;
++          const cites = (it.citations ?? []).map((c) => `<div class="cite">📎 <code>${esc(c.docId)} ${esc(c.locator)}</code></div>`).join("");
++          const aging = it.daysOpen == null ? "—" : `<span class="pill ${it.sla}">${it.daysOpen}d</span>`;
+           return (
+             `<tr class="${it.contradicted ? "flag" : ""}">` +
+             `<td class="mono"><code>${esc(it.id)}</code></td>` +
+             `<td>${esc(it.buyer)}</td>` +
+             `<td>${esc(it.category)}</td>` +
+-            `<td><span class="pill ${status}">${status}</span>${it.contradicted ? `<br><span class="pill open">conflict</span>` : ""}</td>` +
+-            `<td><div class="q">${esc(it.question)}</div><div>${it.currentAnswer ? esc(it.currentAnswer) : "<i>no sent answer yet</i>"}</div>` +
++            `<td><span class="pill ${status}">${status}</span>${it.contradicted ? `<br><span class="pill open">conflict</span>` : ""}${it.blockers.length ? `<br><span class="pill open">blocked</span>` : ""}</td>` +
++            `<td><div class="q">${esc(it.question)}</div><div>${it.currentAnswer ? esc(it.currentAnswer) : "<i>no sent answer yet</i>"}</div>${cites}` +
+             (it.pendingDraft ? `<div class="q">⌛ pending draft: ${esc(it.pendingDraft)}</div>` : "") + `</td>` +
++            `<td class="mono">${aging}</td>` +
+             `<td class="mono">${it.answersCount}</td></tr>`
+           );
+         })
+         .join("");
+   }
+-  renderLog("all");
+-  chips.addEventListener("click", (ev) => {
++
++  render();
++  document.getElementById("filterChips").addEventListener("click", (ev) => {
+     const btn = ev.target.closest("button[data-b]");
+     if (!btn) return;
+-    chips.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+-    btn.classList.add("active");
+-    renderLog(btn.dataset.b);
++    currentFilter = btn.dataset.b;
++    render();
+   });
+ 
+   function download(name, content, type) {
+@@ -168,8 +193,79 @@
+     const a = document.createElement("a");
+     a.href = URL.createObjectURL(blob); a.download = name; a.click();
+   }
+-  document.getElementById("jsonBtn").onclick = () => download("qa-log.json", qaLogToJson(log), "application/json");
+-  document.getElementById("csvBtn").onclick = () => download("qa-log.csv", qaLogToCsv(log), "text/csv");
++  document.getElementById("jsonBtn").onclick = () => download("qa-log.json", qaLogToJson(currentLog), "application/json");
++  document.getElementById("csvBtn").onclick = () => {
++    // when a specific buyer is filtered, export the buyer-safe projection (cross-buyer evidence redacted)
++    const buyer = currentLog.items.find((i) => i.buyer === currentFilter);
++    const view = buyer ? buyerView(currentLog, buyer.buyerId) : currentLog;
++    download(buyer ? `qa-log-${buyer.buyerId}.csv` : "qa-log.csv", qaLogToCsv(view), "text/csv");
++  };
++
++  /* ---- pre-send gate: edit the pending draft, watch blockers update live ---- */
++  const GATE_ID = "Q-005";
++  const gateEl = document.getElementById("gate");
++
++  function gateItem() {
++    const base = EXAMPLE.items.find((i) => i.id === GATE_ID);
++    if (!base) return null;
++    const approver = (document.getElementById("gateApprover")?.value ?? "").trim();
++    const text = document.getElementById("gateText")?.value ?? base.answers.find((a) => a.status === "draft")?.text ?? "";
++    return {
++      ...base,
++      answers: base.answers.map((a) =>
++        a.status === "draft" ? { ...a, text, approvedBy: approver || null, approvedAt: approver ? EXAMPLE.settings.asOf : null } : a
++      ),
++    };
++  }
++
++  function renderGate(releasedMsg) {
++    const base = EXAMPLE.items.find((i) => i.id === GATE_ID);
++    const hasDraft = base && base.answers.some((a) => a.status === "draft");
++    if (!hasDraft) {
++      gateEl.innerHTML =
++        `<div class="q">Editing <code>${GATE_ID}</code> (Lantern Harbor Capital · financials) — the pending draft.</div>` +
++        `<div class="row">${releasedMsg ? `<b>${esc(releasedMsg)}</b>` : ""}<span class="pill open">released</span> <span class="q">reload the page to reset the demo.</span></div>`;
++      return;
++    }
++    const draftText = base.answers.find((a) => a.status === "draft").text;
++    const approver = (document.getElementById("gateApprover")?.value ?? "").trim();
++    const text = document.getElementById("gateText")?.value ?? draftText;
++    gateEl.innerHTML =
++      `<div class="q">Editing the pending draft for <code>${GATE_ID}</code> (Lantern Harbor Capital · financials). ` +
++      `Send is disabled until every release blocker clears — try changing “declined 4%” to “declined 5%”, or clear the approver field.</div>` +
++      `<textarea id="gateText" rows="3">${esc(text)}</textarea>` +
++      `<div class="row"><label class="q" for="gateApprover">Approver</label> <input id="gateApprover" placeholder="e.g. A. Reyes (GC)" value="${esc(approver)}"></div>` +
++      `<div class="blockers" id="gateBlockers"></div>` +
++      `<div class="row"><button id="gateSend" disabled>Approve &amp; send</button><span class="q">transition(item, { type: "approve" }) → { type: "send" }) — approval is recorded as the audit trail.</span></div>`;
++    const ta = document.getElementById("gateText");
++    const ap = document.getElementById("gateApprover");
++    ta.addEventListener("input", refreshBlockers);
++    ap.addEventListener("input", refreshBlockers);
++    refreshBlockers();
++
++    function refreshBlockers() {
++      const item = gateItem();
++      const contradictions = detectContradictions({
++        ...EXAMPLE,
++        items: EXAMPLE.items.map((i) => (i.id === GATE_ID ? item : i)),
++      }).filter((c) => c.evidence.some((e) => e.itemId === GATE_ID && e.answerStatus === "draft")); // gate blocks on the DRAFT contradicting the record
++      const blockers = releaseBlockers(item, contradictions);
++      document.getElementById("gateBlockers").innerHTML = blockers.length
++        ? blockers.map((b) => `<div class="conflict"><span class="k">${esc(b.code)}</span>${esc(b.detail)}</div>`).join("")
++        : `<div class="conflict">No release blockers — the draft may be approved and sent.</div>`;
++      document.getElementById("gateSend").disabled = blockers.length > 0;
++    }
++
++    document.getElementById("gateSend").onclick = () => {
++      const item = gateItem();
++      const approved = transition(item, { type: "approve", approver: (document.getElementById("gateApprover").value || "unspecified approver").trim(), at: EXAMPLE.settings.asOf });
++      const sent = transition(approved, { type: "send" });
++      EXAMPLE.items = EXAMPLE.items.map((i) => (i.id === GATE_ID ? sent : i));
++      render();
++      renderGate(`Draft released — approved by ${esc(approved.answers.find((a) => a.approvedBy).approvedBy)} on ${esc(EXAMPLE.settings.asOf)}.`);
++    };
++  }
++  renderGate();
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/sell-side-qa-log/examples/input.json b/open-artifacts/sell-side-qa-log/examples/input.json
+index 2aa1edf..460eab5 100644
+--- a/open-artifacts/sell-side-qa-log/examples/input.json
++++ b/open-artifacts/sell-side-qa-log/examples/input.json
+@@ -5,61 +5,67 @@
+     { "id": "B2", "name": "Lantern Harbor Capital" },
+     { "id": "B3", "name": "Fairwind Industrials" }
+   ],
++  "settings": { "asOf": "2026-10-23", "sla": { "warnDays": 3, "breachDays": 5 } },
+   "items": [
+     {
+-      "id": "Q-001", "buyerId": "B1", "category": "litigation",
++      "id": "Q-001", "buyerId": "B1", "category": "litigation", "receivedAt": "2026-09-28",
+       "question": "Are there any pending lawsuits against the target?",
+       "answers": [
+         { "text": "Yes. There are 3 pending lawsuits, all employment-related.", "status": "draft", "at": "2026-10-01" },
+-        { "text": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", "status": "sent", "at": "2026-10-03" }
++        { "text": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.", "status": "sent", "at": "2026-10-03",
++          "citations": [{ "docId": "DR-014", "locator": "§2.1", "quote": "Three actions pending: two employment, one commercial." }] }
+       ]
+     },
+     {
+-      "id": "Q-002", "buyerId": "B2", "category": "litigation",
++      "id": "Q-002", "buyerId": "B2", "category": "litigation", "receivedAt": "2026-10-10",
+       "question": "Does the target have any active litigation exposure?",
+       "answers": [
+-        { "text": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", "status": "sent", "at": "2026-10-05" }
++        { "text": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.", "status": "sent", "at": "2026-10-05",
++          "citations": [{ "docId": "DR-014", "locator": "§2.2", "quote": "All 2024 matters settled and dismissed with prejudice." }] }
+       ]
+     },
+     {
+-      "id": "Q-003", "buyerId": "B1", "category": "customers",
++      "id": "Q-003", "buyerId": "B1", "category": "customers", "receivedAt": "2026-10-16",
+       "question": "How many customers does the target have?",
+       "answers": [
+         { "text": "The target serves 1,200 active customers across 14 locations.", "status": "sent", "at": "2026-10-04" }
+       ]
+     },
+     {
+-      "id": "Q-004", "buyerId": "B3", "category": "customers",
++      "id": "Q-004", "buyerId": "B3", "category": "customers", "receivedAt": "2026-10-19",
+       "question": "What is the customer base?",
+       "answers": [
+         { "text": "Approximately 950 active customers as of the latest quarter.", "status": "sent", "at": "2026-10-06" }
+       ]
+     },
+     {
+-      "id": "Q-005", "buyerId": "B2", "category": "financials",
++      "id": "Q-005", "buyerId": "B2", "category": "financials", "receivedAt": "2026-10-02",
+       "question": "What was 2025 revenue growth?",
+       "answers": [
+-        { "text": "Revenue grew 12% in 2025.", "status": "sent", "at": "2026-10-02" },
++        { "text": "Revenue grew 12% in 2025.", "status": "sent", "at": "2026-10-02",
++          "citations": [{ "docId": "DR-002", "locator": "p. 7", "quote": "FY2025 revenue growth of 12 percent." }] },
+         { "text": "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.", "status": "draft", "at": "2026-10-20" }
+       ]
+     },
+     {
+-      "id": "Q-006", "buyerId": "B1", "category": "financials",
++      "id": "Q-006", "buyerId": "B1", "category": "financials", "receivedAt": "2026-10-18",
+       "question": "How did profitability trend in 2025?",
+       "answers": [
+-        { "text": "EBITDA increased 4% year over year in 2025.", "status": "sent", "at": "2026-10-08" }
++        { "text": "EBITDA increased 4% year over year in 2025.", "status": "sent", "at": "2026-10-08",
++          "citations": [{ "docId": "DR-002", "locator": "p. 9", "quote": "EBITDA increased 4 percent year over year in FY2025." }] }
+       ]
+     },
+     {
+-      "id": "Q-007", "buyerId": "B2", "category": "ip",
++      "id": "Q-007", "buyerId": "B2", "category": "ip", "receivedAt": "2026-10-20",
+       "question": "Is the IP exclusively licensed?",
+       "answers": []
+     },
+     {
+-      "id": "Q-008", "buyerId": "B3", "category": "ip",
++      "id": "Q-008", "buyerId": "B3", "category": "ip", "receivedAt": "2026-10-22",
+       "question": "Are any licenses exclusive?",
+       "answers": [
+-        { "text": "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", "status": "sent", "at": "2026-10-09" },
++        { "text": "The core patent portfolio is licensed exclusively to Meridian Manufacturing.", "status": "sent", "at": "2026-10-09",
++          "citations": [{ "docId": "DR-021", "locator": "Exhibit C", "quote": "Core patent portfolio licensed exclusively to Meridian Manufacturing." }] },
+         { "text": "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.", "status": "draft", "at": "2026-10-22" }
+       ]
+     }
+diff --git a/open-artifacts/sell-side-qa-log/examples/output.json b/open-artifacts/sell-side-qa-log/examples/output.json
+index 3e4216f..6442ea9 100644
+--- a/open-artifacts/sell-side-qa-log/examples/output.json
++++ b/open-artifacts/sell-side-qa-log/examples/output.json
+@@ -8,7 +8,15 @@
+     "draftOnly": 0,
+     "open": 1,
+     "pendingDrafts": 2,
+-    "contradictions": 4
++    "contradictions": 5,
++    "overdue": 5
++  },
++  "aging": {
++    "asOf": "2026-10-23",
++    "sla": {
++      "warnDays": 3,
++      "breachDays": 5
++    }
+   },
+   "items": [
+     {
+@@ -20,9 +28,20 @@
+       "status": "sent",
+       "currentAnswer": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.",
+       "currentAnswerAt": "2026-10-03",
++      "citations": [
++        {
++          "docId": "DR-014",
++          "locator": "§2.1",
++          "quote": "Three actions pending: two employment, one commercial."
++        }
++      ],
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 2,
+-      "contradicted": true
++      "daysOpen": 25,
++      "sla": "overdue",
++      "contradicted": true,
++      "blockers": []
+     },
+     {
+       "id": "Q-002",
+@@ -33,9 +52,20 @@
+       "status": "sent",
+       "currentAnswer": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.",
+       "currentAnswerAt": "2026-10-05",
++      "citations": [
++        {
++          "docId": "DR-014",
++          "locator": "§2.2",
++          "quote": "All 2024 matters settled and dismissed with prejudice."
++        }
++      ],
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 1,
+-      "contradicted": true
++      "daysOpen": 13,
++      "sla": "overdue",
++      "contradicted": true,
++      "blockers": []
+     },
+     {
+       "id": "Q-003",
+@@ -46,9 +76,14 @@
+       "status": "sent",
+       "currentAnswer": "The target serves 1,200 active customers across 14 locations.",
+       "currentAnswerAt": "2026-10-04",
++      "citations": null,
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 1,
+-      "contradicted": true
++      "daysOpen": 7,
++      "sla": "overdue",
++      "contradicted": true,
++      "blockers": []
+     },
+     {
+       "id": "Q-004",
+@@ -59,9 +94,14 @@
+       "status": "sent",
+       "currentAnswer": "Approximately 950 active customers as of the latest quarter.",
+       "currentAnswerAt": "2026-10-06",
++      "citations": null,
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 1,
+-      "contradicted": true
++      "daysOpen": 4,
++      "sla": "due-soon",
++      "contradicted": true,
++      "blockers": []
+     },
+     {
+       "id": "Q-005",
+@@ -72,9 +112,29 @@
+       "status": "draft-pending",
+       "currentAnswer": "Revenue grew 12% in 2025.",
+       "currentAnswerAt": "2026-10-02",
++      "citations": [
++        {
++          "docId": "DR-002",
++          "locator": "p. 7",
++          "quote": "FY2025 revenue growth of 12 percent."
++        }
++      ],
+       "pendingDraft": "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",
++      "draftApproved": false,
+       "answersCount": 2,
+-      "contradicted": true
++      "daysOpen": 21,
++      "sla": "overdue",
++      "contradicted": true,
++      "blockers": [
++        {
++          "code": "unapproved",
++          "detail": "pending draft on Q-005 has no approval recorded — transition(item, { type: \"approve\", approver, at }) first"
++        },
++        {
++          "code": "number_conflict",
++          "detail": "number_conflict (financials) between Q-005 and Q-006 — disjoint \"%\" values: Q-005 (sent) says 12, Q-006 (sent) says 4 — 12 vs 4"
++        }
++      ]
+     },
+     {
+       "id": "Q-006",
+@@ -85,9 +145,20 @@
+       "status": "sent",
+       "currentAnswer": "EBITDA increased 4% year over year in 2025.",
+       "currentAnswerAt": "2026-10-08",
++      "citations": [
++        {
++          "docId": "DR-002",
++          "locator": "p. 9",
++          "quote": "EBITDA increased 4 percent year over year in FY2025."
++        }
++      ],
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 1,
+-      "contradicted": true
++      "daysOpen": 5,
++      "sla": "overdue",
++      "contradicted": true,
++      "blockers": []
+     },
+     {
+       "id": "Q-007",
+@@ -98,9 +169,14 @@
+       "status": "open",
+       "currentAnswer": null,
+       "currentAnswerAt": null,
++      "citations": null,
+       "pendingDraft": null,
++      "draftApproved": false,
+       "answersCount": 0,
+-      "contradicted": false
++      "daysOpen": 3,
++      "sla": "due-soon",
++      "contradicted": false,
++      "blockers": []
+     },
+     {
+       "id": "Q-008",
+@@ -111,9 +187,25 @@
+       "status": "draft-pending",
+       "currentAnswer": "The core patent portfolio is licensed exclusively to Meridian Manufacturing.",
+       "currentAnswerAt": "2026-10-09",
++      "citations": [
++        {
++          "docId": "DR-021",
++          "locator": "Exhibit C",
++          "quote": "Core patent portfolio licensed exclusively to Meridian Manufacturing."
++        }
++      ],
+       "pendingDraft": "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.",
++      "draftApproved": false,
+       "answersCount": 2,
+-      "contradicted": false
++      "daysOpen": 1,
++      "sla": "on-track",
++      "contradicted": false,
++      "blockers": [
++        {
++          "code": "unapproved",
++          "detail": "pending draft on Q-008 has no approval recorded — transition(item, { type: \"approve\", approver, at }) first"
++        }
++      ]
+     }
+   ],
+   "contradictions": [
+@@ -192,28 +284,51 @@
+         {
+           "itemId": "Q-001",
+           "answerStatus": "sent",
+-          "quote": "Yes."
++          "quote": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute."
++        },
++        {
++          "itemId": "Q-002",
++          "answerStatus": "sent",
++          "quote": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
++        }
++      ]
++    },
++    {
++      "category": "litigation",
++      "kind": "antonym_conflict",
++      "between": [
++        "Q-001",
++        "Q-002"
++      ],
++      "detail": "Q-001 says \"pending\" where Q-002 says \"settled\"",
++      "evidence": [
++        {
++          "itemId": "Q-001",
++          "answerStatus": "sent",
++          "quote": "There are 3 pending lawsuits: two employment matters and one commercial dispute."
+         },
+         {
+           "itemId": "Q-002",
+           "answerStatus": "sent",
+-          "quote": "No."
++          "quote": "All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
+         }
+       ]
+     }
+   ],
+   "readiness": {
+-    "score": 69,
++    "score": 67,
+     "band": "nearly ready",
+     "components": {
+       "coverage": 0.875,
+       "pipeline": 0.875,
+-      "consistency": 0.25
++      "consistency": 0.25,
++      "provenance": 0.625
+     },
+     "weights": {
+-      "coverage": 0.5,
+-      "pipeline": 0.2,
+-      "consistency": 0.3
++      "coverage": 0.4,
++      "pipeline": 0.15,
++      "consistency": 0.25,
++      "provenance": 0.2
+     },
+     "bands": {
+       "nearly": 60,
+diff --git a/open-artifacts/sell-side-qa-log/examples/qa-log.csv b/open-artifacts/sell-side-qa-log/examples/qa-log.csv
+index 5d53899..4766d2b 100644
+--- a/open-artifacts/sell-side-qa-log/examples/qa-log.csv
++++ b/open-artifacts/sell-side-qa-log/examples/qa-log.csv
+@@ -1,9 +1,9 @@
+-id,buyer,category,status,question,currentAnswer,pendingDraft,contradiction,answers
+-Q-001,Oryx Growth Partners,litigation,sent,Are there any pending lawsuits against the target?,Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.,,number_conflict; antonym_conflict,2
+-Q-002,Lantern Harbor Capital,litigation,sent,Does the target have any active litigation exposure?,No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.,,number_conflict; antonym_conflict,1
+-Q-003,Oryx Growth Partners,customers,sent,How many customers does the target have?,"The target serves 1,200 active customers across 14 locations.",,number_conflict,1
+-Q-004,Fairwind Industrials,customers,sent,What is the customer base?,Approximately 950 active customers as of the latest quarter.,,number_conflict,1
+-Q-005,Lantern Harbor Capital,financials,draft-pending,What was 2025 revenue growth?,Revenue grew 12% in 2025.,"Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",number_conflict,2
+-Q-006,Oryx Growth Partners,financials,sent,How did profitability trend in 2025?,EBITDA increased 4% year over year in 2025.,,number_conflict,1
+-Q-007,Lantern Harbor Capital,ip,open,Is the IP exclusively licensed?,,,,0
+-Q-008,Fairwind Industrials,ip,draft-pending,Are any licenses exclusive?,The core patent portfolio is licensed exclusively to Meridian Manufacturing.,The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.,,2
++id,buyer,category,status,question,currentAnswer,pendingDraft,contradiction,daysOpen,sla,citations,answers
++Q-001,Oryx Growth Partners,litigation,sent,Are there any pending lawsuits against the target?,Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.,,number_conflict; antonym_conflict,25,overdue,1,2
++Q-002,Lantern Harbor Capital,litigation,sent,Does the target have any active litigation exposure?,No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.,,number_conflict; antonym_conflict,13,overdue,1,1
++Q-003,Oryx Growth Partners,customers,sent,How many customers does the target have?,"The target serves 1,200 active customers across 14 locations.",,number_conflict,7,overdue,0,1
++Q-004,Fairwind Industrials,customers,sent,What is the customer base?,Approximately 950 active customers as of the latest quarter.,,number_conflict,4,due-soon,0,1
++Q-005,Lantern Harbor Capital,financials,draft-pending,What was 2025 revenue growth?,Revenue grew 12% in 2025.,"Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",number_conflict,21,overdue,1,2
++Q-006,Oryx Growth Partners,financials,sent,How did profitability trend in 2025?,EBITDA increased 4% year over year in 2025.,,number_conflict,5,overdue,1,1
++Q-007,Lantern Harbor Capital,ip,open,Is the IP exclusively licensed?,,,,3,due-soon,0,0
++Q-008,Fairwind Industrials,ip,draft-pending,Are any licenses exclusive?,The core patent portfolio is licensed exclusively to Meridian Manufacturing.,The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.,,1,on-track,1,2
+diff --git a/open-artifacts/sell-side-qa-log/examples/report.md b/open-artifacts/sell-side-qa-log/examples/report.md
+index 210e08c..895b551 100644
+--- a/open-artifacts/sell-side-qa-log/examples/report.md
++++ b/open-artifacts/sell-side-qa-log/examples/report.md
+@@ -1,19 +1,21 @@
+ # Sell-side Q&A log — Project Copperfield — sale of Kestrel Data Systems, Inc. (fictional)
+ 
+-**8 questions:** 7 sent · 0 draft-only · 1 open · 2 draft-pending · **4 contradiction(s)**
++**8 questions:** 7 sent · 0 draft-only · 1 open · 2 draft-pending · **5 contradiction(s)**
+ 
+-Disclosure readiness: **69/100 (nearly ready)** — coverage 88%, pipeline 88%, consistency 25%.
++Disclosure readiness: **67/100 (nearly ready)** — coverage 88% × 0.4, pipeline 88% × 0.15, consistency 25% × 0.25, provenance 63% × 0.2.
+ 
+-| Id | Buyer | Category | Status | Contradicted |
+-|---|---|---|---|---|
+-| Q-001 | Oryx Growth Partners | litigation | sent | **yes** |
+-| Q-002 | Lantern Harbor Capital | litigation | sent | **yes** |
+-| Q-003 | Oryx Growth Partners | customers | sent | **yes** |
+-| Q-004 | Fairwind Industrials | customers | sent | **yes** |
+-| Q-005 | Lantern Harbor Capital | financials | draft-pending | **yes** |
+-| Q-006 | Oryx Growth Partners | financials | sent | **yes** |
+-| Q-007 | Lantern Harbor Capital | ip | open | — |
+-| Q-008 | Fairwind Industrials | ip | draft-pending | — |
++Aging as of 2026-10-23 (SLA: warn 3d, breach 5d): **5 of 8 overdue**.
++
++| Id | Buyer | Category | Status | Aging | Contradicted |
++|---|---|---|---|---|---|
++| Q-001 | Oryx Growth Partners | litigation | sent | 25d (overdue) | **yes** |
++| Q-002 | Lantern Harbor Capital | litigation | sent | 13d (overdue) | **yes** |
++| Q-003 | Oryx Growth Partners | customers | sent | 7d (overdue) | **yes** |
++| Q-004 | Fairwind Industrials | customers | sent | 4d (due soon) | **yes** |
++| Q-005 | Lantern Harbor Capital | financials | draft-pending | 21d (overdue) | **yes** |
++| Q-006 | Oryx Growth Partners | financials | sent | 5d (overdue) | **yes** |
++| Q-007 | Lantern Harbor Capital | ip | open | 3d (due soon) | — |
++| Q-008 | Fairwind Industrials | ip | draft-pending | 1d | — |
+ 
+ ## Contradictions (deterministic heuristics — attorney review required)
+ 
+@@ -27,8 +29,11 @@ Disclosure readiness: **69/100 (nearly ready)** — coverage 88%, pipeline 88%,
+   - `Q-001` (sent): "There are 3 pending lawsuits: two employment matters and one commercial dispute."
+   - `Q-002` (sent): "All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
+ - **antonym_conflict** (litigation) · Q-001 vs Q-002 — Q-001 says "yes" where Q-002 says "no".
+-  - `Q-001` (sent): "Yes."
+-  - `Q-002` (sent): "No."
++  - `Q-001` (sent): "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute."
++  - `Q-002` (sent): "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
++- **antonym_conflict** (litigation) · Q-001 vs Q-002 — Q-001 says "pending" where Q-002 says "settled".
++  - `Q-001` (sent): "There are 3 pending lawsuits: two employment matters and one commercial dispute."
++  - `Q-002` (sent): "All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
+ 
+ ## Current answers
+ 
+@@ -38,12 +43,16 @@ Disclosure readiness: **69/100 (nearly ready)** — coverage 88%, pipeline 88%,
+ 
+ Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.
+ 
++- source: `DR-014` §2.1 — "Three actions pending: two employment, one commercial."
++
+ ### Q-002 — Lantern Harbor Capital · litigation · sent
+ 
+ > Does the target have any active litigation exposure?
+ 
+ No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.
+ 
++- source: `DR-014` §2.2 — "All 2024 matters settled and dismissed with prejudice."
++
+ ### Q-003 — Oryx Growth Partners · customers · sent
+ 
+ > How many customers does the target have?
+@@ -62,14 +71,20 @@ Approximately 950 active customers as of the latest quarter.
+ 
+ Revenue grew 12% in 2025.
+ 
++- source: `DR-002` p. 7 — "FY2025 revenue growth of 12 percent."
++
+ _Pending draft (not sent):_ "Revenue grew 12% in 2025, but EBITDA declined 4% year over year."
+ 
++_Release blockers:_ `unapproved`, `number_conflict`
++
+ ### Q-006 — Oryx Growth Partners · financials · sent
+ 
+ > How did profitability trend in 2025?
+ 
+ EBITDA increased 4% year over year in 2025.
+ 
++- source: `DR-002` p. 9 — "EBITDA increased 4 percent year over year in FY2025."
++
+ ### Q-007 — Lantern Harbor Capital · ip · open
+ 
+ > Is the IP exclusively licensed?
+@@ -82,6 +97,10 @@ _no sent answer yet_
+ 
+ The core patent portfolio is licensed exclusively to Meridian Manufacturing.
+ 
++- source: `DR-021` Exhibit C — "Core patent portfolio licensed exclusively to Meridian Manufacturing."
++
+ _Pending draft (not sent):_ "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive."
+ 
++_Release blockers:_ `unapproved`
++
+ _All data fictional. Contradiction flags are keyword/number heuristics for human review, not legal conclusions. Not legal advice._
+diff --git a/open-artifacts/sell-side-qa-log/spec.md b/open-artifacts/sell-side-qa-log/spec.md
+index df0b154..8ef072e 100644
+--- a/open-artifacts/sell-side-qa-log/spec.md
++++ b/open-artifacts/sell-side-qa-log/spec.md
+@@ -4,10 +4,14 @@ Open reimplementation of Anthropic's "Sell-side Q&A log" artifact (catalog
+ §2.15): *"manage buyer questions during due diligence, draft and track
+ answers, and keep a clean log for disclosure."*
+ 
+-The closed artifact is a workflow tool. This core adds the piece diligence
++The closed artifact is a workflow tool. This core adds the pieces diligence
+ actually needs: **deterministic contradiction detection between answers** —
+-before a inconsistent statement reaches two different buyers — plus a
+-disclosure-readiness score computed from the log itself, not from a vibe.
++before an inconsistent statement reaches two different buyers — **source
++links on every answer** (`citations`, the counterpart's signature feature,
++as structured data that survives export), an **approve→send release gate as
++code** with an audit trail, a **per-buyer projection function** (ethical
++wall), **SLA aging** computed from dates rather than a clock, and a
++**disclosure-readiness score** computed from the log itself, not from a vibe.
+ 
+ ## What it does
+ 
+@@ -17,76 +21,133 @@ disclosure-readiness score computed from the log itself, not from a vibe.
+    answer), and an item status: `open` → `draft` → `sent` → `draft-pending`
+    (a new draft supersedes a sent answer and awaits re-send).
+ 2. **Contradiction detection (deterministic heuristics, evidence quotes)** —
+-   pairwise, within a category, across items and buyers:
+-   - `number_conflict` — both answers state numbers in the same unit
+-     (`%`, `$`, `million`, `days`, … or bare counts anchored to a shared
+-     keyword) and the value sets are disjoint → conflict. Evidence = the
+-     sentence containing each number.
++   pairwise, within a category (and optionally across categories), across
++   items and buyers:
++   - `number_conflict` — both answers state numbers in the same canonical
++     unit and the value sets are disjoint → conflict. Numbers normalize to a
++     canonical base, so `$3.5 million` and `$3,500,000` agree while
++     `$2 million` vs `$3,500,000` conflicts (`usd`). Bare counts require a
++     shared keyword anchor between evidence sentences. Every conflicting
++     unit fires — not just the first. Evidence = the sentence containing
++     each number.
+    - `antonym_conflict` — one answer uses a term whose opposite appears in
+      the other (`permitted`/`prohibited`, `material`/`immaterial`,
+-     `yes`/`no`, … rules-as-data pairs). Evidence = the matched sentences.
+-   - Pending drafts are compared against every canonical sent answer in the
+-     category — catching inconsistencies *before* they are sent.
+-   - Every conflict carries `evidence`: verbatim quotes + item ids. These are
+-   heuristics for attorney review, not legal conclusions.
+-3. **Disclosure-readiness score** — weighted, configurable (rules-as-data):
+-   coverage (sent answers, 0.5) + pipeline (no open items, 0.2) +
+-   consistency (no contradicted items, 0.3). Bands: `< 60` not ready,
+-   `< 85` nearly ready, `≥ 85` ready.
+-4. **CSV export** — the whole log (status, current answer, contradiction
+-   flags) with anchors preserved; plus stable JSON.
++     `yes`/`no`, … rules-as-data pairs). Every matching pair fires. Evidence
++     quotes are at least 3 words (a bare `"Yes."` falls back to the fuller
++     sentence).
++   - `settings.crossCategory` (default **off**) additionally compares items
++     in different categories, but only when the two answers share a keyword
++     — cross-category flags carry `crossCategory: true` and a
++     `"catA × catB"` category label. Off by default to avoid false
++     positives.
++   - Pending drafts are compared against every canonical sent answer —
++     catching inconsistencies *before* they are sent. Answers of the same
++     item are never compared (revision is workflow, not contradiction).
++   - Every conflict carries `evidence`: verbatim quotes + item ids. These
++     are heuristics for attorney review, not legal conclusions.
++3. **Citations + release gate** — answers may carry
++   `citations: [{ docId, locator, quote }]` (data-room source links that
++   survive CSV/JSON/report export). `transition(item, event)` is the
++   approve→send gate as code: `{ type: "approve", approver, at }` records
++   the approval audit trail (`approvedBy`/`approvedAt` on the draft);
++   `{ type: "send" }` refuses to send an unapproved draft (throws) and
++   returns a new item — the input is never mutated.
++   `releaseBlockers(item, contradictions)` lists everything blocking
++   release: an unapproved draft, plus every detected contradiction
++   involving the item. Unapproved sends are impossible to miss because the
++   gate is a function, not a convention.
++4. **Disclosure-readiness score** — weighted, configurable (rules-as-data):
++   coverage (sent answers, ×0.4) + pipeline (no open items, ×0.15) +
++   consistency (no contradicted items, ×0.25) + provenance (sent answers
++   carrying ≥1 citation, ×0.2). Bands: `< 60` not ready, `< 85` nearly
++   ready, `≥ 85` ready.
++5. **SLA aging** — each item may carry `receivedAt`; with
++   `settings.asOf`, the core derives `daysOpen` (date math only — no wall
++   clock, output stays byte-identical) and an SLA band per
++   `settings.sla` (default warn 3d / breach 5d → `on-track` / `due-soon` /
++   `overdue`). The summary and report carry the overdue count.
++6. **Buyer wall as a function** — `buyerView(log, buyerId)` projects a
++   built log to a single buyer: only that buyer's items appear and
++   contradictions involving any other buyer's items are dropped entirely —
++   cross-buyer evidence never leaves the wall. Summary and readiness are
++   recomputed from the projected view; the result feeds `qaLogToCsv` /
++   `qaLogToJson` directly.
++7. **CSV export** — the whole log (status, current answer, citations,
++   aging, contradiction flags) with anchors preserved; plus stable JSON.
+ 
+ ## IO contract
+ 
+ ```js
+-import { buildQaLog, qaLogToCsv, qaLogToJson } from "./core/core.js";
++import { buildQaLog, qaLogToCsv, qaLogToJson, buyerView,
++         transition, releaseBlockers, itemAging } from "./core/core.js";
+ 
+ const log = buildQaLog(input);
+-//   => { deal, summary, items[], contradictions[], readiness }
++//   => { deal, summary, aging, items[], contradictions[], readiness }
+ qaLogToCsv(log); qaLogToJson(log);
++const view = buyerView(log, "B1");          // buyer-safe projection
++const next = transition(item, { type: "approve", approver, at });
++const sent = transition(next, { type: "send" }); // throws if unapproved
++releaseBlockers(item, contradictions);       // [{ code, detail }]
++itemAging(item, settings);                   // { daysOpen, sla }
+ ```
+ 
+-- item: `{ id, buyerId, category, question, answers: [{ text, status:
+-  "draft"|"sent", at: "YYYY-MM-DD" }] }`
++- item: `{ id, buyerId, category, question, receivedAt?, answers: [{
++  text, status: "draft"|"sent", at: "YYYY-MM-DD", citations?: [{ docId,
++  locator, quote }], approvedBy?, approvedAt? }] }`
+ - settings (rules-as-data, overridable): `{ antonymPairs?, units?,
+-  readinessWeights?, readinessBands? }`.
++  crossCategory?, asOf?, sla?: { warnDays, breachDays },
++  weights?: { coverage, pipeline, consistency, provenance }, bands? }`.
+ 
+-No timestamps, no randomness, no network: same input → byte-identical output.
++No timestamps, no randomness, no network: same input → byte-identical
++output. Empty logs, duplicate ids, and malformed items are handled
++deterministically (covered by tests).
+ 
+ ## Deterministic vs LLM-assisted
+ 
+ | Layer | Who |
+ |---|---|
+-| Workflow state, contradiction heuristics, readiness score, exports | **code** |
++| Workflow state, release gate, contradiction heuristics, aging, readiness score, exports | **code** |
+ | Drafting answers from the data room | optional LLM (drafting, human-approved) |
+ | Deciding whether a flagged conflict is a true inconsistency | **attorney** (core quotes evidence) |
+-| Antonym vocabulary, unit list, score weights | **deal team** (rules-as-data) |
++| Approving a draft for release | **named approver** (recorded via `transition`) |
++| Antonym vocabulary, unit list, SLA bands, score weights | **deal team** (rules-as-data) |
+ 
+ ### LLM prompt schema (drafting step, optional)
+ 
+ ```json
+ {
+   "task": "Draft an answer to the buyer question from the provided data-room excerpts.",
+-  "output_schema": { "text": "…", "status": "draft", "citations": ["document id + pinpoint per fact"] },
+-  "rules": ["Every number must come from an excerpt — never computed or recalled.", "If the excerpts do not answer the question, say so; do not speculate.", "The draft is sent only after human approval (status stays 'draft')."]
++  "output_schema": { "text": "…", "status": "draft", "citations": [{ "docId": "…", "locator": "…", "quote": "…" }] },
++  "rules": ["Every number must come from an excerpt — never computed or recalled.", "Every fact must carry a citation into the data room; the readiness score counts them.", "If the excerpts do not answer the question, say so; do not speculate.", "The draft is sent only after human approval (status stays 'draft' until transition(item, { type: 'send' }))."]
+ }
+ ```
+ 
+ ## What's better than the closed counterpart
+ 
+ - **Contradiction detection as a first-class deterministic output.** The
+-  closed artifact tracks answers; this core cross-examines them — numbers by
+-  unit, terms by antonym pairs — and quotes the evidence for every flag.
++  closed artifact tracks answers; this core cross-examines them — numbers
++  by canonical unit/magnitude, terms by antonym pairs — and quotes the
++  evidence for every flag. The counterpart has none.
++- **Source links that survive export.** The closed artifact links every
++  output to its source inside its product; here citations are structured
++  data on the answer (`docId`/`locator`/`quote`) that flow through CSV,
++  JSON, and the report — and feed the readiness score's provenance
++  component.
+ - **Drafts checked before sending.** A pending draft is compared against
+-  everything already sent in its category, so an inconsistency is caught
+-  while it is still editable.
++  everything already sent while it is still editable.
++- **Release gate as code.** Status management "to release" is an
++  opaque workflow in the counterpart; here approve→send is a testable
++  function with a named-approver audit trail, and release blockers
++  (unapproved, contradicted) are computed, not remembered.
+ - **Readiness score you can audit** — the formula, weights, and bands are
+   rules-as-data, not a proprietary black box.
+-- **Buyer-isolated by construction** — the log is plain JSON you host; export
+-  per-buyer views by filtering `buyerId` (no vendor access control needed).
++- **Ethical wall as a function.** `buyerView(log, buyerId)` is a buyer-safe
++  projection with cross-buyer evidence redacted — sharing between teams is
++  a projection you control, not a vendor setting.
++- **Aging, not just status.** `daysOpen` and SLA bands come from dates in
++  the log; the overdue count is deterministic output.
+ 
+ ## Disclaimer
+-
+ Conflict heuristics are conservative keyword/number checks with US-deal
+-defaults; they flag for human review and never decide disclosure. All example
+-data fictional. Not legal advice.
++defaults; they flag for human review and never decide disclosure. All
++example data fictional. Not legal advice.

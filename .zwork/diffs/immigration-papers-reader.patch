@@ -1,0 +1,1219 @@
+diff --git a/open-artifacts/immigration-papers-reader/README.md b/open-artifacts/immigration-papers-reader/README.md
+index 0424994..f3b3e60 100644
+--- a/open-artifacts/immigration-papers-reader/README.md
++++ b/open-artifacts/immigration-papers-reader/README.md
+@@ -1,34 +1,49 @@
+ # immigration-papers-reader
+ 
+ Open counterpart of Mobile Pathways' immigration papers reader (Claude for
+-Legal partner gallery). Case-type facts JSON in; deterministic first read
+-out:
++Legal partner gallery). Paperwork text and/or case-type facts JSON in;
++deterministic first read out:
+ 
++- **notice parsing** — `parseNotice(text)` turns pasted (fictional) paperwork
++  into facts JSON via per-form rules-as-data templates (I-797C, NTA, EAD
++  I-766, I-693, ASC biometrics); every extracted value is traceable to a
++  named template rule, and unreadable values land in `uncertain` — never
++  guessed;
+ - required-documents checklist per case type (rules-as-data: family-based,
+-  employment-based, affirmative asylum, naturalization);
++  employment-based, affirmative asylum, naturalization, TPS, U-visa);
+ - per-document status with exact date math — missing / present /
+-  expiring_soon (≤180d default) / expired;
+-- readiness score (expired counts against you; optional docs never count);
+-- key dates with days-until, urgent (≤14d) and already-passed warnings —
+-  loud in both directions;
++  expiring_soon (≤180d default) / expired / **uncertain** (capture honesty:
++  uncertain docs are excluded from the ready count and warn);
++- readiness score (expired and uncertain count against you; optional docs
++  never count);
++- **key-date taxonomy** — `hearing | filing_deadline | expiry | other`, each
++  with loud per-type copy (a hearing date warns about in-absentia orders),
++  sorted by days-until, plus a `next_action` line; a hearing date that has
++  already passed auto-triggers the missed-hearing referral;
+ - **referral flag** when complexity exceeds tool scope (criminal history,
+   prior removal order, missed hearing, prior denial, detention, unlawful
+-  presence, removal defense) — refer, don't squeeze.
++  presence, removal proceedings, removal defense) — refer, don't squeeze;
++- **bilingual export** — `exportChecklistMd(r, { lang: 'en' | 'es' })`
++  (Spanish is an unofficial translation);
++- fully deterministic: `facts.today` is required — the core never reads the
++  clock, so the same input gives byte-identical output every run.
+ 
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 16 tests
++node --test "core/*.test.js"     # 34 tests
+ node examples/run.js             # regenerates output.json + checklist.md
+ ```
+ 
+ Demo: `demo/index.html` (standalone, shared design tokens, prefilled with
+ the fictional Ferreira-Lindqvist employment-based case: 100% document
+-readiness yet referred for a prior denial).
++readiness yet referred for a prior denial; paste the fictional biometrics
++notice to see `parseNotice` merge typed facts into the case).
+ 
+ ## Better than the closed counterpart
+ 
+-The safety-critical parts — checklists, date math, referral — are auditable,
+-versioned data instead of a black box; the optional LLM capture step is
+-instructed to never guess a date and to surface uncertainty; and the
+-dependency-free core self-hosts for nonprofit budgets. Not legal advice.
++The safety-critical parts — extraction rules, checklists, date math,
++referral — are auditable, versioned data instead of a black box: every
++extracted value names its template rule, uncertainty is marked rather than
++smoothed over, and the dependency-free core self-hosts for nonprofit
++budgets. Not legal advice.
+diff --git a/open-artifacts/immigration-papers-reader/core/core.js b/open-artifacts/immigration-papers-reader/core/core.js
+index 33f688c..d34f183 100644
+--- a/open-artifacts/immigration-papers-reader/core/core.js
++++ b/open-artifacts/immigration-papers-reader/core/core.js
+@@ -1,15 +1,18 @@
+ /**
+  * immigration-papers-reader — deterministic core.
+  *
+- * Case-type facts JSON → required-documents checklist (rules-as-data),
++ * Paperwork text in (parseNotice, per-form rules-as-data templates) and/or
++ * case-type facts JSON → required-documents checklist (rules-as-data),
+  * per-document status with date math (missing / present / expiring_soon /
+- * expired), readiness score, key-date surfacing, and a referral flag when
+- * case complexity exceeds this tool's scope.
+- * No LLM, no network, no dependencies. Browser + Node ES module.
++ * expired / uncertain), readiness score, key-date taxonomy with loud
++ * per-type copy and next action, bilingual (EN/ES) Markdown export, and a
++ * referral flag when case complexity exceeds this tool's scope.
++ * No LLM, no network, no clock reads, no dependencies. Browser + Node ES module.
+  *
+  * Safety framing: this is a checklist helper, not legal advice. Anything
+- * safety-critical (hearing dates, deadlines) is surfaced loudly, and
+- * out-of-scope cases are referred, never squeezed through the rubric.
++ * safety-critical (hearing dates, deadlines) is surfaced loudly, unreadable
++ * input is marked `uncertain` — never guessed — and out-of-scope cases are
++ * referred, never squeezed through the rubric.
+  *
+  * @module core
+  */
+@@ -78,6 +81,30 @@ export const CASE_TYPES = Object.freeze({
+       { id: 'marriage_certificate', label: 'Marriage certificate (if applying on 3-year basis)' },
+     ]),
+   }),
++  tps: Object.freeze({
++    label: 'Temporary Protected Status (I-821) [verify current designation requirements]',
++    required: Object.freeze([
++      { id: 'government_id', label: 'Passport or government photo ID' },
++      { id: 'nationality_evidence', label: 'Proof of nationality/identity (passport, birth certificate) with certified translation if needed' },
++      { id: 'tps_receipt', label: 'I-821 TPS application/re-registration receipt or approval notice' },
++      { id: 'continuous_residence_evidence', label: 'Evidence of continuous residence (per the country designation — verify dates)' },
++    ]),
++    optional: Object.freeze([
++      { id: 'ead_card', label: 'Employment Authorization Document (I-766) if seeking work authorization', note: 'Expiry-sensitive document.' },
++    ]),
++  }),
++  u_visa: Object.freeze({
++    label: 'U nonimmigrant status (I-918) [verify current requirements]',
++    required: Object.freeze([
++      { id: 'government_id', label: 'Passport or other government ID' },
++      { id: 'law_enforcement_certification', label: 'Law-enforcement certification (I-918 Supplement B)' },
++      { id: 'u_visa_receipt', label: 'I-918 petition receipt notice' },
++      { id: 'qualifying_activity_evidence', label: 'Evidence of the qualifying criminal activity and helpfulness (records, declarations)' },
++    ]),
++    optional: Object.freeze([
++      { id: 'personal_statement', label: 'Personal statement describing harm and helpfulness' },
++    ]),
++  }),
+   removal_defense: Object.freeze({
+     label: 'Removal defense / immigration court',
+     outOfScope: true,
+@@ -96,14 +123,46 @@ export const REFERRAL_FACTORS = Object.freeze({
+   prior_denial: 'Prior denial of this or a related benefit.',
+   detention: 'Applicant or family member currently detained.',
+   prior_unlawful_presence: 'Prior unlawful presence over 180/365 days (bars may apply).',
++  removal_proceedings: 'Notice to Appear on file — case is in removal proceedings; refer to counsel authorized to practice in immigration court.',
+   out_of_scope_case_type: 'Case type exceeds this tool’s scope (removal defense).',
+ });
+ 
++/**
++ * Key-date taxonomy (rules-as-data): each type carries loud copy (why the
++ * date is safety-critical) and next-action copy. `hearing` copy is written
++ * for immigration-court appearances — an in-absentia order is the failure
++ * mode this exists to prevent.
++ * @type {Readonly<Record<'hearing'|'filing_deadline'|'expiry'|'other',
++ *   {label: string, loud: string, action: string}>>}
++ */
++export const KEY_DATE_TYPES = Object.freeze({
++  hearing: Object.freeze({
++    label: 'Hearing / court appearance',
++    loud: 'HEARING DATE — missing it may result in an in-absentia removal order. If it may have been missed, refer immediately.',
++    action: 'Attend this appearance; confirm date, time, and venue with the court. If you cannot attend, ask about rescheduling in advance — never just miss it.',
++  }),
++  filing_deadline: Object.freeze({
++    label: 'Filing deadline',
++    loud: 'FILING DEADLINE — missing it can forfeit the benefit or the chance to respond.',
++    action: 'File or respond before this date.',
++  }),
++  expiry: Object.freeze({
++    label: 'Document expiry',
++    loud: 'EXPIRY — plan renewal or replacement before this date.',
++    action: 'Renew or replace the document before it expires.',
++  }),
++  other: Object.freeze({
++    label: 'Date',
++    loud: '',
++    action: 'Confirm what this date requires and act before it passes.',
++  }),
++});
++
+ /** Documents expiring within this window (days) are flagged expiring_soon. */
+ export const EXPIRING_SOON_DAYS = 180;
+ 
+ /* ------------------------------------------------------------------ *
+- * Date helpers (ISO-only)
++ * Date helpers (ISO-only, no clock reads)
+  * ------------------------------------------------------------------ */
+ 
+ const ISO = /^\d{4}-\d{2}-\d{2}$/;
+@@ -111,6 +170,180 @@ const parseUtc = (s) => new Date(s + 'T12:00:00Z');
+ /** Whole-day difference a − b. @param {string} a @param {string} b */
+ export function diffDays(a, b) { return Math.round((parseUtc(a) - parseUtc(b)) / 86400000); }
+ 
++const MONTHS = Object.freeze({
++  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
++  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
++  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
++});
++const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
++const iso = (y, m, d) => `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
++
++/**
++ * Parse the first valid date in a captured text segment. Accepted formats:
++ * ISO YYYY-MM-DD; 'Month D, YYYY' (full or 3-letter month); MM/DD/YYYY
++ * (US convention used on USCIS notices — [verify] per document type).
++ * No clock reads, no guessing: returns null when nothing valid is found.
++ * @param {string} segment @returns {string|null} ISO date
++ */
++export function parseDateStrict(segment) {
++  const s = String(segment);
++  let m = s.match(/\b([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})\b/);
++  if (m) {
++    const mon = MONTHS[m[1].toLowerCase()];
++    const d = Number(m[2]), y = Number(m[3]);
++    if (mon && d >= 1 && d <= daysInMonth(y, mon)) return iso(y, mon, d);
++  }
++  m = s.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
++  if (m) {
++    const mon = Number(m[1]), d = Number(m[2]), y = Number(m[3]);
++    if (mon >= 1 && mon <= 12 && d >= 1 && d <= daysInMonth(y, mon)) return iso(y, mon, d);
++  }
++  m = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
++  if (m) {
++    const y = Number(m[1]), mon = Number(m[2]), d = Number(m[3]);
++    if (mon >= 1 && mon <= 12 && d >= 1 && d <= daysInMonth(y, mon)) return iso(y, mon, d);
++  }
++  return null;
++}
++
++/* ------------------------------------------------------------------ *
++ * Deterministic notice parser
++ * ------------------------------------------------------------------ */
++
++/**
++ * Per-form extraction templates (rules-as-data). `markers` must all match to
++ * identify the form; `docs` map matched text to checklist document ids;
++ * `dates` capture a labeled line and either set a document expiry (`doc`)
++ * or produce a typed key date. Templates are fictional-sample-oriented and
++ * illustrative — real notice layouts vary; [verify] against current forms.
++ * Detection order matters: e.g. ASC biometrics notices ARE I-797Cs, so the
++ * more specific template is checked first.
++ */
++export const NOTICE_TEMPLATES = Object.freeze({
++  nta: Object.freeze({
++    label: 'Notice to Appear (immigration court)',
++    markers: Object.freeze([/Notice to Appear/i]),
++    dates: Object.freeze([
++      Object.freeze({
++        field: 'hearing', label: 'Immigration court hearing (NTA)', type: 'hearing',
++        re: /(?:appear before an?[^\n]*?\bon\b|Hearing Date:)[ \t]*([^\n\r]+)/i,
++      }),
++    ]),
++    docs: Object.freeze([]),
++    complexity: Object.freeze(['removal_proceedings']),
++  }),
++  biometrics: Object.freeze({
++    label: 'ASC biometrics appointment notice',
++    markers: Object.freeze([/Application Support Center|ASC Appointment/i, /Biometrics/i]),
++    dates: Object.freeze([
++      Object.freeze({
++        field: 'appointment', label: 'Biometrics appointment', type: 'other',
++        re: /Appointment Date:[ \t]*([^\n\r]+)/i,
++      }),
++    ]),
++    docs: Object.freeze([Object.freeze({ id: 'biometrics_notice', re: /Biometrics/i })]),
++  }),
++  ead: Object.freeze({
++    label: 'Employment Authorization Document (I-766 card)',
++    markers: Object.freeze([/Form I-766|Employment Authorization Card/i]),
++    dates: Object.freeze([
++      Object.freeze({
++        field: 'card_expires', label: 'EAD card expires', type: 'expiry', doc: 'ead_card',
++        re: /Card Expires:[ \t]*([^\n\r]+)/i,
++      }),
++    ]),
++    docs: Object.freeze([Object.freeze({ id: 'ead_card', re: /Form I-766|Employment Authorization Card/i })]),
++  }),
++  i693: Object.freeze({
++    label: 'I-693 medical examination report',
++    markers: Object.freeze([/Form I-693/i]),
++    // No validity window is computed — the I-693 validity rule is real-law
++    // dependent, so expiry stays unset rather than guessed.
++    dates: Object.freeze([]),
++    docs: Object.freeze([Object.freeze({ id: 'i693_medical', re: /Form I-693/i })]),
++  }),
++  i797c: Object.freeze({
++    label: 'I-797C Notice of Action (USCIS receipt/action notice)',
++    markers: Object.freeze([/Form I-797C|Notice of Action/i]),
++    dates: Object.freeze([
++      Object.freeze({
++        field: 'notice_date', label: 'Notice date (I-797C)', type: 'other',
++        re: /Notice Date:[ \t]*([^\n\r]+)/i,
++      }),
++    ]),
++    docs: Object.freeze([
++      Object.freeze({ id: 'i140_notice', re: /Form I-140|Immigrant Petition for Alien Worker/i }),
++      Object.freeze({ id: 'petition_receipt', re: /Form I-130|Petition for Alien Relative/i }),
++      Object.freeze({ id: 'i589_receipt', re: /Form I-589/i }),
++      Object.freeze({ id: 'n400_receipt', re: /Form N-400|Application for Naturalization/i }),
++      Object.freeze({ id: 'tps_receipt', re: /Form I-821/i }),
++      Object.freeze({ id: 'u_visa_receipt', re: /Form I-918/i }),
++    ]),
++  }),
++});
++
++/** Detection order: most specific template first (see NOTICE_TEMPLATES doc). */
++const NOTICE_ORDER = Object.freeze(['nta', 'biometrics', 'ead', 'i693', 'i797c']);
++
++/**
++ * Parse notice/paperwork text into a facts fragment for readCase.
++ * Deterministic: same text in, byte-identical facts out; unreadable values
++ * land in `facts.uncertain` — never guessed.
++ *
++ * @param {string} text notice text (paste or OCR)
++ * @returns {{
++ *   matched: boolean, form_type: string|null, form_label: string|null,
++ *   facts: { documents: Record<string, {present: boolean, expiry_date?: string}>,
++ *            key_dates: Record<string, {date: string, type: string}>,
++ *            complexity: string[], uncertain: string[] },
++ *   extraction_log: Array<{template: string, field: string, value: string, rule: string}>
++ * }}
++ * @throws {Error} if text is not a string
++ */
++export function parseNotice(text) {
++  if (typeof text !== 'string') throw new Error(`parseNotice expects notice text as a string, got ${typeof text}`);
++  const out = {
++    matched: false, form_type: null, form_label: null,
++    facts: { documents: {}, key_dates: {}, complexity: [], uncertain: [] },
++    extraction_log: [],
++  };
++  let id = null, tpl = null;
++  for (const tid of NOTICE_ORDER) {
++    const t = NOTICE_TEMPLATES[tid];
++    if (t.markers.every((re) => re.test(text))) { id = tid; tpl = t; break; }
++  }
++  if (!tpl) {
++    out.facts.uncertain.push('No notice template matched — nothing extracted; do not guess.');
++    return out;
++  }
++  out.matched = true;
++  out.form_type = id;
++  out.form_label = tpl.label;
++  for (const d of tpl.docs) {
++    if (d.re.test(text)) {
++      out.facts.documents[d.id] = { present: true };
++      out.extraction_log.push({ template: id, field: `document:${d.id}`, value: 'present', rule: 'docs' });
++    }
++  }
++  for (const dr of tpl.dates) {
++    const m = text.match(dr.re);
++    if (!m) continue; // field simply absent from the page — not uncertainty
++    const parsed = parseDateStrict(m[1]);
++    if (parsed == null) {
++      out.facts.uncertain.push(`${dr.label} is present but unreadable (${JSON.stringify(m[1].trim().slice(0, 40))}) — never guessed.`);
++      continue;
++    }
++    if (dr.doc) out.facts.documents[dr.doc] = { present: true, expiry_date: parsed };
++    else out.facts.key_dates[dr.label] = { date: parsed, type: dr.type };
++    out.extraction_log.push({ template: id, field: dr.field, value: parsed, rule: 'dates' });
++  }
++  for (const c of tpl.complexity ?? []) out.facts.complexity.push(c);
++  if (out.extraction_log.length === 0) {
++    out.facts.uncertain.push('Notice type recognized but no fields could be extracted — verify manually.');
++  }
++  return out;
++}
++
+ /* ------------------------------------------------------------------ *
+  * Per-document status
+  * ------------------------------------------------------------------ */
+@@ -142,33 +375,80 @@ export function documentStatus(doc, today, config = {}) {
+ 
+ /**
+  * Read a case's facts and produce checklist + readiness + referral.
++ * Deterministic: `facts.today` is required — the clock is never read.
+  *
+- * @param {{case_type: string, today?: string,
+- *          documents?: Record<string, {present?: boolean, expiry_date?: string|null}>,
+- *          complexity?: string[], key_dates?: Record<string, string>,
+- *          applicant?: object}} facts
++ * @param {{case_type: string, today: string,
++ *          documents?: Record<string, {present?: boolean, expiry_date?: string|null, uncertain?: boolean}>,
++ *          complexity?: string[], key_dates?: Record<string, string|{date: string, type?: string}>,
++ *          uncertain?: string[], applicant?: object}} facts
+  * @param {{expiringSoonDays?: number, urgentDays?: number}} [config]
+  * @returns {{
+  *   case_type: string, case_label: string, today: string,
+  *   checklist: Array<{id: string, label: string, required: boolean, note: string,
+  *                     status: string, detail: string}>,
+- *   readiness: {score: number, ready_count: number, required_count: number,
++ *   readiness: {score: number, ready_count: number, required_count: number, has_uncertain: boolean,
+  *               not_ready: Array<{id: string, label: string, status: string}>},
+- *   key_dates: Array<{label: string, date: string, days_until: number|null, urgent: boolean}>,
++ *   key_dates: Array<{label: string, date: string, type: string, loud: string,
++ *                     days_until: number|null, urgent: boolean}>,
++ *   next_action: {label: string, date: string, days_until: number, type: string, action: string}|null,
+  *   referral: {flag: boolean, reasons: Array<{id: string, label: string}>},
+  *   summary: string[], warnings: string[]
+  * }}
+- * @throws {Error} unknown case type or malformed dates
++ * @throws {Error} unknown case type; missing/malformed today; malformed or
++ *   untyped-bad dates; non-array `uncertain`
+  */
+ export function readCase(facts, config = {}) {
+   const caseType = facts.case_type;
+   const template = CASE_TYPES[caseType];
+   if (!template) throw new Error(`Unknown case_type "${caseType}"; valid: ${Object.keys(CASE_TYPES).join(', ')}`);
+-  const today = facts.today ?? new Date().toISOString().slice(0, 10);
++  if (facts.today == null) throw new Error('facts.today is required (ISO YYYY-MM-DD) — readCase never reads the clock, so output stays reproducible.');
++  const today = facts.today;
++  if (!ISO.test(today)) throw new Error(`today must be an ISO date, got ${JSON.stringify(today)}`);
+   const urgentDays = config.urgentDays ?? 14;
+   const warnings = [];
+ 
+-  // ---- referral first: out-of-scope cases are never scored ----------------
++  // ---- uncertain capture notes (honesty bridge from parsing) -----------
++  let uncertainNotes = [];
++  if (facts.uncertain !== undefined) {
++    if (!Array.isArray(facts.uncertain) || facts.uncertain.some((u) => typeof u !== 'string')) {
++      throw new Error('facts.uncertain must be an array of strings (capture notes naming documents or describing what was unreadable).');
++    }
++    uncertainNotes = facts.uncertain;
++  }
++  /** @param {string} id @param {{uncertain?: boolean}} docFacts */
++  const flagsDoc = (id, docFacts) => docFacts.uncertain === true || uncertainNotes.some((u) => u.includes(id));
++
++  // ---- key dates: taxonomy, loud copy, sort, next action ----------------
++  const keyDates = [];
++  for (const [label, value] of Object.entries(facts.key_dates ?? {})) {
++    let date, type = 'other';
++    if (typeof value === 'string') date = value;
++    else if (value != null && typeof value === 'object' && !Array.isArray(value)) {
++      date = value.date;
++      if (value.type != null) {
++        if (!Object.hasOwn(KEY_DATE_TYPES, value.type)) {
++          throw new Error(`key_dates.${label}.type must be one of ${Object.keys(KEY_DATE_TYPES).join(', ')}; got ${JSON.stringify(value.type)}`);
++        }
++        type = value.type;
++      }
++    } else {
++      throw new Error(`key_dates.${label} must be an ISO date string or {date, type}, got ${JSON.stringify(value)}`);
++    }
++    if (typeof date !== 'string' || !ISO.test(date)) throw new Error(`key_dates.${label} must be an ISO date, got ${JSON.stringify(date)}`);
++    const loud = KEY_DATE_TYPES[type].loud;
++    const daysUntil = diffDays(date, today);
++    const urgent = daysUntil >= 0 && daysUntil <= urgentDays;
++    if (urgent) warnings.push(`URGENT: ${label} on ${date} — ${daysUntil} day(s) away.${loud ? ` ${loud}` : ''}`);
++    if (daysUntil < 0) warnings.push(`PASSED: ${label} was ${date} (${-daysUntil} day(s) ago) — confirm what happened.${type === 'hearing' ? ` ${KEY_DATE_TYPES.hearing.loud}` : ''}`);
++    keyDates.push({ label, date, type, loud, days_until: daysUntil, urgent });
++  }
++  keyDates.sort((a, b) => a.days_until - b.days_until || a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
++  const upcoming = keyDates.find((k) => k.days_until >= 0);
++  const next_action = upcoming
++    ? { label: upcoming.label, date: upcoming.date, days_until: upcoming.days_until, type: upcoming.type, action: KEY_DATE_TYPES[upcoming.type].action }
++    : null;
++
++  // ---- referral: out-of-scope cases and complexity are never scored ----
+   const complexity = facts.complexity ?? [];
+   const referralReasons = [];
+   if (template.outOfScope) referralReasons.push({ id: 'out_of_scope_case_type', label: REFERRAL_FACTORS.out_of_scope_case_type });
+@@ -177,70 +457,123 @@ export function readCase(facts, config = {}) {
+     if (!label) { warnings.push(`Unknown complexity factor "${c}" included verbatim; not mapped in the referral library.`); referralReasons.push({ id: c, label: `Reported complexity: ${c} (unmapped).` }); continue; }
+     referralReasons.push({ id: c, label });
+   }
++  if (keyDates.some((k) => k.type === 'hearing' && k.days_until < 0) && !referralReasons.some((x) => x.id === 'missed_hearing')) {
++    referralReasons.push({ id: 'missed_hearing', label: `${REFERRAL_FACTORS.missed_hearing} (Detected: a hearing date in key_dates has already passed.)` });
++  }
+ 
+   // ---- checklist ----------------------------------------------------------
+   const docs = facts.documents ?? {};
+   const checklist = [];
+   for (const group of [{ list: template.required, required: true }, { list: template.optional ?? [], required: false }]) {
+     for (const d of group.list) {
+-      const { status, detail } = documentStatus(docs[d.id] ?? {}, today, config);
++      const docFacts = docs[d.id] ?? {};
++      let status, detail;
++      if (docFacts.present && flagsDoc(d.id, docFacts)) {
++        status = 'uncertain';
++        detail = 'On file but flagged uncertain during capture — verify manually before relying on this.';
++      } else {
++        ({ status, detail } = documentStatus(docFacts, today, config));
++      }
+       checklist.push({ id: d.id, label: d.label, required: group.required, note: d.note ?? '', status, detail });
+     }
+   }
++  const hasUncertain = checklist.some((c) => c.status === 'uncertain');
++  for (const c of checklist) {
++    if (c.status === 'uncertain') warnings.push(`UNCERTAIN: ${c.label} — extraction was not confident; verify before relying on this checklist.`);
++  }
++  for (const u of uncertainNotes) {
++    if (!checklist.some((c) => u.includes(c.id))) warnings.push(`UNCERTAIN (capture note): ${u}`);
++  }
+ 
+   const requiredItems = checklist.filter((c) => c.required);
+   const okStatuses = requiredItems.filter((c) => c.status === 'present' || c.status === 'expiring_soon');
+-  const notReady = requiredItems.filter((c) => c.status === 'missing' || c.status === 'expired')
++  const notReady = requiredItems.filter((c) => c.status === 'missing' || c.status === 'expired' || c.status === 'uncertain')
+     .map((c) => ({ id: c.id, label: c.label, status: c.status }));
+   const score = requiredItems.length ? Math.round((okStatuses.length / requiredItems.length) * 100) : 0;
+   if (template.outOfScope) warnings.push('Readiness score is not computed for out-of-scope case types; this case must be referred.');
+ 
+-  // ---- key dates ----------------------------------------------------------
+-  const keyDates = [];
+-  for (const [label, date] of Object.entries(facts.key_dates ?? {})) {
+-    if (!ISO.test(date)) throw new Error(`key_dates.${label} must be an ISO date, got ${JSON.stringify(date)}`);
+-    const daysUntil = diffDays(date, today);
+-    const urgent = daysUntil >= 0 && daysUntil <= urgentDays;
+-    if (urgent) warnings.push(`URGENT: ${label} on ${date} — ${daysUntil} day(s) away.`);
+-    if (daysUntil < 0) warnings.push(`PASSED: ${label} was ${date} (${-daysUntil} day(s) ago) — confirm what happened.`);
+-    keyDates.push({ label, date, days_until: daysUntil, urgent });
+-  }
+-
+   // ---- plain-language summary ----------------------------------------------
+   const summary = [];
+   summary.push(`Case type: ${template.label}. Checklist checked against ${today}.`);
+   if (!template.outOfScope) {
+     summary.push(`${okStatuses.length} of ${requiredItems.length} required documents are on file and valid — readiness ${score}%.`);
+-    if (notReady.length) summary.push(`Still needed or expired: ${notReady.map((n) => `${n.label} (${n.status})`).join('; ')}.`);
++    if (notReady.length) summary.push(`Still needed, expired, or uncertain: ${notReady.map((n) => `${n.label} (${n.status})`).join('; ')}.`);
+   }
++  if (hasUncertain) summary.push('At least one document was flagged uncertain during capture — verify it before relying on this checklist.');
+   for (const k of keyDates) summary.push(`${k.label}: ${k.date}${k.days_until >= 0 ? ` — ${k.days_until} day(s) from now` : ` — ${-k.days_until} day(s) ago`}${k.urgent ? ' (URGENT)' : ''}.`);
++  if (next_action) summary.push(`Next action: ${next_action.label} on ${next_action.date} (${next_action.days_until} day(s) away) — ${next_action.action}`);
+   if (referralReasons.length) summary.push('This case should be referred to an accredited attorney or accredited representative before anything is filed.');
+   summary.push('This checklist is not legal advice.');
+ 
+   return {
+     case_type: caseType, case_label: template.label, today,
+-    checklist, readiness: { score, ready_count: okStatuses.length, required_count: requiredItems.length, not_ready: notReady },
+-    key_dates: keyDates,
++    checklist, readiness: { score, ready_count: okStatuses.length, required_count: requiredItems.length, has_uncertain: hasUncertain, not_ready: notReady },
++    key_dates: keyDates, next_action,
+     referral: { flag: referralReasons.length > 0, reasons: referralReasons },
+     summary, warnings,
+   };
+ }
+ 
++/* ------------------------------------------------------------------ *
++ * Markdown export (bilingual EN/ES)
++ * ------------------------------------------------------------------ */
++
+ /**
+- * Markdown checklist export.
++ * Export strings. The Spanish rendering is an unofficial translation
++ * (marked as such in the footer) — it needs native review before
++ * community use.
++ */
++const I18N = Object.freeze({
++  en: Object.freeze({
++    title: 'Immigration document checklist',
++    asOf: 'Checked as of', readiness: 'Readiness', requiredValid: 'required valid',
++    referralHead: '**REFERRAL RECOMMENDED**',
++    requiredDocs: 'Required documents', ifApplicable: 'If applicable',
++    keyDates: 'Key dates', nextAction: 'Next action',
++    warnings: 'Warnings', note: 'note',
++    daysAway: (n) => `${n} day(s) away`, daysAgo: (n) => `${n} day(s) ago`,
++    footer: '_Deterministic output of the open immigration-papers-reader. Checklists are configurable rules-as-data and change with USCIS/EOIR practice; not legal advice._',
++  }),
++  es: Object.freeze({
++    title: 'Lista de verificación de documentos de inmigración',
++    asOf: 'Verificado al', readiness: 'Preparación', requiredValid: 'requeridos válidos',
++    referralHead: '**SE RECOMIENDA DERIVACIÓN**',
++    requiredDocs: 'Documentos requeridos', ifApplicable: 'Si aplica',
++    keyDates: 'Fechas clave', nextAction: 'Próxima acción',
++    warnings: 'Advertencias', note: 'nota',
++    daysAway: (n) => `en ${n} día(s)`, daysAgo: (n) => `hace ${n} día(s)`,
++    footer: '_Salida determinista del immigration-papers-reader abierto. Las listas de verificación son datos configurables y cambian con la práctica de USCIS/EOIR; traducción no oficial; no es asesoría legal._',
++  }),
++});
++
++/**
++ * Markdown checklist export (bilingual).
+  * @param {ReturnType<readCase>} r
++ * @param {{lang?: 'en'|'es'}} [options]
+  */
+-export function exportChecklistMd(r) {
++export function exportChecklistMd(r, options = {}) {
++  const lang = options.lang ?? 'en';
++  const s = I18N[lang];
++  if (!s) throw new Error(`lang must be one of ${Object.keys(I18N).join(', ')}; got ${JSON.stringify(lang)}`);
+   const L = [];
+-  L.push(`# Immigration document checklist — ${r.case_label}`, '',
+-    `Checked as of ${r.today}. Readiness: **${r.readiness.score}%** (${r.readiness.ready_count}/${r.readiness.required_count} required valid).`, '');
+-  if (r.referral.flag) { L.push('> **REFERRAL RECOMMENDED**', ''); for (const x of r.referral.reasons) L.push(`> - ${x.label}`); L.push(''); }
+-  L.push('## Required documents', '');
+-  for (const c of r.checklist.filter((x) => x.required)) L.push(`- [${c.status === 'present' || c.status === 'expiring_soon' ? 'x' : ' '}] **${c.label}** — ${c.status}: ${c.detail}${c.note ? ` (note: ${c.note})` : ''}`);
++  L.push(`# ${s.title} — ${r.case_label}`, '',
++    `${s.asOf} ${r.today}. ${s.readiness}: **${r.readiness.score}%** (${r.readiness.ready_count}/${r.readiness.required_count} ${s.requiredValid}).`, '');
++  if (r.referral.flag) { L.push(`> ${s.referralHead}`, '', ...r.referral.reasons.map((x) => `> - ${x.label}`), ''); }
++  L.push(`## ${s.requiredDocs}`, '');
++  for (const c of r.checklist.filter((x) => x.required)) {
++    const done = c.status === 'present' || c.status === 'expiring_soon';
++    L.push(`- [${done ? 'x' : ' '}] **${c.label}** — ${c.status}: ${c.detail}${c.note ? ` (${s.note}: ${c.note})` : ''}`);
++  }
+   const opt = r.checklist.filter((x) => !x.required);
+-  if (opt.length) { L.push('', '## If applicable', ''); for (const c of opt) L.push(`- [ ] ${c.label} — ${c.status}`); }
+-  if (r.key_dates.length) { L.push('', '## Key dates', ''); for (const k of r.key_dates) L.push(`- ${k.label}: **${k.date}** (${k.days_until >= 0 ? `${k.days_until} day(s) away${k.urgent ? ' — URGENT' : ''}` : `${-k.days_until} day(s) ago`})`); }
+-  if (r.warnings.length) { L.push('', '## Warnings', ''); for (const w of r.warnings) L.push(`- ⚠ ${w}`); }
+-  L.push('', '---', '', '_Deterministic output of the open immigration-papers-reader. Checklists are configurable rules-as-data and change with USCIS/EOIR practice; not legal advice._');
++  if (opt.length) { L.push('', `## ${s.ifApplicable}`, ''); for (const c of opt) L.push(`- [ ] ${c.label} — ${c.status}`); }
++  if (r.key_dates.length) {
++    L.push('', `## ${s.keyDates}`, '');
++    for (const k of r.key_dates) {
++      L.push(`- ${k.label}: **${k.date}** (${k.days_until >= 0 ? `${s.daysAway(k.days_until)}${k.urgent ? ' — URGENT' : ''}` : s.daysAgo(-k.days_until)})${k.type !== 'other' ? ` — ${KEY_DATE_TYPES[k.type].label}` : ''}`);
++    }
++  }
++  if (r.next_action) L.push('', `**${s.nextAction}:** ${r.next_action.label} — ${r.next_action.date} (${s.daysAway(r.next_action.days_until)}) — ${r.next_action.action}`);
++  if (r.warnings.length) { L.push('', `## ${s.warnings}`, ''); for (const w of r.warnings) L.push(`- ⚠ ${w}`); }
++  L.push('', '---', '', s.footer);
+   return L.join('\n');
+ }
+diff --git a/open-artifacts/immigration-papers-reader/core/core.test.js b/open-artifacts/immigration-papers-reader/core/core.test.js
+index 1914bec..277c8a4 100644
+--- a/open-artifacts/immigration-papers-reader/core/core.test.js
++++ b/open-artifacts/immigration-papers-reader/core/core.test.js
+@@ -1,10 +1,22 @@
+ /** Tests for immigration-papers-reader core. Run: node --test "core/*.test.js" */
+ import { test, describe } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { readCase, documentStatus, exportChecklistMd, CASE_TYPES, REFERRAL_FACTORS, diffDays } from './core.js';
++import {
++  readCase, documentStatus, exportChecklistMd, parseNotice,
++  CASE_TYPES, REFERRAL_FACTORS, NOTICE_TEMPLATES, diffDays,
++} from './core.js';
+ 
+ const TODAY = '2026-11-07';
+ 
++const BASE = {
++  case_type: 'naturalization', today: TODAY,
++  documents: {
++    green_card: { present: true, expiry_date: '2029-04-01' },
++    n400_receipt: { present: true },
++    tax_returns: { present: true },
++  },
++};
++
+ describe('rules-as-data integrity', () => {
+   test('every in-scope case type has required docs with ids and labels', () => {
+     for (const [key, t] of Object.entries(CASE_TYPES)) {
+@@ -16,6 +28,14 @@ describe('rules-as-data integrity', () => {
+   test('removal defense is out of scope', () => {
+     assert.equal(CASE_TYPES.removal_defense.outOfScope, true);
+   });
++  test('tps and u_visa ship as data with >=3 required docs each', () => {
++    for (const key of ['tps', 'u_visa']) {
++      assert.ok(CASE_TYPES[key], key);
++      assert.equal(CASE_TYPES[key].outOfScope, undefined);
++      assert.ok(CASE_TYPES[key].required.length >= 3, key);
++      for (const d of CASE_TYPES[key].required) assert.ok(d.id && d.label, `${key}.${d.id}`);
++    }
++  });
+ });
+ 
+ describe('documentStatus date math', () => {
+@@ -36,7 +56,7 @@ describe('documentStatus date math', () => {
+   });
+   test('window is configurable', () => {
+     assert.equal(documentStatus({ present: true, expiry_date: '2026-11-20' }, TODAY, { expiringSoonDays: 15 }).status, 'expiring_soon'); // 13d
+-    assert.equal(documentStatus({ present: true, expiry_date: '2026-11-20' }, TODAY, { expiringSoonDays: 10 }).status, 'present');
++    assert.equal(documentStatus({ present: true, expiry_date: '2026-11-20' }, TODAY, { expiringSoonDays: 10 }).status, 'present'); // 13d
+   });
+   test('malformed dates throw', () => {
+     assert.throws(() => documentStatus({ present: true, expiry_date: 'soon' }, TODAY), /ISO/);
+@@ -44,36 +64,109 @@ describe('documentStatus date math', () => {
+   });
+ });
+ 
++describe('parseNotice (deterministic paperwork parser)', () => {
++  const I797C = [
++    'U.S. Citizenship and Immigration Services (fictional sample)',
++    'Form I-797C, Notice of Action',
++    'Receipt Number: LIN2609012345',
++    'Notice Date: October 31, 2026',
++    'Notice Type: Receipt Confirmation',
++    'Application Type: FORM I-140, Immigrant Petition for Alien Worker',
++  ].join('\n');
++
++  test('fictional I-797C text → exact facts, byte-identical across runs', () => {
++    const p = parseNotice(I797C);
++    assert.equal(p.matched, true);
++    assert.equal(p.form_type, 'i797c');
++    assert.deepEqual(p.facts.documents, { i140_notice: { present: true } });
++    assert.deepEqual(p.facts.key_dates, { 'Notice date (I-797C)': { date: '2026-10-31', type: 'other' } });
++    assert.deepEqual(p.facts.uncertain, []);
++    assert.deepEqual(parseNotice(I797C), p); // determinism: same input, identical output object
++  });
++  test('unreadable date lands in uncertain — never guessed', () => {
++    const p = parseNotice(I797C.replace('October 31, 2026', 'ILLEGIBLE SMEAR'));
++    assert.equal(p.matched, true);
++    assert.equal(p.facts.key_dates['Notice date (I-797C)'], undefined);
++    assert.ok(p.facts.uncertain.some((u) => /notice date/i.test(u) && /unreadable/i.test(u)));
++  });
++  test('NTA → typed hearing key date + removal-proceedings referral complexity', () => {
++    const NTA = [
++      'EXECUTIVE OFFICE FOR IMMIGRATION REVIEW (fictional sample)',
++      'Notice to Appear',
++      'You are ordered to appear before an immigration judge on 12/15/2026 at 9:00 AM.',
++    ].join('\n');
++    const p = parseNotice(NTA);
++    assert.equal(p.form_type, 'nta');
++    assert.deepEqual(p.facts.key_dates, { 'Immigration court hearing (NTA)': { date: '2026-12-15', type: 'hearing' } });
++    assert.deepEqual(p.facts.complexity, ['removal_proceedings']);
++    assert.deepEqual(p.facts.documents, {});
++  });
++  test('EAD card → ead_card present with parsed expiry', () => {
++    const EAD = [
++      'DHS / USCIS (fictional sample)',
++      'Form I-766, Employment Authorization Card',
++      'Card Expires: 03/14/2028',
++    ].join('\n');
++    const p = parseNotice(EAD);
++    assert.equal(p.form_type, 'ead');
++    assert.deepEqual(p.facts.documents, { ead_card: { present: true, expiry_date: '2028-03-14' } });
++    assert.deepEqual(p.facts.key_dates, {});
++  });
++  test('biometrics appointment (an I-797C variant) and I-693 parse without guessing validity', () => {
++    const BIO = [
++      'USCIS (fictional sample)',
++      'Form I-797C, Notice of Action',
++      'Application Support Center — Biometrics Appointment',
++      'Appointment Date: November 24, 2026',
++    ].join('\n');
++    const b = parseNotice(BIO);
++    assert.equal(b.form_type, 'biometrics'); // biometrics wins over generic I-797C
++    assert.deepEqual(b.facts.documents, { biometrics_notice: { present: true } });
++    assert.deepEqual(b.facts.key_dates, { 'Biometrics appointment': { date: '2026-11-24', type: 'other' } });
++    const MED = 'USCIS (fictional sample)\nForm I-693, Report of Immigration Medical Examination and Vaccination Record';
++    const m = parseNotice(MED);
++    assert.equal(m.form_type, 'i693');
++    assert.deepEqual(m.facts.documents, { i693_medical: { present: true } }); // no guessed validity window
++  });
++  test('unrecognized text → matched false, uncertain, no guessed facts', () => {
++    const p = parseNotice('grocery list: eggs, milk, tortillas');
++    assert.equal(p.matched, false);
++    assert.equal(p.form_type, null);
++    assert.ok(p.facts.uncertain.length >= 1);
++    assert.deepEqual(p.facts.documents, {});
++    assert.deepEqual(p.facts.key_dates, {});
++  });
++  test('every extracted value is traceable to a named template rule', () => {
++    const p = parseNotice(I797C);
++    assert.ok(p.extraction_log.some((e) => e.template === 'i797c' && e.field === 'notice_date' && e.value === '2026-10-31'));
++    assert.ok(p.extraction_log.some((e) => e.field === 'document:i140_notice'));
++    for (const e of p.extraction_log) assert.ok(NOTICE_TEMPLATES[e.template], e.template);
++  });
++});
++
+ describe('readCase', () => {
+-  const base = {
+-    case_type: 'naturalization', today: TODAY,
+-    documents: {
+-      green_card: { present: true, expiry_date: '2029-04-01' },
+-      n400_receipt: { present: true },
+-      tax_returns: { present: true },
+-    },
+-  };
+   test('readiness counts only valid required docs; selective service missing', () => {
+-    const r = readCase(base);
++    const r = readCase(BASE);
+     assert.equal(r.readiness.required_count, 4);
+     assert.equal(r.readiness.ready_count, 3);
+     assert.equal(r.readiness.score, 75);
+     assert.ok(r.readiness.not_ready.some((n) => n.id === 'selective_service' && n.status === 'missing'));
+     assert.equal(r.referral.flag, false);
++    assert.equal(r.readiness.has_uncertain, false);
+   });
+   test('expired required doc counts against readiness and lands in not_ready', () => {
+-    const r = readCase({ ...base, documents: { ...base.documents, green_card: { present: true, expiry_date: '2025-01-01' } } });
++    const r = readCase({ ...BASE, documents: { ...BASE.documents, green_card: { present: true, expiry_date: '2025-01-01' } } });
+     assert.equal(r.readiness.ready_count, 2);
+     assert.ok(r.readiness.not_ready.some((n) => n.status === 'expired'));
+   });
+   test('complexity factors trigger referral with mapped labels', () => {
+-    const r = readCase({ ...base, complexity: ['criminal_history', 'prior_denial'] });
++    const r = readCase({ ...BASE, complexity: ['criminal_history', 'prior_denial'] });
+     assert.equal(r.referral.flag, true);
+     assert.deepEqual(r.referral.reasons.map((x) => x.id), ['criminal_history', 'prior_denial']);
+     assert.ok(r.summary.some((s) => /referred/.test(s)));
+   });
+   test('unknown complexity factor warns but still refers', () => {
+-    const r = readCase({ ...base, complexity: ['something_new'] });
++    const r = readCase({ ...BASE, complexity: ['something_new'] });
+     assert.equal(r.referral.flag, true);
+     assert.ok(r.warnings.some((w) => /something_new/.test(w)));
+   });
+@@ -84,18 +177,86 @@ describe('readCase', () => {
+     assert.ok(r.warnings.some((w) => /not computed/.test(w)));
+   });
+   test('unknown case type throws', () => {
+-    assert.throws(() => readCase({ case_type: 'deduction' }), /Unknown case_type/);
++    assert.throws(() => readCase({ case_type: 'deduction', today: TODAY }), /Unknown case_type/);
++  });
++  test('missing today throws — readCase never reads the clock', () => {
++    assert.throws(() => readCase({ case_type: 'naturalization' }), /today/);
++    assert.throws(() => readCase({ case_type: 'naturalization', today: null }), /today/);
+   });
+-  test('urgent and passed key dates warn; days_until is exact', () => {
+-    const r = readCase({ ...base, key_dates: { 'Interview (fictional)': '2026-11-12', 'Biometrics': '2026-10-01' } });
+-    assert.equal(r.key_dates[0].days_until, 5);
+-    assert.equal(r.key_dates[0].urgent, true);
+-    assert.equal(r.key_dates[1].days_until, -37);
++  test('urgent and passed key dates warn; days_until exact; sorted soonest-first', () => {
++    const r = readCase({ ...BASE, key_dates: { 'Interview (fictional)': '2026-11-12', 'Biometrics': '2026-10-01' } });
++    assert.deepEqual(r.key_dates.map((k) => k.days_until), [-37, 5]); // ascending days_until
++    assert.equal(r.key_dates[1].urgent, true);
+     assert.ok(r.warnings.some((w) => /URGENT/.test(w)));
+     assert.ok(r.warnings.some((w) => /PASSED/.test(w)));
+   });
+ });
+ 
++describe('readCase uncertain handling (capture honesty)', () => {
++  test('present-but-uncertain doc lowers score, excluded from ready count, warns', () => {
++    const r = readCase({ ...BASE, documents: { ...BASE.documents, tax_returns: { present: true, uncertain: true } } });
++    assert.equal(r.readiness.ready_count, 2);
++    assert.equal(r.readiness.score, 50);
++    assert.equal(r.readiness.has_uncertain, true);
++    assert.equal(r.checklist.find((c) => c.id === 'tax_returns').status, 'uncertain');
++    assert.ok(r.readiness.not_ready.some((n) => n.id === 'tax_returns' && n.status === 'uncertain'));
++    assert.ok(r.warnings.some((w) => /UNCERTAIN/.test(w) && /tax returns/i.test(w)));
++  });
++  test('top-level facts.uncertain entries naming a doc id flag that doc', () => {
++    const r = readCase({
++      ...BASE,
++      documents: { ...BASE.documents, selective_service: { present: true } },
++      uncertain: ['selective_service — registration status unreadable', 'the mailing address block was smudged'],
++    });
++    assert.equal(r.checklist.find((c) => c.id === 'selective_service').status, 'uncertain');
++    assert.equal(r.readiness.ready_count, 3); // selective_service no longer counts as ready
++    assert.ok(r.warnings.some((w) => /mailing address/.test(w))); // unmatched note surfaced verbatim
++  });
++  test('uncertain must be an array of strings', () => {
++    assert.throws(() => readCase({ ...BASE, uncertain: 'green_card unreadable' }), /uncertain/);
++    assert.throws(() => readCase({ ...BASE, uncertain: [42] }), /uncertain/);
++  });
++});
++
++describe('key-date taxonomy', () => {
++  test('typed dates carry type + loud copy, sort by days_until, feed next_action', () => {
++    const r = readCase({
++      ...BASE,
++      key_dates: {
++        'EAD renewal deadline (fictional)': { date: '2026-12-01', type: 'filing_deadline' },
++        'Master calendar hearing (fictional)': { date: '2026-11-18', type: 'hearing' },
++        'Biometrics (fictional)': '2026-10-01',
++      },
++    });
++    assert.deepEqual(r.key_dates.map((k) => k.days_until), [-37, 11, 24]);
++    assert.equal(r.key_dates[1].type, 'hearing');
++    assert.ok(r.key_dates[1].loud.includes('in-absentia'));
++    assert.ok(r.key_dates[2].loud.includes('FILING DEADLINE'));
++    assert.equal(r.next_action.type, 'hearing');
++    assert.equal(r.next_action.date, '2026-11-18');
++    assert.ok(r.next_action.action.length > 10);
++    assert.ok(r.summary.some((s) => /Next action/.test(s)));
++  });
++  test('a hearing date already passed auto-triggers missed_hearing referral', () => {
++    const r = readCase({ ...BASE, key_dates: { 'Master calendar hearing (fictional)': { date: '2026-10-01', type: 'hearing' } } });
++    assert.ok(r.referral.reasons.some((x) => x.id === 'missed_hearing'));
++    assert.equal(r.referral.flag, true);
++    const dup = readCase({ ...BASE, complexity: ['missed_hearing'], key_dates: { 'MCH (fictional)': { date: '2026-10-01', type: 'hearing' } } });
++    assert.equal(dup.referral.reasons.filter((x) => x.id === 'missed_hearing').length, 1); // deduped
++  });
++  test('invalid key-date type or shape throws', () => {
++    assert.throws(() => readCase({ ...BASE, key_dates: { x: { date: '2026-11-18', type: 'party' } } }), /type/);
++    assert.throws(() => readCase({ ...BASE, key_dates: { x: 42 } }), /key_dates/);
++    assert.throws(() => readCase({ ...BASE, key_dates: { x: { date: 'soon', type: 'hearing' } } }), /ISO/);
++  });
++  test('plain ISO string dates remain accepted with type other and empty loud copy', () => {
++    const r = readCase({ ...BASE, key_dates: { 'Interview (fictional)': '2026-11-12' } });
++    assert.equal(r.key_dates[0].type, 'other');
++    assert.equal(r.key_dates[0].loud, '');
++    assert.equal(r.next_action.date, '2026-11-12');
++  });
++});
++
+ describe('exportChecklistMd', () => {
+   test('checklist shows statuses, referral, key dates, disclaimer', () => {
+     const r = readCase({
+@@ -112,3 +273,21 @@ describe('exportChecklistMd', () => {
+     assert.ok(md.includes('not legal advice'));
+   });
+ });
++
++describe('bilingual export (EN/ES)', () => {
++  test('es export uses Spanish headings and unofficial-translation disclaimer', () => {
++    const r = readCase({ ...BASE, complexity: ['prior_denial'], key_dates: { 'Interview (fictional)': { date: '2026-11-12', type: 'hearing' } } });
++    const md = exportChecklistMd(r, { lang: 'es' });
++    assert.ok(md.includes('## Documentos requeridos'));
++    assert.ok(md.includes('Fechas clave'));
++    assert.ok(md.includes('Advertencias'));
++    assert.ok(md.includes('SE RECOMIENDA DERIVACIÓN'));
++    assert.ok(md.includes('no oficial'));
++    assert.ok(/no es asesoría legal/i.test(md));
++    assert.ok(!md.includes('## Required documents'));
++  });
++  test('default is english; unknown lang throws', () => {
++    assert.ok(exportChecklistMd(readCase(BASE)).includes('## Required documents'));
++    assert.throws(() => exportChecklistMd(readCase(BASE), { lang: 'fr' }), /lang/);
++  });
++});
+diff --git a/open-artifacts/immigration-papers-reader/demo/index.html b/open-artifacts/immigration-papers-reader/demo/index.html
+index d8594b7..c5a2360 100644
+--- a/open-artifacts/immigration-papers-reader/demo/index.html
++++ b/open-artifacts/immigration-papers-reader/demo/index.html
+@@ -28,6 +28,7 @@
+   .st.present { background: var(--flag-tint); }
+   .st.missing, .st.expired { border: 1px solid var(--bad); color: var(--bad); background: transparent; }
+   .st.expiring_soon { background: var(--border); }
++  .st.uncertain { background: var(--accent); }
+   .muted { color: var(--text-secondary); font-size: 13px; }
+   .warn { border: var(--hairline); padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+   .summary { background: #fff; border: var(--hairline); padding: 12px; font-size: 14px; }
+@@ -46,13 +47,17 @@
+     <div class="sec">Case facts JSON (editable)</div>
+     <textarea id="input" spellcheck="false"></textarea>
+     <button id="run">Read case →</button>
++    <div class="sec">Paste a notice (fictional) → deterministic parse</div>
++    <textarea id="notice" spellcheck="false" style="min-height:130px"></textarea>
++    <button id="parse">Parse notice → merge into facts</button>
++    <div id="parseOut" class="muted"></div>
+     <div id="err" class="err"></div>
+   </section>
+   <section id="out" aria-live="polite"></section>
+ </main></div>
+ 
+ <script type="module">
+-import { readCase, exportChecklistMd } from '../core/core.js';
++import { readCase, exportChecklistMd, parseNotice } from '../core/core.js';
+ 
+ const SAMPLE = {
+   case_type: "employment_based",
+@@ -72,6 +77,15 @@ const SAMPLE = {
+ 
+ const $ = (id) => document.getElementById(id);
+ $('input').value = JSON.stringify(SAMPLE, null, 2);
++$('notice').value = [
++  'U.S. Citizenship and Immigration Services (fictional sample)',
++  'Form I-797C, Notice of Action',
++  'Application Support Center — Biometrics Appointment Notice',
++  'Application Type: FORM I-140, Immigrant Petition for Alien Worker',
++  'Appointment Date: November 24, 2026',
++  'Time: 9:00 AM',
++  'Please bring this notice and photo identification.',
++].join('\n');
+ function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+ 
+ function render(r) {
+@@ -85,20 +99,42 @@ function render(r) {
+   h += `<div class="sec">Required documents</div><ul>`;
+   for (const c of r.checklist.filter((x) => x.required)) h += `<li><span class="st ${c.status}">${c.status}</span><strong>${esc(c.label)}</strong><br><span class="muted">${esc(c.detail)}</span></li>`;
+   h += `</ul>`;
++  if (r.next_action) h += `<div class="warn">→ <strong>Next action:</strong> ${esc(r.next_action.label)} — ${esc(r.next_action.date)} (${r.next_action.days_until} day(s) away) — ${esc(r.next_action.action)}</div>`;
+   if (r.key_dates.length) {
+     h += `<div class="sec">Key dates</div><ul>`;
+-    for (const k of r.key_dates) h += `<li><strong>${esc(k.label)}: ${esc(k.date)}</strong> <span class="muted">— ${k.days_until >= 0 ? `${k.days_until} day(s) away${k.urgent ? ' · URGENT' : ''}` : `${-k.days_until} day(s) ago`}</span></li>`;
++    for (const k of r.key_dates) h += `<li><strong>${esc(k.label)}: ${esc(k.date)}</strong> <span class="muted">— ${k.days_until >= 0 ? `${k.days_until} day(s) away${k.urgent ? ' · URGENT' : ''}` : `${-k.days_until} day(s) ago`} · ${esc(k.type)}</span></li>`;
+     h += `</ul>`;
+   }
+   if (r.warnings.length) { h += `<div class="sec">Warnings</div>`; for (const w of r.warnings) h += `<div class="warn">⚠ ${esc(w)}</div>`; }
+   h += `<div class="sec">Plain-language summary</div><div class="summary">${r.summary.map((s) => `<p>${esc(s)}</p>`).join('')}</div>
+-    <div class="sec">Checklist export</div><textarea readonly style="min-height:160px">${esc(exportChecklistMd(r))}</textarea>`;
++    <div class="sec">Checklist export <select id="lang"><option value="en">EN</option><option value="es">ES</option></select> <span class="muted">(ES = unofficial translation)</span></div><textarea readonly style="min-height:160px">${esc(exportChecklistMd(r, { lang: 'en' }))}</textarea>`;
+   $('out').innerHTML = h;
++  $('lang').addEventListener('change', () => {
++    document.querySelector('#out textarea').value = exportChecklistMd(r, { lang: $('lang').value });
++  });
+ }
+ $('run').addEventListener('click', () => {
+   $('err').textContent = '';
+   try { render(readCase(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
+ });
++$('parse').addEventListener('click', () => {
++  $('err').textContent = '';
++  try {
++    const p = parseNotice($('notice').value);
++    const facts = JSON.parse($('input').value);
++    facts.documents = { ...(facts.documents ?? {}), ...p.facts.documents };
++    facts.key_dates = { ...(facts.key_dates ?? {}), ...p.facts.key_dates };
++    facts.complexity = [...new Set([...(facts.complexity ?? []), ...p.facts.complexity])];
++    facts.uncertain = [...new Set([...(facts.uncertain ?? []), ...p.facts.uncertain])];
++    $('input').value = JSON.stringify(facts, null, 2);
++    $('parseOut').innerHTML = p.matched
++      ? `<strong>${esc(p.form_label)}</strong> — extracted ${p.extraction_log.length} field(s):` +
++        p.extraction_log.map((e) => `<br>· <code>${esc(e.template)}.${esc(e.field)} = ${esc(e.value)}</code>`).join('') +
++        (p.facts.uncertain.length ? `<br>⚠ uncertain: ${p.facts.uncertain.map(esc).join(' · ')}` : '')
++      : `⚠ ${esc(p.facts.uncertain[0] ?? 'No match')}`;
++    render(readCase(facts));
++  } catch (e) { $('err').textContent = String(e.message ?? e); }
++});
+ render(readCase(SAMPLE));
+ </script>
+ </body>
+diff --git a/open-artifacts/immigration-papers-reader/examples/checklist.md b/open-artifacts/immigration-papers-reader/examples/checklist.md
+index c7a9656..bb1320e 100644
+--- a/open-artifacts/immigration-papers-reader/examples/checklist.md
++++ b/open-artifacts/immigration-papers-reader/examples/checklist.md
+@@ -21,7 +21,9 @@ Checked as of 2026-11-07. Readiness: **100%** (5/5 required valid).
+ ## Key dates
+ 
+ - I-485 interview (fictional): **2026-11-18** (11 day(s) away — URGENT)
+-- EAD renewal deadline (fictional): **2026-12-01** (24 day(s) away)
++- EAD renewal deadline (fictional): **2026-12-01** (24 day(s) away) — Filing deadline
++
++**Next action:** I-485 interview (fictional) — 2026-11-18 (11 day(s) away) — Confirm what this date requires and act before it passes.
+ 
+ ## Warnings
+ 
+diff --git a/open-artifacts/immigration-papers-reader/examples/input.json b/open-artifacts/immigration-papers-reader/examples/input.json
+index 03d2779..e7d84d6 100644
+--- a/open-artifacts/immigration-papers-reader/examples/input.json
++++ b/open-artifacts/immigration-papers-reader/examples/input.json
+@@ -15,8 +15,8 @@
+     "tax_returns": { "present": false }
+   },
+   "key_dates": {
+-    "I-485 interview (fictional)": "2026-11-18",
+-    "EAD renewal deadline (fictional)": "2026-12-01"
++    "I-485 interview (fictional)": { "date": "2026-11-18", "type": "other" },
++    "EAD renewal deadline (fictional)": { "date": "2026-12-01", "type": "filing_deadline" }
+   },
+   "complexity": ["prior_denial"]
+ }
+diff --git a/open-artifacts/immigration-papers-reader/examples/output.json b/open-artifacts/immigration-papers-reader/examples/output.json
+index 7b7c3bc..8a6a291 100644
+--- a/open-artifacts/immigration-papers-reader/examples/output.json
++++ b/open-artifacts/immigration-papers-reader/examples/output.json
+@@ -56,22 +56,34 @@
+     "score": 100,
+     "ready_count": 5,
+     "required_count": 5,
++    "has_uncertain": false,
+     "not_ready": []
+   },
+   "key_dates": [
+     {
+       "label": "I-485 interview (fictional)",
+       "date": "2026-11-18",
++      "type": "other",
++      "loud": "",
+       "days_until": 11,
+       "urgent": true
+     },
+     {
+       "label": "EAD renewal deadline (fictional)",
+       "date": "2026-12-01",
++      "type": "filing_deadline",
++      "loud": "FILING DEADLINE — missing it can forfeit the benefit or the chance to respond.",
+       "days_until": 24,
+       "urgent": false
+     }
+   ],
++  "next_action": {
++    "label": "I-485 interview (fictional)",
++    "date": "2026-11-18",
++    "days_until": 11,
++    "type": "other",
++    "action": "Confirm what this date requires and act before it passes."
++  },
+   "referral": {
+     "flag": true,
+     "reasons": [
+@@ -86,6 +98,7 @@
+     "5 of 5 required documents are on file and valid — readiness 100%.",
+     "I-485 interview (fictional): 2026-11-18 — 11 day(s) from now (URGENT).",
+     "EAD renewal deadline (fictional): 2026-12-01 — 24 day(s) from now.",
++    "Next action: I-485 interview (fictional) on 2026-11-18 (11 day(s) away) — Confirm what this date requires and act before it passes.",
+     "This case should be referred to an accredited attorney or accredited representative before anything is filed.",
+     "This checklist is not legal advice."
+   ],
+diff --git a/open-artifacts/immigration-papers-reader/spec.md b/open-artifacts/immigration-papers-reader/spec.md
+index 93d1632..f507397 100644
+--- a/open-artifacts/immigration-papers-reader/spec.md
++++ b/open-artifacts/immigration-papers-reader/spec.md
+@@ -2,54 +2,78 @@
+ 
+ Open counterpart of Mobile Pathways' "immigration papers reader" (Claude for
+ Legal partner gallery; catalog §3.6). The closed tool reads paperwork and
+-summarizes; this artifact keeps the safety-critical parts — checklists,
+-date math, readiness, referral — deterministic and auditable.
++summarizes; this artifact keeps the safety-critical parts — extraction,
++checklists, date math, readiness, referral — deterministic and auditable.
+ 
+ ## What it does
+ 
+-Input case-type facts JSON; get, deterministically:
++Input paperwork text and/or case-type facts JSON; get, deterministically:
+ 
++- **Notice parsing** (`parseNotice`): per-form rules-as-data templates
++  (I-797C receipt/action, Notice to Appear, EAD I-766 card, I-693 medical
++  report, ASC biometrics appointment — checked most-specific-first since
++  biometrics notices are themselves I-797Cs) turn notice text into a facts
++  fragment: documents, typed key dates, referral complexity, and an
++  extraction log naming the template rule behind every value. Unreadable
++  dates or unmatched text land in `uncertain` — never guessed.
+ - **Required-documents checklist** per case type from rules-as-data
+-  (US-context defaults: family-based, employment-based, affirmative
+-  asylum, naturalization; removal defense is deliberately out of scope);
++  (US-context defaults: family-based, employment-based, affirmative asylum,
++  naturalization, TPS, U-visa; removal defense is deliberately out of
++  scope);
+ - **Per-document status** with exact date math — `missing` / `present` /
+   `expiring_soon` (default ≤180 days, configurable) / `expired`
+-  (past-or-today expiry);
++  (past-or-today expiry) / `uncertain` (flagged by capture; excluded from
++  the ready count, surfaced with a warning);
+ - **Readiness score** = valid required documents ÷ required total (expired
+-  counts against; optional documents never count);
+-- **Key-date surfacing** with days-until, urgent (≤14 days) and
+-  already-passed warnings — a missed hearing date is the failure mode this
+-  exists to prevent, so it is loud, never buried;
++  and uncertain count against; optional documents never count);
++  `readiness.has_uncertain` reports capture honesty at a glance;
++- **Key-date taxonomy** — each date is `hearing | filing_deadline | expiry |
++  other` (plain ISO strings still accepted, typed `other`). Per-type loud
++  copy (a hearing warns about in-absentia orders), sorted by days-until,
++  and a `next_action` entry for the soonest upcoming date. A `hearing` date
++  that already passed auto-triggers the missed-hearing referral;
+ - **Referral flag** when complexity exceeds tool scope (criminal history,
+   prior removal order, missed hearing, prior denial, detention, unlawful
+-  presence, or an out-of-scope case type) — the tool refers instead of
+-  squeezing the case through;
+-- **Plain-language summary** lines + Markdown checklist export.
++  presence, removal proceedings — e.g. a parsed Notice to Appear — or an
++  out-of-scope case type) — the tool refers instead of squeezing the case
++  through;
++- **Plain-language summary** lines + bilingual Markdown checklist export
++  (`exportChecklistMd(r, { lang: 'en' | 'es' })`; the Spanish rendering is
++  an unofficial translation, marked as such in its footer).
++
++Determinism contract: `facts.today` is required — the core never reads the
++clock, so the same paperwork yields a byte-identical first read on every
++run.
+ 
+ ## IO contract
+ 
+ ```js
+-import { readCase, exportChecklistMd } from './core/core.js';
++import { parseNotice, readCase, exportChecklistMd } from './core/core.js';
++const parsed = parseNotice(noticeText);            // deterministic extraction
+ const result = readCase({
+   case_type: 'employment_based', today: '2026-11-07',
+   documents: { i693_medical: { present: true, expiry_date: '2027-01-30' }, ... },
+   complexity: ['prior_denial'],
+-  key_dates: { 'I-485 interview': '2026-11-18' },
++  key_dates: { 'I-485 interview': { date: '2026-11-18', type: 'other' } },
++  uncertain: parsed.facts.uncertain,               // capture honesty carried through
++  ...parsed.facts,                                 // merge parsed documents/key_dates
+ });
+-exportChecklistMd(result);
++exportChecklistMd(result, { lang: 'es' });         // 'en' by default
+ ```
+ 
+-Errors (thrown): unknown case type; malformed dates (today, expiry_date,
+-key_dates values). Warnings (not errors): unmapped complexity factors,
+-urgent/passed dates, out-of-scope scoring notice.
++Errors (thrown): unknown case type; missing or malformed `today` (the clock
++is never read); malformed dates (expiry_date, key_dates values); unknown
++key-date type; non-array `facts.uncertain`; unknown export lang. Warnings
++(not errors): unmapped complexity factors, urgent/passed dates, uncertain
++documents and capture notes, out-of-scope scoring notice.
+ 
+ ## Deterministic vs LLM-assisted
+ 
+ | Part | Owner |
+ |---|---|
+-| Checklist templates, referral factors, expiring-soon window | rules-as-data in `core/core.js` |
+-| Date math, readiness, referral logic, summary, exports | deterministic code |
+-| Reading scanned forms/notices (I-797s, hearing notices) into the facts JSON | LLM-assisted (optional capture step) |
++| Notice templates, checklist templates, referral factors, key-date taxonomy, expiring-soon window, export strings | rules-as-data in `core/core.js` |
++| Date math, parsing, readiness, referral logic, summary, exports | deterministic code |
++| Scanned images / OCR of real forms, and form types without a template | outside the core — parseNotice returns `uncertain`, and an LLM (optional) can help transcribe, but its output must re-enter through the same JSON and uncertainty rules |
+ 
+ ### LLM prompt schema (optional capture step)
+ 
+@@ -59,31 +83,41 @@ what the document states. Dates must be ISO YYYY-MM-DD. If a date or status
+ is unreadable, use null and add it to "uncertain" — never guess a date; a
+ guessed hearing date is worse than a missing one. Schema:
+ { "case_type": "family_based"|"employment_based"|"asylum_affirmative"|
+-"naturalization"|"removal_defense"|null,
+-  "documents": { "<doc_id>": { "present": true, "expiry_date": "YYYY-MM-DD"|null } },
+-  "key_dates": { "<label>": "YYYY-MM-DD" }, "uncertain": ["..."] }.
++"naturalization"|"tps"|"u_visa"|"removal_defense"|null,
++  "documents": { "<doc_id>": { "present": true, "expiry_date": "YYYY-MM-DD"|null,
++  "uncertain": false } },
++  "key_dates": { "<label>": "YYYY-MM-DD"|{ "date": "YYYY-MM-DD",
++  "type": "hearing"|"filing_deadline"|"expiry"|"other" } },
++  "uncertain": ["..."] }.
+ Document ids: <ids from the checklist templates>.
+ ```
+ 
+ The LLM never computes readiness or decides referrals; unreadable items are
+-surfaced as `uncertain`, not smoothed over.
++surfaced as `uncertain`, not smoothed over. For the five templated notice
++types, prefer `parseNotice` — it is deterministic and auditable.
+ 
+ ## What's better than the closed counterpart
+ 
+-1. **Referral over reach** — complexity factors and removal defense route to
+-   an accredited attorney/representative instead of producing a confident
++1. **Referral over reach** — complexity factors (including a parsed Notice
++   to Appear and any already-passed hearing date) and removal defense route
++   to an accredited attorney/representative instead of producing a confident
+    checklist that hides risk.
+-2. **Auditable date math** — expiry windows, urgency thresholds, and
+-   checklist templates are versioned data you can inspect and localize;
+-   key dates warn in both directions (upcoming and already passed).
+-3. **Capture honesty** — the extraction prompt's prime directive is "never
+-   guess a date"; uncertainty is a first-class output.
+-4. **Self-hostable** — dependency-free core fits nonprofit, low-cost
++2. **Auditable extraction** — every parsed value names its template rule;
++   templates are versioned data you can inspect and localize.
++3. **Capture honesty** — unreadable values are marked `uncertain` and carry
++   through to readiness scoring (uncertain never counts as ready); the
++   extraction prompt's prime directive is "never guess a date".
++4. **Byte-identical determinism** — no clock reads; same fictional
++   paperwork in, identical first read out, every run (two-run diff is part
++   of the example regeneration check).
++5. **Self-hostable** — dependency-free core fits nonprofit, low-cost
+    deployment (the Mobile Pathways use case) without any vendor.
+ 
+ ## Legal accuracy notes
+ 
+-Checklist templates are US-context defaults and change with USCIS/EOIR
+-practice — they are explicitly configurable rules-as-data, not authority.
+-Every output carries a not-legal-advice disclaimer. Fictional applicant
+-data throughout.
++Checklist templates and notice templates are US-context defaults and change
++with USCIS/EOIR practice — they are explicitly configurable rules-as-data,
++not authority; TPS/U-visa labels are tagged `[verify]` for the same reason.
++MM/DD/YYYY parsing assumes the US notice convention. Every output carries a
++not-legal-advice disclaimer; the Spanish export is labeled an unofficial
++translation. Fictional applicant data throughout.

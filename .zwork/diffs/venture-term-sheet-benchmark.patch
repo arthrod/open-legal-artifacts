@@ -1,0 +1,840 @@
+diff --git a/open-artifacts/venture-term-sheet-benchmark/README.md b/open-artifacts/venture-term-sheet-benchmark/README.md
+index e4babdd..2668dd8 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/README.md
++++ b/open-artifacts/venture-term-sheet-benchmark/README.md
+@@ -6,22 +6,34 @@ sourced, editable** market grid:
+ 
+ - per-term verdicts: `inside_market` / `outside_market` (with direction or
+   the standard set) / `unknown_value_type` / `no_benchmark` — never a guess;
+-- every verdict cites its benchmark entry's source and as-of date;
++- every outside-market row carries a **favor direction** (investor /
++  company) — who the off-market drift benefits;
++- optional p25/p50/p75 **distribution bands** on range entries place a value
++  in the distribution (“above p75”) — always labeled EXAMPLE percentiles;
++- **typo guard**: an enum value matching no grid vocabulary anywhere (e.g.
++  `participatng`) is `unknown_value_type` with a suggested correction —
++  never a false off-market flag;
++- **flag kind** scores boolean terms (e.g. `founder_vesting_restart`) with
++  real verdicts instead of `no_benchmark`;
++- every verdict cites its benchmark entry's source and as-of date, and
++  every known term links to the public NVCA model docs (`TERM_CATALOG`);
+ - structural enums cite the public NVCA Model Legal Documents; numeric
+   ranges ship as loudly labeled example defaults — swap in your own dated
+-  market data via `withGrid()`;
+-- staleness warning when the sheet's vintage postdates the grid.
++  market data via `withGrid()` (per-entry merge: override one term, keep
++  the rest of the round);
++- staleness warning when the sheet's vintage postdates the grid;
++- exports: Markdown (`exportMd`) and CSV (`exportCsv`, one row per term).
+ 
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 10 tests
++node --test "core/*.test.js"     # 20 tests
+ node examples/run.js             # regenerates output.json + benchmark.md
+ ```
+ 
+ Demo: `demo/index.html` (standalone, shared design tokens, prefilled with
+ the fictional Quillform Analytics series A — investor-favorable sheet,
+-6 outside-market terms).
++7 outside-market terms, CSV download).
+ 
+ ## Better than the closed counterpart
+ 
+diff --git a/open-artifacts/venture-term-sheet-benchmark/core/core.js b/open-artifacts/venture-term-sheet-benchmark/core/core.js
+index 9c57d46..da6d5a7 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/core/core.js
++++ b/open-artifacts/venture-term-sheet-benchmark/core/core.js
+@@ -5,8 +5,9 @@
+  * DATED market-standard grid (rules-as-data). Every verdict cites the
+  * benchmark entry and its source — nothing is invented here: structural
+  * enums follow the public NVCA Model Legal Documents as a baseline, and all
+- * NUMERIC ranges ship as explicitly-labeled EXAMPLE defaults you must
+- * replace with your own dated market data before relying on them.
++ * NUMERIC ranges (including optional p25/p50/p75 distribution bands) ship
++ * as explicitly-labeled EXAMPLE defaults you must replace with your own
++ * dated market data before relying on them.
+  * No LLM, no network, no dependencies. Browser + Node ES module.
+  *
+  * @module core
+@@ -15,96 +16,227 @@
+ /**
+  * The default grid. Shape:
+  *   { asOf: 'YYYY-MM', sourceNote, rounds: { <round>: { <term>: entry } } }
+- * entry = { kind:'range', min, max, unit?, source } | { kind:'enum', values, source }
++ * entry = { kind:'range', min, max, unit?, p25?, p50?, p75?, favor?, source }
++ *       | { kind:'enum', values, favor?, source }
++ *       | { kind:'flag', values: boolean[], favor?, source }
+  * source = { name, asOf }  — cited verbatim in every output.
++ * favor  = 'investor' | 'company' | 'neutral' — which side off-market drift
++ *          on this term favors (for ranges: drift ABOVE the range; falling
++ *          below flips it). Emitted on outside_market rows only.
+  * @typedef {Object} BenchmarkGrid
+  */
+ const SRC_NVCA = Object.freeze({ name: 'NVCA Model Legal Documents (public structural baseline, nvca.org)', asOf: '2026-01' });
+ const SRC_NVCA_EXAMPLE = Object.freeze({ name: 'NVCA structure + EXAMPLE numeric default — replace with dated market data', asOf: '2026-01' });
+ const SRC_EXAMPLE = Object.freeze({ name: 'EXAMPLE DEFAULT — not market data; replace with your own dated source', asOf: '2026-01' });
+ 
++/** Public NVCA model documents index — the per-term reference every row can cite. */
++const NVCA_MODEL_DOCS_URL = 'https://nvca.org/model-legal-docs/';
++
++/**
++ * Per-term catalog: one-line definition + the public NVCA model-docs URL.
++ * Definitions describe the standard concept only — no market claims.
++ */
++export const TERM_CATALOG = Object.freeze({
++  liquidation_preference_multiple: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Multiple of the original purchase price repaid to preferred stock before common stock in a liquidation (NVCA Certificate of Incorporation).' }),
++  participation: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Whether preferred stock also shares in remaining proceeds after its liquidation preference is paid.' }),
++  anti_dilution: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Adjustment to the preferred conversion price when the company issues shares at a lower price (weighted-average vs full-ratchet forms).' }),
++  seniority: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Ranking of this series’ liquidation preference relative to other preferred series (pari passu or senior).' }),
++  investor_board_seats: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Board seats allocated to investors under the financing’s governance documents (NVCA Voting Agreement).' }),
++  dividends: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Dividend on preferred stock: none, non-cumulative when declared, or accruing cumulative.' }),
++  redemption: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Right of investors to require the company to repurchase their shares after a set period.' }),
++  pro_rata_rights: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Right of investors to purchase a proportional share of a future round (NVCA Investor Rights Agreement).' }),
++  pay_to_play: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Requirement that investors keep investing pro rata or lose senior preferred rights.' }),
++  founder_vesting_restart: Object.freeze({ url: NVCA_MODEL_DOCS_URL, definition: 'Whether founder shares restart vesting at this round (NVCA Stock Purchase Agreement context).' }),
++});
++
++/**
++ * NVCA structural vocabulary known beyond the default grid's per-round sets.
++ * A value found here (or anywhere in the passed grid) is a REAL structure:
++ * it scores outside_market against a narrower round entry, never a typo.
++ */
++const NVCA_KNOWN_VALUES = Object.freeze([
++  'non_participating', 'participating',
++  'broad_based_weighted_average', 'narrow_weighted_average', 'full_ratchet', 'none',
++  'pari_passu', 'senior_to_this_series_only', 'senior_to_all_prior',
++  'non_cumulative', 'cumulative',
++  'investor_demand_after_5y',
++  'granted_major_investors', 'granted_all',
++  'present',
++]);
++
+ export const DEFAULT_GRID = Object.freeze({
+   asOf: '2026-01',
+-  sourceNote: 'Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.',
++  sourceNote: 'Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges and percentile bands are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.',
+   rounds: Object.freeze({
+     pre_seed: Object.freeze({
+-      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE),
+-      participation: enu(['non_participating'], SRC_NVCA),
+-      anti_dilution: enu(['broad_based_weighted_average', 'narrow_weighted_average', 'none'], SRC_NVCA),
+-      seniority: enu(['pari_passu'], SRC_NVCA),
+-      investor_board_seats: rng(0, 1, 'seats', SRC_EXAMPLE),
+-      dividends: enu(['none', 'non_cumulative'], SRC_NVCA),
+-      redemption: enu(['none'], SRC_NVCA),
+-      pro_rata_rights: enu(['granted_major_investors', 'granted_all'], SRC_NVCA),
+-      pay_to_play: enu(['none'], SRC_NVCA_EXAMPLE),
++      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE, { favor: 'investor' }),
++      participation: enu(['non_participating'], SRC_NVCA, { favor: 'investor' }),
++      anti_dilution: enu(['broad_based_weighted_average', 'narrow_weighted_average', 'none'], SRC_NVCA, { favor: 'investor' }),
++      seniority: enu(['pari_passu'], SRC_NVCA, { favor: 'investor' }),
++      investor_board_seats: rng(0, 1, 'seats', SRC_EXAMPLE, { bands: [0, 0, 1], favor: 'investor' }),
++      dividends: enu(['none', 'non_cumulative'], SRC_NVCA, { favor: 'investor' }),
++      redemption: enu(['none'], SRC_NVCA, { favor: 'investor' }),
++      pro_rata_rights: enu(['granted_major_investors', 'granted_all'], SRC_NVCA, { favor: 'neutral' }),
++      pay_to_play: enu(['none'], SRC_NVCA_EXAMPLE, { favor: 'company' }),
++      founder_vesting_restart: flg([false], SRC_NVCA, { favor: 'investor' }),
+     }),
+     seed: Object.freeze({
+-      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE),
+-      participation: enu(['non_participating'], SRC_NVCA),
+-      anti_dilution: enu(['broad_based_weighted_average', 'narrow_weighted_average'], SRC_NVCA),
+-      seniority: enu(['pari_passu'], SRC_NVCA),
+-      investor_board_seats: rng(0, 1, 'seats', SRC_EXAMPLE),
+-      dividends: enu(['none', 'non_cumulative'], SRC_NVCA),
+-      redemption: enu(['none'], SRC_NVCA),
+-      pro_rata_rights: enu(['granted_major_investors', 'granted_all'], SRC_NVCA),
+-      pay_to_play: enu(['none'], SRC_NVCA_EXAMPLE),
++      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE, { favor: 'investor' }),
++      participation: enu(['non_participating'], SRC_NVCA, { favor: 'investor' }),
++      anti_dilution: enu(['broad_based_weighted_average', 'narrow_weighted_average'], SRC_NVCA, { favor: 'investor' }),
++      seniority: enu(['pari_passu'], SRC_NVCA, { favor: 'investor' }),
++      investor_board_seats: rng(0, 1, 'seats', SRC_EXAMPLE, { bands: [0, 1, 1], favor: 'investor' }),
++      dividends: enu(['none', 'non_cumulative'], SRC_NVCA, { favor: 'investor' }),
++      redemption: enu(['none'], SRC_NVCA, { favor: 'investor' }),
++      pro_rata_rights: enu(['granted_major_investors', 'granted_all'], SRC_NVCA, { favor: 'neutral' }),
++      pay_to_play: enu(['none'], SRC_NVCA_EXAMPLE, { favor: 'company' }),
++      founder_vesting_restart: flg([false], SRC_NVCA, { favor: 'investor' }),
+     }),
+     series_a: Object.freeze({
+-      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE),
+-      participation: enu(['non_participating'], SRC_NVCA),
+-      anti_dilution: enu(['broad_based_weighted_average'], SRC_NVCA),
+-      seniority: enu(['pari_passu'], SRC_NVCA),
+-      investor_board_seats: rng(1, 2, 'seats', SRC_EXAMPLE),
+-      dividends: enu(['none', 'non_cumulative'], SRC_NVCA),
+-      redemption: enu(['none'], SRC_NVCA),
+-      pro_rata_rights: enu(['granted_major_investors'], SRC_NVCA),
+-      pay_to_play: enu(['none', 'present'], SRC_NVCA_EXAMPLE),
++      liquidation_preference_multiple: rng(1, 1, 'x', SRC_NVCA_EXAMPLE, { favor: 'investor' }),
++      participation: enu(['non_participating'], SRC_NVCA, { favor: 'investor' }),
++      anti_dilution: enu(['broad_based_weighted_average'], SRC_NVCA, { favor: 'investor' }),
++      seniority: enu(['pari_passu'], SRC_NVCA, { favor: 'investor' }),
++      investor_board_seats: rng(1, 2, 'seats', SRC_EXAMPLE, { bands: [1, 1, 2], favor: 'investor' }),
++      dividends: enu(['none', 'non_cumulative'], SRC_NVCA, { favor: 'investor' }),
++      redemption: enu(['none'], SRC_NVCA, { favor: 'investor' }),
++      pro_rata_rights: enu(['granted_major_investors'], SRC_NVCA, { favor: 'neutral' }),
++      pay_to_play: enu(['none', 'present'], SRC_NVCA_EXAMPLE, { favor: 'company' }),
++      founder_vesting_restart: flg([false], SRC_NVCA, { favor: 'investor' }),
+     }),
+     series_b: Object.freeze({
+-      liquidation_preference_multiple: rng(1, 1.5, 'x', SRC_NVCA_EXAMPLE),
+-      participation: enu(['non_participating'], SRC_NVCA),
+-      anti_dilution: enu(['broad_based_weighted_average'], SRC_NVCA),
+-      seniority: enu(['pari_passu', 'senior_to_this_series_only'], SRC_NVCA),
+-      investor_board_seats: rng(1, 2, 'seats', SRC_EXAMPLE),
+-      dividends: enu(['none', 'non_cumulative'], SRC_NVCA),
+-      redemption: enu(['none'], SRC_NVCA),
+-      pro_rata_rights: enu(['granted_major_investors'], SRC_NVCA),
+-      pay_to_play: enu(['none', 'present'], SRC_NVCA_EXAMPLE),
++      liquidation_preference_multiple: rng(1, 1.5, 'x', SRC_NVCA_EXAMPLE, { bands: [1, 1, 1.5], favor: 'investor' }),
++      participation: enu(['non_participating'], SRC_NVCA, { favor: 'investor' }),
++      anti_dilution: enu(['broad_based_weighted_average'], SRC_NVCA, { favor: 'investor' }),
++      seniority: enu(['pari_passu', 'senior_to_this_series_only'], SRC_NVCA, { favor: 'investor' }),
++      investor_board_seats: rng(1, 2, 'seats', SRC_EXAMPLE, { bands: [1, 1, 2], favor: 'investor' }),
++      dividends: enu(['none', 'non_cumulative'], SRC_NVCA, { favor: 'investor' }),
++      redemption: enu(['none'], SRC_NVCA, { favor: 'investor' }),
++      pro_rata_rights: enu(['granted_major_investors'], SRC_NVCA, { favor: 'neutral' }),
++      pay_to_play: enu(['none', 'present'], SRC_NVCA_EXAMPLE, { favor: 'company' }),
++      founder_vesting_restart: flg([false], SRC_NVCA, { favor: 'investor' }),
+     }),
+   }),
+ });
+ 
+-/** @param {number} min @param {number} max @param {string} unit @param {{name:string,asOf:string}} src */
+-function rng(min, max, unit, src) { return { kind: 'range', min, max, unit, source: src }; }
+-/** @param {string[]} values @param {{name:string,asOf:string}} src */
+-function enu(values, src) { return { kind: 'enum', values: [...values], source: src }; }
++/**
++ * @param {number} min @param {number} max @param {string} unit @param {{name:string,asOf:string}} src
++ * @param {{bands?: [number,number,number], favor?: string}} [opts] p25/p50/p75 EXAMPLE bands + favor direction
++ */
++function rng(min, max, unit, src, opts = {}) {
++  const e = { kind: 'range', min, max, unit, source: src };
++  if (opts.bands) [e.p25, e.p50, e.p75] = opts.bands;
++  if (opts.favor) e.favor = opts.favor;
++  return e;
++}
++/** @param {string[]} values @param {{name:string,asOf:string}} src @param {{favor?: string}} [opts] */
++function enu(values, src, opts = {}) {
++  const e = { kind: 'enum', values: [...values], source: src };
++  if (opts.favor) e.favor = opts.favor;
++  return e;
++}
++/** @param {boolean[]} values @param {{name:string,asOf:string}} src @param {{favor?: string}} [opts] */
++function flg(values, src, opts = {}) {
++  const e = { kind: 'flag', values: [...values], source: src };
++  if (opts.favor) e.favor = opts.favor;
++  return e;
++}
+ 
+ /* ------------------------------------------------------------------ *
+  * Comparison logic
+  * ------------------------------------------------------------------ */
+ 
++/** favor for a value that moved ABOVE a range entry (below flips sides). */
++function invertFavor(f) { return f === 'investor' ? 'company' : f === 'company' ? 'investor' : 'neutral'; }
++
++/** Levenshtein edit distance — typo detection only, no fuzzy matching of verdicts. */
++function editDistance(a, b) {
++  const m = a.length, n = b.length;
++  let prev = Array.from({ length: n + 1 }, (_, j) => j);
++  for (let i = 1; i <= m; i++) {
++    const cur = [i];
++    for (let j = 1; j <= n; j++) {
++      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
++    }
++    prev = cur;
++  }
++  return prev[n];
++}
++
++/** Band label for a value inside a banded range entry (EXAMPLE percentiles). */
++function bandLabel(v, e) {
++  if (v < e.p25) return 'below p25';
++  if (v === e.p25) return 'at p25';
++  if (v < e.p50) return 'p25–p50';
++  if (v === e.p50) return 'at p50';
++  if (v < e.p75) return 'p50–p75';
++  if (v === e.p75) return 'at p75';
++  return 'above p75';
++}
++
+ /**
+  * Compare one term value against one benchmark entry.
++ * Vocabulary (optional, whole-grid + NVCA structural set) enables the typo
++ * guard: a near-miss of a known value is unknown_value_type — never a false
++ * off-market flag — and a value matching no vocabulary anywhere is likewise
++ * not scored as off-market.
++ *
+  * @param {unknown} value
+- * @param {{kind:'range',min:number,max:number,unit?:string,source:{name:string,asOf:string}}|
+- *         {kind:'enum',values:string[],source:{name:string,asOf:string}}} entry
+- * @returns {{verdict:'inside_market'|'outside_market'|'unknown_value_type', detail: string}}
++ * @param {{kind:'range',min:number,max:number,unit?:string,p25?:number,p50?:number,p75?:number,favor?:string,source:{name:string,asOf:string}}|
++ *         {kind:'enum',values:string[],favor?:string,source:{name:string,asOf:string}}|
++ *         {kind:'flag',values:boolean[],favor?:string,source:{name:string,asOf:string}}} entry
++ * @param {string[]} [vocabulary]
++ * @returns {{verdict:'inside_market'|'outside_market'|'unknown_value_type', detail: string, favor?: 'investor'|'company'|'neutral'}}
+  */
+-export function compareTerm(value, entry) {
++export function compareTerm(value, entry, vocabulary = null) {
+   if (entry.kind === 'range') {
+     const v = Number(value);
+     if (!Number.isFinite(v)) return { verdict: 'unknown_value_type', detail: `Value ${JSON.stringify(value)} is not numeric; benchmark is a ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
+-    if (v >= entry.min && v <= entry.max) return { verdict: 'inside_market', detail: `${v} ${entry.unit ?? ''}within ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
+-    return { verdict: 'outside_market', detail: `${v} ${entry.unit ?? ''}is ${v > entry.max ? 'above' : 'below'} the ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
++    if (v >= entry.min && v <= entry.max) {
++      const band = Number.isFinite(entry.p25) && Number.isFinite(entry.p50) && Number.isFinite(entry.p75)
++        ? ` — ${bandLabel(v, entry)} band (EXAMPLE percentiles — replace with your own dated data)` : '';
++      return { verdict: 'inside_market', detail: `${v} ${entry.unit ?? ''}within ${entry.min}–${entry.max} ${entry.unit ?? ''}range${band}.` };
++    }
++    const out = { verdict: 'outside_market', detail: `${v} ${entry.unit ?? ''}is ${v > entry.max ? 'above' : 'below'} the ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
++    if (entry.favor) out.favor = v > entry.max ? entry.favor : invertFavor(entry.favor);
++    return out;
+   }
+   if (entry.kind === 'enum') {
+     const v = String(value);
+     if (entry.values.includes(v)) return { verdict: 'inside_market', detail: `“${v}” is in the standard set (${entry.values.join(', ')}).` };
+-    return { verdict: 'outside_market', detail: `“${v}” is not in the standard set (${entry.values.join(', ')}).` };
++    if (vocabulary && !vocabulary.includes(v)) {
++      let best = null, bestD = Infinity;
++      for (const known of vocabulary) {
++        const d = editDistance(v, known);
++        if (d < bestD) { bestD = d; best = known; }
++      }
++      if (bestD <= 1) return { verdict: 'unknown_value_type', detail: `“${v}” matches no grid vocabulary anywhere — looks like a typo of “${best}”. Fix the value or extend the grid; not scored as off-market.` };
++      return { verdict: 'unknown_value_type', detail: `“${v}” matches no vocabulary in the grid or the NVCA structural set (${vocabulary.slice(0, 8).join(', ')}…). Fix the value or extend the grid; not scored as off-market.` };
++    }
++    const out = { verdict: 'outside_market', detail: `“${v}” is not in the standard set (${entry.values.join(', ')}).` };
++    if (entry.favor) out.favor = entry.favor;
++    return out;
++  }
++  if (entry.kind === 'flag') {
++    if (typeof value !== 'boolean') return { verdict: 'unknown_value_type', detail: `Flag benchmarks take booleans; got ${JSON.stringify(value)}.` };
++    const standard = entry.values.map(String).join(', ');
++    if (entry.values.includes(value)) return { verdict: 'inside_market', detail: `${value} is the standard setting (${standard}).` };
++    const out = { verdict: 'outside_market', detail: `${value} is not the standard setting (${standard}).` };
++    if (entry.favor) out.favor = entry.favor;
++    return out;
+   }
+   return { verdict: 'unknown_value_type', detail: 'Unrecognized benchmark entry kind.' };
+ }
+ 
++/** Union of every enum value in the grid + the NVCA structural set (typo-guard pool). */
++function gridVocabulary(grid) {
++  const vocab = [...NVCA_KNOWN_VALUES];
++  for (const terms of Object.values(grid.rounds ?? {})) {
++    for (const e of Object.values(terms)) if (e.kind === 'enum') vocab.push(...e.values);
++  }
++  return vocab;
++}
++
+ /**
+  * Benchmark a whole term sheet against a grid.
+  *
+@@ -114,7 +246,8 @@ export function compareTerm(value, entry) {
+  *   round: string, vintage: number|null, company: string,
+  *   gridAsOf: string, sourceNote: string,
+  *   terms: Array<{name: string, value: unknown, verdict: 'inside_market'|'outside_market'|'unknown_value_type'|'no_benchmark',
+- *                 detail: string, benchmark: string, source: {name: string, asOf: string}|null}>,
++ *                 detail: string, benchmark: string, favor?: 'investor'|'company'|'neutral',
++ *                 source: {name: string, asOf: string}|null}>,
+  *   counts: {inside_market: number, outside_market: number, unknown_value_type: number, no_benchmark: number},
+  *   warnings: string[]
+  * }}
+@@ -130,6 +263,7 @@ export function benchmarkTermSheet(input, grid = DEFAULT_GRID) {
+     const gridYear = Number(grid.asOf.slice(0, 4));
+     if (vintage > gridYear) warnings.push(`Term sheet vintage ${vintage} postdates the grid (as of ${grid.asOf}); refresh your market data before relying on numeric verdicts.`);
+   }
++  const vocabulary = gridVocabulary(grid);
+ 
+   const out = [];
+   for (const [name, value] of Object.entries(terms)) {
+@@ -138,9 +272,12 @@ export function benchmarkTermSheet(input, grid = DEFAULT_GRID) {
+       out.push({ name, value, verdict: 'no_benchmark', detail: 'No benchmark entry for this term in this round’s grid; add one rather than guessing.', benchmark: '—', source: null });
+       continue;
+     }
+-    const { verdict, detail } = compareTerm(value, entry);
+-    const benchmark = entry.kind === 'range' ? `${entry.min}–${entry.max} ${entry.unit ?? ''}`.trim() : entry.values.join(', ');
+-    out.push({ name, value, verdict, detail, benchmark, source: { ...entry.source } });
++    const { verdict, detail, favor } = compareTerm(value, entry, vocabulary);
++    const benchmark = entry.kind === 'range' ? `${entry.min}–${entry.max} ${entry.unit ?? ''}`.trim()
++      : entry.kind === 'flag' ? entry.values.map(String).join(', ') : entry.values.join(', ');
++    const row = { name, value, verdict, detail, benchmark, source: { ...entry.source } };
++    if (verdict === 'outside_market' && favor) row.favor = favor;
++    out.push(row);
+   }
+ 
+   const counts = { inside_market: 0, outside_market: 0, unknown_value_type: 0, no_benchmark: 0 };
+@@ -153,13 +290,25 @@ export function benchmarkTermSheet(input, grid = DEFAULT_GRID) {
+ }
+ 
+ /**
+- * Merge a user grid over the default (shallow per round; a round key in the
+- * user grid replaces that round entirely — explicit beats inherited).
++ * Merge a user grid over the default, PER ENTRY within each round: a term
++ * key you supply replaces that term only; terms you omit are inherited.
++ * A round key absent from the default starts a fresh round; grid-level
++ * asOf/sourceNote override wholesale (explicit beats inherited).
+  * @param {BenchmarkGrid} userGrid
+  * @returns {BenchmarkGrid}
+  */
+ export function withGrid(userGrid) {
+-  return { ...DEFAULT_GRID, ...userGrid, rounds: { ...DEFAULT_GRID.rounds, ...(userGrid?.rounds ?? {}) } };
++  const rounds = { ...DEFAULT_GRID.rounds };
++  for (const [round, entries] of Object.entries(userGrid?.rounds ?? {})) {
++    rounds[round] = { ...(DEFAULT_GRID.rounds[round] ?? {}), ...entries };
++  }
++  return { ...DEFAULT_GRID, ...userGrid, rounds };
++}
++
++/** Verdict cell text with favor direction on outside rows. @param {{verdict: string, favor?: string}} t */
++function verdictCell(t) {
++  return t.verdict === 'outside_market' && t.favor && t.favor !== 'neutral'
++    ? `**outside_market** (favors ${t.favor})` : `**${t.verdict}**`;
+ }
+ 
+ /** Markdown report. @param {ReturnType<benchmarkTermSheet>} r */
+@@ -169,9 +318,37 @@ export function exportMd(r) {
+     `Benchmark grid as of **${r.gridAsOf}**. ${r.counts.inside_market} inside market · ${r.counts.outside_market} outside market · ${r.counts.no_benchmark} without benchmark.`, '',
+     '| Term | Value | Verdict | Benchmark | Source |', '|---|---|---|---|---|');
+   for (const t of r.terms) {
+-    L.push(`| ${t.name} | ${String(t.value)} | **${t.verdict}** | ${t.benchmark} | ${t.source ? `${t.source.name} (as of ${t.source.asOf})` : '—'} |`);
++    L.push(`| ${t.name} | ${String(t.value)} | ${verdictCell(t)} | ${t.benchmark} | ${t.source ? `${t.source.name} (as of ${t.source.asOf})` : '—'} |`);
++  }
++  const refd = [...new Set(r.terms.map((t) => t.name))].filter((n) => TERM_CATALOG[n]);
++  if (refd.length) {
++    L.push('', '## Term references', '');
++    for (const n of refd) L.push(`- **${n}** — ${TERM_CATALOG[n].definition} ([NVCA model docs](${TERM_CATALOG[n].url}))`);
+   }
+   if (r.warnings.length) { L.push('', '## Warnings', ''); for (const w of r.warnings) L.push(`- ⚠ ${w}`); }
+   L.push('', '---', '', `> ${r.sourceNote}`, '', '_Deterministic output of the open venture-term-sheet-benchmark. Not legal advice; verdicts describe distance from an editable grid, not deal quality._');
+   return L.join('\n');
+ }
++
++/** RFC-4180-ish CSV cell: quote on comma/quote/newline, double internal quotes. @param {unknown} x */
++function csvCell(x) {
++  const s = String(x ?? '');
++  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
++}
++
++/** CSV export: exactly one row per term. @param {ReturnType<benchmarkTermSheet>} r */
++export function exportCsv(r) {
++  const L = ['Term,Value,Verdict,Favor,Benchmark,Source,Detail'];
++  for (const t of r.terms) {
++    L.push([
++      t.name,
++      typeof t.value === 'boolean' || typeof t.value === 'number' ? t.value : t.value,
++      t.verdict,
++      t.favor ?? '',
++      t.benchmark,
++      t.source ? `${t.source.name} (as of ${t.source.asOf})` : '',
++      t.detail,
++    ].map(csvCell).join(','));
++  }
++  return L.join('\n');
++}
+diff --git a/open-artifacts/venture-term-sheet-benchmark/core/core.test.js b/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
+index f9f467b..ebe555b 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
++++ b/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
+@@ -1,7 +1,6 @@
+-/** Tests for venture-term-sheet-benchmark core. Run: node --test "core/*.test.js" */
+-import { test, describe } from 'node:test';
++/** Tests for venture-term-sheet-benchmark core. Run: node --test "core/*.test.js" */ import { test, describe } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { benchmarkTermSheet, compareTerm, exportMd, withGrid, DEFAULT_GRID } from './core.js';
++import { benchmarkTermSheet, compareTerm, exportCsv, exportMd, withGrid, DEFAULT_GRID, TERM_CATALOG } from './core.js';
+ 
+ describe('compareTerm', () => {
+   test('range: inside and outside with direction', () => {
+@@ -21,6 +20,23 @@ describe('compareTerm', () => {
+     assert.equal(compareTerm('senior_to_all', e).verdict, 'outside_market');
+     assert.match(compareTerm('senior_to_all', e).detail, /pari_passu/);
+   });
++  test('range with distribution bands states the band in the detail, labeled EXAMPLE', () => {
++    const e = { kind: 'range', min: 0, max: 3, p25: 0.5, p50: 1, p75: 1.5, unit: 'x', source: { name: 's', asOf: '2026-01' } };
++    const hi = compareTerm(2, e);
++    assert.equal(hi.verdict, 'inside_market');
++    assert.match(hi.detail, /above p75/);
++    assert.match(hi.detail, /EXAMPLE/);
++    assert.match(compareTerm(0.75, e).detail, /p25–p50/);
++    assert.match(compareTerm(1, e).detail, /at p50/);
++  });
++  test('flag kind: boolean terms get real verdicts', () => {
++    const e = { kind: 'flag', values: [false], source: { name: 's', asOf: '2026-01' } };
++    assert.equal(compareTerm(false, e).verdict, 'inside_market');
++    const out = compareTerm(true, e);
++    assert.equal(out.verdict, 'outside_market');
++    assert.match(out.detail, /false/);
++    assert.equal(compareTerm('yes', e).verdict, 'unknown_value_type');
++  });
+ });
+ 
+ describe('benchmarkTermSheet', () => {
+@@ -59,11 +75,13 @@ describe('benchmarkTermSheet', () => {
+     const r = benchmarkTermSheet({ term_sheet: { round: 'seed', vintage: 2027, terms: {} } });
+     assert.ok(r.warnings.some((w) => /postdates/.test(w)));
+   });
+-  test('user grid replaces a round entirely via withGrid', () => {
++  test('withGrid merges per entry: override one term, keep the rest of the round', () => {
+     const custom = withGrid({ rounds: { seed: { dividends: { kind: 'enum', values: ['cumulative'], source: { name: 'My 2026 deal corpus', asOf: '2026-06' } } } } });
+-    const r = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { dividends: 'non_cumulative' } } }, custom);
+-    assert.equal(r.counts.outside_market, 1);
+-    assert.equal(r.terms[0].source.name, 'My 2026 deal corpus');
++    const r = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { dividends: 'non_cumulative', anti_dilution: 'broad_based_weighted_average' } } }, custom);
++    assert.equal(r.counts.outside_market, 1); // dividends against the user's entry
++    const ad = r.terms.find((t) => t.name === 'anti_dilution');
++    assert.equal(ad.verdict, 'inside_market'); // retained from the default round
++    assert.match(ad.source.name, /NVCA/);
+     // other rounds still default
+     const r2 = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { dividends: 'non_cumulative' } } }, custom);
+     assert.equal(r2.counts.inside_market, 1);
+@@ -75,6 +93,51 @@ describe('benchmarkTermSheet', () => {
+       }
+     }
+   });
++  test('typo guard: a near-miss enum value is unknown_value_type, never a false off-market', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { participation: 'participatng' } } });
++    assert.equal(r.counts.unknown_value_type, 1);
++    assert.equal(r.counts.outside_market, 0);
++    assert.match(r.terms[0].detail, /participating/); // suggested correction
++  });
++  test('typo guard: a recognized but nonstandard value still scores outside_market', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { participation: 'participating' } } });
++    assert.equal(r.counts.outside_market, 1);
++    assert.equal(r.counts.unknown_value_type, 0);
++  });
++  test('typo guard: a value matching no vocabulary anywhere is unknown_value_type', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { dividends: 'payable_in_gold' } } });
++    assert.equal(r.counts.unknown_value_type, 1);
++    assert.match(r.terms[0].detail, /no vocabulary/i);
++  });
++  test('outside rows carry favor direction', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { anti_dilution: 'full_ratchet', investor_board_seats: 5 } } });
++    const ad = r.terms.find((t) => t.name === 'anti_dilution');
++    assert.equal(ad.verdict, 'outside_market');
++    assert.equal(ad.favor, 'investor'); // full ratchet drift favors investors
++    const seats = r.terms.find((t) => t.name === 'investor_board_seats');
++    assert.equal(seats.verdict, 'outside_market');
++    assert.equal(seats.favor, 'investor'); // above the range
++    const low = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { investor_board_seats: 0 } } });
++    assert.equal(low.terms[0].verdict, 'outside_market');
++    assert.equal(low.terms[0].favor, 'company'); // below the range favors the company
++  });
++  test('boolean term with a flag entry scores a real verdict (founder_vesting_restart)', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { founder_vesting_restart: true } } });
++    assert.equal(r.counts.outside_market, 1);
++    assert.equal(r.terms[0].favor, 'investor'); // restarting founder vesting favors investors
++    const r2 = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { founder_vesting_restart: false } } });
++    assert.equal(r2.counts.inside_market, 1);
++  });
++  test('every default grid term has a TERM_CATALOG entry with an NVCA url and definition', () => {
++    const names = new Set();
++    for (const terms of Object.values(DEFAULT_GRID.rounds)) for (const n of Object.keys(terms)) names.add(n);
++    assert.ok(names.size >= 10);
++    for (const n of names) {
++      assert.ok(TERM_CATALOG[n], `missing catalog entry for ${n}`);
++      assert.match(TERM_CATALOG[n].url, /^https:\/\/nvca\.org\//, n);
++      assert.ok(TERM_CATALOG[n].definition.length > 10, n);
++    }
++  });
+ });
+ 
+ describe('exportMd', () => {
+@@ -87,4 +150,24 @@ describe('exportMd', () => {
+     assert.ok(md.includes('replace'));
+     assert.ok(md.includes('Not legal advice'));
+   });
++  test('report renders favor direction and a per-term NVCA reference section', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { anti_dilution: 'full_ratchet' } } });
++    const md = exportMd(r);
++    assert.match(md, /favors investor/);
++    assert.match(md, /## Term references/);
++    assert.match(md, /\[NVCA model docs\]\(https:\/\/nvca\.org\//);
++    assert.match(md, /anti_dilution/);
++  });
++});
++
++describe('exportCsv', () => {
++  test('emits exactly one row per term, with quoted cells', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { anti_dilution: 'full_ratchet', dividends: 'non_cumulative', liquidation_preference_multiple: 1 } } });
++    const csv = exportCsv(r);
++    const lines = csv.trimEnd().split('\n');
++    assert.equal(lines.length, r.terms.length + 1); // header + one row per term
++    assert.match(lines[0], /^Term,Value,Verdict/);
++    const dividendsLine = lines.find((l) => l.startsWith('dividends'));
++    assert.match(dividendsLine, /"/); // benchmark "none, non_cumulative" contains a comma → must be quoted
++  });
+ });
+diff --git a/open-artifacts/venture-term-sheet-benchmark/demo/index.html b/open-artifacts/venture-term-sheet-benchmark/demo/index.html
+index 4baeab2..f06cbef 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/demo/index.html
++++ b/open-artifacts/venture-term-sheet-benchmark/demo/index.html
+@@ -24,6 +24,7 @@
+   .v.outside_market { background: var(--flag-tint); padding: 2px 5px; }
+   .v.no_benchmark, .v.unknown_value_type { background: var(--border); padding: 2px 5px; }
+   .src { color: var(--text-secondary); font-size: 11px; }
++  td a { color: var(--text); text-decoration-color: var(--accent); }
+   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 6px; }
+   .muted { color: var(--text-secondary); font-size: 13px; }
+   .counts { font-size: 20px; margin: 4px 0; }
+@@ -48,7 +49,7 @@
+ </main></div>
+ 
+ <script type="module">
+-import { benchmarkTermSheet, exportMd } from '../core/core.js';
++import { benchmarkTermSheet, exportCsv, exportMd, TERM_CATALOG } from '../core/core.js';
+ 
+ const SAMPLE = {
+   term_sheet: {
+@@ -79,11 +80,25 @@ function render(r) {
+     <p class="counts">${r.counts.inside_market} inside · ${r.counts.outside_market} outside · ${r.counts.no_benchmark} no benchmark</p>`;
+   for (const w of r.warnings) h += `<p class="muted">⚠ ${esc(w)}</p>`;
+   h += `<table><tr><th>Term</th><th>Value</th><th>Verdict</th><th>Benchmark</th><th>Source</th></tr>`;
+-  for (const t of r.terms) h += `<tr><td>${esc(t.name)}</td><td>${esc(t.value)}</td>
+-    <td><span class="v ${t.verdict}">${t.verdict}</span></td><td>${esc(t.benchmark)}</td>
++  for (const t of r.terms) {
++    const cat = TERM_CATALOG[t.name];
++    const termCell = cat ? `<a href="${cat.url}" target="_blank" rel="noopener" title="${esc(cat.definition)}">${esc(t.name)}</a>` : esc(t.name);
++    const favor = t.verdict === 'outside_market' && t.favor && t.favor !== 'neutral' ? ` · favors ${esc(t.favor)}` : '';
++    h += `<tr><td>${termCell}</td><td>${esc(t.value)}</td>
++    <td><span class="v ${t.verdict}">${esc(t.verdict)}</span><span class="src">${favor}</span></td><td>${esc(t.benchmark)}</td>
+     <td class="src">${t.source ? `${esc(t.source.name)} (${esc(t.source.asOf)})` : '—'}</td></tr>`;
++  }
+   h += `</table><div class="sec">Report export</div><textarea readonly style="min-height:150px">${esc(exportMd(r))}</textarea>`;
++  h += `<button id="csv">Download CSV</button>`;
+   $('out').innerHTML = h;
++  $('csv').addEventListener('click', () => {
++    const blob = new Blob([exportCsv(r)], { type: 'text/csv' });
++    const a = document.createElement('a');
++    a.href = URL.createObjectURL(blob);
++    a.download = `term-sheet-benchmark-${r.round}.csv`;
++    a.click();
++    URL.revokeObjectURL(a.href);
++  });
+ }
+ $('run').addEventListener('click', () => {
+   $('err').textContent = '';
+diff --git a/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md b/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
+index 77748f1..76fd698 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
++++ b/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
+@@ -1,22 +1,35 @@
+ # Term sheet benchmark — Quillform Analytics, Inc. (fictional) (series_a, 2026)
+ 
+-Benchmark grid as of **2026-01**. 3 inside market · 6 outside market · 1 without benchmark.
++Benchmark grid as of **2026-01**. 3 inside market · 7 outside market · 0 without benchmark.
+ 
+ | Term | Value | Verdict | Benchmark | Source |
+ |---|---|---|---|---|
+-| liquidation_preference_multiple | 1.5 | **outside_market** | 1–1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
+-| participation | participating | **outside_market** | non_participating | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+-| anti_dilution | full_ratchet | **outside_market** | broad_based_weighted_average | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+-| seniority | senior_to_all_prior | **outside_market** | pari_passu | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++| liquidation_preference_multiple | 1.5 | **outside_market** (favors investor) | 1–1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
++| participation | participating | **outside_market** (favors investor) | non_participating | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++| anti_dilution | full_ratchet | **outside_market** (favors investor) | broad_based_weighted_average | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++| seniority | senior_to_all_prior | **outside_market** (favors investor) | pari_passu | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+ | investor_board_seats | 2 | **inside_market** | 1–2 seats | EXAMPLE DEFAULT — not market data; replace with your own dated source (as of 2026-01) |
+-| dividends | cumulative | **outside_market** | none, non_cumulative | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+-| redemption | investor_demand_after_5y | **outside_market** | none | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++| dividends | cumulative | **outside_market** (favors investor) | none, non_cumulative | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++| redemption | investor_demand_after_5y | **outside_market** (favors investor) | none | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+ | pro_rata_rights | granted_major_investors | **inside_market** | granted_major_investors | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+ | pay_to_play | none | **inside_market** | none, present | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
+-| founder_vesting_restart | true | **no_benchmark** | — | — |
++| founder_vesting_restart | true | **outside_market** (favors investor) | false | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
++
++## Term references
++
++- **liquidation_preference_multiple** — Multiple of the original purchase price repaid to preferred stock before common stock in a liquidation (NVCA Certificate of Incorporation). ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **participation** — Whether preferred stock also shares in remaining proceeds after its liquidation preference is paid. ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **anti_dilution** — Adjustment to the preferred conversion price when the company issues shares at a lower price (weighted-average vs full-ratchet forms). ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **seniority** — Ranking of this series’ liquidation preference relative to other preferred series (pari passu or senior). ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **investor_board_seats** — Board seats allocated to investors under the financing’s governance documents (NVCA Voting Agreement). ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **dividends** — Dividend on preferred stock: none, non-cumulative when declared, or accruing cumulative. ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **redemption** — Right of investors to require the company to repurchase their shares after a set period. ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **pro_rata_rights** — Right of investors to purchase a proportional share of a future round (NVCA Investor Rights Agreement). ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **pay_to_play** — Requirement that investors keep investing pro rata or lose senior preferred rights. ([NVCA model docs](https://nvca.org/model-legal-docs/))
++- **founder_vesting_restart** — Whether founder shares restart vesting at this round (NVCA Stock Purchase Agreement context). ([NVCA model docs](https://nvca.org/model-legal-docs/))
+ 
+ ---
+ 
+-> Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.
++> Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges and percentile bands are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.
+ 
+ _Deterministic output of the open venture-term-sheet-benchmark. Not legal advice; verdicts describe distance from an editable grid, not deal quality._
+diff --git a/open-artifacts/venture-term-sheet-benchmark/examples/output.json b/open-artifacts/venture-term-sheet-benchmark/examples/output.json
+index e261e6e..372a0e8 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/examples/output.json
++++ b/open-artifacts/venture-term-sheet-benchmark/examples/output.json
+@@ -3,7 +3,7 @@
+   "vintage": 2026,
+   "company": "Quillform Analytics, Inc. (fictional)",
+   "gridAsOf": "2026-01",
+-  "sourceNote": "Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.",
++  "sourceNote": "Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges and percentile bands are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.",
+   "terms": [
+     {
+       "name": "liquidation_preference_multiple",
+@@ -14,7 +14,8 @@
+       "source": {
+         "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "participation",
+@@ -25,7 +26,8 @@
+       "source": {
+         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "anti_dilution",
+@@ -36,7 +38,8 @@
+       "source": {
+         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "seniority",
+@@ -47,13 +50,14 @@
+       "source": {
+         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "investor_board_seats",
+       "value": 2,
+       "verdict": "inside_market",
+-      "detail": "2 seatswithin 1–2 seatsrange.",
++      "detail": "2 seatswithin 1–2 seatsrange — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
+       "benchmark": "1–2 seats",
+       "source": {
+         "name": "EXAMPLE DEFAULT — not market data; replace with your own dated source",
+@@ -69,7 +73,8 @@
+       "source": {
+         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "redemption",
+@@ -80,7 +85,8 @@
+       "source": {
+         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+         "asOf": "2026-01"
+-      }
++      },
++      "favor": "investor"
+     },
+     {
+       "name": "pro_rata_rights",
+@@ -107,17 +113,21 @@
+     {
+       "name": "founder_vesting_restart",
+       "value": true,
+-      "verdict": "no_benchmark",
+-      "detail": "No benchmark entry for this term in this round’s grid; add one rather than guessing.",
+-      "benchmark": "—",
+-      "source": null
++      "verdict": "outside_market",
++      "detail": "true is not the standard setting (false).",
++      "benchmark": "false",
++      "source": {
++        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
++        "asOf": "2026-01"
++      },
++      "favor": "investor"
+     }
+   ],
+   "counts": {
+     "inside_market": 3,
+-    "outside_market": 6,
++    "outside_market": 7,
+     "unknown_value_type": 0,
+-    "no_benchmark": 1
++    "no_benchmark": 0
+   },
+   "warnings": []
+ }
+diff --git a/open-artifacts/venture-term-sheet-benchmark/spec.md b/open-artifacts/venture-term-sheet-benchmark/spec.md
+index ef99d54..119077a 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/spec.md
++++ b/open-artifacts/venture-term-sheet-benchmark/spec.md
+@@ -11,15 +11,22 @@ flagged rather than guessed.
+ Input a term sheet's terms as JSON (round + vintage + term map); compare
+ each term against an editable market grid; output a per-term verdict:
+ 
+-- `inside_market` — value within the grid entry (range or enum);
++- `inside_market` — value within the grid entry (range, enum, or flag);
+ - `outside_market` — value outside it, with direction for ranges (above/
+-  below) and the standard set for enums;
+-- `unknown_value_type` — e.g. a non-numeric value against a numeric range —
+-  never guessed;
++  below) and the standard set for enums/flags; outside rows carry a favor
++  direction (`investor`/`company`) — the side the off-market drift benefits;
++- `unknown_value_type` — e.g. a non-numeric value against a numeric range,
++  or an enum value matching no grid vocabulary anywhere (typo guard:
++  near-misses get a suggested correction) — never guessed;
+ - `no_benchmark` — term has no grid entry this round; you add one, the tool
+   doesn't invent one.
+ 
+ Every verdict row cites its benchmark entry's `source: {name, asOf}`.
++Range entries may carry optional `p25/p50/p75` distribution bands —
++inside-range details then state the band ("above p75"); bands are
++EXAMPLE percentiles until you replace them. Each known term also has a
++`TERM_CATALOG` entry (one-line definition + public NVCA model-docs URL)
++rendered in the Markdown export and the demo.
+ 
+ ### Sourcing discipline (the whole point)
+ 
+@@ -27,15 +34,15 @@ Every verdict row cites its benchmark entry's `source: {name, asOf}`.
+   redemption, pro-rata, pay-to-play) follow the public **NVCA Model Legal
+   Documents** as a structure baseline — cited as such, not as market data.
+ - **Numeric ranges** (liquidation multiple, board seats) ship as loudly
+-  labeled `EXAMPLE DEFAULT — replace with your own dated market data`.
+-  The tool never presents them as market truth; swap in your deal corpus or
+-  a dated survey via `withGrid()`.
++  labeled `EXAMPLE DEFAULT — replace with your own dated market data`,
++  including any p25/p50/p75 bands. The tool never presents them as market
++  truth; swap in your deal corpus or a dated survey via `withGrid()`.
+ - A term sheet whose vintage postdates the grid gets a staleness warning.
+ 
+ ## IO contract
+ 
+ ```js
+-import { benchmarkTermSheet, exportMd, withGrid } from './core/core.js';
++import { benchmarkTermSheet, exportCsv, exportMd, withGrid } from './core/core.js';
+ const result = benchmarkTermSheet({
+   term_sheet: { round: 'series_a', vintage: 2026, company: '…',
+                 terms: { liquidation_preference_multiple: 1.5, anti_dilution: 'full_ratchet', … } },
+@@ -52,8 +59,8 @@ fields.
+ 
+ | Part | Owner |
+ |---|---|
+-| Grid entries, sources, dates | rules-as-data (editable; `withGrid` merges per round) |
+-| Verdicts, direction, staleness checks, MD export | deterministic code |
++| Grid entries, sources, dates, bands, favor | rules-as-data (editable; `withGrid` merges per entry) |
++| Verdicts, direction, favor, typo guard, staleness checks, MD/CSV export | deterministic code |
+ | Parsing a PDF term sheet into the terms JSON | LLM-assisted (optional capture step) |
+ 
+ ### LLM prompt schema (optional capture step)

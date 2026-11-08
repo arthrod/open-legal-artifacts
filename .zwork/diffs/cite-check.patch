@@ -1,0 +1,2977 @@
+diff --git a/open-artifacts/cite-check/README.md b/open-artifacts/cite-check/README.md
+index e4ede7c..1aecf8b 100644
+--- a/open-artifacts/cite-check/README.md
++++ b/open-artifacts/cite-check/README.md
+@@ -3,24 +3,32 @@
+ Deterministic quote verification for legal documents: compares every quoted
+ passage in a brief/memo against its cited sources and classifies it as
+ **exact / normalized / fuzzy / not_found**, with a similarity score, a located
+-verbatim anchor (source + page/§/¶ + char offsets), and pinpoint citation
+-validation (`p. 12`, `pp. 12-13`, `at 123`, `§ 5.2`, `¶ 8`). Wrong page cites
+-and missing sources are flagged. See [spec.md](spec.md) for the full IO
+-contract and the LLM-part prompt schema. Fictional worked example in
+-[examples/](examples/) — 9 quotes from a fictional appeal yield 5 exact,
+-1 normalized, 1 fuzzy, 2 not_found and 2 pinpoint mismatches.
++verbatim anchor (source + page/§/¶ + char offsets), a machine-checkable token
++diff, and pinpoint citation validation (`p. 12`, `pp. 12-13`, `at 123`, `§ 5.2`,
++`¶ 8`, `Tr. 12:4-12:8`, `§§ 5-6`, `id. at 123`, `n. 12`). Wrong page cites and
++missing sources are flagged. Deterministic guards catch altered digits (the
++number guard caps them at fuzzy) and silently dropped tokens (omission notes,
++with explicit ellipses accepted). See [spec.md](spec.md) for the full IO
++contract, the document-side extractor, and the LLM-part prompt schema /
++proposition harness. Fictional worked example in [examples/](examples/) —
++10 quotes from a fictional appeal yield 5 exact, 1 normalized, 2 fuzzy,
++2 not_found and 2 pinpoint mismatches.
+ 
+ ## Layout
+ 
+ - `core/` — dependency-free TypeScript, no LLM: `textutil.ts` (token-span
+-  matcher), `pinpoint.ts` (citation parser), `citecheck.ts` (engine + report),
+-  `citecheck.test.ts`.
++  matcher + number guard), `diff.ts` (LCS token diff), `pinpoint.ts` (citation
++  parser), `extract.ts` (document-side quote/footnote extractor),
++  `citecheck.ts` (engine + report), `propositions.ts` (LLM prompt-builder +
++  verdict gate), `core.js` (plain-JS port for the demo, kept at parity by
++  `parity.test.ts`), tests alongside.
+ - `examples/` — `input.json` (fictional brief + depo/MSA/declaration sources),
+   `run.ts`, generated `output.json` + `report.md`.
++- `demo/` — standalone HTML demo importing `../core/core.js`.
+ 
+ ## Run
+ 
+ ```bash
+-npx tsx --test core/citecheck.test.ts   # 12 tests
+-npx tsx examples/run.ts                 # regenerates examples/output.json + report.md
++npx tsx --test core/*.test.ts    # 33 tests
++npx tsx examples/run.ts          # regenerates examples/output.json + report.md
+ ```
+diff --git a/open-artifacts/cite-check/core/citecheck.test.ts b/open-artifacts/cite-check/core/citecheck.test.ts
+index a7de000..198d278 100644
+--- a/open-artifacts/cite-check/core/citecheck.test.ts
++++ b/open-artifacts/cite-check/core/citecheck.test.ts
+@@ -147,3 +147,90 @@ test('similarity is symmetric and bounded', () => {
+   assert.equal(similarity(a, a), 1);
+   assert.equal(similarity(a, 'something else entirely') < 0.3, true);
+ });
++
++test('number guard caps a near-verbatim quote with an altered digit at fuzzy, with a note', () => {
++  const text = 'The auditor determined that the total loss attributable to the February pipe failure was 34,800 dollars, covering repairs, replacement parts, and three days of lost production at the Millbrook plant, and the report was signed on March 9 by the lead engineer.';
++  const input: CiteCheckInput = {
++    document: { name: 'Motion (fictional)' },
++    sources: [{ id: 'audit', name: 'Audit Report (fictional)', text }],
++    quotes: [{ id: 'N1', text: text.replace('34,800', '35,800'), sourceId: 'audit' }],
++  };
++  const r = runCiteCheck(input).results[0];
++  assert.equal(r.classification, 'fuzzy', JSON.stringify(r));
++  assert.ok(r.notes.some((n) => n.includes('quote "35" vs source "34"')), JSON.stringify(r.notes));
++  assert.ok(r.diff!.some((o) => o.op === 'replace' && o.quote.includes('35') && o.source.includes('34')), JSON.stringify(r.diff));
++});
++
++test('omission detection flags silently dropped tokens (Q2 fixture)', () => {
++  const r = runCiteCheck(DEPO).results.find((x) => x.id === 'Q2')!;
++  assert.equal(r.classification, 'normalized');
++  assert.ok(r.notes.some((n) => n.includes('omits "on the document"')), JSON.stringify(r.notes));
++  assert.ok(r.anchor!.verbatim.endsWith('on the document'), r.anchor!.verbatim);
++  const del = r.diff!.find((o) => o.op === 'delete')!;
++  assert.equal(del.source.join(' '), 'on the document');
++  assert.equal(r.anchor!.verbatim.slice(del.sourceSpan.start, del.sourceSpan.end), 'on the document');
++  assert.equal(del.sourceSpan.end, r.anchor!.verbatim.length);
++});
++
++test('explicit ellipsis makes an omission acceptable (noted, still normalized)', () => {
++  const text = 'The auditor determined that the total loss attributable to the February pipe failure was 34,800 dollars, covering repairs, replacement parts, and three days of lost production at the Millbrook plant, and the report was signed on March 9 by the lead engineer.';
++  const input: CiteCheckInput = {
++    document: { name: 'Motion (fictional)' },
++    sources: [{ id: 'audit', name: 'Audit Report (fictional)', text }],
++    quotes: [{ id: 'E1', text: text.replace('covering repairs, replacement parts,', 'covering repairs …'), sourceId: 'audit' }],
++  };
++  const r = runCiteCheck(input).results[0];
++  assert.equal(r.classification, 'normalized', JSON.stringify(r.notes));
++  assert.ok(r.notes.some((n) => n.includes('ellipsis') && n.includes('replacement parts')), JSON.stringify(r.notes));
++});
++
++test('coverage roll-up reports Checked N of M and never claims confirmation for unchecked quotes', () => {
++  const sub: CiteCheckInput = {
++    ...DEPO,
++    quotes: [DEPO.quotes[0], DEPO.quotes[1], DEPO.quotes[2], DEPO.quotes[3]],
++  };
++  const report = runCiteCheck(sub);
++  assert.equal(report.summary.checked, 3);
++  assert.equal(report.summary.couldNotCheck, 1);
++  assert.equal(report.summary.unparseablePinpoints, 0);
++  const md = renderReport(report);
++  assert.ok(md.includes('Checked 3 of 4'), md.slice(0, 300));
++  assert.ok(md.includes('never reported as "confirmed"'));
++});
++
++test('unverifiable pinpoint details distinguish missing source, unlocated quote, and missing segments', () => {
++  const ghost: CiteCheckInput = {
++    ...DEPO,
++    quotes: [{ id: 'G1', text: 'The seal was intact.', sourceId: 'ghost-doc', pinpoint: 'p. 3' }],
++  };
++  const g = runCiteCheck(ghost).results[0];
++  assert.equal(g.pinpoint?.status, 'unverifiable');
++  assert.ok(g.pinpoint!.detail.includes('source not provided'), g.pinpoint!.detail);
++
++  const q4 = runCiteCheck(DEPO).results.find((x) => x.id === 'Q4')!;
++  assert.equal(q4.pinpoint?.status, 'unverifiable');
++  assert.ok(q4.pinpoint!.detail.includes('quote not located'), q4.pinpoint!.detail);
++
++  const unsegmented: CiteCheckInput = {
++    document: { name: 'Free text (fictional)' },
++    sources: [{ id: 'f', name: 'Free-text Source', text: 'Some unsegmented free text.' }],
++    quotes: [{ id: 'F1', text: 'Some unsegmented free text.', sourceId: 'f', pinpoint: 'p. 3' }],
++  };
++  const f = runCiteCheck(unsegmented).results[0];
++  assert.equal(f.pinpoint?.status, 'unverifiable');
++  assert.ok(f.pinpoint!.detail.includes('source does not declare page segments'), f.pinpoint!.detail);
++});
++
++test('runCiteCheck derives quotes from document.text when quotes are not supplied', () => {
++  const input = {
++    document: {
++      name: 'Extracted brief (fictional)',
++      text: 'She testified that “The seal was already broken.”[1]\n\n[1] Okafor Deposition, p. 11.',
++    },
++    sources: [{ id: 'okafor-depo', name: 'Okafor Deposition (fictional)', aliases: ['Okafor Deposition'], pages: [{ number: 11, text: 'A. The seal was already broken.' }] }],
++  };
++  const report = runCiteCheck(input as unknown as CiteCheckInput);
++  assert.equal(report.summary.total, 1);
++  assert.equal(report.results[0].classification, 'exact');
++  assert.equal(report.results[0].id, 'Q1');
++});
+diff --git a/open-artifacts/cite-check/core/citecheck.ts b/open-artifacts/cite-check/core/citecheck.ts
+index c071eab..6e83d42 100644
+--- a/open-artifacts/cite-check/core/citecheck.ts
++++ b/open-artifacts/cite-check/core/citecheck.ts
+@@ -8,15 +8,23 @@
+  *   fuzzy       — best window similarity ≥ fuzzyThreshold (default 0.7) and coverage ≥ 0.6
+  *   not_found   — everything below the fuzzy threshold
+  *
+- * Every located quote carries a verbatim anchor: source id, segment (page /
+- * section / paragraph when the source declares them), and char offsets.
+- * Pinpoint citations are parsed and, when the source declares comparable
+- * segments, validated against the anchor's actual segment.
++ * Guards (deterministic, never silent):
++ *   number guard   — an altered numeric token caps the class at fuzzy and is noted
++ *   omission check — tokens dropped from the located span are noted; an explicit
++ *                    ellipsis in the quote marks the omission as accepted
++ *
++ * Every located quote carries a verbatim anchor (source id, segment, char
++ * offsets — extended to the end of the quoted sentence for near-verbatim
++ * quotes), a machine-checkable token diff (LCS ops), and pinpoint validation.
+  */
+ 
+-import { bestWindow, rawContains, tokens } from './textutil';
++import { bestWindow, rawContains, tokens, tokenizeWithSpans, numericMismatches } from './textutil';
++import type { Tok, WindowMatch } from './textutil';
+ import { parsePinpoint, formatPinpoint } from './pinpoint';
+ import type { Pinpoint } from './pinpoint';
++import { alignTokens, diffTokens, formatDiffOps } from './diff';
++import type { DiffOp } from './diff';
++import { extractQuotes } from './extract';
+ 
+ export interface PageSeg {
+   number: number;
+@@ -38,20 +46,23 @@ export interface SourceDoc {
+   pages?: PageSeg[];
+   sections?: SectionSeg[];
+   paragraphs?: ParagraphSeg[];
++  /** alternative names the reviewed document may cite this source by */
++  aliases?: string[];
+ }
+ export interface QuoteEntry {
+   id: string;
+   text: string;
+   sourceId: string;
+-  /** pinpoint as it appears in the reviewed document, e.g. "p. 12", "§ 5.2", "¶ 8" */
++  /** pinpoint as it appears in the reviewed document, e.g. "p. 12", "§ 5.2", "¶ 8", "Tr. 12:4" */
+   pinpoint?: string;
+   /** optional proposition the quote is offered to support (LLM judges this; core does not) */
+   proposition?: string;
+ }
+ export interface CiteCheckInput {
+-  document: { name: string };
++  document: { name: string; text?: string };
+   sources: SourceDoc[];
+-  quotes: QuoteEntry[];
++  /** omit when document.text is given: quotes are then extracted from it (see core/extract.ts) */
++  quotes?: QuoteEntry[];
+   /** minimum best-window Jaccard for "fuzzy"; default 0.7 */
+   fuzzyThreshold?: number;
+ }
+@@ -82,6 +93,10 @@ export interface QuoteResult {
+   /** closest window for not_found quotes — evidence, not an endorsement */
+   bestCandidate: Anchor | null;
+   pinpoint: PinpointCheck | null;
++  /** LCS token diff quote ↔ anchor span; null when no anchor */
++  diff: DiffOp[] | null;
++  /** echoed from the input quote, for the proposition harness */
++  proposition?: string;
+   notes: string[];
+ }
+ export interface CiteCheckReport {
+@@ -92,14 +107,23 @@ export interface CiteCheckReport {
+     normalized: number;
+     fuzzy: number;
+     not_found: number;
++    /** located quotes: exact + normalized + fuzzy */
++    checked: number;
++    /** never reported as "confirmed" */
++    couldNotCheck: number;
++    unparseablePinpoints: number;
+     pinpointIssues: number;
+   };
++  /** present only when quotes were extracted from document.text */
++  extractionWarnings?: string[];
+   results: QuoteResult[];
+ }
+ 
+ interface BuiltDoc {
+   doc: SourceDoc;
+   fullText: string;
++  /** tokens of fullText with char spans */
++  toks: Tok[];
+   /** char ranges per segment kind */
+   segments: Array<{ kind: 'page' | 'section' | 'paragraph'; label: string; start: number; end: number }>;
+ }
+@@ -121,7 +145,7 @@ function buildDoc(doc: SourceDoc): BuiltDoc {
+     const start = append(seg.text);
+     segments.push({ kind: seg.kind, label: seg.label, start, end: full.length });
+   }
+-  return { doc, fullText: full, segments };
++  return { doc, fullText: full, toks: tokenizeWithSpans(full), segments };
+ }
+ 
+ function segmentAt(built: BuiltDoc, char: number): BuiltDoc['segments'][number] | null {
+@@ -131,18 +155,159 @@ function segmentAt(built: BuiltDoc, char: number): BuiltDoc['segments'][number]
+   return null;
+ }
+ 
+-function checkPinpoint(quote: QuoteEntry, anchor: Anchor | null): PinpointCheck | null {
++function anchorFromWindow(built: BuiltDoc, useWin: WindowMatch | null): Anchor | null {
++  if (!useWin) return null;
++  const seg = segmentAt(built, useWin.start);
++  return {
++    sourceId: built.doc.id,
++    sourceName: built.doc.name,
++    segmentKind: seg?.kind ?? null,
++    segmentLabel: seg?.label ?? null,
++    charStart: useWin.start,
++    charEnd: useWin.end,
++    verbatim: useWin.verbatim,
++  };
++}
++
++/**
++ * Near-verbatim anchor: LCS-align the quote against the segment containing the
++ * best window, then extend the span to the end of that sentence, so dropped
++ * tail tokens ("... any exception" ⊂ "... any exception on the document.")
++ * stay inside the anchor and surface in the diff instead of being trimmed away.
++ */
++function alignedAnchor(built: BuiltDoc, quoteToks: Tok[], win: WindowMatch | null): { anchor: Anchor | null; diff: DiffOp[] | null } {
++  if (!win) return { anchor: null, diff: null };
++  const seg = segmentAt(built, win.start);
++  const regionEnd = seg ? seg.end : built.fullText.length;
++  // region starts at the best window (never before it) so early duplicate
++  // tokens from a preceding sentence cannot capture the alignment
++  const wsIdx = built.toks.findIndex((t) => t.start >= win.start);
++  const regionToks = wsIdx < 0 ? [] : built.toks.filter((t, idx) => idx >= wsIdx && t.end <= regionEnd);
++  const pairs = alignTokens(quoteToks, regionToks);
++  if (pairs.length === 0) {
++    const fallback = anchorFromWindow(built, win);
++    return { anchor: fallback, diff: fallback ? diffTokens(quoteToks, tokenizeWithSpans(fallback.verbatim)) : null };
++  }
++  const first = regionToks[pairs[0].s];
++  const lastIdx = pairs[pairs.length - 1].s;
++  let endIdx = lastIdx;
++  for (let j = lastIdx + 1; j < regionToks.length && j <= lastIdx + 30; j++) {
++    const gap = built.fullText.slice(regionToks[j - 1].end, regionToks[j].start);
++    if (/[.!?\n]/.test(gap)) break; // sentence (or line) already ended
++    endIdx = j;
++  }
++  const endTok = regionToks[endIdx];
++  const anchorSeg = segmentAt(built, first.start);
++  const anchor: Anchor = {
++    sourceId: built.doc.id,
++    sourceName: built.doc.name,
++    segmentKind: anchorSeg?.kind ?? null,
++    segmentLabel: anchorSeg?.label ?? null,
++    charStart: first.start,
++    charEnd: endTok.end,
++    verbatim: built.fullText.slice(first.start, endTok.end),
++  };
++  return { anchor, diff: diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim)) };
++}
++
++function segmentKindOf(p: Pinpoint): 'page' | 'section' | 'paragraph' | null {
++  if (p.kind === 'page' || p.kind === 'page-line') return 'page';
++  if (p.kind === 'section') return 'section';
++  if (p.kind === 'paragraph') return 'paragraph';
++  return null; // footnote / article / clause — not modeled
++}
++
++function checkPinpoint(quote: QuoteEntry, anchor: Anchor | null, built: BuiltDoc | null): PinpointCheck | null {
+   if (quote.pinpoint === undefined) return null;
+   const parsed = parsePinpoint(quote.pinpoint);
+   if (parsed === null) {
+     return { raw: quote.pinpoint, parsed: null, status: 'unparseable', detail: 'pinpoint syntax not recognized' };
+   }
+-  if (parsed.kind !== anchor?.segmentKind || anchor?.segmentKind === null) {
++  const kindWord = segmentKindOf(parsed);
++  if (kindWord === null) {
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: 'unverifiable',
++      detail: `core does not model ${parsed.kind} segments, so the pinpoint cannot be validated`,
++    };
++  }
++  if (anchor === null || anchor.segmentKind === null) {
++    if (built === null) {
++      return { raw: quote.pinpoint, parsed, status: 'unverifiable', detail: 'source not provided, so the pinpoint cannot be validated' };
++    }
++    if (!built.segments.some((s) => s.kind === kindWord)) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: 'unverifiable',
++        detail: `source does not declare ${kindWord} segments, so the pinpoint cannot be validated`,
++      };
++    }
++    if (anchor === null) {
++      return { raw: quote.pinpoint, parsed, status: 'unverifiable', detail: 'quote not located in the source, so the pinpoint cannot be validated' };
++    }
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: 'unverifiable',
++      detail: `the quote is not located in a segmented part of the source, so the ${kindWord} pinpoint cannot be validated`,
++    };
++  }
++  if (parsed.kind !== anchor.segmentKind && parsed.kind !== 'page-line') {
+     return {
+       raw: quote.pinpoint,
+       parsed,
+       status: 'unverifiable',
+-      detail: `source does not declare ${parsed.kind} segments, so the pinpoint cannot be validated`,
++      detail: `the quote is located in a ${anchor.segmentKind} segment, so the ${kindWord} pinpoint cannot be validated`,
++    };
++  }
++  if (parsed.kind === 'page-line') {
++    if (anchor.segmentKind !== 'page' || built === null) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: 'unverifiable',
++        detail: 'the quote is not located in a page segment, so the page:line pinpoint cannot be validated',
++      };
++    }
++    const anchorPage = Number(anchor.segmentLabel);
++    const pageFrom = parsed.page;
++    const pageTo = parsed.pageTo ?? parsed.page;
++    if (anchorPage < pageFrom || anchorPage > pageTo) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: 'mismatch',
++        detail: `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage}`,
++      };
++    }
++    const seg = segmentAt(built, anchor.charStart);
++    if (!seg) {
++      return { raw: quote.pinpoint, parsed, status: 'unverifiable', detail: 'quote not located in the source, so the pinpoint cannot be validated' };
++    }
++    const pageText = built.fullText.slice(seg.start, seg.end);
++    const lineTo = parsed.lineTo ?? parsed.lineFrom;
++    if (!pageText.includes('\n')) {
++      if (parsed.lineFrom <= 1 && lineTo <= 1) {
++        return { raw: quote.pinpoint, parsed, status: 'ok', detail: `quote is located on page ${anchorPage} (single line)` };
++      }
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: 'unverifiable',
++        detail: `page ${anchorPage} is not line-segmented, so line ${parsed.lineFrom} cannot be validated`,
++      };
++    }
++    const line = pageText.slice(0, anchor.charStart - seg.start).split('\n').length;
++    const ok = line >= parsed.lineFrom && line <= lineTo;
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: ok ? 'ok' : 'mismatch',
++      detail: ok
++        ? `quote is located on page ${anchorPage} line ${line}`
++        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage} line ${line}`,
+     };
+   }
+   if (parsed.kind === 'page' && anchor.segmentKind === 'page') {
+@@ -160,25 +325,34 @@ function checkPinpoint(quote: QuoteEntry, anchor: Anchor | null): PinpointCheck
+     };
+   }
+   if (parsed.kind === 'section' && anchor.segmentKind === 'section') {
+-    const ok = anchor.segmentLabel === parsed.label;
++    let ok: boolean;
++    if (parsed.to === undefined) {
++      ok = anchor.segmentLabel === parsed.label;
++    } else {
++      const fromNum = Number(parsed.label);
++      const toNum = Number(parsed.to);
++      const aNum = Number(anchor.segmentLabel);
++      ok = !Number.isNaN(fromNum) && !Number.isNaN(toNum) && !Number.isNaN(aNum) && aNum >= fromNum && aNum <= toNum;
++    }
+     return {
+       raw: quote.pinpoint,
+       parsed,
+       status: ok ? 'ok' : 'mismatch',
+       detail: ok
+         ? `quote is located in § ${anchor.segmentLabel}`
+-        : `pinpoint says § ${parsed.label} but the quote is located in § ${anchor.segmentLabel}`,
++        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in § ${anchor.segmentLabel}`,
+     };
+   }
+   // paragraph
+-  const ok = Number(anchor.segmentLabel) === parsed.number;
++  const anchorNum = Number(anchor.segmentLabel);
++  const ok = parsed.to !== undefined ? anchorNum >= parsed.number && anchorNum <= parsed.to : anchorNum === parsed.number;
+   return {
+     raw: quote.pinpoint,
+     parsed,
+     status: ok ? 'ok' : 'mismatch',
+     detail: ok
+       ? `quote is located in ¶ ${anchor.segmentLabel}`
+-      : `pinpoint says ¶ ${parsed.number} but the quote is located in ¶ ${anchor.segmentLabel}`,
++      : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in ¶ ${anchor.segmentLabel}`,
+   };
+ }
+ 
+@@ -187,80 +361,118 @@ export function runCiteCheck(input: CiteCheckInput): CiteCheckReport {
+   const byId = new Map<string, BuiltDoc>();
+   for (const doc of input.sources) byId.set(doc.id, buildDoc(doc));
+ 
+-  const results: QuoteResult[] = input.quotes.map((quote) => {
++  let quoteList: QuoteEntry[];
++  let extractionWarnings: string[] | undefined;
++  if (input.quotes !== undefined) {
++    quoteList = input.quotes;
++  } else if (input.document.text !== undefined) {
++    const extracted = extractQuotes(input.document.text, input.sources);
++    quoteList = extracted.quotes;
++    extractionWarnings = extracted.warnings;
++  } else {
++    quoteList = [];
++  }
++
++  const results: QuoteResult[] = quoteList.map((quote) => {
+     const notes: string[] = [];
+     const built = byId.get(quote.sourceId);
++    const base = {
++      id: quote.id,
++      ...(quote.proposition !== undefined ? { proposition: quote.proposition } : {}),
++    };
+     if (!built) {
+       return {
+-        id: quote.id,
+-        classification: 'not_found',
++        ...base,
++        classification: 'not_found' as Classification,
+         similarity: 0,
+         coverage: 0,
+         anchor: null,
+-        pinpoint: checkPinpoint(quote, null),
++        pinpoint: checkPinpoint(quote, null, null),
+         bestCandidate: null,
++        diff: null,
+         notes: [`source "${quote.sourceId}" not provided`],
+       };
+     }
+ 
++    const quoteToks = tokenizeWithSpans(quote.text);
+     const win = bestWindow(built.fullText, quote.text);
+     const similarity = win?.score ?? 0;
+     const coverage = win?.coverage ?? 0;
+ 
+     let classification: Classification;
++    let anchor: Anchor | null = null;
++    let diff: DiffOp[] | null = null;
++
+     if (rawContains(built.fullText, quote.text)) {
+       classification = 'exact';
++      anchor = anchorFromWindow(built, win ?? locateRaw(built.fullText, quote.text));
++      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+     } else if (similarity >= 0.95 && coverage >= 0.95) {
+       classification = 'normalized';
+       notes.push('matches modulo case/punctuation/whitespace');
++      const aligned = alignedAnchor(built, quoteToks, win);
++      anchor = aligned.anchor;
++      diff = aligned.diff;
++      // omission detection: pure deletions from the located span
++      const hasEllipsis = /\.\.\.|…/.test(quote.text);
++      if (anchor && diff) {
++        for (const op of diff) {
++          if (op.op !== 'delete') continue;
++          // diff spans are relative to anchor.verbatim (the diffed string)
++          const omitted = anchor.verbatim.slice(op.sourceSpan.start, op.sourceSpan.end);
++          notes.push(hasEllipsis ? `omits "${omitted}" — explicit ellipsis, accepted` : `omits "${omitted}" without an ellipsis`);
++        }
++        // number guard: altered digits never pass as near-verbatim
++        const mism = numericMismatches(
++          quoteToks.map((t) => t.norm),
++          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
++        );
++        for (const p of mism.paired) notes.push(`quote "${p.quote}" vs source "${p.source}"`);
++        for (const q of mism.quoteOnly) notes.push(`quote "${q}" not found in the located source text`);
++        for (const s of mism.sourceOnly) notes.push(`source "${s}" appears in the located text but not in the quote`);
++        if (mism.paired.length + mism.quoteOnly.length > 0) {
++          classification = 'fuzzy';
++          notes.push('number alteration caps the classification at fuzzy — requires human review');
++        }
++      }
+     } else if (similarity >= fuzzyThreshold && coverage >= 0.6) {
+       classification = 'fuzzy';
+       notes.push('substantial overlap but not verbatim — requires human review');
++      anchor = anchorFromWindow(built, win);
++      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+     } else {
+       classification = 'not_found';
++      anchor = anchorFromWindow(built, win); // kept as bestCandidate evidence below
+       if (win) notes.push(`best candidate similarity ${similarity.toFixed(2)} below threshold ${fuzzyThreshold}`);
+     }
+ 
+-    // Anchor from the verbatim window (even for "exact", so offsets always resolve)
+-    const useWin = win ?? (rawContains(built.fullText, quote.text) ? locateRaw(built.fullText, quote.text) : null);
+-    let anchor: Anchor | null = null;
+-    if (useWin) {
+-      const seg = segmentAt(built, useWin.start);
+-      anchor = {
+-        sourceId: built.doc.id,
+-        sourceName: built.doc.name,
+-        segmentKind: seg?.kind ?? null,
+-        segmentLabel: seg?.label ?? null,
+-        charStart: useWin.start,
+-        charEnd: useWin.end,
+-        verbatim: useWin.verbatim,
+-      };
+-    }
+     const bestCandidate = classification === 'not_found' ? anchor : null;
+     if (classification === 'not_found') anchor = null;
+ 
+-    const pinpoint = checkPinpoint(quote, anchor);
++    const pinpoint = checkPinpoint(quote, anchor, built);
+     if (pinpoint?.status === 'mismatch') notes.push(`PINPOINT ISSUE: ${pinpoint.detail}`);
+     if (quote.proposition !== undefined && classification !== 'not_found') {
+       notes.push('proposition support is an LLM/human judgment — not evaluated by this core');
+     }
+ 
+-    return { id: quote.id, classification, similarity, coverage, anchor, bestCandidate, pinpoint, notes };
++    return { ...base, classification, similarity, coverage, anchor, bestCandidate, pinpoint, diff, notes };
+   });
+ 
+   const count = (c: Classification): number => results.filter((r) => r.classification === c).length;
+-  return {
+-    documentName: input.document.name,
+-    summary: {
+-      total: results.length,
+-      exact: count('exact'),
+-      normalized: count('normalized'),
+-      fuzzy: count('fuzzy'),
+-      not_found: count('not_found'),
+-      pinpointIssues: results.filter((r) => r.pinpoint?.status === 'mismatch').length,
+-    },
+-    results,
++  const summary: CiteCheckReport['summary'] = {
++    total: results.length,
++    exact: count('exact'),
++    normalized: count('normalized'),
++    fuzzy: count('fuzzy'),
++    not_found: count('not_found'),
++    checked: results.length - count('not_found'),
++    couldNotCheck: count('not_found'),
++    unparseablePinpoints: results.filter((r) => r.pinpoint?.status === 'unparseable').length,
++    pinpointIssues: results.filter((r) => r.pinpoint?.status === 'mismatch').length,
+   };
++  const report: CiteCheckReport = { documentName: input.document.name, summary, results };
++  if (extractionWarnings !== undefined) report.extractionWarnings = extractionWarnings;
++  return report;
+ }
+ 
+ /** Anchor for an exactly-contained quote (window search also finds these; kept precise). */
+@@ -277,8 +489,14 @@ export function renderReport(report: CiteCheckReport): string {
+   lines.push(`# Cite check — ${report.documentName}`);
+   lines.push('');
+   lines.push(
+-    `**${s.total} quotes checked:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ${s.not_found} not found · ${s.pinpointIssues} pinpoint issue(s)`,
++    `**Checked ${s.checked} of ${s.total} quotes:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ` +
++      `${s.couldNotCheck} not checked (never reported as "confirmed") · ${s.unparseablePinpoints} unparseable pinpoint(s) · ` +
++      `${s.pinpointIssues} pinpoint issue(s)`,
+   );
++  if (report.extractionWarnings !== undefined && report.extractionWarnings.length > 0) {
++    lines.push('');
++    for (const w of report.extractionWarnings) lines.push(`- extraction: ${w}`);
++  }
+   lines.push('');
+   lines.push('| Quote | Verdict | Similarity | Anchor | Pinpoint |');
+   lines.push('|---|---|---|---|---|');
+@@ -300,9 +518,14 @@ export function renderReport(report: CiteCheckReport): string {
+     } else {
+       lines.push('No locating anchor in the provided sources.');
+     }
++    const marks = r.diff ? formatDiffOps(r.diff) : '';
++    if (marks) lines.push(`Token diff: ${marks}`);
+     if (r.pinpoint) lines.push(`Pinpoint: ${r.pinpoint.raw} — ${r.pinpoint.status} (${r.pinpoint.detail}).`);
+     for (const n of r.notes) lines.push(`- ${n}`);
+     lines.push('');
+   }
+   return lines.join('\n');
+ }
++
++// re-export for convenience of downstream tooling
++export { tokens };
+diff --git a/open-artifacts/cite-check/core/core.js b/open-artifacts/cite-check/core/core.js
+index 8fa75a6..cb0c7ca 100644
+--- a/open-artifacts/cite-check/core/core.js
++++ b/open-artifacts/cite-check/core/core.js
+@@ -2,9 +2,10 @@
+  * cite-check core — deterministic quote verification against source documents.
+  * NO LLM: every classification is reproducible from the inputs alone.
+  *
+- * Plain-JavaScript port of core/citecheck.ts + pinpoint.ts + textutil.ts
+- * (the TypeScript sources stay authoritative for tests). Exports the same
+- * functions; browser + Node compatible, dependency-free.
++ * Plain-JavaScript port of core/citecheck.ts + pinpoint.ts + textutil.ts +
++ * diff.ts + extract.ts (the TypeScript sources stay authoritative for tests).
++ * Exports the same engine functions; browser + Node compatible, dependency-free.
++ * core/propositions.ts is TS-only (a harness around the engine, not part of it).
+  *
+  * Classification ladder (first match wins):
+  *   exact       — quote appears verbatim (whitespace-trimmed) in the source
+@@ -12,10 +13,13 @@
+  *   fuzzy       — best window similarity ≥ fuzzyThreshold (default 0.7) and coverage ≥ 0.6
+  *   not_found   — everything below the fuzzy threshold
+  *
+- * Every located quote carries a verbatim anchor: source id, segment (page /
+- * section / paragraph when the source declares them), and char offsets.
+- * Pinpoint citations are parsed and, when the source declares comparable
+- * segments, validated against the anchor's actual segment.
++ * Guards (deterministic, never silent):
++ *   number guard   — an altered numeric token caps the class at fuzzy and is noted
++ *   omission check — tokens dropped from the located span are noted; an explicit
++ *                    ellipsis in the quote marks the omission as accepted
++ *
++ * Every located quote carries a verbatim anchor (source id, segment, char
++ * offsets), a machine-checkable token diff (LCS ops), and pinpoint validation.
+  * @module core
+  */
+ 
+@@ -116,19 +120,190 @@ export function similarity(a, b) {
+   return inter / (ta.length + tb.length - inter);
+ }
+ 
++/** Numeric token: digits with an optional interior decimal point ("90", "5.2").
++ * @param {string} t @returns {boolean} */
++export function isNumericToken(t) {
++  return /^\d+(?:\.\d+)?$/.test(t);
++}
++
++/**
++ * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
++ * the located source span. Any difference is potential material alteration
++ * ("90" -> "120") and must never pass as near-verbatim.
++ * @param {string[]} quote @param {string[]} source
++ * @returns {{ paired: Array<{ quote: string, source: string }>, quoteOnly: string[], sourceOnly: string[] }} */
++export function numericMismatches(quote, source) {
++  const qNums = quote.filter(isNumericToken);
++  const sNums = source.filter(isNumericToken);
++  const qCounts = multiset(qNums);
++  const sCounts = multiset(sNums);
++  const qDiff = [];
++  const sDiff = [];
++  for (const [t, c] of qCounts) {
++    const extra = c - (sCounts.get(t) ?? 0);
++    for (let k = 0; k < extra; k++) qDiff.push(t);
++  }
++  for (const [t, c] of sCounts) {
++    const extra = c - (qCounts.get(t) ?? 0);
++    for (let k = 0; k < extra; k++) sDiff.push(t);
++  }
++  const pairedCount = Math.min(qDiff.length, sDiff.length);
++  const paired = [];
++  for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
++  return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
++}
++
++/* ============================================================
++ * diff (port of core/diff.ts)
++ * ============================================================ */
++
++/**
++ * Token-level LCS walk (deterministic tie-break: skip quote first).
++ * @param {Tok[]} quote @param {Tok[]} source
++ * @returns {Array<{ type: "equal", q: number, s: number } | { type: "del", s: number } | { type: "ins", q: number }>} */
++function lcsWalk(quote, source) {
++  const n = quote.length;
++  const m = source.length;
++  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      dp[i][j] = quote[i].norm === source[j].norm ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
++    }
++  }
++  const steps = [];
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (quote[i].norm === source[j].norm) {
++      steps.push({ type: "equal", q: i, s: j });
++      i++;
++      j++;
++    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
++      // skipping quote[i] preserves the LCS (quote-only token → insert)
++      steps.push({ type: "ins", q: i });
++      i++;
++    } else {
++      // skipping source[j] preserves the LCS (source-only token → delete)
++      steps.push({ type: "del", s: j });
++      j++;
++    }
++  }
++  while (j < m) steps.push({ type: "del", s: j++ });
++  while (i < n) steps.push({ type: "ins", q: i++ });
++  return steps;
++}
++
++/** LCS alignment pairs (quote index ↔ source index), in order.
++ * @param {Tok[]} quote @param {Tok[]} source
++ * @returns {Array<{ q: number, s: number }>} */
++export function alignTokens(quote, source) {
++  return lcsWalk(quote, source)
++    .filter((st) => st.type === "equal")
++    .map((st) => ({ q: st.q, s: st.s }));
++}
++
++/** Grouped diff ops; consecutive del+ins runs merge into a single replace.
++ * @param {Tok[]} quote @param {Tok[]} source */
++export function diffTokens(quote, source) {
++  const steps = lcsWalk(quote, source);
++  const ops = [];
++  let equalRun = [];
++  let delRun = [];
++  let insRun = [];
++
++  const flushEqual = () => {
++    if (equalRun.length > 0) {
++      ops.push({ op: "equal", source: equalRun });
++      equalRun = [];
++    }
++  };
++  const flushChange = () => {
++    if (delRun.length === 0 && insRun.length === 0) return;
++    flushEqual();
++    if (delRun.length > 0 && insRun.length > 0) {
++      ops.push({
++        op: "replace",
++        quote: insRun.map((t) => t.norm),
++        source: delRun.map((t) => t.norm),
++        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
++      });
++    } else if (delRun.length > 0) {
++      ops.push({
++        op: "delete",
++        source: delRun.map((t) => t.norm),
++        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
++      });
++    } else {
++      ops.push({ op: "insert", quote: insRun.map((t) => t.norm) });
++    }
++    delRun = [];
++    insRun = [];
++  };
++
++  for (const st of steps) {
++    if (st.type === "equal") {
++      flushChange();
++      equalRun.push(source[st.s].norm);
++    } else if (st.type === "del") {
++      delRun.push(source[st.s]);
++    } else {
++      insRun.push(quote[st.q]);
++    }
++  }
++  flushChange();
++  flushEqual();
++  return ops;
++}
++
++/** Inline marks for non-equal ops, e.g. `del:"on the document" sub:"120"->"90"`.
++ * @param {any[]} ops @returns {string} */
++export function formatDiffOps(ops) {
++  return ops
++    .filter((o) => o.op !== "equal")
++    .map((o) => {
++      switch (o.op) {
++        case "delete":
++          return `del:"${o.source.join(" ")}"`;
++        case "insert":
++          return `ins:"${o.quote.join(" ")}"`;
++        case "replace":
++          return `sub:"${o.quote.join(" ")}"->"${o.source.join(" ")}"`;
++      }
++    })
++    .join(" ");
++}
++
+ /* ============================================================
+  * pinpoint (port of core/pinpoint.ts)
+  * ============================================================ */
+ 
++const NUM = "[0-9]+(?:\\.[0-9]+)*";
++const SEC_RANGE = new RegExp(`^(?:§§|secs\\.|sections?)\\s*(${NUM})\\s*[-–—]\\s*(${NUM})$`, "i");
++const SEC_SINGLE = new RegExp(`^(?:§+|secs?\\.|sections?)\\s*(${NUM})$`, "i");
++const ART = new RegExp(`^art(?:icle)?\\.?\\s*(${NUM})$`, "i");
++const CL = new RegExp(`^cl(?:ause)?\\.?\\s*(${NUM})$`, "i");
++
+ /**
+- * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123".
++ * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123",
++ * plus v2 forms: transcript page:line ("Tr. 12:4", "12:4-12:8"), ranges
++ * ("§§ 5-6", "¶¶ 7-8"), "id. at 123", "n. 12", "art. 3", "cl. 8".
+  * Deterministic, dependency-free. Unparseable strings return null (never guessed).
+  * @param {string} raw
+- * @returns {{ kind: "page", from: number, to?: number } | { kind: "section", label: string } | { kind: "paragraph", number: number } | null}
++ * @returns {any} Pinpoint | null
+  */
+ export function parsePinpoint(raw) {
+   const s = raw.trim();
+   let m;
++  if ((m = s.match(/^id\.\s+at\s+(\d+)$/i))) return { kind: "page", from: Number(m[1]) };
++  if ((m = s.match(/^id\.\s+at\s+(\d+):(\d+)$/i))) return { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
++  if ((m = s.match(/^(?:tr\.|transcript)?\s*(\d+):(\d+)(?:\s*[-–—]\s*(?:(\d+):)?(\d+))?$/i))) {
++    const pl = { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
++    if (m[4] !== undefined) {
++      pl.lineTo = Number(m[4]);
++      if (m[3] !== undefined) pl.pageTo = Number(m[3]);
++    }
++    return pl;
++  }
+   if ((m = s.match(/^pp?\.\s*(\d+)(?:\s*[-–—to]+\s*(\d+))?$/i))) {
+     const page = { kind: "page", from: Number(m[1]) };
+     if (m[2] !== undefined) page.to = Number(m[2]);
+@@ -137,12 +312,21 @@ export function parsePinpoint(raw) {
+   if ((m = s.match(/^at\s+(\d+)$/i))) {
+     return { kind: "page", from: Number(m[1]) };
+   }
+-  if ((m = s.match(/^(?:§+|secs?\.|sections?)\s*([0-9]+(?:\.[0-9]+)*)$/i))) {
++  if ((m = s.match(SEC_RANGE))) {
++    return { kind: "section", label: m[1], to: m[2] };
++  }
++  if ((m = s.match(SEC_SINGLE))) {
+     return { kind: "section", label: m[1] };
+   }
++  if ((m = s.match(/^(?:¶¶|paras\.|paragraphs?)\s*(\d+)\s*[-–—]\s*(\d+)$/i))) {
++    return { kind: "paragraph", number: Number(m[1]), to: Number(m[2]) };
++  }
+   if ((m = s.match(/^(?:¶+|paras?\.|paragraphs?)\s*(\d+)$/i))) {
+     return { kind: "paragraph", number: Number(m[1]) };
+   }
++  if ((m = s.match(/^(?:n\.|note)\s*(\d+)$/i))) return { kind: "footnote", number: Number(m[1]) };
++  if ((m = s.match(ART))) return { kind: "article", label: m[1] };
++  if ((m = s.match(CL))) return { kind: "clause", label: m[1] };
+   return null;
+ }
+ 
+@@ -151,13 +335,96 @@ export function formatPinpoint(p) {
+   switch (p.kind) {
+     case "page":
+       return p.to !== undefined ? `pp. ${p.from}-${p.to}` : `p. ${p.from}`;
++    case "page-line":
++      if (p.pageTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.pageTo}:${p.lineTo}`;
++      if (p.lineTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.lineTo}`;
++      return `Tr. ${p.page}:${p.lineFrom}`;
+     case "section":
+-      return `§ ${p.label}`;
++      return p.to !== undefined ? `§§ ${p.label}-${p.to}` : `§ ${p.label}`;
+     case "paragraph":
+-      return `¶ ${p.number}`;
++      return p.to !== undefined ? `¶¶ ${p.number}-${p.to}` : `¶ ${p.number}`;
++    case "footnote":
++      return `n. ${p.number}`;
++    case "article":
++      return `art. ${p.label}`;
++    case "clause":
++      return `cl. ${p.label}`;
+   }
+ }
+ 
++/* ============================================================
++ * extract (port of core/extract.ts)
++ * ============================================================ */
++
++const FOOTNOTE_RE = /^\[(\d+)\]\s+(.+)$/;
++
++/**
++ * Deterministic extractor: pull quoted passages + footnote pinpoints from the
++ * reviewed document's text and resolve each footnote to a source by name/alias.
++ * Unresolvable footnotes and unmarked quotations become warnings, never
++ * fabricated entries.
++ * @param {string} documentText @param {any[]} sources
++ * @returns {{ quotes: any[], warnings: string[] }} */
++export function extractQuotes(documentText, sources) {
++  const warnings = [];
++  const footnotes = new Map();
++  const bodyLines = [];
++  for (const line of documentText.split("\n")) {
++    const m = line.match(FOOTNOTE_RE);
++    if (m) footnotes.set(Number(m[1]), m[2].trim());
++    else bodyLines.push(line);
++  }
++  const bodyText = bodyLines.join("\n");
++
++  const resolved = new Map();
++  for (const [n, noteText] of footnotes) {
++    const lower = noteText.toLowerCase();
++    let best = null;
++    for (const src of sources) {
++      for (const name of [src.name, ...(src.aliases ?? [])]) {
++        const idx = lower.indexOf(name.toLowerCase());
++        if (idx >= 0 && (best === null || name.length > best.len)) {
++          best = { id: src.id, len: name.length, end: idx + name.length };
++        }
++      }
++    }
++    if (!best) {
++      warnings.push(`footnote ${n}: no matching source for "${noteText}"`);
++      continue;
++    }
++    let rest = noteText.slice(best.end).trim();
++    if (rest.startsWith(",")) rest = rest.slice(1).trim();
++    if (rest.endsWith(".")) rest = rest.slice(0, -1);
++    if (rest.length > 0) resolved.set(n, { sourceId: best.id, pinpoint: rest });
++    else resolved.set(n, { sourceId: best.id });
++  }
++
++  const quotes = [];
++  const QUOTE_RE = /["“]([^"”“\n]+)["”]\s*\[(\d+)\]/g;
++  let qm;
++  while ((qm = QUOTE_RE.exec(bodyText)) !== null) {
++    const text = qm[1].trim();
++    const n = Number(qm[2]);
++    const r = resolved.get(n);
++    if (!r) {
++      warnings.push(`footnote ${n}: quoted passage has no resolvable footnote`);
++      continue;
++    }
++    const entry = { id: `Q${n}`, text, sourceId: r.sourceId };
++    if (r.pinpoint !== undefined) entry.pinpoint = r.pinpoint;
++    quotes.push(entry);
++  }
++
++  const UNMARKED_RE = /["“]([^"”“\n]{15,})["”](?!\s*\[\d+\])/g;
++  let um;
++  while ((um = UNMARKED_RE.exec(bodyText)) !== null) {
++    const t = um[1].trim();
++    warnings.push(`unmarked quotation: "${t.length > 40 ? t.slice(0, 40) + "…" : t}"`);
++  }
++
++  return { quotes, warnings };
++}
++
+ /* ============================================================
+  * citecheck (port of core/citecheck.ts)
+  * ============================================================ */
+@@ -179,7 +446,7 @@ function buildDoc(doc) {
+     const start = append(seg.text);
+     segments.push({ kind: seg.kind, label: seg.label, start, end: full.length });
+   }
+-  return { doc, fullText: full, segments };
++  return { doc, fullText: full, toks: tokenizeWithSpans(full), segments };
+ }
+ 
+ function segmentAt(built, char) {
+@@ -189,18 +456,158 @@ function segmentAt(built, char) {
+   return null;
+ }
+ 
+-function checkPinpoint(quote, anchor) {
++function anchorFromWindow(built, useWin) {
++  if (!useWin) return null;
++  const seg = segmentAt(built, useWin.start);
++  return {
++    sourceId: built.doc.id,
++    sourceName: built.doc.name,
++    segmentKind: seg?.kind ?? null,
++    segmentLabel: seg?.label ?? null,
++    charStart: useWin.start,
++    charEnd: useWin.end,
++    verbatim: useWin.verbatim,
++  };
++}
++
++/**
++ * Near-verbatim anchor: LCS-align the quote against the segment containing the
++ * best window, then extend the span to the end of that sentence, so dropped
++ * tail tokens stay inside the anchor and surface in the diff.
++ */
++function alignedAnchor(built, quoteToks, win) {
++  if (!win) return { anchor: null, diff: null };
++  const seg = segmentAt(built, win.start);
++  const regionEnd = seg ? seg.end : built.fullText.length;
++  // region starts at the best window (never before it) so early duplicate
++  // tokens from a preceding sentence cannot capture the alignment
++  const wsIdx = built.toks.findIndex((t) => t.start >= win.start);
++  const regionToks = wsIdx < 0 ? [] : built.toks.filter((t, idx) => idx >= wsIdx && t.end <= regionEnd);
++  const pairs = alignTokens(quoteToks, regionToks);
++  if (pairs.length === 0) {
++    const fallback = anchorFromWindow(built, win);
++    return { anchor: fallback, diff: fallback ? diffTokens(quoteToks, tokenizeWithSpans(fallback.verbatim)) : null };
++  }
++  const first = regionToks[pairs[0].s];
++  const lastIdx = pairs[pairs.length - 1].s;
++  let endIdx = lastIdx;
++  for (let j = lastIdx + 1; j < regionToks.length && j <= lastIdx + 30; j++) {
++    const gap = built.fullText.slice(regionToks[j - 1].end, regionToks[j].start);
++    if (/[.!?\n]/.test(gap)) break; // sentence (or line) already ended
++    endIdx = j;
++  }
++  const endTok = regionToks[endIdx];
++  const anchorSeg = segmentAt(built, first.start);
++  const anchor = {
++    sourceId: built.doc.id,
++    sourceName: built.doc.name,
++    segmentKind: anchorSeg?.kind ?? null,
++    segmentLabel: anchorSeg?.label ?? null,
++    charStart: first.start,
++    charEnd: endTok.end,
++    verbatim: built.fullText.slice(first.start, endTok.end),
++  };
++  return { anchor, diff: diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim)) };
++}
++
++function segmentKindOf(p) {
++  if (p.kind === "page" || p.kind === "page-line") return "page";
++  if (p.kind === "section") return "section";
++  if (p.kind === "paragraph") return "paragraph";
++  return null; // footnote / article / clause — not modeled
++}
++
++function checkPinpoint(quote, anchor, built) {
+   if (quote.pinpoint === undefined) return null;
+   const parsed = parsePinpoint(quote.pinpoint);
+   if (parsed === null) {
+     return { raw: quote.pinpoint, parsed: null, status: "unparseable", detail: "pinpoint syntax not recognized" };
+   }
+-  if (parsed.kind !== anchor?.segmentKind || anchor?.segmentKind === null) {
++  const kindWord = segmentKindOf(parsed);
++  if (kindWord === null) {
+     return {
+       raw: quote.pinpoint,
+       parsed,
+       status: "unverifiable",
+-      detail: `source does not declare ${parsed.kind} segments, so the pinpoint cannot be validated`,
++      detail: `core does not model ${parsed.kind} segments, so the pinpoint cannot be validated`,
++    };
++  }
++  if (anchor === null || anchor.segmentKind === null) {
++    if (built === null) {
++      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "source not provided, so the pinpoint cannot be validated" };
++    }
++    if (!built.segments.some((s) => s.kind === kindWord)) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: "unverifiable",
++        detail: `source does not declare ${kindWord} segments, so the pinpoint cannot be validated`,
++      };
++    }
++    if (anchor === null) {
++      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
++    }
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: "unverifiable",
++      detail: `the quote is not located in a segmented part of the source, so the ${kindWord} pinpoint cannot be validated`,
++    };
++  }
++  if (parsed.kind !== anchor.segmentKind && parsed.kind !== "page-line") {
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: "unverifiable",
++      detail: `the quote is located in a ${anchor.segmentKind} segment, so the ${kindWord} pinpoint cannot be validated`,
++    };
++  }
++  if (parsed.kind === "page-line") {
++    if (anchor.segmentKind !== "page" || built === null) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: "unverifiable",
++        detail: "the quote is not located in a page segment, so the page:line pinpoint cannot be validated",
++      };
++    }
++    const anchorPage = Number(anchor.segmentLabel);
++    const pageFrom = parsed.page;
++    const pageTo = parsed.pageTo ?? parsed.page;
++    if (anchorPage < pageFrom || anchorPage > pageTo) {
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: "mismatch",
++        detail: `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage}`,
++      };
++    }
++    const seg = segmentAt(built, anchor.charStart);
++    if (!seg) {
++      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
++    }
++    const pageText = built.fullText.slice(seg.start, seg.end);
++    const lineTo = parsed.lineTo ?? parsed.lineFrom;
++    if (!pageText.includes("\n")) {
++      if (parsed.lineFrom <= 1 && lineTo <= 1) {
++        return { raw: quote.pinpoint, parsed, status: "ok", detail: `quote is located on page ${anchorPage} (single line)` };
++      }
++      return {
++        raw: quote.pinpoint,
++        parsed,
++        status: "unverifiable",
++        detail: `page ${anchorPage} is not line-segmented, so line ${parsed.lineFrom} cannot be validated`,
++      };
++    }
++    const line = pageText.slice(0, anchor.charStart - seg.start).split("\n").length;
++    const ok = line >= parsed.lineFrom && line <= lineTo;
++    return {
++      raw: quote.pinpoint,
++      parsed,
++      status: ok ? "ok" : "mismatch",
++      detail: ok
++        ? `quote is located on page ${anchorPage} line ${line}`
++        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage} line ${line}`,
+     };
+   }
+   if (parsed.kind === "page" && anchor.segmentKind === "page") {
+@@ -218,31 +625,41 @@ function checkPinpoint(quote, anchor) {
+     };
+   }
+   if (parsed.kind === "section" && anchor.segmentKind === "section") {
+-    const ok = anchor.segmentLabel === parsed.label;
++    let ok;
++    if (parsed.to === undefined) {
++      ok = anchor.segmentLabel === parsed.label;
++    } else {
++      const fromNum = Number(parsed.label);
++      const toNum = Number(parsed.to);
++      const aNum = Number(anchor.segmentLabel);
++      ok = !Number.isNaN(fromNum) && !Number.isNaN(toNum) && !Number.isNaN(aNum) && aNum >= fromNum && aNum <= toNum;
++    }
+     return {
+       raw: quote.pinpoint,
+       parsed,
+       status: ok ? "ok" : "mismatch",
+       detail: ok
+         ? `quote is located in § ${anchor.segmentLabel}`
+-        : `pinpoint says § ${parsed.label} but the quote is located in § ${anchor.segmentLabel}`,
++        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in § ${anchor.segmentLabel}`,
+     };
+   }
+   // paragraph
+-  const ok = Number(anchor.segmentLabel) === parsed.number;
++  const anchorNum = Number(anchor.segmentLabel);
++  const ok = parsed.to !== undefined ? anchorNum >= parsed.number && anchorNum <= parsed.to : anchorNum === parsed.number;
+   return {
+     raw: quote.pinpoint,
+     parsed,
+     status: ok ? "ok" : "mismatch",
+     detail: ok
+       ? `quote is located in ¶ ${anchor.segmentLabel}`
+-      : `pinpoint says ¶ ${parsed.number} but the quote is located in ¶ ${anchor.segmentLabel}`,
++      : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in ¶ ${anchor.segmentLabel}`,
+   };
+ }
+ 
+ /**
+- * Run the deterministic cite check over the input's quotes.
+- * @param {{ document: { name: string }, sources: any[], quotes: any[], fuzzyThreshold?: number }} input
++ * Run the deterministic cite check over the input's quotes (or over quotes
++ * extracted from document.text when none are supplied).
++ * @param {{ document: { name: string, text?: string }, sources: any[], quotes?: any[], fuzzyThreshold?: number }} input
+  * @returns {any} CiteCheckReport
+  */
+ export function runCiteCheck(input) {
+@@ -250,80 +667,118 @@ export function runCiteCheck(input) {
+   const byId = new Map();
+   for (const doc of input.sources) byId.set(doc.id, buildDoc(doc));
+ 
+-  const results = input.quotes.map((quote) => {
++  let quoteList;
++  let extractionWarnings;
++  if (input.quotes !== undefined) {
++    quoteList = input.quotes;
++  } else if (input.document.text !== undefined) {
++    const extracted = extractQuotes(input.document.text, input.sources);
++    quoteList = extracted.quotes;
++    extractionWarnings = extracted.warnings;
++  } else {
++    quoteList = [];
++  }
++
++  const results = quoteList.map((quote) => {
+     const notes = [];
+     const built = byId.get(quote.sourceId);
++    const base = {
++      id: quote.id,
++      ...(quote.proposition !== undefined ? { proposition: quote.proposition } : {}),
++    };
+     if (!built) {
+       return {
+-        id: quote.id,
++        ...base,
+         classification: "not_found",
+         similarity: 0,
+         coverage: 0,
+         anchor: null,
+-        pinpoint: checkPinpoint(quote, null),
++        pinpoint: checkPinpoint(quote, null, null),
+         bestCandidate: null,
++        diff: null,
+         notes: [`source "${quote.sourceId}" not provided`],
+       };
+     }
+ 
++    const quoteToks = tokenizeWithSpans(quote.text);
+     const win = bestWindow(built.fullText, quote.text);
+-    const similarityScore = win?.score ?? 0;
++    const similarity = win?.score ?? 0;
+     const coverage = win?.coverage ?? 0;
+ 
+     let classification;
++    let anchor = null;
++    let diff = null;
++
+     if (rawContains(built.fullText, quote.text)) {
+       classification = "exact";
+-    } else if (similarityScore >= 0.95 && coverage >= 0.95) {
++      anchor = anchorFromWindow(built, win ?? locateRaw(built.fullText, quote.text));
++      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
++    } else if (similarity >= 0.95 && coverage >= 0.95) {
+       classification = "normalized";
+       notes.push("matches modulo case/punctuation/whitespace");
+-    } else if (similarityScore >= fuzzyThreshold && coverage >= 0.6) {
++      const aligned = alignedAnchor(built, quoteToks, win);
++      anchor = aligned.anchor;
++      diff = aligned.diff;
++      // omission detection: pure deletions from the located span
++      const hasEllipsis = /\.\.\.|…/.test(quote.text);
++      if (anchor && diff) {
++        for (const op of diff) {
++          if (op.op !== "delete") continue;
++          // diff spans are relative to anchor.verbatim (the diffed string)
++          const omitted = anchor.verbatim.slice(op.sourceSpan.start, op.sourceSpan.end);
++          notes.push(hasEllipsis ? `omits "${omitted}" — explicit ellipsis, accepted` : `omits "${omitted}" without an ellipsis`);
++        }
++        // number guard: altered digits never pass as near-verbatim
++        const mism = numericMismatches(
++          quoteToks.map((t) => t.norm),
++          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
++        );
++        for (const p of mism.paired) notes.push(`quote "${p.quote}" vs source "${p.source}"`);
++        for (const q of mism.quoteOnly) notes.push(`quote "${q}" not found in the located source text`);
++        for (const s of mism.sourceOnly) notes.push(`source "${s}" appears in the located text but not in the quote`);
++        if (mism.paired.length + mism.quoteOnly.length > 0) {
++          classification = "fuzzy";
++          notes.push("number alteration caps the classification at fuzzy — requires human review");
++        }
++      }
++    } else if (similarity >= fuzzyThreshold && coverage >= 0.6) {
+       classification = "fuzzy";
+       notes.push("substantial overlap but not verbatim — requires human review");
++      anchor = anchorFromWindow(built, win);
++      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+     } else {
+       classification = "not_found";
+-      if (win) notes.push(`best candidate similarity ${similarityScore.toFixed(2)} below threshold ${fuzzyThreshold}`);
++      anchor = anchorFromWindow(built, win); // kept as bestCandidate evidence below
++      if (win) notes.push(`best candidate similarity ${similarity.toFixed(2)} below threshold ${fuzzyThreshold}`);
+     }
+ 
+-    // Anchor from the verbatim window (even for "exact", so offsets always resolve)
+-    const useWin = win ?? (rawContains(built.fullText, quote.text) ? locateRaw(built.fullText, quote.text) : null);
+-    let anchor = null;
+-    if (useWin) {
+-      const seg = segmentAt(built, useWin.start);
+-      anchor = {
+-        sourceId: built.doc.id,
+-        sourceName: built.doc.name,
+-        segmentKind: seg?.kind ?? null,
+-        segmentLabel: seg?.label ?? null,
+-        charStart: useWin.start,
+-        charEnd: useWin.end,
+-        verbatim: useWin.verbatim,
+-      };
+-    }
+     const bestCandidate = classification === "not_found" ? anchor : null;
+     if (classification === "not_found") anchor = null;
+ 
+-    const pinpoint = checkPinpoint(quote, anchor);
++    const pinpoint = checkPinpoint(quote, anchor, built);
+     if (pinpoint?.status === "mismatch") notes.push(`PINPOINT ISSUE: ${pinpoint.detail}`);
+     if (quote.proposition !== undefined && classification !== "not_found") {
+       notes.push("proposition support is an LLM/human judgment — not evaluated by this core");
+     }
+ 
+-    return { id: quote.id, classification, similarity: similarityScore, coverage, anchor, bestCandidate, pinpoint, notes };
++    return { ...base, classification, similarity, coverage, anchor, bestCandidate, pinpoint, diff, notes };
+   });
+ 
+   const count = (c) => results.filter((r) => r.classification === c).length;
+-  return {
+-    documentName: input.document.name,
+-    summary: {
+-      total: results.length,
+-      exact: count("exact"),
+-      normalized: count("normalized"),
+-      fuzzy: count("fuzzy"),
+-      not_found: count("not_found"),
+-      pinpointIssues: results.filter((r) => r.pinpoint?.status === "mismatch").length,
+-    },
+-    results,
++  const summary = {
++    total: results.length,
++    exact: count("exact"),
++    normalized: count("normalized"),
++    fuzzy: count("fuzzy"),
++    not_found: count("not_found"),
++    checked: results.length - count("not_found"),
++    couldNotCheck: count("not_found"),
++    unparseablePinpoints: results.filter((r) => r.pinpoint?.status === "unparseable").length,
++    pinpointIssues: results.filter((r) => r.pinpoint?.status === "mismatch").length,
+   };
++  const report = { documentName: input.document.name, summary, results };
++  if (extractionWarnings !== undefined) report.extractionWarnings = extractionWarnings;
++  return report;
+ }
+ 
+ /** Anchor for an exactly-contained quote (window search also finds these; kept precise). */
+@@ -341,8 +796,14 @@ export function renderReport(report) {
+   lines.push(`# Cite check — ${report.documentName}`);
+   lines.push("");
+   lines.push(
+-    `**${s.total} quotes checked:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ${s.not_found} not found · ${s.pinpointIssues} pinpoint issue(s)`,
++    `**Checked ${s.checked} of ${s.total} quotes:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ` +
++      `${s.couldNotCheck} not checked (never reported as "confirmed") · ${s.unparseablePinpoints} unparseable pinpoint(s) · ` +
++      `${s.pinpointIssues} pinpoint issue(s)`,
+   );
++  if (report.extractionWarnings !== undefined && report.extractionWarnings.length > 0) {
++    lines.push("");
++    for (const w of report.extractionWarnings) lines.push(`- extraction: ${w}`);
++  }
+   lines.push("");
+   lines.push("| Quote | Verdict | Similarity | Anchor | Pinpoint |");
+   lines.push("|---|---|---|---|---|");
+@@ -364,6 +825,8 @@ export function renderReport(report) {
+     } else {
+       lines.push("No locating anchor in the provided sources.");
+     }
++    const marks = r.diff ? formatDiffOps(r.diff) : "";
++    if (marks) lines.push(`Token diff: ${marks}`);
+     if (r.pinpoint) lines.push(`Pinpoint: ${r.pinpoint.raw} — ${r.pinpoint.status} (${r.pinpoint.detail}).`);
+     for (const n of r.notes) lines.push(`- ${n}`);
+     lines.push("");
+diff --git a/open-artifacts/cite-check/core/diff.test.ts b/open-artifacts/cite-check/core/diff.test.ts
+new file mode 100644
+index 0000000..158cbc5
+--- /dev/null
++++ b/open-artifacts/cite-check/core/diff.test.ts
+@@ -0,0 +1,40 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { diffTokens, formatDiffOps } from './diff';
++import { tokenizeWithSpans, numericMismatches } from './textutil';
++
++test('tokenDiff marks a substitution as a replace op with a source span', () => {
++  const ops = diffTokens(tokenizeWithSpans('pay 120 dollars now'), tokenizeWithSpans('pay 90 dollars now'));
++  assert.deepEqual(ops, [
++    { op: 'equal', source: ['pay'] },
++    { op: 'replace', quote: ['120'], source: ['90'], sourceSpan: { start: 4, end: 6 } },
++    { op: 'equal', source: ['dollars', 'now'] },
++  ]);
++});
++
++test('tokenDiff marks dropped tokens as delete runs and additions as insert runs', () => {
++  const drop = diffTokens(tokenizeWithSpans('the fox ran'), tokenizeWithSpans('the quick brown fox ran'));
++  assert.deepEqual(drop.filter((o) => o.op !== 'equal'), [
++    { op: 'delete', source: ['quick', 'brown'], sourceSpan: { start: 4, end: 15 } },
++  ]);
++  const ins = diffTokens(tokenizeWithSpans('the very quick fox'), tokenizeWithSpans('the quick fox'));
++  assert.deepEqual(ins.filter((o) => o.op !== 'equal'), [{ op: 'insert', quote: ['very'] }]);
++});
++
++test('formatDiffOps renders inline marks for non-equal ops only', () => {
++  const ops = diffTokens(tokenizeWithSpans('pay 120 now'), tokenizeWithSpans('pay 90 now'));
++  const marks = formatDiffOps(ops);
++  assert.ok(marks.includes('120'), marks);
++  assert.ok(marks.includes('90'), marks);
++  assert.ok(!marks.includes('pay'), marks);
++});
++
++test('numericMismatches pairs altered numbers and reports unpaired extras', () => {
++  const r = numericMismatches(['pay', '120', 'now'], ['pay', '90', 'now']);
++  assert.deepEqual(r.paired, [{ quote: '120', source: '90' }]);
++  assert.deepEqual(r.quoteOnly, []);
++  assert.deepEqual(r.sourceOnly, []);
++  const r2 = numericMismatches(['120'], ['124', '80']);
++  assert.deepEqual(r2.paired, [{ quote: '120', source: '124' }]);
++  assert.deepEqual(r2.sourceOnly, ['80']);
++});
+diff --git a/open-artifacts/cite-check/core/diff.ts b/open-artifacts/cite-check/core/diff.ts
+new file mode 100644
+index 0000000..da20730
+--- /dev/null
++++ b/open-artifacts/cite-check/core/diff.ts
+@@ -0,0 +1,127 @@
++/**
++ * Deterministic token diff — LCS alignment between quote and source tokens.
++ * Produces machine-checkable evidence ops (equal / delete / insert / replace)
++ * plus a compact inline mark format for reports. Dependency-free.
++ */
++
++import type { Tok } from './textutil';
++
++export type DiffOp =
++  | { op: 'equal'; source: string[] }
++  | { op: 'delete'; source: string[]; sourceSpan: { start: number; end: number } }
++  | { op: 'insert'; quote: string[] }
++  | { op: 'replace'; quote: string[]; source: string[]; sourceSpan: { start: number; end: number } };
++
++type Step =
++  | { type: 'equal'; q: number; s: number }
++  | { type: 'del'; s: number }
++  | { type: 'ins'; q: number };
++
++/** Token-level LCS walk (deterministic tie-break: consume source first). */
++function lcsWalk(quote: Tok[], source: Tok[]): Step[] {
++  const n = quote.length;
++  const m = source.length;
++  const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      dp[i][j] = quote[i].norm === source[j].norm ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
++    }
++  }
++  const steps: Step[] = [];
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (quote[i].norm === source[j].norm) {
++      steps.push({ type: 'equal', q: i, s: j });
++      i++;
++      j++;
++    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
++      // skipping quote[i] preserves the LCS (quote-only token → insert)
++      steps.push({ type: 'ins', q: i });
++      i++;
++    } else {
++      // skipping source[j] preserves the LCS (source-only token → delete)
++      steps.push({ type: 'del', s: j });
++      j++;
++    }
++  }
++  while (j < m) steps.push({ type: 'del', s: j++ });
++  while (i < n) steps.push({ type: 'ins', q: i++ });
++  return steps;
++}
++
++/** LCS alignment pairs (quote index ↔ source index), in order. */
++export function alignTokens(quote: Tok[], source: Tok[]): Array<{ q: number; s: number }> {
++  return lcsWalk(quote, source)
++    .filter((st): st is { type: 'equal'; q: number; s: number } => st.type === 'equal')
++    .map((st) => ({ q: st.q, s: st.s }));
++}
++
++/** Grouped diff ops; consecutive del+ins runs merge into a single replace. */
++export function diffTokens(quote: Tok[], source: Tok[]): DiffOp[] {
++  const steps = lcsWalk(quote, source);
++  const ops: DiffOp[] = [];
++  let equalRun: string[] = [];
++  let delRun: Tok[] = [];
++  let insRun: Tok[] = [];
++
++  const flushEqual = (): void => {
++    if (equalRun.length > 0) {
++      ops.push({ op: 'equal', source: equalRun });
++      equalRun = [];
++    }
++  };
++  const flushChange = (): void => {
++    if (delRun.length === 0 && insRun.length === 0) return;
++    flushEqual();
++    if (delRun.length > 0 && insRun.length > 0) {
++      ops.push({
++        op: 'replace',
++        quote: insRun.map((t) => t.norm),
++        source: delRun.map((t) => t.norm),
++        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
++      });
++    } else if (delRun.length > 0) {
++      ops.push({
++        op: 'delete',
++        source: delRun.map((t) => t.norm),
++        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
++      });
++    } else {
++      ops.push({ op: 'insert', quote: insRun.map((t) => t.norm) });
++    }
++    delRun = [];
++    insRun = [];
++  };
++
++  for (const st of steps) {
++    if (st.type === 'equal') {
++      flushChange();
++      equalRun.push(source[st.s].norm);
++    } else if (st.type === 'del') {
++      delRun.push(source[st.s]);
++    } else {
++      insRun.push(quote[st.q]);
++    }
++  }
++  flushChange();
++  flushEqual();
++  return ops;
++}
++
++/** Inline marks for non-equal ops, e.g. `del:"on the document" sub:"120"->"90"`. */
++export function formatDiffOps(ops: DiffOp[]): string {
++  return ops
++    .filter((o) => o.op !== 'equal')
++    .map((o) => {
++      switch (o.op) {
++        case 'delete':
++          return `del:"${o.source.join(' ')}"`;
++        case 'insert':
++          return `ins:"${o.quote.join(' ')}"`;
++        case 'replace':
++          return `sub:"${o.quote.join(' ')}"->"${o.source.join(' ')}"`;
++      }
++    })
++    .join(' ');
++}
+diff --git a/open-artifacts/cite-check/core/extract.test.ts b/open-artifacts/cite-check/core/extract.test.ts
+new file mode 100644
+index 0000000..f17b002
+--- /dev/null
++++ b/open-artifacts/cite-check/core/extract.test.ts
+@@ -0,0 +1,44 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { extractQuotes } from './extract';
++import type { SourceDoc } from './citecheck';
++
++const SOURCES: SourceDoc[] = [
++  { id: 'okafor-depo', name: 'Deposition of Sandra Okafor (Jan. 14, 2026)', aliases: ['Okafor Deposition'] },
++  { id: 'msa', name: 'Master Services Agreement (Halcyon–Meridian, 2024)', aliases: ['Master Services Agreement'] },
++];
++
++const BRIEF = `The record shows that “Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document.”[1] The contract further provides that “Customer may terminate this Agreement for convenience.”[2] One passing phrase “too vague to matter here” goes unmarked, and “The seal was already broken when our team inspected it.”[3] closes the argument.
++
++[1] Deposition of Sandra Okafor (Jan. 14, 2026), p. 12.
++[2] Master Services Agreement, § 5.2.
++[3] Ghost Transcript, Tr. 12:4.`;
++
++test('extractor pulls quoted passages and resolves footnote pinpoints deterministically', () => {
++  const { quotes, warnings } = extractQuotes(BRIEF, SOURCES);
++  assert.deepEqual(quotes, [
++    {
++      id: 'Q1',
++      text: 'Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document.',
++      sourceId: 'okafor-depo',
++      pinpoint: 'p. 12',
++    },
++    {
++      id: 'Q2',
++      text: 'Customer may terminate this Agreement for convenience.',
++      sourceId: 'msa',
++      pinpoint: '§ 5.2',
++    },
++  ]);
++  assert.ok(warnings.some((w) => w.includes('footnote 3') && w.includes('no matching source')), JSON.stringify(warnings));
++  assert.ok(warnings.some((w) => w.includes('unmarked quotation')), JSON.stringify(warnings));
++});
++
++test('extractor matches by alias when the full source name is absent', () => {
++  const brief = `She testified that “the seal was already broken.”[7]\n\n[7] Okafor Deposition, Tr. 12:4.`;
++  const { quotes, warnings } = extractQuotes(brief, SOURCES);
++  assert.equal(quotes.length, 1);
++  assert.equal(quotes[0].sourceId, 'okafor-depo');
++  assert.equal(quotes[0].pinpoint, 'Tr. 12:4');
++  assert.deepEqual(warnings, []);
++});
+diff --git a/open-artifacts/cite-check/core/extract.ts b/open-artifacts/cite-check/core/extract.ts
+new file mode 100644
+index 0000000..4946e3c
+--- /dev/null
++++ b/open-artifacts/cite-check/core/extract.ts
+@@ -0,0 +1,83 @@
++/**
++ * Deterministic extractor — pulls quoted passages + footnote pinpoints from
++ * the reviewed document's own text and resolves each footnote to a source by
++ * name or alias. Reproducible replacement for LLM extraction (the LLM part of
++ * the artifact may still be preferred for messy documents; this never guesses).
++ *
++ * Recognized grammar (documented in spec.md):
++ *   body:    “quoted passage”[1]   or   "quoted passage"[1]
++ *   footnote: [1] <source name or alias>[, <pinpoint>][.]
++ *
++ * Unresolvable footnotes and unmarked quotations become warnings, never
++ * fabricated entries.
++ */
++
++import type { QuoteEntry, SourceDoc } from './citecheck';
++
++export interface ExtractionResult {
++  quotes: QuoteEntry[];
++  warnings: string[];
++}
++
++const FOOTNOTE_RE = /^\[(\d+)\]\s+(.+)$/;
++
++export function extractQuotes(documentText: string, sources: SourceDoc[]): ExtractionResult {
++  const warnings: string[] = [];
++  const footnotes = new Map<number, string>();
++  const bodyLines: string[] = [];
++  for (const line of documentText.split('\n')) {
++    const m = line.match(FOOTNOTE_RE);
++    if (m) footnotes.set(Number(m[1]), m[2].trim());
++    else bodyLines.push(line);
++  }
++  const bodyText = bodyLines.join('\n');
++
++  // Resolve each footnote to {sourceId, pinpoint?} by longest name/alias match.
++  const resolved = new Map<number, { sourceId: string; pinpoint?: string }>();
++  for (const [n, noteText] of footnotes) {
++    const lower = noteText.toLowerCase();
++    let best: { id: string; len: number; end: number } | null = null;
++    for (const src of sources) {
++      for (const name of [src.name, ...(src.aliases ?? [])]) {
++        const idx = lower.indexOf(name.toLowerCase());
++        if (idx >= 0 && (best === null || name.length > best.len)) {
++          best = { id: src.id, len: name.length, end: idx + name.length };
++        }
++      }
++    }
++    if (!best) {
++      warnings.push(`footnote ${n}: no matching source for "${noteText}"`);
++      continue;
++    }
++    let rest = noteText.slice(best.end).trim();
++    if (rest.startsWith(',')) rest = rest.slice(1).trim();
++    if (rest.endsWith('.')) rest = rest.slice(0, -1);
++    if (rest.length > 0) resolved.set(n, { sourceId: best.id, pinpoint: rest });
++    else resolved.set(n, { sourceId: best.id });
++  }
++
++  const quotes: QuoteEntry[] = [];
++  const QUOTE_RE = /["“]([^"”“\n]+)["”]\s*\[(\d+)\]/g;
++  let qm: RegExpExecArray | null;
++  while ((qm = QUOTE_RE.exec(bodyText)) !== null) {
++    const text = qm[1].trim();
++    const n = Number(qm[2]);
++    const r = resolved.get(n);
++    if (!r) {
++      warnings.push(`footnote ${n}: quoted passage has no resolvable footnote`);
++      continue;
++    }
++    const entry: QuoteEntry = { id: `Q${n}`, text, sourceId: r.sourceId };
++    if (r.pinpoint !== undefined) entry.pinpoint = r.pinpoint;
++    quotes.push(entry);
++  }
++
++  const UNMARKED_RE = /["“]([^"”“\n]{15,})["”](?!\s*\[\d+\])/g;
++  let um: RegExpExecArray | null;
++  while ((um = UNMARKED_RE.exec(bodyText)) !== null) {
++    const t = um[1].trim();
++    warnings.push(`unmarked quotation: "${t.length > 40 ? t.slice(0, 40) + '…' : t}"`);
++  }
++
++  return { quotes, warnings };
++}
+diff --git a/open-artifacts/cite-check/core/parity.test.ts b/open-artifacts/cite-check/core/parity.test.ts
+new file mode 100644
+index 0000000..0b2e842
+--- /dev/null
++++ b/open-artifacts/cite-check/core/parity.test.ts
+@@ -0,0 +1,45 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { fileURLToPath } from 'node:url';
++import { dirname, join } from 'node:path';
++import { runCiteCheck, renderReport } from './citecheck';
++import type { CiteCheckInput } from './citecheck';
++
++const here = dirname(fileURLToPath(import.meta.url));
++
++/** Load core.js through a data: URL so tsx cannot resolve it to the .ts sources. */
++async function loadJsCore(): Promise<typeof import('./core.js')> {
++  const src = readFileSync(join(here, 'core.js'), 'utf8');
++  return (await import('data:text/javascript;charset=utf-8,' + encodeURIComponent(src))) as never;
++}
++
++test('core.js hand-port produces identical output to the TS core (shared example fixture)', async () => {
++  const js = await loadJsCore();
++  const input: CiteCheckInput = JSON.parse(readFileSync(join(here, '../examples/input.json'), 'utf8'));
++  const tsReport = runCiteCheck(input);
++  const jsReport = js.runCiteCheck(input);
++  assert.deepEqual(jsReport, tsReport);
++  assert.equal(js.renderReport(jsReport), renderReport(tsReport));
++});
++
++test('core.js hand-port mirrors the engine on guard/omission/diff paths', async () => {
++  const js = await loadJsCore();
++  const input: CiteCheckInput = {
++    document: { name: 'Parity fixture (fictional)' },
++    sources: [
++      {
++        id: 's',
++        name: 'Source (fictional)',
++        pages: [
++          { number: 3, text: 'A. The manifest listed 34,800 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 34,460 kilograms, a shortfall the intake team documented in the overflow log and reported to the dispatch office that same afternoon before the shift ended.' },
++        ],
++      },
++    ],
++    quotes: [
++      { id: 'P1', text: 'The manifest listed 34,900 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 34,460 kilograms, a shortfall the intake team documented in the overflow log and reported to the dispatch office that same afternoon before the shift ended.', sourceId: 's', pinpoint: 'Tr. 3:1' },
++      { id: 'P2', text: 'The manifest listed 34,800 kilograms of freight … reported to the dispatch office that same afternoon.', sourceId: 's' },
++    ],
++  };
++  assert.deepEqual(js.runCiteCheck(input), runCiteCheck(input));
++});
+diff --git a/open-artifacts/cite-check/core/pinpoint.test.ts b/open-artifacts/cite-check/core/pinpoint.test.ts
+new file mode 100644
+index 0000000..b9e2e1f
+--- /dev/null
++++ b/open-artifacts/cite-check/core/pinpoint.test.ts
+@@ -0,0 +1,96 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { parsePinpoint, formatPinpoint } from './pinpoint';
++import { runCiteCheck } from './citecheck';
++import type { CiteCheckInput } from './citecheck';
++
++test('pinpoint parser handles v2 forms (page:line, ranges, id., n., art., cl.)', () => {
++  assert.deepEqual(parsePinpoint('Tr. 12:4'), { kind: 'page-line', page: 12, lineFrom: 4 });
++  assert.deepEqual(parsePinpoint('Tr. 12:4-12:8'), { kind: 'page-line', page: 12, lineFrom: 4, lineTo: 8, pageTo: 12 });
++  assert.deepEqual(parsePinpoint('12:4-8'), { kind: 'page-line', page: 12, lineFrom: 4, lineTo: 8 });
++  assert.deepEqual(parsePinpoint('¶¶ 7-8'), { kind: 'paragraph', number: 7, to: 8 });
++  assert.deepEqual(parsePinpoint('§§ 5-6'), { kind: 'section', label: '5', to: '6' });
++  assert.deepEqual(parsePinpoint('Secs. 5.2-5.4'), { kind: 'section', label: '5.2', to: '5.4' });
++  assert.deepEqual(parsePinpoint('id. at 123'), { kind: 'page', from: 123 });
++  assert.deepEqual(parsePinpoint('id. at 12:4'), { kind: 'page-line', page: 12, lineFrom: 4 });
++  assert.deepEqual(parsePinpoint('n. 12'), { kind: 'footnote', number: 12 });
++  assert.deepEqual(parsePinpoint('art. 3'), { kind: 'article', label: '3' });
++  assert.deepEqual(parsePinpoint('cl. 8'), { kind: 'clause', label: '8' });
++  // legacy forms keep working
++  assert.deepEqual(parsePinpoint('p. 12'), { kind: 'page', from: 12 });
++  assert.deepEqual(parsePinpoint('pp. 12-13'), { kind: 'page', from: 12, to: 13 });
++  assert.equal(parsePinpoint('somewhere in there'), null);
++});
++
++test('pinpoint v2 forms round-trip through formatPinpoint', () => {
++  assert.equal(formatPinpoint(parsePinpoint('Tr. 12:4-12:8')!), 'Tr. 12:4-12:8');
++  assert.equal(formatPinpoint(parsePinpoint('12:4-8')!), 'Tr. 12:4-8');
++  assert.equal(formatPinpoint(parsePinpoint('¶¶ 7-8')!), '¶¶ 7-8');
++  assert.equal(formatPinpoint(parsePinpoint('§§ 5-6')!), '§§ 5-6');
++  assert.equal(formatPinpoint(parsePinpoint('n. 12')!), 'n. 12');
++  assert.equal(formatPinpoint(parsePinpoint('art. 3')!), 'art. 3');
++});
++
++test('page:line pinpoints validate against line-segmented pages', () => {
++  const input: CiteCheckInput = {
++    document: { name: 'Transcript test (fictional)' },
++    sources: [
++      {
++        id: 'tr',
++        name: 'Trial Transcript (fictional)',
++        pages: [
++          {
++            number: 12,
++            text: 'Q. You saw the seal?\nA. The seal was intact when I checked it at the gate.\nQ. At what time?\nA. Around 4 p.m., before the rain started.',
++          },
++        ],
++      },
++    ],
++    quotes: [
++      { id: 'T1', text: 'The seal was intact when I checked it at the gate.', sourceId: 'tr', pinpoint: 'Tr. 12:2' },
++      { id: 'T2', text: 'The seal was intact when I checked it at the gate.', sourceId: 'tr', pinpoint: 'Tr. 12:4-12:8' },
++      { id: 'T3', text: 'Around 4 p.m., before the rain started.', sourceId: 'tr', pinpoint: '12:4' },
++      { id: 'T4', text: 'The seal was intact when I checked it at the gate.', sourceId: 'tr', pinpoint: 'Tr. 12:2-2' },
++    ],
++  };
++  const res = runCiteCheck(input).results;
++  assert.equal(res[0].pinpoint?.status, 'ok');
++  assert.equal(res[1].pinpoint?.status, 'mismatch');
++  assert.ok(res[1].pinpoint!.detail.includes('line 2'), res[1].pinpoint!.detail);
++  assert.equal(res[2].pinpoint?.status, 'ok');
++  assert.equal(res[3].pinpoint?.status, 'ok');
++});
++
++test('range pinpoints validate across their span (§§ / ¶¶)', () => {
++  const input: CiteCheckInput = {
++    document: { name: 'Range test (fictional)' },
++    sources: [
++      {
++        id: 'doc',
++        name: 'Fictional Contract',
++        sections: [{ label: '5.2', text: 'Customer may terminate for convenience.' }],
++        paragraphs: [{ number: 8, text: 'The witness recalled the alarm.' }],
++      },
++    ],
++    quotes: [
++      { id: 'R1', text: 'Customer may terminate for convenience.', sourceId: 'doc', pinpoint: '§§ 5-6' },
++      { id: 'R2', text: 'Customer may terminate for convenience.', sourceId: 'doc', pinpoint: '§§ 7-8' },
++      { id: 'R3', text: 'The witness recalled the alarm.', sourceId: 'doc', pinpoint: '¶¶ 7-8' },
++    ],
++  };
++  const res = runCiteCheck(input).results;
++  assert.equal(res[0].pinpoint?.status, 'ok');
++  assert.equal(res[1].pinpoint?.status, 'mismatch');
++  assert.equal(res[2].pinpoint?.status, 'ok');
++});
++
++test('footnote/article/clause pinpoints parse but stay unverifiable (never guessed)', () => {
++  const input: CiteCheckInput = {
++    document: { name: 'Unverifiable test (fictional)' },
++    sources: [{ id: 's', name: 'Source', text: 'Some unsegmented free text.' }],
++    quotes: [{ id: 'U1', text: 'Some unsegmented free text.', sourceId: 's', pinpoint: 'n. 12' }],
++  };
++  const r = runCiteCheck(input).results[0];
++  assert.equal(r.pinpoint?.status, 'unverifiable');
++  assert.ok(r.pinpoint!.detail.includes('does not model footnote'), r.pinpoint!.detail);
++});
+diff --git a/open-artifacts/cite-check/core/pinpoint.ts b/open-artifacts/cite-check/core/pinpoint.ts
+index b75ec93..3806782 100644
+--- a/open-artifacts/cite-check/core/pinpoint.ts
++++ b/open-artifacts/cite-check/core/pinpoint.ts
+@@ -1,16 +1,41 @@
+ /**
+- * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123".
++ * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123",
++ * plus v2 forms: transcript page:line ("Tr. 12:4", "12:4-12:8"), ranges
++ * ("§§ 5-6", "¶¶ 7-8"), "id. at 123", "n. 12", "art. 3", "cl. 8".
+  * Deterministic, dependency-free. Unparseable strings return null (never guessed).
+  */
+ 
+ export type Pinpoint =
+   | { kind: 'page'; from: number; to?: number }
+-  | { kind: 'section'; label: string }
+-  | { kind: 'paragraph'; number: number };
++  | { kind: 'page-line'; page: number; lineFrom: number; lineTo?: number; pageTo?: number }
++  | { kind: 'section'; label: string; to?: string }
++  | { kind: 'paragraph'; number: number; to?: number }
++  | { kind: 'footnote'; number: number }
++  | { kind: 'article'; label: string }
++  | { kind: 'clause'; label: string };
++
++const NUM = '[0-9]+(?:\\.[0-9]+)*';
++const SEC_RANGE = new RegExp(`^(?:§§|secs\\.|sections?)\\s*(${NUM})\\s*[-–—]\\s*(${NUM})$`, 'i');
++const SEC_SINGLE = new RegExp(`^(?:§+|secs?\\.|sections?)\\s*(${NUM})$`, 'i');
++const ART = new RegExp(`^art(?:icle)?\\.?\\s*(${NUM})$`, 'i');
++const CL = new RegExp(`^cl(?:ause)?\\.?\\s*(${NUM})$`, 'i');
+ 
+ export function parsePinpoint(raw: string): Pinpoint | null {
+   const s = raw.trim();
+   let m: RegExpMatchArray | null;
++  // id. at 123 / id. at 12:4
++  if ((m = s.match(/^id\.\s+at\s+(\d+)$/i))) return { kind: 'page', from: Number(m[1]) };
++  if ((m = s.match(/^id\.\s+at\s+(\d+):(\d+)$/i))) return { kind: 'page-line', page: Number(m[1]), lineFrom: Number(m[2]) };
++  // page:line, optionally Tr.-prefixed, optionally a range ("Tr. 12:4-12:8", "12:4-8")
++  if ((m = s.match(/^(?:tr\.|transcript)?\s*(\d+):(\d+)(?:\s*[-–—]\s*(?:(\d+):)?(\d+))?$/i))) {
++    const pl: Pinpoint = { kind: 'page-line', page: Number(m[1]), lineFrom: Number(m[2]) };
++    if (m[4] !== undefined) {
++      pl.lineTo = Number(m[4]);
++      if (m[3] !== undefined) pl.pageTo = Number(m[3]);
++    }
++    return pl;
++  }
++  // page / page range
+   if ((m = s.match(/^pp?\.\s*(\d+)(?:\s*[-–—to]+\s*(\d+))?$/i))) {
+     const page: Pinpoint = { kind: 'page', from: Number(m[1]) };
+     if (m[2] !== undefined) page.to = Number(m[2]);
+@@ -19,12 +44,24 @@ export function parsePinpoint(raw: string): Pinpoint | null {
+   if ((m = s.match(/^at\s+(\d+)$/i))) {
+     return { kind: 'page', from: Number(m[1]) };
+   }
+-  if ((m = s.match(/^(?:§+|secs?\.|sections?)\s*([0-9]+(?:\.[0-9]+)*)$/i))) {
++  // section range then single
++  if ((m = s.match(SEC_RANGE))) {
++    return { kind: 'section', label: m[1], to: m[2] };
++  }
++  if ((m = s.match(SEC_SINGLE))) {
+     return { kind: 'section', label: m[1] };
+   }
++  // paragraph range then single
++  if ((m = s.match(/^(?:¶¶|paras\.|paragraphs?)\s*(\d+)\s*[-–—]\s*(\d+)$/i))) {
++    return { kind: 'paragraph', number: Number(m[1]), to: Number(m[2]) };
++  }
+   if ((m = s.match(/^(?:¶+|paras?\.|paragraphs?)\s*(\d+)$/i))) {
+     return { kind: 'paragraph', number: Number(m[1]) };
+   }
++  // footnote / article / clause (parsed, but the core models no such segments)
++  if ((m = s.match(/^(?:n\.|note)\s*(\d+)$/i))) return { kind: 'footnote', number: Number(m[1]) };
++  if ((m = s.match(ART))) return { kind: 'article', label: m[1] };
++  if ((m = s.match(CL))) return { kind: 'clause', label: m[1] };
+   return null;
+ }
+ 
+@@ -32,9 +69,19 @@ export function formatPinpoint(p: Pinpoint): string {
+   switch (p.kind) {
+     case 'page':
+       return p.to !== undefined ? `pp. ${p.from}-${p.to}` : `p. ${p.from}`;
++    case 'page-line':
++      if (p.pageTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.pageTo}:${p.lineTo}`;
++      if (p.lineTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.lineTo}`;
++      return `Tr. ${p.page}:${p.lineFrom}`;
+     case 'section':
+-      return `§ ${p.label}`;
++      return p.to !== undefined ? `§§ ${p.label}-${p.to}` : `§ ${p.label}`;
+     case 'paragraph':
+-      return `¶ ${p.number}`;
++      return p.to !== undefined ? `¶¶ ${p.number}-${p.to}` : `¶ ${p.number}`;
++    case 'footnote':
++      return `n. ${p.number}`;
++    case 'article':
++      return `art. ${p.label}`;
++    case 'clause':
++      return `cl. ${p.label}`;
+   }
+ }
+diff --git a/open-artifacts/cite-check/core/propositions.test.ts b/open-artifacts/cite-check/core/propositions.test.ts
+new file mode 100644
+index 0000000..d0639d1
+--- /dev/null
++++ b/open-artifacts/cite-check/core/propositions.test.ts
+@@ -0,0 +1,48 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { buildPropositionPrompt, mergeVerdicts } from './propositions';
++import { runCiteCheck } from './citecheck';
++import type { CiteCheckInput } from './citecheck';
++
++const INPUT: CiteCheckInput = {
++  document: { name: 'Proposition test (fictional)' },
++  sources: [
++    {
++      id: 'depo',
++      name: 'Deposition (fictional)',
++      pages: [{ number: 12, text: 'A. Mr. Beltran signed the delivery receipt without noting any exception on the document. The delivery occurred at the loading dock in the late afternoon.' }],
++    },
++  ],
++  quotes: [
++    { id: 'Q1', text: 'Mr. Beltran signed the delivery receipt without noting any exception on the document.', sourceId: 'depo', proposition: 'Delivery accepted without exception.' },
++    { id: 'Q2', text: 'Mr. Beltran signed the delivery receipt without noting any exception on the document at the loading dock', sourceId: 'depo', proposition: 'Paraphrased version.' },
++  ],
++};
++
++test('buildPropositionPrompt includes only exact/normalized quotes and their anchors', () => {
++  const report = runCiteCheck(INPUT);
++  const prompt = buildPropositionPrompt(report);
++  assert.ok(prompt.includes('"Q1"'), prompt);
++  assert.ok(!prompt.includes('"Q2"'), prompt);
++  assert.ok(prompt.includes('signed the delivery receipt'), prompt);
++  assert.ok(prompt.includes('verbatim'), prompt);
++});
++
++test('mergeVerdicts refuses non-verbatim-verified quotes and anchor mismatches', () => {
++  const report = runCiteCheck(INPUT);
++  assert.equal(report.results[1].classification, 'fuzzy');
++  const merged = mergeVerdicts(report, [
++    { id: 'Q1', proposition: 'Delivery accepted without exception.', supported: true, reasoning: 'ok', anchorFromCore: report.results[0].anchor!.verbatim },
++    { id: 'Q2', proposition: 'Paraphrased version.', supported: true, reasoning: 'nope' },
++    { id: 'Q1', proposition: 'Delivery accepted without exception.', supported: false, reasoning: 'stale', anchorFromCore: 'something else entirely' },
++    { id: 'QX', proposition: 'unknown', supported: true, reasoning: '?' },
++  ]);
++  assert.equal(merged[0].eligible, true);
++  assert.equal(merged[0].verdict?.supported, true);
++  assert.equal(merged[1].eligible, false);
++  assert.ok(merged[1].refusal!.includes('fuzzy'), merged[1].refusal);
++  assert.equal(merged[2].eligible, false);
++  assert.ok(merged[2].refusal!.includes('anchor'), merged[2].refusal);
++  assert.equal(merged[3].eligible, false);
++  assert.ok(merged[3].refusal!.includes('no quote'), merged[3].refusal);
++});
+diff --git a/open-artifacts/cite-check/core/propositions.ts b/open-artifacts/cite-check/core/propositions.ts
+new file mode 100644
+index 0000000..27bf55b
+--- /dev/null
++++ b/open-artifacts/cite-check/core/propositions.ts
+@@ -0,0 +1,75 @@
++/**
++ * Proposition harness — the auditable two-stage pipeline around the LLM part.
++ *
++ * The deterministic core classifies and anchors quotes; ONLY quotes classified
++ * exact/normalized are eligible for LLM/human proposition judgment. Everything
++ * else is refused with a note: there is no verbatim-verified anchor to judge
++ * against, and the core never lets judgment outrun verification.
++ */
++
++import type { CiteCheckReport, Classification, QuoteResult } from './citecheck';
++
++export interface PropositionVerdict {
++  id: string;
++  proposition: string;
++  supported: boolean | 'unclear';
++  reasoning: string;
++  /** the core's verbatim anchor echoed back, so the verdict is pinned to text */
++  anchorFromCore?: string;
++}
++
++export interface MergedVerdict {
++  id: string;
++  classification: Classification | null;
++  eligible: boolean;
++  verdict?: PropositionVerdict;
++  refusal?: string;
++}
++
++/** Structured prompt for the LLM/human judgment stage (never classification). */
++export function buildPropositionPrompt(report: CiteCheckReport): string {
++  const eligible = report.results.filter(
++    (r: QuoteResult) => r.classification === 'exact' || r.classification === 'normalized',
++  );
++  const items = eligible.map((r) => ({
++    id: r.id,
++    proposition: r.proposition ?? null,
++    source: r.anchor?.sourceName ?? null,
++    anchor: r.anchor?.verbatim ?? null,
++  }));
++  return [
++    'You are judging whether each verbatim-verified quotation actually supports the proposition it is offered to prove.',
++    'Quote fidelity was already verified deterministically (exact/normalized). Judge SUPPORT ONLY — never re-classify the quote text.',
++    'Respond with JSON only:',
++    '{"verdicts":[{"id":"...","supported":true|false|"unclear","reasoning":"..."}]}',
++    'Quotes to judge:',
++    JSON.stringify(items, null, 2),
++  ].join('\n');
++}
++
++/** Merge LLM/human verdicts into the report, gating on core verification. */
++export function mergeVerdicts(report: CiteCheckReport, verdicts: PropositionVerdict[]): MergedVerdict[] {
++  return verdicts.map((v) => {
++    const r = report.results.find((x) => x.id === v.id);
++    if (!r) {
++      return { id: v.id, classification: null, eligible: false, refusal: `refused: no quote with id "${v.id}" in the report` };
++    }
++    if (r.classification !== 'exact' && r.classification !== 'normalized') {
++      return {
++        id: v.id,
++        classification: r.classification,
++        eligible: false,
++        refusal: `refused: classification "${r.classification}" is not verbatim-verified — the deterministic core gates proposition judgment`,
++      };
++    }
++    if (v.anchorFromCore !== undefined && v.anchorFromCore !== r.anchor?.verbatim) {
++      return {
++        id: v.id,
++        classification: r.classification,
++        eligible: false,
++        refusal: 'refused: echoed anchor does not match the core anchor for this quote',
++      };
++    }
++    return { id: v.id, classification: r.classification, eligible: true, verdict: v };
++  });
++}
+diff --git a/open-artifacts/cite-check/core/textutil.ts b/open-artifacts/cite-check/core/textutil.ts
+index 34a1f04..81acac5 100644
+--- a/open-artifacts/cite-check/core/textutil.ts
++++ b/open-artifacts/cite-check/core/textutil.ts
+@@ -102,3 +102,43 @@ export function similarity(a: string, b: string): number {
+   for (const [t, c] of ma) inter += Math.min(c, mb.get(t) ?? 0);
+   return inter / (ta.length + tb.length - inter);
+ }
++
++/** Numeric token: digits with an optional interior decimal point ("90", "5.2"). */
++export function isNumericToken(t: string): boolean {
++  return /^\d+(?:\.\d+)?$/.test(t);
++}
++
++export interface NumericMismatch {
++  /** numeric tokens present in both sides but with different values, paired in order */
++  paired: Array<{ quote: string; source: string }>;
++  /** numeric tokens in the quote with no numeric counterpart in the source window */
++  quoteOnly: string[];
++  /** numeric tokens in the source window with no counterpart in the quote */
++  sourceOnly: string[];
++}
++
++/**
++ * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
++ * the located source span. Any difference is potential material alteration
++ * ("90" -> "120") and must never pass as near-verbatim.
++ */
++export function numericMismatches(quote: string[], source: string[]): NumericMismatch {
++  const qNums = quote.filter(isNumericToken);
++  const sNums = source.filter(isNumericToken);
++  const qCounts = multiset(qNums);
++  const sCounts = multiset(sNums);
++  const qDiff: string[] = [];
++  const sDiff: string[] = [];
++  for (const [t, c] of qCounts) {
++    const extra = c - (sCounts.get(t) ?? 0);
++    for (let k = 0; k < extra; k++) qDiff.push(t);
++  }
++  for (const [t, c] of sCounts) {
++    const extra = c - (qCounts.get(t) ?? 0);
++    for (let k = 0; k < extra; k++) sDiff.push(t);
++  }
++  const pairedCount = Math.min(qDiff.length, sDiff.length);
++  const paired: Array<{ quote: string; source: string }> = [];
++  for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
++  return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
++}
+diff --git a/open-artifacts/cite-check/demo/example.js b/open-artifacts/cite-check/demo/example.js
+index 85cef3b..61a0e60 100644
+--- a/open-artifacts/cite-check/demo/example.js
++++ b/open-artifacts/cite-check/demo/example.js
+@@ -9,7 +9,7 @@ export default {
+       "pages": [
+         { "number": 11, "text": "Q. What happened at the loading dock? A. The trailer arrived at the dock around 4 p.m. and the seal was already broken when our team inspected it at 4:10 p.m." },
+         { "number": 12, "text": "Q. Who signed the delivery receipt? A. Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document." },
+-        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest." }
++        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest. The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon." }
+       ]
+     },
+     {
+@@ -92,6 +92,13 @@ export default {
+       "sourceId": "weber-emails",
+       "pinpoint": "p. 3",
+       "proposition": "Source not in the record excerpt."
++    },
++    {
++      "id": "Q10 (brief p. 18)",
++      "text": "The manifest itself listed 12,580 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon.",
++      "sourceId": "okafor-depo",
++      "pinpoint": "p. 15",
++      "proposition": "The brief's manifest figure — caught by the number guard (altered digit)."
+     }
+   ]
+ };
+diff --git a/open-artifacts/cite-check/demo/index.html b/open-artifacts/cite-check/demo/index.html
+index 7d05ecd..9e77659 100644
+--- a/open-artifacts/cite-check/demo/index.html
++++ b/open-artifacts/cite-check/demo/index.html
+@@ -53,13 +53,15 @@
+       loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets,
+       and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open
+       reimplementation of Anthropic's closed artifact.</p>
+-    <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 9 quotes —
+-      including one paraphrase that drifts, one correct quote cited to the wrong page, and one source not in the record.</p>
++    <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 10 quotes —
++      including one paraphrase that drifts, one silently altered digit caught by the number guard, one
++      omission without an ellipsis, one correct quote cited to the wrong page, and one source not in the record.</p>
+   </header>
+ 
+   <section>
+     <h2>Summary</h2>
+     <div class="counts" id="counts"></div>
++    <p class="lede" id="coverage" style="font-size:12px;margin:8px 0 0"></p>
+     <div class="scroll"><table id="results"></table></div>
+     <div class="row">
+       <button id="mdBtn">Export report.md</button>
+@@ -80,7 +82,7 @@
+ </div>
+ 
+ <script type="module">
+-  import { runCiteCheck, renderReport } from "../core/core.js";
++  import { runCiteCheck, renderReport, formatDiffOps } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+   const report = runCiteCheck(EXAMPLE);
+@@ -89,12 +91,16 @@
+ 
+   document.getElementById("counts").innerHTML =
+     `<div><b>${s.total}</b><span>quotes checked</span></div>` +
++    `<div><b>${s.checked} of ${s.total}</b><span>located</span></div>` +
+     `<div><b>${s.exact}</b><span>exact</span></div>` +
+     `<div><b>${s.normalized}</b><span>normalized</span></div>` +
+     `<div><b>${s.fuzzy}</b><span>fuzzy</span></div>` +
+     `<div><b>${s.not_found}</b><span>not found</span></div>` +
+     `<div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+ 
++  document.getElementById("coverage").textContent =
++    `Checked ${s.checked} of ${s.total} quotes — ${s.couldNotCheck} could not be checked and are never reported as "confirmed"; ${s.unparseablePinpoints} unparseable pinpoint(s).`;
++
+   let firstFlagDone = false;
+   document.getElementById("results").innerHTML =
+     `<tr><th>Quote</th><th>Verdict</th><th>Similarity</th><th>Anchor</th><th>Pinpoint</th></tr>` +
+@@ -121,6 +127,7 @@
+         ` ${a ? `— anchored at <b>${esc(a.sourceName)}</b>${a.segmentLabel !== null ? ` (${esc(a.segmentKind)} ${esc(a.segmentLabel)})` : ""} chars ${a.charStart}–${a.charEnd}` : "— no locating anchor in the provided sources"}` +
+         (a ? `<blockquote>${esc(a.verbatim.replace(/\n/g, " "))}</blockquote>` : "") +
+         (r.pinpoint ? `<div style="margin-top:6px">Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}</div>` : "") +
++        (r.diff && formatDiffOps(r.diff) ? `<div style="margin-top:4px">Token diff: <code>${esc(formatDiffOps(r.diff))}</code></div>` : "") +
+         r.notes.map((n) => `<div style="margin-top:4px;color:var(--text-secondary)">· ${esc(n)}</div>`).join("") +
+         `</div>`;
+     })
+diff --git a/open-artifacts/cite-check/examples/input.json b/open-artifacts/cite-check/examples/input.json
+index c20b8e5..1b31f96 100644
+--- a/open-artifacts/cite-check/examples/input.json
++++ b/open-artifacts/cite-check/examples/input.json
+@@ -8,7 +8,7 @@
+       "pages": [
+         { "number": 11, "text": "Q. What happened at the loading dock? A. The trailer arrived at the dock around 4 p.m. and the seal was already broken when our team inspected it at 4:10 p.m." },
+         { "number": 12, "text": "Q. Who signed the delivery receipt? A. Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document." },
+-        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest." }
++        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest. The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon." }
+       ]
+     },
+     {
+@@ -91,6 +91,13 @@
+       "sourceId": "weber-emails",
+       "pinpoint": "p. 3",
+       "proposition": "Source not in the record excerpt."
++    },
++    {
++      "id": "Q10 (brief p. 18)",
++      "text": "The manifest itself listed 12,580 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon.",
++      "sourceId": "okafor-depo",
++      "pinpoint": "p. 15",
++      "proposition": "The brief's manifest figure — caught by the number guard (altered digit)."
+     }
+   ]
+ }
+diff --git a/open-artifacts/cite-check/examples/output.json b/open-artifacts/cite-check/examples/output.json
+index 2081dce..5c18f5f 100644
+--- a/open-artifacts/cite-check/examples/output.json
++++ b/open-artifacts/cite-check/examples/output.json
+@@ -1,16 +1,20 @@
+ {
+   "documentName": "Appellant's Opening Brief — Halcyon Dynamics, Inc. v. Meridian Freight Systems, LLC (No. 26-1187, fictional)",
+   "summary": {
+-    "total": 9,
++    "total": 10,
+     "exact": 5,
+     "normalized": 1,
+-    "fuzzy": 1,
++    "fuzzy": 2,
+     "not_found": 2,
++    "checked": 8,
++    "couldNotCheck": 2,
++    "unparseablePinpoints": 0,
+     "pinpointIssues": 2
+   },
+   "results": [
+     {
+       "id": "Q1 (brief p. 6)",
++      "proposition": "The delivery was accepted without exception, defeating the notice defense.",
+       "classification": "exact",
+       "similarity": 1,
+       "coverage": 1,
+@@ -33,12 +37,37 @@
+         "status": "ok",
+         "detail": "quote is located on 12"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "mr",
++            "beltran",
++            "signed",
++            "the",
++            "delivery",
++            "receipt",
++            "at",
++            "4",
++            "20",
++            "p.m",
++            "without",
++            "noting",
++            "any",
++            "exception",
++            "on",
++            "the",
++            "document"
++          ]
++        }
++      ],
+       "notes": [
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+       ]
+     },
+     {
+       "id": "Q2 (brief p. 7)",
++      "proposition": "Same receipt facts, quoting with altered punctuation.",
+       "classification": "normalized",
+       "similarity": 1,
+       "coverage": 1,
+@@ -48,8 +77,8 @@
+         "segmentKind": "page",
+         "segmentLabel": "12",
+         "charStart": 198,
+-        "charEnd": 279,
+-        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception"
++        "charEnd": 295,
++        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+       },
+       "bestCandidate": null,
+       "pinpoint": {
+@@ -61,13 +90,48 @@
+         "status": "ok",
+         "detail": "quote is located on 12"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "mr",
++            "beltran",
++            "signed",
++            "the",
++            "delivery",
++            "receipt",
++            "at",
++            "4",
++            "20",
++            "p.m",
++            "without",
++            "noting",
++            "any",
++            "exception"
++          ]
++        },
++        {
++          "op": "delete",
++          "source": [
++            "on",
++            "the",
++            "document"
++          ],
++          "sourceSpan": {
++            "start": 82,
++            "end": 97
++          }
++        }
++      ],
+       "notes": [
+         "matches modulo case/punctuation/whitespace",
++        "omits \"on the document\" without an ellipsis",
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+       ]
+     },
+     {
+       "id": "Q3 (brief p. 9)",
++      "proposition": "Receipt signed without exception (paraphrased in the brief).",
+       "classification": "fuzzy",
+       "similarity": 0.7,
+       "coverage": 0.8235294117647058,
+@@ -90,6 +154,53 @@
+         "status": "ok",
+         "detail": "quote is located on 12"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "mr",
++            "beltran",
++            "signed",
++            "the",
++            "delivery",
++            "receipt"
++          ]
++        },
++        {
++          "op": "delete",
++          "source": [
++            "at",
++            "4",
++            "20",
++            "p.m"
++          ],
++          "sourceSpan": {
++            "start": 40,
++            "end": 51
++          }
++        },
++        {
++          "op": "equal",
++          "source": [
++            "without",
++            "noting",
++            "any",
++            "exception",
++            "on",
++            "the",
++            "document"
++          ]
++        },
++        {
++          "op": "insert",
++          "quote": [
++            "at",
++            "the",
++            "loading",
++            "dock"
++          ]
++        }
++      ],
+       "notes": [
+         "substantial overlap but not verbatim — requires human review",
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+@@ -97,6 +208,7 @@
+     },
+     {
+       "id": "Q4 (brief p. 11)",
++      "proposition": "Unsupervised unloading — nothing in the cited deposition supports this.",
+       "classification": "not_found",
+       "similarity": 0.2608695652173913,
+       "coverage": 0.4,
+@@ -117,14 +229,16 @@
+           "from": 12
+         },
+         "status": "unverifiable",
+-        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
++        "detail": "quote not located in the source, so the pinpoint cannot be validated"
+       },
++      "diff": null,
+       "notes": [
+         "best candidate similarity 0.26 below threshold 0.7"
+       ]
+     },
+     {
+       "id": "Q5 (brief p. 13)",
++      "proposition": "Correct quote, wrong page cite.",
+       "classification": "exact",
+       "similarity": 1,
+       "coverage": 1,
+@@ -147,6 +261,30 @@
+         "status": "mismatch",
+         "detail": "pinpoint says p. 15 but the quote is located on 12"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "mr",
++            "beltran",
++            "signed",
++            "the",
++            "delivery",
++            "receipt",
++            "at",
++            "4",
++            "20",
++            "p.m",
++            "without",
++            "noting",
++            "any",
++            "exception",
++            "on",
++            "the",
++            "document"
++          ]
++        }
++      ],
+       "notes": [
+         "PINPOINT ISSUE: pinpoint says p. 15 but the quote is located on 12",
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+@@ -154,6 +292,7 @@
+     },
+     {
+       "id": "Q6 (brief p. 14)",
++      "proposition": "The 90-day termination right was preserved.",
+       "classification": "exact",
+       "similarity": 1,
+       "coverage": 1,
+@@ -176,12 +315,34 @@
+         "status": "ok",
+         "detail": "quote is located in § 5.2"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "customer",
++            "may",
++            "terminate",
++            "this",
++            "agreement",
++            "for",
++            "convenience",
++            "upon",
++            "ninety",
++            "90",
++            "days",
++            "prior",
++            "written",
++            "notice"
++          ]
++        }
++      ],
+       "notes": [
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+       ]
+     },
+     {
+       "id": "Q7 (brief p. 15)",
++      "proposition": "Correct clause text cited to the wrong section.",
+       "classification": "exact",
+       "similarity": 1,
+       "coverage": 1,
+@@ -204,6 +365,26 @@
+         "status": "mismatch",
+         "detail": "pinpoint says § 5.2 but the quote is located in § 9.1"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "neither",
++            "party",
++            "shall",
++            "be",
++            "liable",
++            "for",
++            "indirect",
++            "or",
++            "consequential",
++            "damages",
++            "including",
++            "lost",
++            "profits"
++          ]
++        }
++      ],
+       "notes": [
+         "PINPOINT ISSUE: pinpoint says § 5.2 but the quote is located in § 9.1",
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+@@ -211,6 +392,7 @@
+     },
+     {
+       "id": "Q8 (brief p. 16)",
++      "proposition": "Damage was visible on arrival.",
+       "classification": "exact",
+       "similarity": 1,
+       "coverage": 1,
+@@ -233,12 +415,35 @@
+         "status": "ok",
+         "detail": "quote is located in ¶ 8"
+       },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "the",
++            "photographs",
++            "show",
++            "water",
++            "staining",
++            "on",
++            "four",
++            "of",
++            "the",
++            "eleven",
++            "pallets",
++            "delivered",
++            "under",
++            "this",
++            "shipment"
++          ]
++        }
++      ],
+       "notes": [
+         "proposition support is an LLM/human judgment — not evaluated by this core"
+       ]
+     },
+     {
+       "id": "Q9 (brief p. 17)",
++      "proposition": "Source not in the record excerpt.",
+       "classification": "not_found",
+       "similarity": 0,
+       "coverage": 0,
+@@ -250,12 +455,113 @@
+           "from": 3
+         },
+         "status": "unverifiable",
+-        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
++        "detail": "source not provided, so the pinpoint cannot be validated"
+       },
+       "bestCandidate": null,
++      "diff": null,
+       "notes": [
+         "source \"weber-emails\" not provided"
+       ]
++    },
++    {
++      "id": "Q10 (brief p. 18)",
++      "proposition": "The brief's manifest figure — caught by the number guard (altered digit).",
++      "classification": "fuzzy",
++      "similarity": 0.9555555555555556,
++      "coverage": 0.9772727272727273,
++      "anchor": {
++        "sourceId": "okafor-depo",
++        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
++        "segmentKind": "page",
++        "segmentLabel": "15",
++        "charStart": 432,
++        "charEnd": 695,
++        "verbatim": "The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon"
++      },
++      "bestCandidate": null,
++      "pinpoint": {
++        "raw": "p. 15",
++        "parsed": {
++          "kind": "page",
++          "from": 15
++        },
++        "status": "ok",
++        "detail": "quote is located on 15"
++      },
++      "diff": [
++        {
++          "op": "equal",
++          "source": [
++            "the",
++            "manifest",
++            "itself",
++            "listed",
++            "12"
++          ]
++        },
++        {
++          "op": "replace",
++          "quote": [
++            "580"
++          ],
++          "source": [
++            "480"
++          ],
++          "sourceSpan": {
++            "start": 30,
++            "end": 33
++          }
++        },
++        {
++          "op": "equal",
++          "source": [
++            "kilograms",
++            "of",
++            "freight",
++            "on",
++            "the",
++            "outbound",
++            "leg",
++            "and",
++            "the",
++            "reweigh",
++            "at",
++            "the",
++            "millbrook",
++            "terminal",
++            "showed",
++            "only",
++            "12",
++            "140",
++            "kilograms",
++            "a",
++            "difference",
++            "the",
++            "intake",
++            "team",
++            "documented",
++            "in",
++            "the",
++            "overflow",
++            "log",
++            "and",
++            "reported",
++            "to",
++            "the",
++            "dispatch",
++            "office",
++            "that",
++            "same",
++            "afternoon"
++          ]
++        }
++      ],
++      "notes": [
++        "matches modulo case/punctuation/whitespace",
++        "quote \"580\" vs source \"480\"",
++        "number alteration caps the classification at fuzzy — requires human review",
++        "proposition support is an LLM/human judgment — not evaluated by this core"
++      ]
+     }
+   ]
+ }
+diff --git a/open-artifacts/cite-check/examples/report.md b/open-artifacts/cite-check/examples/report.md
+index 788c854..77fef4a 100644
+--- a/open-artifacts/cite-check/examples/report.md
++++ b/open-artifacts/cite-check/examples/report.md
+@@ -1,11 +1,11 @@
+ # Cite check — Appellant's Opening Brief — Halcyon Dynamics, Inc. v. Meridian Freight Systems, LLC (No. 26-1187, fictional)
+ 
+-**9 quotes checked:** 5 exact · 1 normalized · 1 fuzzy · 2 not found · 2 pinpoint issue(s)
++**Checked 8 of 10 quotes:** 5 exact · 1 normalized · 2 fuzzy · 2 not checked (never reported as "confirmed") · 0 unparseable pinpoint(s) · 2 pinpoint issue(s)
+ 
+ | Quote | Verdict | Similarity | Anchor | Pinpoint |
+ |---|---|---|---|---|
+ | Q1 (brief p. 6) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
+-| Q2 (brief p. 7) | normalized | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–279) | p. 12: ok |
++| Q2 (brief p. 7) | normalized | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
+ | Q3 (brief p. 9) | fuzzy | 0.70 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
+ | Q4 (brief p. 11) | not_found | 0.26 | — | p. 12: unverifiable |
+ | Q5 (brief p. 13) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 15: mismatch |
+@@ -13,6 +13,7 @@
+ | Q7 (brief p. 15) | exact | 1.00 | Master Services Agreement (Halcyon–Meridian, 2024), section 9.1 (chars 98–189) | § 5.2: mismatch |
+ | Q8 (brief p. 16) | exact | 1.00 | Declaration of Priya Nair (Feb. 2, 2026), paragraph 8 (chars 107–202) | ¶ 8: ok |
+ | Q9 (brief p. 17) | not_found | 0.00 | — | p. 3: unverifiable |
++| Q10 (brief p. 18) | fuzzy | 0.96 | Deposition of Sandra Okafor (Jan. 14, 2026), page 15 (chars 432–695) | p. 15: ok |
+ 
+ ## Q1 (brief p. 6) — exact
+ 
+@@ -24,11 +25,13 @@ Pinpoint: p. 12 — ok (quote is located on 12).
+ 
+ ## Q2 (brief p. 7) — normalized
+ 
+-> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception
++> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document
+ 
+-Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–279.
++Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–295.
++Token diff: del:"on the document"
+ Pinpoint: p. 12 — ok (quote is located on 12).
+ - matches modulo case/punctuation/whitespace
++- omits "on the document" without an ellipsis
+ - proposition support is an LLM/human judgment — not evaluated by this core
+ 
+ ## Q3 (brief p. 9) — fuzzy
+@@ -36,6 +39,7 @@ Pinpoint: p. 12 — ok (quote is located on 12).
+ > Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document
+ 
+ Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–295.
++Token diff: del:"at 4 20 p.m" ins:"at the loading dock"
+ Pinpoint: p. 12 — ok (quote is located on 12).
+ - substantial overlap but not verbatim — requires human review
+ - proposition support is an LLM/human judgment — not evaluated by this core
+@@ -43,7 +47,7 @@ Pinpoint: p. 12 — ok (quote is located on 12).
+ ## Q4 (brief p. 11) — not_found
+ 
+ No locating anchor in the provided sources.
+-Pinpoint: p. 12 — unverifiable (source does not declare page segments, so the pinpoint cannot be validated).
++Pinpoint: p. 12 — unverifiable (quote not located in the source, so the pinpoint cannot be validated).
+ - best candidate similarity 0.26 below threshold 0.7
+ 
+ ## Q5 (brief p. 13) — exact
+@@ -83,5 +87,17 @@ Pinpoint: ¶ 8 — ok (quote is located in ¶ 8).
+ ## Q9 (brief p. 17) — not_found
+ 
+ No locating anchor in the provided sources.
+-Pinpoint: p. 3 — unverifiable (source does not declare page segments, so the pinpoint cannot be validated).
++Pinpoint: p. 3 — unverifiable (source not provided, so the pinpoint cannot be validated).
+ - source "weber-emails" not provided
++
++## Q10 (brief p. 18) — fuzzy
++
++> The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon
++
++Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 432–695.
++Token diff: sub:"580"->"480"
++Pinpoint: p. 15 — ok (quote is located on 15).
++- matches modulo case/punctuation/whitespace
++- quote "580" vs source "480"
++- number alteration caps the classification at fuzzy — requires human review
++- proposition support is an LLM/human judgment — not evaluated by this core
+diff --git a/open-artifacts/cite-check/spec.md b/open-artifacts/cite-check/spec.md
+index 24922e9..8efdc0d 100644
+--- a/open-artifacts/cite-check/spec.md
++++ b/open-artifacts/cite-check/spec.md
+@@ -2,8 +2,8 @@
+ 
+ Open reimplementation of the Anthropic "Cite check" legal artifact
+ (catalog §2.5). Verifies quoted passages in a legal document against their
+-cited source documents and flags quote mismatches, wrong pinpoints, and
+-missing sources.
++cited source documents and flags quote mismatches, altered numbers, silent
++omissions, wrong pinpoints, and missing sources.
+ 
+ ## Design split: deterministic core vs. LLM
+ 
+@@ -12,11 +12,14 @@ Everything in `core/` runs **without an LLM** and is fully reproducible:
+ | Capability | Owner |
+ |---|---|
+ | Quote-vs-source string matching (exact / normalized / fuzzy / not_found) | core (deterministic) |
+-| Verbatim anchor with source id, page/§/¶ segment, char offsets | core (deterministic) |
+-| Pinpoint parsing (`p. 12`, `pp. 12-13`, `at 123`, `§ 5.2`, `Sec. 5`, `¶ 8`, `Para. 8`) | core (deterministic) |
+-| Pinpoint validation against the located anchor's segment | core (deterministic) |
++| Number guard: altered numeric tokens cap the class at fuzzy + note | core (deterministic) |
++| Omission detection: dropped tokens noted; explicit ellipsis accepted | core (deterministic) |
++| Verbatim anchor (source id, page/§/¶ segment, char offsets) + LCS token diff | core (deterministic) |
++| Document-side extraction of quotes + footnote pinpoints (`extract.ts`) | core (deterministic) |
++| Pinpoint parsing & validation against the located anchor's segment | core (deterministic) |
++| Coverage roll-up ("Checked N of M"; unchecked never "confirmed") | core (deterministic) |
+ | Markdown report generation | core (deterministic) |
+-| "Does the source actually support the proposition?" | LLM or human (out of core) |
++| "Does the source actually support the proposition?" | LLM or human (out of core, gated by `propositions.ts`) |
+ 
+ The catalog explicitly calls for this split: "Deterministic core … should be
+ non-LLM code; the LLM only judges 'does the source support the proposition.'"
+@@ -25,20 +28,20 @@ non-LLM code; the LLM only judges 'does the source support the proposition.'"
+ 
+ ```jsonc
+ {
+-  "document": { "name": "Brief name" },
++  "document": { "name": "Brief name", "text": "…" },   // text optional; used by the extractor
+   "fuzzyThreshold": 0.7,              // optional, default 0.7
+   "sources": [
+-    { "id": "depo", "name": "…", "text": "…" },                    // free-text source, OR
+-    { "id": "msa", "name": "…",
+-      "pages":     [ { "number": 12, "text": "…" } ],              // any mix of
+-      "sections":  [ { "label": "5.2", "text": "…" } ],            // segment arrays
+-      "paragraphs":[ { "number": 8,  "text": "…" } ] }             // (validated pinpoints)
++    { "id": "depo", "name": "…", "aliases": ["Okafor Deposition"],   // optional aliases
++      "text": "…",                                                    // free-text source, OR
++      "pages":     [ { "number": 12, "text": "line 1\nline 2" } ],   // \n = line segmentation
++      "sections":  [ { "label": "5.2", "text": "…" } ],              // for Tr. page:line checks
++      "paragraphs":[ { "number": 8,  "text": "…" } ] }
+   ],
+-  "quotes": [
++  "quotes": [                          // optional — omit to extract from document.text
+     { "id": "Q1", "text": "quoted passage",
+       "sourceId": "depo",
+-      "pinpoint": "p. 12",            // optional
+-      "proposition": "what the quote is offered to prove" }        // optional, LLM-judged
++      "pinpoint": "p. 12",             // optional
++      "proposition": "what the quote is offered to prove" }          // optional, LLM-judged
+   ]
+ }
+ ```
+@@ -49,26 +52,78 @@ One `QuoteResult` per input quote:
+ 
+ - `classification`: `exact` | `normalized` | `fuzzy` | `not_found`
+   - **exact** — quote appears verbatim (whitespace-trimmed) in the source.
+-  - **normalized** — same tokens modulo case/punctuation/whitespace (best-window Jaccard ≥ 0.95).
++  - **normalized** — same tokens modulo case/punctuation/whitespace (best-window Jaccard ≥ 0.95), *unless* a guard fires (below).
+   - **fuzzy** — best-window Jaccard ≥ `fuzzyThreshold` (default 0.7) and quote-token coverage ≥ 0.6. Substantial overlap, not verbatim: flagged for human review, never treated as verified.
+   - **not_found** — below the fuzzy threshold. The closest window is preserved in `bestCandidate` as evidence only, never as verification.
+ - `similarity`, `coverage`: the scores behind the classification.
+-- `anchor` (null for not_found): `{ sourceId, sourceName, segmentKind, segmentLabel, charStart, charEnd, verbatim }` — the located verbatim span in the source.
++- `anchor` (null for not_found): `{ sourceId, sourceName, segmentKind, segmentLabel, charStart, charEnd, verbatim }`. For near-verbatim quotes the span is LCS-aligned and extended to the end of the quoted sentence, so dropped tail tokens stay inside the anchor instead of being trimmed away.
++- `diff`: LCS diff ops quote ↔ anchor span (`equal` / `delete` / `insert` / `replace`, deletes and replaces carry `sourceSpan` char offsets). Machine-checkable evidence for every flag.
+ - `pinpoint` (when the quote carries one): `parsed` form plus a status:
+-  `ok` · `mismatch` (e.g. cite says p. 15, quote lives on p. 12) · `unverifiable` (source declares no comparable segments) · `unparseable` (syntax not recognized — never guessed).
+-- `notes`: human-readable findings, including whether the *proposition* still needs LLM/human judgment.
+-
+-`renderReport(report)` produces a deterministic Markdown report (summary line,
+-per-quote table, anchored verbatim block quotes).
+-
+-## Prompt schema for the LLM part
+-
+-The LLM never classifies quote fidelity. Its only job in the full artifact is
+-(a) extracting quote/pinpoint pairs from the reviewed document and (b) judging
+-proposition support. Suggested structured prompt output:
++  `ok` · `mismatch` (e.g. cite says p. 15, quote lives on p. 12) · `unverifiable` (with a truthful detail: *source not provided*, *quote not located in the source*, *source does not declare such segments*, *core does not model footnote/article/clause segments*, *page not line-segmented*) · `unparseable` (syntax not recognized — never guessed).
++- `notes`: human-readable findings: number-guard mismatches
++  (`quote "120" vs source "90"`), omissions (`omits "on the document"` —
++  `— explicit ellipsis, accepted` when the quote marks the cut with `…`/`...`),
++  and whether the *proposition* still needs LLM/human judgment.
++- `summary`: `total`, per-class counts, `checked` (located = total − not_found),
++  `couldNotCheck` (never reported as "confirmed"), `unparseablePinpoints`,
++  `pinpointIssues`.
++
++### Deterministic guards
++
++1. **Number guard** — numeric tokens (`34,800` tokenizes as `34` + `800`) are
++   multiset-compared between quote and anchor. Any quote-side difference caps
++   the classification at fuzzy and is noted. One changed digit in a long quote
++   can otherwise still score ≥ 0.95 and pass as "normalized".
++2. **Omission detection** — for near-verbatim quotes, tokens present in the
++   located span but dropped from the quote are noted verbatim
++   (`omits "on the document"`). A quote containing an explicit ellipsis
++   (`…` or `...`) marks the omission as accepted. Sentence-bounded: a quote
++   that legitimately ends at a sentence boundary is never flagged.
++
++`renderReport(report)` produces a deterministic Markdown report (coverage
++roll-up line, per-quote table, anchored verbatim block quotes, token-diff
++marks, notes).
++
++## Pinpoint grammar
++
++Parsed forms (`pinpoint.ts`): `p. 12` · `pp. 12-13` · `at 123` · `§ 5.2` ·
++`Sec. 5` · `¶ 8` · `Para. 8` — plus v2: `Tr. 12:4` · `12:4` · `Tr. 12:4-12:8` ·
++`12:4-8` · `§§ 5-6` · `Secs. 5.2-5.4` · `¶¶ 7-8` · `id. at 123` · `id. at 12:4` ·
++`n. 12` · `art. 3` · `cl. 8`.
++
++Validation never guesses: page:line pinpoints validate only against pages whose
++text is line-segmented (`\n`); `§`/`¶` pinpoints into page-only sources are
++`unverifiable`, not `ok`; footnote/article/clause pinpoints parse and
++round-trip but stay `unverifiable` (the core models no such segments).
++
++## Document-side extractor (`core/extract.ts`)
++
++Deterministic replacement for LLM extraction. When `quotes` is omitted and
++`document.text` is given, `runCiteCheck` extracts quotes itself:
++
++- body: `“quoted passage”[1]` or `"quoted passage"[1]`
++- footnote: `[1] <source name or alias>[, <pinpoint>][.]` — the source is
++  resolved by longest name/alias match (case-insensitive); the remainder after
++  the comma is the pinpoint (raw — the engine reports unparseable syntax
++  rather than guessing)
++
++Unresolvable footnotes and unmarked quotations become `extractionWarnings`
++on the report — never fabricated entries. Messier documents (inline cites,
++superscripts, ibid.) are out of grammar: use the LLM extraction path and feed
++the explicit `quotes` array.
++
++## Proposition harness (`core/propositions.ts`)
++
++- `buildPropositionPrompt(report)` — structured prompt for the LLM/human stage:
++  lists ONLY exact/normalized quotes with their core anchors, instructs the
++  judge to rule on support only, never to re-classify.
++- `mergeVerdicts(report, verdicts)` — merges verdicts back, gating on the core:
++  fuzzy/not_found quotes are `refused` ("not verbatim-verified"), verdicts whose
++  echoed `anchorFromCore` does not match the core anchor are refused, unknown
++  ids are refused.
+ 
+ ```jsonc
+-// Task (a): extract quotations from the document under review
++// Task (a): extract quotations from the document under review (LLM alternative to extract.ts)
+ { "quotes": [ { "id": "Q1", "text": "…", "sourceId": "depo", "pinpoint": "p. 12" } ] }
+ 
+ // Task (b): judge support, ONLY for quotes the core classified exact/normalized
+@@ -76,22 +131,26 @@ proposition support. Suggested structured prompt output:
+                   "reasoning": "…", "anchorFromCore": "<verbatim anchor echoed back>" } ] }
+ ```
+ 
+-The pipeline is: extract → **core classifies + anchors** → LLM/human judges
+-propositions only for located quotes. Unlocated quotes (`not_found`) skip the
+-LLM entirely; there is nothing to judge against.
++The pipeline is: extract (deterministic `extract.ts` or LLM) → **core classifies
+++ anchors + guards** → LLM/human judges propositions only for located,
++verbatim-verified quotes. Unlocated quotes (`not_found`) skip the LLM entirely.
+ 
+ ## Determinism
+ 
+ No timestamps, no randomness, no network. Same input file → byte-identical
+-`output.json` and `report.md` (see `examples/run.ts`).
++`output.json` and `report.md` (see `examples/run.ts`). `core/core.js` is a
++hand-port kept at output parity with the TypeScript core by
++`core/parity.test.ts`.
+ 
+ ## Known limits
+ 
+-- Matching is token-based (alphanumeric + interior dots), so altered numbers
+-  (`90` → `120`) lower similarity by one token; they surface as `normalized`
+-  or `fuzzy`, and the `verbatim` anchor exposes the true figure.
++- Matching is token-based (alphanumeric + interior dots), but altered numbers
++  are caught by the number guard, and commas split large numbers
++  (`12,480` → `12` + `480`) — changes inside either piece still trip the guard.
+ - Pinpoint validation compares only against segments the source declares;
+   `§`/`¶` pinpoints into page-only sources are `unverifiable`, not `ok`.
+-- Full reporter-aware citation parsing (eyecite-style) is out of scope for
+-  the core; pinpoints are expected as a dedicated field, not parsed out of
+-  prose footnotes.
++- Omission notes are sentence-bounded and capped at 30 extended tokens;
++  multi-sentence tail drops are reported as a lower bound.
++- Full reporter-aware citation parsing (eyecite-style) is out of scope for the
++  core; pinpoints are expected as a dedicated field or in the extractor's
++  footnote grammar.

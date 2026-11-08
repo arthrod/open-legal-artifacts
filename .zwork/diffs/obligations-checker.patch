@@ -1,0 +1,1218 @@
+diff --git a/open-artifacts/obligations-checker/README.md b/open-artifacts/obligations-checker/README.md
+index 01ad800..18f1030 100644
+--- a/open-artifacts/obligations-checker/README.md
++++ b/open-artifacts/obligations-checker/README.md
+@@ -1,39 +1,69 @@
+ # obligations-checker
+ 
+ Contract obligations register: obligations JSON (party, verb, deadline,
+-condition) in → per-obligation compliance status out, with breach-risk
+-flags when due dates pass without satisfaction records. CSV export.
++condition, recurrence) in → per-obligation compliance status out, with
++breach-risk flags when due dates or cycles pass without satisfaction
++records. Quote-level source citations, party exposure rollups, register
++diffs, iCalendar alerts, CSV export.
+ 
+ ## Run
+ 
+-- Demo: open `demo/index.html` (standalone, prefilled with the fictional
+-  worked example).
+-- Tests: `node --test core/core.test.js` — 16 tests.
++- Demo: open `demo/index.html` (prefilled with the fictional worked
++  example; imports `tokens.css` + `../core/core.js`, which the site
++  build inlines for the deployed single-file page).
++- Tests: `node --test core/core.test.js` — 30 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+-  `register.md`, `register.csv` from `examples/input.json` (7
+-  obligations: 1 breach risk, 1 late satisfaction, 2 conditional).
++  `register.md`, `register.csv`, `register.ics`, and `diff.md` from
++  `examples/input.json` (8 obligations: 2 breach risk — one a recurring
++  duty with 2 missed quarters, 1 late satisfaction, 2 conditional).
+ 
+ ## How it works
+ 
+-1. Obligations carry party, verb, text, clause, dueDate (or a
+-   `condition` trigger), optional amount. Extract them yourself or with
+-   the documented LLM prompt (extraction only — never date math).
++1. Obligations carry party, owner, verb, text, clause, dueDate (or a
++   `condition` trigger, or a `recurrence` {cadence, anchor}), optional
++   amount, and a verbatim `sourceQuote` from the contract. Extract them
++   yourself or with the documented LLM prompt (extraction only — never
++   date math; ids must be stable across re-extractions so registers can
++   be diffed).
+ 2. Satisfaction records mark obligations met (latest by date wins);
+-   satisfying after the due date is flagged with the day count.
++   satisfying after the due date is flagged with the day count. For
++   recurring duties, the latest record covers at most the most recent
++   past cycle — every earlier unmet cycle counts as a miss (month-end
++   and leap-day anchors are clamped deterministically).
+ 3. Status: satisfied / pending / due-soon (≤14d, configurable) /
+-   overdue (past due, no record → breach-risk flag) / conditional
+-   (event-triggered) / unscheduled (no date, no condition — flagged,
+-   never guessed).
+-4. Register renders worst-first; CSV exports the full register.
++   overdue (past due or missed cycles, no record → breach-risk flag) /
++   conditional (event-triggered) / unscheduled (no date, no condition —
++   flagged, never guessed).
++4. Register renders worst-first with a Sources section quoting the
++   contract per obligation; CSV carries every field; `toICS()` exports
++   one VEVENT + reminder per open dated obligation; `diffRegisters()`
++   compares two registers (as-of dates or amendments) — transitions,
++   added/removed, new flags; `summary.byParty` rolls up open/overdue/
++   exposure (Σ overdue payment amounts) for the both-parties view.
+ 
+ ## Better than the closed counterpart
+ 
+-- Reproducible and auditable: statuses are pure functions, tested; the
+-  same register can be rebuilt and diffed at any as-of date.
+-- Breach risk is an explicit rule (day counts + evidence links), not
+-  model commentary.
+-- Event-triggered obligations stay visible instead of being dropped or
+-  force-dated.
++The closed counterpart is the partner-built "Obligations Checker" by
++Foley & Lardner in Anthropic's Claude for Legal artifacts gallery
++([launch article](https://claude.com/resources/articles/introducing-artifacts-for-legal-work);
++[reference repo](https://github.com/anthropics/claude-for-legal) — no
++obligations-specific skill is published there). Per those public
++sources it ingests raw agreements via Claude + connectors, lists
++obligations in the contract's own words, and links outputs to sources.
++
++Ours, verifiably:
++
++- Reproducible and auditable: statuses are pure functions of
++  (obligations, satisfaction, asOf) — 30 green `node:test` tests,
++  deterministic at any as-of date, diffable in git.
++- The quote-level audit trail is data, not prose: every row carries the
++  verbatim `sourceQuote` through JSON, CSV, and the Markdown Sources
++  section.
++- Recurrence is computed (per-cycle due dates, missed-cycle counts,
++  month-end/leap clamps pinned by tests) — a static list can't send
++  those reminders; `toICS()` puts them on any calendar.
++- Per-party exposure (Σ overdue payment amounts) gives the pre-closing
++  both-parties view in one deterministic pass.
+ 
+ Contracts and parties in examples are fictional. Statuses track
+ compliance evidence, not legal conclusions (waiver/cure/materiality
+diff --git a/open-artifacts/obligations-checker/core/core.js b/open-artifacts/obligations-checker/core/core.js
+index dbb853d..9906566 100644
+--- a/open-artifacts/obligations-checker/core/core.js
++++ b/open-artifacts/obligations-checker/core/core.js
+@@ -13,6 +13,31 @@
+ 
+ const VALID_ISO = /^\d{4}-\d{2}-\d{2}$/;
+ const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
++const CADENCE_MONTHS = { monthly: 1, quarterly: 3, annual: 12 };
++const OPEN = ['pending', 'due-soon', 'overdue'];
++
++/** Anchor + n months, day clamped to the target month's last day (Jan 31 → Feb 28). */
++function addMonthsISO(iso, n) {
++  const [y, m, d] = iso.split('-').map(Number);
++  const total = y * 12 + (m - 1) + n;
++  const ny = Math.floor(total / 12);
++  const nm = total % 12 + 1;
++  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
++  return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
++}
++
++/** Cycle due dates strictly before asOf, plus the next one at/after asOf. */
++function cycleDates(recurrence, asOf) {
++  const step = CADENCE_MONTHS[recurrence.cadence];
++  const past = [];
++  let next = null;
++  for (let k = 0; ; k++) {
++    const d = addMonthsISO(recurrence.anchor, k * step);
++    if (d < asOf) past.push(d);
++    else { next = d; break; }
++  }
++  return { past, next };
++}
+ 
+ /**
+  * Build the obligation register.
+@@ -21,8 +46,9 @@ const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a +
+  *   { asOf: ISO, obligations: Obligation[], satisfaction: Satisfaction[],
+  *     settings?: { dueSoonDays?: number } }
+  *
+- * Obligation: { id, clause, party, verb, text, dueDate?: ISO|null,
+- *               condition?: string, amount?: number }
++ * Obligation: { id, clause, party, owner?, verb, text, dueDate?: ISO|null,
++ *               condition?: string, amount?: number, sourceQuote?: string,
++ *               recurrence?: { cadence: 'monthly'|'quarterly'|'annual', anchor: ISO } }
+  * Satisfaction: { obligationId, satisfiedOn: ISO, evidence?: string, note?: string }
+  */
+ export function buildRegister(input) {
+@@ -43,8 +69,44 @@ export function buildRegister(input) {
+     const flags = [];
+     const record = satisfied.get(o.id) ?? null;
+     let status;
++    let nextDue = null;
++    let cyclesMissed = null;
+ 
+-    if (record) {
++    if (o.recurrence && (!CADENCE_MONTHS[o.recurrence.cadence] || !VALID_ISO.test(o.recurrence.anchor ?? ''))) {
++      status = 'unscheduled';
++      flags.push(`invalid recurrence (${JSON.stringify(o.recurrence)}) — compliance unverified, never guessed`);
++    } else if (o.recurrence) {
++      // Each cycle is its own duty: the latest satisfaction record covers at
++      // most the most recent past cycle (when it falls in that cycle's window);
++      // every earlier unmet cycle is a miss.
++      const { past, next } = cycleDates(o.recurrence, asOf);
++      nextDue = next;
++      const missed = [...past];
++      const lastPast = past[past.length - 1];
++      if (record && lastPast && (!VALID_ISO.test(record.satisfiedOn) || record.satisfiedOn >= (past[past.length - 2] ?? ''))) {
++        missed.pop(); // the record covers the most recent past cycle
++        if (VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > lastPast) {
++          flags.push(`satisfied ${days(lastPast, record.satisfiedOn)} days late for cycle due ${lastPast}`);
++        } else if (!VALID_ISO.test(record.satisfiedOn)) {
++          flags.push(`satisfaction date "${record.satisfiedOn}" not valid ISO — lateness unverified`);
++        }
++      }
++      cyclesMissed = missed.length;
++      if (cyclesMissed > 0) {
++        status = 'overdue';
++        flags.push(`breach risk: ${cyclesMissed} missed ${o.recurrence.cadence} cycle${cyclesMissed > 1 ? 's' : ''} — due ${missed.join(', ')} with no satisfaction record`);
++      } else if (record) {
++        status = 'satisfied';
++      } else {
++        const d = days(asOf, next);
++        if (d <= dueSoonDays) {
++          status = 'due-soon';
++          flags.push(`next ${o.recurrence.cadence} cycle due in ${d} days (≤ ${dueSoonDays})`);
++        } else {
++          status = 'pending';
++        }
++      }
++    } else if (record) {
+       status = 'satisfied';
+       if (o.dueDate && VALID_ISO.test(o.dueDate) && VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > o.dueDate) {
+         flags.push(`satisfied ${days(o.dueDate, record.satisfiedOn)} days late (due ${o.dueDate}, done ${record.satisfiedOn})`);
+@@ -79,7 +141,12 @@ export function buildRegister(input) {
+       party: o.party,
+       verb: o.verb,
+       text: o.text,
++      owner: o.owner ?? null,
+       dueDate: o.dueDate ?? null,
++      nextDue,
++      recurrence: o.recurrence ?? null,
++      cyclesMissed,
++      sourceQuote: o.sourceQuote ?? null,
+       condition: o.condition ?? null,
+       amount: o.amount ?? null,
+       status,
+@@ -97,20 +164,31 @@ export function buildRegister(input) {
+     breachRisk: rows.filter((r) => r.breachRisk).length,
+     satisfied: byStatus.satisfied ?? 0,
+     satisfiedLate: rows.filter((r) => r.status === 'satisfied' && r.flags.some((f) => f.includes('late'))).length,
+-    open: rows.filter((r) => ['pending', 'due-soon', 'overdue'].includes(r.status)).length,
++    open: rows.filter((r) => OPEN.includes(r.status)).length,
+     flagged: rows.filter((r) => r.flags.length > 0).length,
+     unscheduledOrConditional: (byStatus.unscheduled ?? 0) + (byStatus.conditional ?? 0),
+   };
++  const byParty = {};
++  for (const r of rows) {
++    const b = (byParty[r.party] ??= { open: 0, overdue: 0, exposure: 0 });
++    if (OPEN.includes(r.status)) b.open += 1;
++    if (r.status === 'overdue') {
++      b.overdue += 1;
++      if (typeof r.amount === 'number') b.exposure += r.amount;
++    }
++  }
++  summary.byParty = byParty;
+   return { asOf, obligations: rows, summary, settings: { dueSoonDays } };
+ }
+ 
+ /** CSV export, one row per obligation. */
+ export function toCSV(register) {
+   const esc = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+-  const lines = ['id,clause,party,verb,text,dueDate,amount,status,breachRisk,satisfiedOn,evidence,flags'];
++  const lines = ['id,clause,party,owner,verb,text,dueDate,nextDue,amount,status,breachRisk,satisfiedOn,evidence,sourceQuote,flags'];
+   for (const r of register.obligations) {
+-    lines.push([r.id, r.clause, r.party, r.verb, r.text, r.dueDate, r.amount, r.status, r.breachRisk,
++    lines.push([r.id, r.clause, r.party, r.owner, r.verb, r.text, r.dueDate, r.nextDue, r.amount, r.status, r.breachRisk,
+       r.satisfaction?.satisfiedOn ?? '', r.satisfaction?.evidence ?? '',
++      r.sourceQuote ?? '',
+       r.flags.join('; ')].map((v) => esc(v ?? '')).join(','));
+   }
+   return lines.join('\n') + '\n';
+@@ -126,8 +204,108 @@ export function renderRegister(reg) {
+   L.push('|---|---|---|---|---|---|---|');
+   const order = { overdue: 0, 'due-soon': 1, unscheduled: 2, conditional: 3, pending: 4, satisfied: 5 };
+   for (const r of [...reg.obligations].sort((a, b) => order[a.status] - order[b.status] || (a.id < b.id ? -1 : 1))) {
+-    L.push(`| ${r.status}${r.breachRisk ? ' ⚠' : ''} | ${r.id}${r.clause ? ` (${r.clause})` : ''} | ${r.party} | ${r.verb}: ${r.text} | ${r.dueDate ?? '—'} | ${r.satisfaction?.satisfiedOn ?? '—'} | ${r.flags.join('; ') || '—'} |`);
++    const due = r.dueDate ?? (r.recurrence ? `${r.nextDue}${r.cyclesMissed ? ` (+${r.cyclesMissed} missed cycle${r.cyclesMissed > 1 ? 's' : ''})` : ''}` : null) ?? '—';
++    L.push(`| ${r.status}${r.breachRisk ? ' ⚠' : ''} | ${r.id}${r.clause ? ` (${r.clause})` : ''} | ${r.party}${r.owner ? ` (${r.owner})` : ''} | ${r.verb}: ${r.text} | ${due} | ${r.satisfaction?.satisfiedOn ?? '—'} | ${r.flags.join('; ') || '—'} |`);
+   }
+   L.push('');
++  const quoted = reg.obligations.filter((r) => r.sourceQuote);
++  if (quoted.length) {
++    L.push('## Sources', '');
++    for (const r of quoted) L.push(`- ${r.id}${r.clause ? ` ${r.clause}` : ''}: "${r.sourceQuote}"`);
++    L.push('');
++  }
+   return L.join('\n');
+ }
++
++/**
++ * Diff two registers (different asOf dates, or before/after an amendment):
++ * per-id status transitions, added/removed ids, and flags that appeared.
++ * Keyed by obligation id — stable ids across re-extractions are required
++ * (see the spec.md prompt schema).
++ */
++export function diffRegisters(a, b) {
++  const A = new Map(a.obligations.map((r) => [r.id, r]));
++  const B = new Map(b.obligations.map((r) => [r.id, r]));
++  const added = [...B.keys()].filter((id) => !A.has(id)).sort();
++  const removed = [...A.keys()].filter((id) => !B.has(id)).sort();
++  const transitions = [];
++  const newFlags = [];
++  for (const [id, rb] of B) {
++    const ra = A.get(id);
++    if (!ra) continue;
++    if (ra.status !== rb.status) transitions.push({ id, party: rb.party, from: ra.status, to: rb.status });
++    const oldFlags = new Set(ra.flags);
++    const appeared = rb.flags.filter((f) => !oldFlags.has(f));
++    if (appeared.length) newFlags.push({ id, flags: appeared });
++  }
++  transitions.sort((x, y) => (x.id < y.id ? -1 : 1));
++  newFlags.sort((x, y) => (x.id < y.id ? -1 : 1));
++  return { from: a.asOf, to: b.asOf, added, removed, transitions, newFlags };
++}
++
++/** Deterministic Markdown rendering of a register diff. */
++export function renderDiff(d) {
++  const L = [];
++  L.push(`# Register diff — ${d.from} → ${d.to}`, '');
++  L.push(`${d.transitions.length} transition(s) · ${d.added.length} added · ${d.removed.length} removed · ${d.newFlags.length} new flag(s)`, '');
++  if (d.transitions.length) {
++    L.push('| Id | Party | Status |', '|---|---|---|');
++    for (const t of d.transitions) L.push(`| ${t.id} | ${t.party} | ${t.from} → ${t.to} |`);
++    L.push('');
++  }
++  if (d.added.length) {
++    L.push('**Added**', '');
++    for (const id of d.added) L.push(`+ ${id}`);
++    L.push('');
++  }
++  if (d.removed.length) {
++    L.push('**Removed**', '');
++    for (const id of d.removed) L.push(`- ${id}`);
++    L.push('');
++  }
++  if (d.newFlags.length) {
++    L.push('**New flags**', '');
++    for (const n of d.newFlags) for (const f of n.flags) L.push(`- ${n.id}: ${f}`);
++    L.push('');
++  }
++  return L.join('\n');
++}
++
++/** RFC 5545 text escaping for ICS property values. */
++function icsEscape(s) {
++  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
++}
++
++/**
++ * iCalendar export: one VEVENT (+VALARM reminder, 7 days ahead) per open
++ * obligation with a known date — recurring obligations use their next cycle
++ * date. Satisfied, conditional, and undated obligations are excluded.
++ */
++export function toICS(register) {
++  const stamp = register.asOf.replace(/-/g, '') + 'T000000Z';
++  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//open-legal-artifacts//obligations-checker//EN', 'CALSCALE:GREGORIAN'];
++  for (const r of register.obligations) {
++    const date = r.dueDate ?? r.nextDue;
++    if (!OPEN.includes(r.status) || !date) continue;
++    const end = new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10).replace(/-/g, '');
++    const summary = `${r.status}: ${r.id}${r.clause ? ` (${r.clause})` : ''} — ${r.verb}: ${r.text}`;
++    const desc = [`Party: ${r.party}`, r.owner ? `Owner: ${r.owner}` : null, ...r.flags].filter(Boolean).join('\n');
++    lines.push(
++      'BEGIN:VEVENT',
++      `UID:${r.id}@obligations-checker`,
++      `DTSTAMP:${stamp}`,
++      `DTSTART;VALUE=DATE:${date.replace(/-/g, '')}`,
++      `DTEND;VALUE=DATE:${end}`,
++      `SUMMARY:${icsEscape(summary)}`,
++      `DESCRIPTION:${icsEscape(desc)}`,
++      'BEGIN:VALARM',
++      'ACTION:DISPLAY',
++      'TRIGGER:-P7D',
++      `DESCRIPTION:${icsEscape(`obligation ${r.id} due ${date}`)}`,
++      'END:VALARM',
++      'END:VEVENT',
++    );
++  }
++  lines.push('END:VCALENDAR');
++  return lines.join('\n') + '\n';
++}
+diff --git a/open-artifacts/obligations-checker/core/core.test.js b/open-artifacts/obligations-checker/core/core.test.js
+index 714d4e3..f26392e 100644
+--- a/open-artifacts/obligations-checker/core/core.test.js
++++ b/open-artifacts/obligations-checker/core/core.test.js
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { buildRegister, toCSV, renderRegister } from './core.js';
++import { buildRegister, toCSV, renderRegister, diffRegisters, renderDiff, toICS } from './core.js';
+ 
+ const AS_OF = '2026-11-07';
+ 
+@@ -140,7 +140,8 @@ test('CSV has header + one row per obligation with escaped text', () => {
+   const r = reg([ob({ text: 'deliver "the" deliverables, per § 5' })]);
+   const lines = toCSV(r).trimEnd().split('\n');
+   assert.equal(lines.length, 2);
+-  assert.ok(lines[0].startsWith('id,clause,party,verb,text,dueDate'));
++  assert.ok(lines[0].startsWith('id,clause,party,owner,verb,text,dueDate'));
++  assert.ok(lines[0].includes('nextDue') && lines[0].includes('sourceQuote'));
+   assert.ok(lines[1].includes('"deliver ""the"" deliverables, per § 5"'));
+ });
+ 
+@@ -157,3 +158,158 @@ test('renderRegister shows summary line and worst-first ordering', () => {
+ test('invalid asOf throws instead of computing nonsense', () => {
+   assert.throws(() => buildRegister({ asOf: 'today', obligations: [] }), /ISO/);
+ });
++
++// --- I2: sourceQuote becomes auditable data ---
++
++test('sourceQuote is carried to the row, the CSV column, and a Markdown sources section', () => {
++  const quote = 'Supplier shall deliver the platform security audit report by November 12, 2026.';
++  const r = reg([ob({ sourceQuote: quote })]);
++  assert.equal(r.obligations[0].sourceQuote, quote);
++  const lines = toCSV(r).trimEnd().split('\n');
++  assert.ok(lines[0].includes('sourceQuote'));
++  assert.ok(lines[1].includes(quote));
++  const md = renderRegister(r);
++  assert.match(md, /## Sources/);
++  assert.match(md, /OBL-1.*§ 5\.2: "Supplier shall deliver/);
++});
++
++// --- I3: diffRegisters ---
++
++test('diffRegisters reports per-id status transitions and new flags between two registers', () => {
++  const before = buildRegister({ asOf: '2026-11-01', obligations: [ob({ id: 'A', dueDate: '2026-12-15' })] }); // pending
++  const after = buildRegister({ asOf: '2026-11-07', obligations: [ob({ id: 'A', dueDate: '2026-11-06' })] });  // overdue
++  const d = diffRegisters(before, after);
++  assert.deepEqual(d.transitions, [{ id: 'A', party: 'Supplier', from: 'pending', to: 'overdue' }]);
++  assert.deepEqual(d.added, []);
++  assert.deepEqual(d.removed, []);
++  assert.equal(d.newFlags.length, 1);
++  assert.equal(d.newFlags[0].id, 'A');
++  assert.ok(d.newFlags[0].flags.every((f) => f.startsWith('breach risk')));
++  const md = renderDiff(d);
++  assert.match(md, /pending → overdue/);
++  assert.match(md, /breach risk/);
++});
++
++test('diffRegisters reports added and removed obligations (amendment awareness)', () => {
++  const before = reg([ob({ id: 'A', dueDate: '2027-01-01' }), ob({ id: 'B', dueDate: '2027-01-01' })]);
++  const after = reg([ob({ id: 'B', dueDate: '2027-01-01' }), ob({ id: 'C', dueDate: '2027-01-01' })]);
++  const d = diffRegisters(before, after);
++  assert.deepEqual(d.added, ['C']);
++  assert.deepEqual(d.removed, ['A']);
++  assert.equal(d.transitions.length, 0);
++  const md = renderDiff(d);
++  assert.match(md, /\+ C/);
++  assert.match(md, /\n- A/);
++});
++
++// --- I4: recurrence ---
++
++test('two missed quarterly cycles → overdue + breach risk with both dates listed', () => {
++  const r = reg([ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-05-15' } })]);
++  const o = r.obligations[0];
++  assert.equal(o.status, 'overdue');
++  assert.equal(o.breachRisk, true);
++  assert.equal(o.cyclesMissed, 2);
++  assert.match(o.flags[0], /2 missed quarterly cycles — due 2026-05-15, 2026-08-15 with no satisfaction record/);
++  assert.equal(o.nextDue, '2026-11-15');
++});
++
++test('monthly recurrence clamps to month end (Jan 31 anchor → Feb 28 next due)', () => {
++  const r = buildRegister({ asOf: '2026-02-15', obligations: [ob({ dueDate: null, recurrence: { cadence: 'monthly', anchor: '2026-01-31' } })] });
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 1);
++  assert.match(o.flags[0], /2026-01-31/);
++  assert.equal(o.nextDue, '2026-02-28');
++});
++
++test('annual recurrence clamps a Feb 29 leap anchor to Feb 28 in non-leap years', () => {
++  const r = buildRegister({ asOf: '2025-03-01', obligations: [ob({ dueDate: null, recurrence: { cadence: 'annual', anchor: '2024-02-29' } })] });
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 2); // 2024-02-29 and clamped 2025-02-28 both past
++  assert.match(o.flags[0], /2025-02-28/);
++  assert.equal(o.nextDue, '2026-02-28');
++});
++
++test('latest satisfaction record covers only the most recent past cycle; earlier misses still count', () => {
++  const r = reg(
++    [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-05-15' } })],
++    [{ obligationId: 'OBL-1', satisfiedOn: '2026-09-20' }],
++  );
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 1); // the 2026-05-15 cycle
++  assert.equal(o.status, 'overdue');
++  assert.ok(o.flags.some((f) => /^breach risk: 1 missed quarterly cycle — due 2026-05-15 with no satisfaction record$/.test(f)));
++  assert.ok(o.flags.some((f) => /36 days late for cycle due 2026-08-15/.test(f)));
++});
++
++test('recurring obligation with the latest cycle satisfied and none missed is satisfied', () => {
++  const r = reg(
++    [ob({ dueDate: null, recurrence: { cadence: 'monthly', anchor: '2026-10-31' } })],
++    [{ obligationId: 'OBL-1', satisfiedOn: '2026-10-30' }],
++  );
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 0);
++  assert.equal(o.status, 'satisfied');
++  assert.equal(o.breachRisk, false);
++  assert.equal(o.nextDue, '2026-11-30');
++});
++
++test('invalid recurrence cadence or anchor → unscheduled, never guessed', () => {
++  const r = reg([ob({ dueDate: null, recurrence: { cadence: 'biweekly', anchor: '2026-01-15' } })]);
++  assert.equal(r.obligations[0].status, 'unscheduled');
++  assert.match(r.obligations[0].flags[0], /never guessed/);
++  const r2 = reg([ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: 'Q1' } })]);
++  assert.equal(r2.obligations[0].status, 'unscheduled');
++  assert.match(r2.obligations[0].flags[0], /never guessed/);
++});
++
++// --- I5: toICS ---
++
++test('toICS emits one VEVENT+VALARM per open dated obligation (satisfied/conditional excluded)', () => {
++  const r = reg([
++    ob({ id: 'OPEN', dueDate: '2026-11-10' }),
++    ob({ id: 'LATE', dueDate: '2026-10-01' }),
++    ob({ id: 'DONE', dueDate: '2026-10-15' }),
++  ], [{ obligationId: 'DONE', satisfiedOn: '2026-10-15' }]);
++  const ics = toICS(r);
++  assert.match(ics, /BEGIN:VCALENDAR\nVERSION:2.0\n/);
++  assert.match(ics, /\nEND:VCALENDAR\n$/);
++  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
++  assert.equal((ics.match(/BEGIN:VALARM/g) || []).length, 2);
++  assert.match(ics, /DTSTART;VALUE=DATE:20261110/);
++  assert.match(ics, /DTEND;VALUE=DATE:20261111/);
++  assert.match(ics, /UID:OPEN@/);
++  assert.ok(!ics.includes('DONE'));
++});
++
++test('toICS escapes commas, semicolons, and newlines per RFC 5545', () => {
++  const r = reg([ob({ id: 'E', text: 'deliver tea, coffee; and biscuits\nquarterly' })]);
++  assert.ok(toICS(r).includes('tea\\, coffee\\; and biscuits\\nquarterly'));
++});
++
++test('toICS uses the next cycle date for recurring obligations', () => {
++  const r = reg([ob({ id: 'R', dueDate: null, recurrence: { cadence: 'monthly', anchor: '2026-10-31' } })]);
++  assert.match(toICS(r), /DTSTART;VALUE=DATE:20261130/);
++});
++
++// --- I6: owner + byParty rollup ---
++
++test('owner field is carried through to rows and the CSV', () => {
++  const r = reg([ob({ owner: 'Ops lead' })]);
++  assert.equal(r.obligations[0].owner, 'Ops lead');
++  assert.ok(toCSV(r).trimEnd().split('\n')[0].includes('owner'));
++  assert.ok(toCSV(r).includes('Ops lead'));
++});
++
++test('summary.byParty rolls up open, overdue, and exposure (Σ overdue amounts)', () => {
++  const r = reg([
++    ob({ id: 'A', party: 'Customer', verb: 'pay', amount: 48000, dueDate: '2026-10-01' }), // overdue
++    ob({ id: 'B', party: 'Customer', verb: 'pay', amount: 12000, dueDate: '2026-11-10' }), // due-soon
++    ob({ id: 'C', party: 'Supplier', dueDate: '2027-01-01' }),                              // pending
++    ob({ id: 'D', party: 'Supplier', dueDate: '2026-10-15' }),                              // satisfied
++  ], [{ obligationId: 'D', satisfiedOn: '2026-10-15' }]);
++  assert.deepEqual(r.summary.byParty, {
++    Customer: { open: 2, overdue: 1, exposure: 48000 },
++    Supplier: { open: 1, overdue: 0, exposure: 0 },
++  });
++});
+diff --git a/open-artifacts/obligations-checker/demo/index.html b/open-artifacts/obligations-checker/demo/index.html
+index dc61394..eb735e9 100644
+--- a/open-artifacts/obligations-checker/demo/index.html
++++ b/open-artifacts/obligations-checker/demo/index.html
+@@ -29,6 +29,7 @@
+   .chip.unscheduled, .chip.conditional { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
+   .clause { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+   .notes { color: var(--text-secondary); font-size: 12px; }
++  .quote { color: var(--text-secondary); font-size: 11px; font-style: italic; }
+   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
+ </style>
+ </head>
+@@ -41,6 +42,7 @@
+   <h2>Register input (JSON)</h2>
+   <textarea id="input" spellcheck="false"></textarea>
+   <button id="run">Build register</button>
++  <button id="ics" title="One VEVENT + reminder per open dated obligation">Download .ics</button>
+   <div class="err" id="err"></div>
+ 
+   <h2>Summary</h2>
+@@ -50,7 +52,7 @@
+ </div>
+ 
+ <script type="module">
+-import { buildRegister, toCSV } from '../core/core.js';
++import { buildRegister, toCSV, toICS } from '../core/core.js';
+ 
+ const DEFAULT_INPUT = {
+   asOf: new Date().toISOString().slice(0, 10),
+@@ -60,6 +62,7 @@ const DEFAULT_INPUT = {
+     { id: 'OBL-2', clause: '§ 5.2', party: 'Supplier', verb: 'deliver', text: 'deliver the platform security audit report', dueDate: '2026-11-12' },
+     { id: 'OBL-3', clause: '§ 5.4', party: 'Supplier', verb: 'notify', text: 'notify Customer of any security incident within 72 hours of discovery', dueDate: null, condition: 'within 72 hours of discovery of a security incident' },
+     { id: 'OBL-6', clause: '§ 8.2', party: 'Supplier', verb: 'deliver', text: 'deliver the Q3 API usage statement', dueDate: '2026-09-30' },
++    { id: 'OBL-8', clause: '§ 4.4', party: 'Customer', owner: 'Finance (Customer)', verb: 'pay', text: 'pay the quarterly platform license fee of $6,000', dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' }, amount: 6000, sourceQuote: 'Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.' },
+   ],
+   satisfaction: [
+     { obligationId: 'OBL-6', satisfiedOn: '2026-10-03', evidence: 'email thread 2026-10-03 (fictional)' },
+@@ -76,6 +79,8 @@ $('run').addEventListener('click', () => {
+   try { reg = buildRegister(JSON.parse($('input').value)); }
+   catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
+   const s = reg.summary;
++  const partyCards = Object.entries(s.byParty).map(([p, b]) => `
++      <div class="card"><div class="k">${esc(p)} · open / overdue / exposure</div><div class="v">${b.open} / ${b.overdue} / $${b.exposure.toLocaleString('en-US')}</div></div>`).join('');
+   $('summary').innerHTML = `
+     <div class="cards">
+       <div class="card"><div class="k">Obligations</div><div class="v">${s.total}</div></div>
+@@ -83,20 +88,33 @@ $('run').addEventListener('click', () => {
+       <div class="card"><div class="k">Open</div><div class="v">${s.open}</div></div>
+       <div class="card"><div class="k">Satisfied</div><div class="v">${s.satisfied}${s.satisfiedLate ? ` (${s.satisfiedLate} late)` : ''}</div></div>
+       <div class="card"><div class="k">Unsched./cond.</div><div class="v">${s.unscheduledOrConditional}</div></div>
+-    </div>`;
++    </div>
++    <h2>By party</h2>
++    <div class="cards">${partyCards}</div>`;
+   const order = { overdue: 0, 'due-soon': 1, unscheduled: 2, conditional: 3, pending: 4, satisfied: 5 };
+   const rows = [...reg.obligations].sort((a, b) => order[a.status] - order[b.status] || a.id.localeCompare(b.id))
+-    .map((o) => `
++    .map((o) => {
++      const due = o.dueDate ?? (o.recurrence ? `${o.nextDue}${o.cyclesMissed ? ` (+${o.cyclesMissed} missed)` : ''}` : null) ?? '—';
++      return `
+     <tr>
+-      <td><strong>${esc(o.id)}</strong> <span class="clause">${esc(o.clause ?? '')}</span><br /><span class="notes">${esc(o.party)} · ${esc(o.verb)}${o.amount != null ? ' · $' + o.amount.toLocaleString('en-US') : ''}</span></td>
+-      <td>${esc(o.text)}</td>
+-      <td>${o.dueDate ?? '—'}${o.condition ? `<br /><span class="notes">if: ${esc(o.condition)}</span>` : ''}</td>
++      <td><strong>${esc(o.id)}</strong> <span class="clause">${esc(o.clause ?? '')}</span><br /><span class="notes">${esc(o.party)}${o.owner ? ` · ${esc(o.owner)}` : ''} · ${esc(o.verb)}${o.amount != null ? ' · $' + o.amount.toLocaleString('en-US') : ''}</span></td>
++      <td>${esc(o.text)}${o.sourceQuote ? `<br /><span class="quote">“${esc(o.sourceQuote)}”</span>` : ''}</td>
++      <td>${due}${o.condition ? `<br /><span class="notes">if: ${esc(o.condition)}</span>` : ''}</td>
+       <td><span class="chip ${o.status}">${o.status}</span>${o.breachRisk ? ' <span class="chip overdue">breach risk</span>' : ''}</td>
+       <td>${o.satisfaction ? `${o.satisfaction.satisfiedOn}<br /><span class="notes">${esc(o.satisfaction.evidence ?? '')}</span>` : '—'}</td>
+       <td>${o.flags.length ? `<span class="notes">${o.flags.map(esc).join('<br>')}</span>` : '—'}</td>
+-    </tr>`).join('');
++    </tr>`;}).join('');
+   $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Obligation</th><th>Due</th><th>Status</th><th>Satisfaction</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
+   window.__csv = toCSV(reg);
++  window.__ics = toICS(reg);
++});
++$('ics').addEventListener('click', () => {
++  if (!window.__ics) return;
++  const a = document.createElement('a');
++  a.href = URL.createObjectURL(new Blob([window.__ics], { type: 'text/calendar' }));
++  a.download = 'obligations.ics';
++  a.click();
++  URL.revokeObjectURL(a.href);
+ });
+ $('run').click();
+ </script>
+diff --git a/open-artifacts/obligations-checker/examples/diff.md b/open-artifacts/obligations-checker/examples/diff.md
+new file mode 100644
+index 0000000..dd77b14
+--- /dev/null
++++ b/open-artifacts/obligations-checker/examples/diff.md
+@@ -0,0 +1,12 @@
++# Register diff — 2026-11-07 → 2026-12-07
++
++1 transition(s) · 0 added · 0 removed · 2 new flag(s)
++
++| Id | Party | Status |
++|---|---|---|
++| OBL-2 | Supplier | due-soon → overdue |
++
++**New flags**
++
++- OBL-1: breach risk: due 2026-10-30 — 38 days past with no satisfaction record
++- OBL-2: breach risk: due 2026-11-12 — 25 days past with no satisfaction record
+diff --git a/open-artifacts/obligations-checker/examples/input.json b/open-artifacts/obligations-checker/examples/input.json
+index 26ef2a3..9e2347d 100644
+--- a/open-artifacts/obligations-checker/examples/input.json
++++ b/open-artifacts/obligations-checker/examples/input.json
+@@ -7,27 +7,33 @@
+       "id": "OBL-1",
+       "clause": "§ 4.1",
+       "party": "Customer",
++      "owner": "Finance (Customer)",
+       "verb": "pay",
+       "text": "pay the Phase 2 milestone fee of $48,000",
+       "dueDate": "2026-10-30",
+-      "amount": 48000
++      "amount": 48000,
++      "sourceQuote": "Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables."
+     },
+     {
+       "id": "OBL-2",
+       "clause": "§ 5.2",
+       "party": "Supplier",
++      "owner": "Security team (Supplier)",
+       "verb": "deliver",
+       "text": "deliver the platform security audit report",
+-      "dueDate": "2026-11-12"
++      "dueDate": "2026-11-12",
++      "sourceQuote": "Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026."
+     },
+     {
+       "id": "OBL-3",
+       "clause": "§ 5.4",
+       "party": "Supplier",
++      "owner": "Security team (Supplier)",
+       "verb": "notify",
+       "text": "notify Customer of any security incident within 72 hours of discovery",
+       "dueDate": null,
+-      "condition": "within 72 hours of discovery of a security incident"
++      "condition": "within 72 hours of discovery of a security incident",
++      "sourceQuote": "Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery."
+     },
+     {
+       "id": "OBL-4",
+@@ -36,7 +42,8 @@
+       "verb": "return",
+       "text": "return all Confidential Materials within 30 days of termination",
+       "dueDate": null,
+-      "condition": "within 30 days of termination of the Agreement"
++      "condition": "within 30 days of termination of the Agreement",
++      "sourceQuote": "Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days."
+     },
+     {
+       "id": "OBL-5",
+@@ -44,7 +51,8 @@
+       "party": "Supplier",
+       "verb": "maintain",
+       "text": "maintain commercial general liability insurance of at least $1M",
+-      "dueDate": "2027-03-31"
++      "dueDate": "2027-03-31",
++      "sourceQuote": "Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence."
+     },
+     {
+       "id": "OBL-6",
+@@ -52,7 +60,8 @@
+       "party": "Supplier",
+       "verb": "deliver",
+       "text": "deliver the Q3 API usage statement",
+-      "dueDate": "2026-09-30"
++      "dueDate": "2026-09-30",
++      "sourceQuote": "Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter."
+     },
+     {
+       "id": "OBL-7",
+@@ -60,11 +69,25 @@
+       "party": "Both",
+       "verb": "renew",
+       "text": "exchange written renewal notices for the pilot extension",
+-      "dueDate": "end of the pilot period"
++      "dueDate": "end of the pilot period",
++      "sourceQuote": "The parties shall exchange written renewal notices no later than the end of the pilot period."
++    },
++    {
++      "id": "OBL-8",
++      "clause": "§ 4.4",
++      "party": "Customer",
++      "owner": "Finance (Customer)",
++      "verb": "pay",
++      "text": "pay the quarterly platform license fee of $6,000",
++      "dueDate": null,
++      "recurrence": { "cadence": "quarterly", "anchor": "2026-03-31" },
++      "amount": 6000,
++      "sourceQuote": "Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026."
+     }
+   ],
+   "satisfaction": [
+     { "obligationId": "OBL-6", "satisfiedOn": "2026-10-03", "evidence": "email thread 2026-10-03 (fictional)", "note": "delivered 3 days late" },
+-    { "obligationId": "OBL-5", "satisfiedOn": "2026-04-15", "evidence": "certificate of insurance COI-2026-1187 (fictional)" }
++    { "obligationId": "OBL-5", "satisfiedOn": "2026-04-15", "evidence": "certificate of insurance COI-2026-1187 (fictional)" },
++    { "obligationId": "OBL-8", "satisfiedOn": "2026-10-05", "evidence": "wire confirmation WIRE-Q3-0042 (fictional)", "note": "Q3 fee paid; Q1 and Q2 cycles unreconciled" }
+   ]
+ }
+diff --git a/open-artifacts/obligations-checker/examples/output.json b/open-artifacts/obligations-checker/examples/output.json
+index 0d14fb7..91e1aa1 100644
+--- a/open-artifacts/obligations-checker/examples/output.json
++++ b/open-artifacts/obligations-checker/examples/output.json
+@@ -7,7 +7,12 @@
+       "party": "Customer",
+       "verb": "pay",
+       "text": "pay the Phase 2 milestone fee of $48,000",
++      "owner": "Finance (Customer)",
+       "dueDate": "2026-10-30",
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables.",
+       "condition": null,
+       "amount": 48000,
+       "status": "overdue",
+@@ -23,7 +28,12 @@
+       "party": "Supplier",
+       "verb": "deliver",
+       "text": "deliver the platform security audit report",
++      "owner": "Security team (Supplier)",
+       "dueDate": "2026-11-12",
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026.",
+       "condition": null,
+       "amount": null,
+       "status": "due-soon",
+@@ -39,7 +49,12 @@
+       "party": "Supplier",
+       "verb": "notify",
+       "text": "notify Customer of any security incident within 72 hours of discovery",
++      "owner": "Security team (Supplier)",
+       "dueDate": null,
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery.",
+       "condition": "within 72 hours of discovery of a security incident",
+       "amount": null,
+       "status": "conditional",
+@@ -55,7 +70,12 @@
+       "party": "Customer",
+       "verb": "return",
+       "text": "return all Confidential Materials within 30 days of termination",
++      "owner": null,
+       "dueDate": null,
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days.",
+       "condition": "within 30 days of termination of the Agreement",
+       "amount": null,
+       "status": "conditional",
+@@ -71,7 +91,12 @@
+       "party": "Supplier",
+       "verb": "maintain",
+       "text": "maintain commercial general liability insurance of at least $1M",
++      "owner": null,
+       "dueDate": "2027-03-31",
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence.",
+       "condition": null,
+       "amount": null,
+       "status": "satisfied",
+@@ -89,7 +114,12 @@
+       "party": "Supplier",
+       "verb": "deliver",
+       "text": "deliver the Q3 API usage statement",
++      "owner": null,
+       "dueDate": "2026-09-30",
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter.",
+       "condition": null,
+       "amount": null,
+       "status": "satisfied",
+@@ -109,7 +139,12 @@
+       "party": "Both",
+       "verb": "renew",
+       "text": "exchange written renewal notices for the pilot extension",
++      "owner": null,
+       "dueDate": "end of the pilot period",
++      "nextDue": null,
++      "recurrence": null,
++      "cyclesMissed": null,
++      "sourceQuote": "The parties shall exchange written renewal notices no later than the end of the pilot period.",
+       "condition": null,
+       "amount": null,
+       "status": "unscheduled",
+@@ -118,23 +153,69 @@
+         "dueDate \"end of the pilot period\" not valid ISO — compliance unverified, never guessed"
+       ],
+       "satisfaction": null
++    },
++    {
++      "id": "OBL-8",
++      "clause": "§ 4.4",
++      "party": "Customer",
++      "verb": "pay",
++      "text": "pay the quarterly platform license fee of $6,000",
++      "owner": "Finance (Customer)",
++      "dueDate": null,
++      "nextDue": "2026-12-31",
++      "recurrence": {
++        "cadence": "quarterly",
++        "anchor": "2026-03-31"
++      },
++      "cyclesMissed": 2,
++      "sourceQuote": "Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.",
++      "condition": null,
++      "amount": 6000,
++      "status": "overdue",
++      "breachRisk": true,
++      "flags": [
++        "satisfied 5 days late for cycle due 2026-09-30",
++        "breach risk: 2 missed quarterly cycles — due 2026-03-31, 2026-06-30 with no satisfaction record"
++      ],
++      "satisfaction": {
++        "satisfiedOn": "2026-10-05",
++        "evidence": "wire confirmation WIRE-Q3-0042 (fictional)",
++        "note": "Q3 fee paid; Q1 and Q2 cycles unreconciled"
++      }
+     }
+   ],
+   "summary": {
+-    "total": 7,
++    "total": 8,
+     "byStatus": {
+-      "overdue": 1,
++      "overdue": 2,
+       "due-soon": 1,
+       "conditional": 2,
+       "satisfied": 2,
+       "unscheduled": 1
+     },
+-    "breachRisk": 1,
++    "breachRisk": 2,
+     "satisfied": 2,
+     "satisfiedLate": 1,
+-    "open": 2,
+-    "flagged": 6,
+-    "unscheduledOrConditional": 3
++    "open": 3,
++    "flagged": 7,
++    "unscheduledOrConditional": 3,
++    "byParty": {
++      "Customer": {
++        "open": 2,
++        "overdue": 2,
++        "exposure": 54000
++      },
++      "Supplier": {
++        "open": 1,
++        "overdue": 0,
++        "exposure": 0
++      },
++      "Both": {
++        "open": 0,
++        "overdue": 0,
++        "exposure": 0
++      }
++    }
+   },
+   "settings": {
+     "dueSoonDays": 14
+diff --git a/open-artifacts/obligations-checker/examples/register.csv b/open-artifacts/obligations-checker/examples/register.csv
+index 5852917..b69a5ab 100644
+--- a/open-artifacts/obligations-checker/examples/register.csv
++++ b/open-artifacts/obligations-checker/examples/register.csv
+@@ -1,8 +1,9 @@
+-id,clause,party,verb,text,dueDate,amount,status,breachRisk,satisfiedOn,evidence,flags
+-OBL-1,§ 4.1,Customer,pay,"pay the Phase 2 milestone fee of $48,000",2026-10-30,48000,overdue,true,,,breach risk: due 2026-10-30 — 8 days past with no satisfaction record
+-OBL-2,§ 5.2,Supplier,deliver,deliver the platform security audit report,2026-11-12,,due-soon,false,,,due in 5 days (≤ 14) with no satisfaction record yet
+-OBL-3,§ 5.4,Supplier,notify,notify Customer of any security incident within 72 hours of discovery,,,conditional,false,,,"no calendar due date — triggered by condition: ""within 72 hours of discovery of a security incident""; monitor manually"
+-OBL-4,§ 6.3,Customer,return,return all Confidential Materials within 30 days of termination,,,conditional,false,,,"no calendar due date — triggered by condition: ""within 30 days of termination of the Agreement""; monitor manually"
+-OBL-5,§ 7.1,Supplier,maintain,maintain commercial general liability insurance of at least $1M,2027-03-31,,satisfied,false,2026-04-15,certificate of insurance COI-2026-1187 (fictional),
+-OBL-6,§ 8.2,Supplier,deliver,deliver the Q3 API usage statement,2026-09-30,,satisfied,false,2026-10-03,email thread 2026-10-03 (fictional),"satisfied 3 days late (due 2026-09-30, done 2026-10-03)"
+-OBL-7,§ 9.5,Both,renew,exchange written renewal notices for the pilot extension,end of the pilot period,,unscheduled,false,,,"dueDate ""end of the pilot period"" not valid ISO — compliance unverified, never guessed"
++id,clause,party,owner,verb,text,dueDate,nextDue,amount,status,breachRisk,satisfiedOn,evidence,sourceQuote,flags
++OBL-1,§ 4.1,Customer,Finance (Customer),pay,"pay the Phase 2 milestone fee of $48,000",2026-10-30,,48000,overdue,true,,,"Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables.",breach risk: due 2026-10-30 — 8 days past with no satisfaction record
++OBL-2,§ 5.2,Supplier,Security team (Supplier),deliver,deliver the platform security audit report,2026-11-12,,,due-soon,false,,,"Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026.",due in 5 days (≤ 14) with no satisfaction record yet
++OBL-3,§ 5.4,Supplier,Security team (Supplier),notify,notify Customer of any security incident within 72 hours of discovery,,,,conditional,false,,,Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery.,"no calendar due date — triggered by condition: ""within 72 hours of discovery of a security incident""; monitor manually"
++OBL-4,§ 6.3,Customer,,return,return all Confidential Materials within 30 days of termination,,,,conditional,false,,,"Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days.","no calendar due date — triggered by condition: ""within 30 days of termination of the Agreement""; monitor manually"
++OBL-5,§ 7.1,Supplier,,maintain,maintain commercial general liability insurance of at least $1M,2027-03-31,,,satisfied,false,2026-04-15,certificate of insurance COI-2026-1187 (fictional),"Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence.",
++OBL-6,§ 8.2,Supplier,,deliver,deliver the Q3 API usage statement,2026-09-30,,,satisfied,false,2026-10-03,email thread 2026-10-03 (fictional),Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter.,"satisfied 3 days late (due 2026-09-30, done 2026-10-03)"
++OBL-7,§ 9.5,Both,,renew,exchange written renewal notices for the pilot extension,end of the pilot period,,,unscheduled,false,,,The parties shall exchange written renewal notices no later than the end of the pilot period.,"dueDate ""end of the pilot period"" not valid ISO — compliance unverified, never guessed"
++OBL-8,§ 4.4,Customer,Finance (Customer),pay,"pay the quarterly platform license fee of $6,000",,2026-12-31,6000,overdue,true,2026-10-05,wire confirmation WIRE-Q3-0042 (fictional),"Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.","satisfied 5 days late for cycle due 2026-09-30; breach risk: 2 missed quarterly cycles — due 2026-03-31, 2026-06-30 with no satisfaction record"
+diff --git a/open-artifacts/obligations-checker/examples/register.ics b/open-artifacts/obligations-checker/examples/register.ics
+new file mode 100644
+index 0000000..8dceb48
+--- /dev/null
++++ b/open-artifacts/obligations-checker/examples/register.ics
+@@ -0,0 +1,44 @@
++BEGIN:VCALENDAR
++VERSION:2.0
++PRODID:-//open-legal-artifacts//obligations-checker//EN
++CALSCALE:GREGORIAN
++BEGIN:VEVENT
++UID:OBL-1@obligations-checker
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261030
++DTEND;VALUE=DATE:20261031
++SUMMARY:overdue: OBL-1 (§ 4.1) — pay: pay the Phase 2 milestone fee of $48\,000
++DESCRIPTION:Party: Customer\nOwner: Finance (Customer)\nbreach risk: due 2026-10-30 — 8 days past with no satisfaction record
++BEGIN:VALARM
++ACTION:DISPLAY
++TRIGGER:-P7D
++DESCRIPTION:obligation OBL-1 due 2026-10-30
++END:VALARM
++END:VEVENT
++BEGIN:VEVENT
++UID:OBL-2@obligations-checker
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261112
++DTEND;VALUE=DATE:20261113
++SUMMARY:due-soon: OBL-2 (§ 5.2) — deliver: deliver the platform security audit report
++DESCRIPTION:Party: Supplier\nOwner: Security team (Supplier)\ndue in 5 days (≤ 14) with no satisfaction record yet
++BEGIN:VALARM
++ACTION:DISPLAY
++TRIGGER:-P7D
++DESCRIPTION:obligation OBL-2 due 2026-11-12
++END:VALARM
++END:VEVENT
++BEGIN:VEVENT
++UID:OBL-8@obligations-checker
++DTSTAMP:20261107T000000Z
++DTSTART;VALUE=DATE:20261231
++DTEND;VALUE=DATE:20270101
++SUMMARY:overdue: OBL-8 (§ 4.4) — pay: pay the quarterly platform license fee of $6\,000
++DESCRIPTION:Party: Customer\nOwner: Finance (Customer)\nsatisfied 5 days late for cycle due 2026-09-30\nbreach risk: 2 missed quarterly cycles — due 2026-03-31\, 2026-06-30 with no satisfaction record
++BEGIN:VALARM
++ACTION:DISPLAY
++TRIGGER:-P7D
++DESCRIPTION:obligation OBL-8 due 2026-12-31
++END:VALARM
++END:VEVENT
++END:VCALENDAR
+diff --git a/open-artifacts/obligations-checker/examples/register.md b/open-artifacts/obligations-checker/examples/register.md
+index 1f04475..3e44739 100644
+--- a/open-artifacts/obligations-checker/examples/register.md
++++ b/open-artifacts/obligations-checker/examples/register.md
+@@ -1,13 +1,25 @@
+ # Obligations register — as of 2026-11-07
+ 
+-Total **7** · open **2** · satisfied **2** (1 late) · breach risk **1** · unscheduled/conditional **3**
++Total **8** · open **3** · satisfied **2** (1 late) · breach risk **2** · unscheduled/conditional **3**
+ 
+ | Status | Id | Party | Obligation | Due | Satisfied | Flags |
+ |---|---|---|---|---|---|---|
+-| overdue ⚠ | OBL-1 (§ 4.1) | Customer | pay: pay the Phase 2 milestone fee of $48,000 | 2026-10-30 | — | breach risk: due 2026-10-30 — 8 days past with no satisfaction record |
+-| due-soon | OBL-2 (§ 5.2) | Supplier | deliver: deliver the platform security audit report | 2026-11-12 | — | due in 5 days (≤ 14) with no satisfaction record yet |
++| overdue ⚠ | OBL-1 (§ 4.1) | Customer (Finance (Customer)) | pay: pay the Phase 2 milestone fee of $48,000 | 2026-10-30 | — | breach risk: due 2026-10-30 — 8 days past with no satisfaction record |
++| overdue ⚠ | OBL-8 (§ 4.4) | Customer (Finance (Customer)) | pay: pay the quarterly platform license fee of $6,000 | 2026-12-31 (+2 missed cycles) | 2026-10-05 | satisfied 5 days late for cycle due 2026-09-30; breach risk: 2 missed quarterly cycles — due 2026-03-31, 2026-06-30 with no satisfaction record |
++| due-soon | OBL-2 (§ 5.2) | Supplier (Security team (Supplier)) | deliver: deliver the platform security audit report | 2026-11-12 | — | due in 5 days (≤ 14) with no satisfaction record yet |
+ | unscheduled | OBL-7 (§ 9.5) | Both | renew: exchange written renewal notices for the pilot extension | end of the pilot period | — | dueDate "end of the pilot period" not valid ISO — compliance unverified, never guessed |
+-| conditional | OBL-3 (§ 5.4) | Supplier | notify: notify Customer of any security incident within 72 hours of discovery | — | — | no calendar due date — triggered by condition: "within 72 hours of discovery of a security incident"; monitor manually |
++| conditional | OBL-3 (§ 5.4) | Supplier (Security team (Supplier)) | notify: notify Customer of any security incident within 72 hours of discovery | — | — | no calendar due date — triggered by condition: "within 72 hours of discovery of a security incident"; monitor manually |
+ | conditional | OBL-4 (§ 6.3) | Customer | return: return all Confidential Materials within 30 days of termination | — | — | no calendar due date — triggered by condition: "within 30 days of termination of the Agreement"; monitor manually |
+ | satisfied | OBL-5 (§ 7.1) | Supplier | maintain: maintain commercial general liability insurance of at least $1M | 2027-03-31 | 2026-04-15 | — |
+ | satisfied | OBL-6 (§ 8.2) | Supplier | deliver: deliver the Q3 API usage statement | 2026-09-30 | 2026-10-03 | satisfied 3 days late (due 2026-09-30, done 2026-10-03) |
++
++## Sources
++
++- OBL-1 § 4.1: "Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables."
++- OBL-2 § 5.2: "Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026."
++- OBL-3 § 5.4: "Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery."
++- OBL-4 § 6.3: "Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days."
++- OBL-5 § 7.1: "Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence."
++- OBL-6 § 8.2: "Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter."
++- OBL-7 § 9.5: "The parties shall exchange written renewal notices no later than the end of the pilot period."
++- OBL-8 § 4.4: "Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026."
+diff --git a/open-artifacts/obligations-checker/examples/run.js b/open-artifacts/obligations-checker/examples/run.js
+index b951f3f..f6c97aa 100644
+--- a/open-artifacts/obligations-checker/examples/run.js
++++ b/open-artifacts/obligations-checker/examples/run.js
+@@ -1,12 +1,13 @@
+ /**
+  * Reproducible worked example: reads examples/input.json, builds the
+- * obligations register, writes output.json, register.md, register.csv.
++ * obligations register, writes output.json, register.md, register.csv,
++ * register.ics, and a diff.md showing how statuses move one month out.
+  * Run:  node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { buildRegister, renderRegister, toCSV } from '../core/core.js';
++import { buildRegister, renderRegister, renderDiff, diffRegisters, toCSV, toICS } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+@@ -15,9 +16,19 @@ const reg = buildRegister(input);
+ writeFileSync(join(here, 'output.json'), JSON.stringify(reg, null, 2) + '\n');
+ writeFileSync(join(here, 'register.md'), renderRegister(reg));
+ writeFileSync(join(here, 'register.csv'), toCSV(reg));
++writeFileSync(join(here, 'register.ics'), toICS(reg));
++
++// same facts, one month later: shows status transitions + newly appearing flags
++const later = buildRegister({ ...input, asOf: '2026-12-07' });
++const diff = diffRegisters(reg, later);
++writeFileSync(join(here, 'diff.md'), renderDiff(diff));
+ 
+ const s = reg.summary;
+ console.log(
+   `${s.total} obligations -> open ${s.open}, satisfied ${s.satisfied} (${s.satisfiedLate} late), ` +
+-  `breach risk ${s.breachRisk}, unscheduled/conditional ${s.unscheduledOrConditional} -> output.json, register.md, register.csv`,
++    `breach risk ${s.breachRisk}, unscheduled/conditional ${s.unscheduledOrConditional} -> output.json, register.md, register.csv, register.ics`,
++);
++console.log(
++  `per party: ${Object.entries(s.byParty).map(([p, b]) => `${p} open ${b.open} / overdue ${b.overdue} / exposure $${b.exposure.toLocaleString('en-US')}`).join(' · ')}`,
+ );
++console.log(`diff to 2026-12-07: ${diff.transitions.length} transition(s), ${diff.newFlags.length} new flag(s) -> diff.md`);
+diff --git a/open-artifacts/obligations-checker/meta.json b/open-artifacts/obligations-checker/meta.json
+index e2babb2..fd283ba 100644
+--- a/open-artifacts/obligations-checker/meta.json
++++ b/open-artifacts/obligations-checker/meta.json
+@@ -1,8 +1,8 @@
+ {
+   "name": "obligations-checker",
+-  "tagline": "Contract obligations register: per-obligation compliance status from deadlines + satisfaction records, breach-risk flags, CSV export",
+-  "category": "anthropic-built",
+-  "anthropic_counterpart": "Contract obligations tracker (Claude for Legal gallery)",
++  "tagline": "Contract obligations register: per-obligation compliance status from deadlines + satisfaction records, recurrence + missed cycles, party exposure, ICS alerts, diffs, CSV export",
++  "category": "partner-built",
++  "anthropic_counterpart": "Obligations Checker — Foley & Lardner (Claude for Legal partner gallery)",
+   "status": "shipped",
+   "demo": "demo/index.html"
+-}
+\ No newline at end of file
++}
+diff --git a/open-artifacts/obligations-checker/spec.md b/open-artifacts/obligations-checker/spec.md
+index f28aaf7..3ffe414 100644
+--- a/open-artifacts/obligations-checker/spec.md
++++ b/open-artifacts/obligations-checker/spec.md
+@@ -1,9 +1,10 @@
+ # obligations-checker — specification
+ 
+ Open artifact: a contract obligations extractor/checker. Obligations
+-JSON (party, verb, deadline, condition) goes in; a register with
+-per-obligation compliance status tracking and breach-risk flags (due
+-date passed with no satisfaction record) comes out. CSV export.
++JSON (party, verb, deadline, condition, recurrence) goes in; a register
++with per-obligation compliance status tracking and breach-risk flags
++(due date passed with no satisfaction record) comes out. CSV, iCalendar,
++and diff exports.
+ 
+ ## Design split: deterministic core vs. LLM
+ 
+@@ -13,13 +14,17 @@ date passed with no satisfaction record) comes out. CSV export.
+ | Breach-risk flags: due date passed with no satisfaction record (with day count) | core (deterministic) |
+ | Late-satisfaction detection (satisfied after due date → satisfied + "N days late" flag) | core (deterministic) |
+ | Latest-satisfaction-record-wins (by satisfiedOn, order-independent) | core (deterministic) |
++| Recurrence: per-cycle due dates (monthly/quarterly/annual), month-end + leap clamps, missed-cycle counts | core (deterministic) |
++| Register diff: status transitions, added/removed ids, newly appearing flags | core (deterministic) |
++| Per-party rollup: open / overdue / exposure (Σ overdue payment amounts) | core (deterministic) |
+ | Conditional obligations without calendar dates → tracked as `conditional` with the trigger text | core (deterministic) |
+-| Extracting obligations JSON (party, verb, deadline, condition) from contract text | LLM (prompt below) |
++| Extracting obligations JSON (party, verb, deadline, condition, quote) from contract text | LLM (prompt below) |
+ | Whether a breach matters (waiver, cure, materiality) | attorney |
+ 
+-Never guesses: invalid dates → `unscheduled` with an "unverified, never
+-guessed" flag; satisfaction records for unknown ids are ignored (no
+-phantom obligations).
++Never guesses: invalid dates (including invalid recurrence cadence or
++anchor) → `unscheduled` with an "unverified, never guessed" flag;
++satisfaction records for unknown ids are ignored (no phantom
++obligations).
+ 
+ ## Input contract (JSON)
+ 
+@@ -28,48 +33,92 @@ phantom obligations).
+   "asOf": "2026-11-07",
+   "settings": { "dueSoonDays": 14 },
+   "obligations": [ {
+-    "id": "OBL-1", "clause": "§ 4.1", "party": "Customer", "verb": "pay",
+-    "text": "pay the milestone fee of $48,000",
++    "id": "OBL-1", "clause": "§ 4.1", "party": "Customer",
++    "owner": "Finance (Customer)",          // optional responsible team/person
++    "verb": "pay", "text": "pay the milestone fee of $48,000",
+     "dueDate": "2026-10-30",        // ISO or null
+     "condition": "…trigger text…",  // for event-triggered duties
+-    "amount": 48000 } ],
++    "recurrence": { "cadence": "quarterly", "anchor": "2026-03-31" }, // for recurring duties
++    "amount": 48000,
++    "sourceQuote": "verbatim sentence from the contract" } ],
+   "satisfaction": [ {
+     "obligationId": "OBL-1", "satisfiedOn": "ISO",
+     "evidence": "doc/email reference", "note": "…" } ]
+ }
+ ```
+ 
++`dueDate`, `condition`, and `recurrence` are mutually exclusive in
++practice; recurrence takes precedence in the status machine.
++
++### Recurrence semantics (deterministic)
++
++- Cycle due dates = anchor + k·cadence months, day clamped to the
++  target month's last day (Jan 31 monthly → Feb 28; Feb 29 annual →
++  Feb 28 in non-leap years).
++- Each cycle is its own duty. The latest satisfaction record covers at
++  most the most recent past cycle (when it falls in that cycle's
++  window); every earlier unmet cycle counts as a miss.
++- Misses > 0 → `overdue` + breach-risk flag listing the missed dates;
++  otherwise the next cycle date drives due-soon/pending/satisfied.
++
+ ## Output contract (JSON)
+ 
+ Per obligation: `status`, `breachRisk`, `flags[]`, `satisfaction
+-{satisfiedOn, evidence, note} | null`, plus carried clause/party/verb/
+-text/dueDate/condition/amount. `summary { total, byStatus, breachRisk,
+-satisfied, satisfiedLate, open, flagged, unscheduledOrConditional }`.
+-Exports: `toCSV()` (register row per obligation), `renderRegister()`
+-(Markdown, worst-first).
++{satisfiedOn, evidence, note} | null`, plus carried clause/party/owner/
++verb/text/dueDate/condition/amount/sourceQuote and, for recurring
++duties, `recurrence`, `nextDue`, `cyclesMissed`. `summary { total,
++byStatus, breachRisk, satisfied, satisfiedLate, open, flagged,
++unscheduledOrConditional, byParty }` where `byParty[party] =
++{ open, overdue, exposure }`.
++
++Exports: `toCSV()` (every field, one row per obligation),
++`renderRegister()` (Markdown, worst-first, with a Sources section
++quoting the contract per obligation), `toICS()` (one VEVENT + VALARM
++per open dated obligation, RFC 5545 escaping, recurring duties at
++their next cycle date), `diffRegisters(a, b)` + `renderDiff()` (per-id
++status transitions, added/removed, new flags).
+ 
+ ## Prompt schema for the LLM part (extraction only)
+ 
+ ```jsonc
+ // System: "Extract every obligation from the contract text. Copy party
+-// names and deadlines verbatim; normalize ONLY to the shape below. If a
+-// deadline is event-triggered, put the trigger in `condition` and leave
+-// dueDate null. Never compute a date yourself."
++// names, deadlines, and the source sentence verbatim; normalize ONLY to
++// the shape below. If a deadline is event-triggered, put the trigger in
++// `condition` and leave dueDate null. If a duty recurs, set
++// `recurrence` from the contract's stated cadence and first due date.
++// Never compute a date yourself. Ids must be STABLE across
++// re-extractions of the same contract (derive them from the clause
++// citation, e.g. OBL-4-1 for § 4.1) so registers can be diffed."
+ { "obligations": [ {
+-    "id": "stable id", "clause": "verbatim cite",
+-    "party": "obligor name as written", "verb": "deliver|pay|notify|return|maintain|renew|other",
++    "id": "stable clause-derived id", "clause": "verbatim cite",
++    "party": "obligor name as written", "owner": "named owner|null",
++    "verb": "deliver|pay|notify|return|maintain|renew|other",
+     "text": "one-sentence obligation", "dueDate": "ISO|null",
+-    "condition": "verbatim trigger|null", "amount": "number|null",
++    "condition": "verbatim trigger|null",
++    "recurrence": "{cadence,anchor}|null", "amount": "number|null",
+     "sourceQuote": "verbatim sentence from the contract" } ] }
+ ```
+ 
+ ## What's better than the closed counterpart
+ 
++The closed counterpart is the partner-built "Obligations Checker" by
++Foley & Lardner in the Claude for Legal gallery (per the launch
++article; no obligations-specific skill is published in the open
++reference repo). Ours:
++
+ - The register is reproducible: statuses are pure functions of
+-  (obligations, satisfaction records, asOf) — auditable, diffable in git,
+-  testable (16 unit tests).
++  (obligations, satisfaction records, asOf) — auditable, diffable in
++  git, testable (30 unit tests).
+ - Breach risk is a visible rule with day counts and evidence links, not
+   a summary you have to trust.
+ - Event-triggered obligations are first-class (`conditional`) instead of
+-  being dropped or force-dated; unparseable dates are flagged, never guessed.
+-- CSV export, zero dependencies, runs in the browser and Node.
++  being dropped or force-dated; unparseable dates are flagged, never
++  guessed.
++- The quote-level audit trail is carried as data (JSON row, CSV column,
++  Markdown Sources section), not a link to re-read.
++- Recurring duties compute per-cycle due dates and missed-cycle counts
++  (month-end/leap clamps pinned by tests) and export to any calendar
++  via ICS — a static list can't.
++- Per-party exposure rollups (Σ overdue payment amounts) give the
++  pre-closing both-parties view deterministically.
++- Zero dependencies, runs in the browser and Node.

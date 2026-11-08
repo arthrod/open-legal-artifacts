@@ -1,0 +1,1310 @@
+diff --git a/open-artifacts/litigation-portfolio/README.md b/open-artifacts/litigation-portfolio/README.md
+index bd30fb3..ff3f7a7 100644
+--- a/open-artifacts/litigation-portfolio/README.md
++++ b/open-artifacts/litigation-portfolio/README.md
+@@ -8,7 +8,7 @@ banding, rules-of-the-road metadata, dashboard + CSV export.
+ 
+ - Demo: open `demo/index.html` (standalone, styled with the shared design
+   tokens, prefilled with the worked example).
+-- Tests: `node --test core/core.test.js` — 17 tests.
++- Tests: `node --test core/core.test.js` — 26 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+   `dashboard.md`, `portfolio.csv` from `examples/input.json`.
+ 
+@@ -24,15 +24,46 @@ banding, rules-of-the-road metadata, dashboard + CSV export.
+    warning (≤90d) / ok; unknown claim types or missing dates →
+    `unverified` with explicit flags.
+ 4. Exposure bands (low <$50k / medium <$500k / high ≥$500k /
+-   unquantified) are configurable; rollups feed the dashboard.
++   unquantified) are configurable; rollups feed the dashboard, together
++   with materiality classes (reserved / disclosed / monitored / none)
++   and rough midpoint totals per class.
++5. Eight deterministic anomaly checks (stable ids + severity,
++   configurable thresholds): overdue next deadline, stale matter,
++   conflicts open/override, high risk without outside counsel, stale
++   reserve, hold gap, missing fields. Next-deadline horizon buckets
++   (overdue / ≤14d / 15–30d / 31–60d / >60d) roll up in summary and
++   dashboard; the dashboard adds a severity-sorted ⚠️ anomalies section
++   with a deterministic "look first" line and a stage-distribution table.
++6. `applyFilters()` is the closed skill's CLI flags as data —
++   includeClosed / stale-only / band / claimType / counsel — and the
++   demo wires them into the board live (closed matters excluded by
++   default).
++7. Exposure provenance (`exposureBasis` + `sourceDoc`) travels from
++   input through output JSON, CSV, and the dashboard.
+ 
+ ## Better than the closed counterpart
+ 
+ - Limitation rules are visible, cited, editable data — not hidden
+   model behavior; every output date shows its `ruleCite`.
+-- Deterministic and reproducible (17 unit tests), exports CSV,
++- Deterministic and reproducible (26 unit tests), exports CSV,
+   runs browser-side with zero dependencies.
+ - Fails open questions loudly (`unverified`) instead of inventing dates.
++- Their 8 prompt-interpreted anomaly checks, implemented as tested code:
++
++| Their check | Our anomaly id | Test |
++|---|---|---|
++| overdue next_deadline | `overdue-next-deadline` | `detectAnomalies fires each of the 8 checks…` |
++| stale >30d | `stale-matter` | `staleness: 45-day-old lastUpdated is stale…` |
++| conflicts unresolved | `conflicts-open` | `detectAnomalies fires each of the 8 checks…` |
++| conflicts override | `conflicts-override` | `detectAnomalies fires each of the 8 checks…` |
++| high/critical risk w/o outside counsel | `high-risk-no-counsel` | `detectAnomalies fires each of the 8 checks…` |
++| stale reserve >60d | `stale-reserve` | `staleness: 45-day-old lastUpdated is stale…` (config) + 8-check test |
++| hold gap | `hold-gap` | `detectAnomalies fires each of the 8 checks…` |
++| missing fields | `missing-fields` | `detectAnomalies fires each of the 8 checks…` |
++
++Plus what theirs lacks: cited rules-as-data SOL computation, horizon
++buckets, materiality midpoint rollups, exposure provenance in exports,
++CSV export, reproducible git-diffable output, 0-dependency browser demo.
+ 
+ All data in examples/demo is fictional. Not legal advice; verify all
+ limitation rules against current law in the governing jurisdiction.
+diff --git a/open-artifacts/litigation-portfolio/core/core.js b/open-artifacts/litigation-portfolio/core/core.js
+index 843b7c9..f983f72 100644
+--- a/open-artifacts/litigation-portfolio/core/core.js
++++ b/open-artifacts/litigation-portfolio/core/core.js
+@@ -122,6 +122,16 @@ export const DEFAULT_EXPOSURE_BANDS = [
+ /** SOL status thresholds in days. Editable. */
+ export const DEFAULT_SOL_THRESHOLDS = { critical: 30, warning: 90 };
+ 
++/**
++ * Anomaly-detection configuration. Editable, firm-calibrated defaults.
++ * @property {number} staleDays         matter untouched longer than this is stale
++ * @property {number} reserveStaleDays  reserve not reviewed within this window is stale
++ */
++export const DEFAULT_ANOMALY_CONFIG = { staleDays: 30, reserveStaleDays: 60 };
++
++const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
++const MATERIALITY_CLASSES = ['reserved', 'disclosed', 'monitored', 'none'];
++
+ // ------------------------------------------------------------- inputs
+ 
+ /**
+@@ -141,6 +151,13 @@ export const DEFAULT_SOL_THRESHOLDS = { critical: 30, warning: 90 };
+  * @property {string} [venue]        rules-of-the-road: venue
+  * @property {string} [strategy]     rules-of-the-road: negotiated ground rules
+  * @property {string} [nextDeadline] ISO date of next known deadline
++ * @property {string} [lastUpdated]  ISO date the matter record was last touched
++ * @property {{amount:number, asOf:string}} [reserve] loss-reserve figure + review date
++ * @property {boolean} [legalHold]   true once a litigation hold is confirmed
++ * @property {{status:string, override?:boolean, overrideReason?:string}} [conflicts]
++ * @property {'reserved'|'disclosed'|'monitored'|'none'} [materiality] financial-reporting treatment (firm-calibrated, verify)
++ * @property {string} [exposureBasis] verbatim provenance for the exposure estimate
++ * @property {string} [sourceDoc]    document id the exposure basis came from
+  */
+ /**
+  * @typedef {Object} PortfolioInput
+@@ -212,6 +229,83 @@ function solStatus(deadline, asOf, thresholds) {
+   return { remaining, status: 'ok' };
+ }
+ 
++function daysSince(iso, asOf) {
++  return isValidIsoDate(iso) ? diffDays(iso, asOf) : null;
++}
++
++function horizonBucket(nextDeadline, asOf) {
++  if (!nextDeadline || !isValidIsoDate(nextDeadline)) return 'none';
++  const n = diffDays(asOf, nextDeadline);
++  if (n < 0) return 'overdue';
++  if (n <= 14) return 'within14';
++  if (n <= 30) return 'days15to30';
++  if (n <= 60) return 'days31to60';
++  return 'beyond60';
++}
++
++/**
++ * Port of the closed counterpart's 8 named anomaly checks as pure,
++ * unit-tested functions. Every check has a stable id + severity and
++ * never guesses — absence of data is itself reported.
++ * Returns [{ id, severity, detail }] sorted critical > high > medium > low.
++ */
++export function detectAnomalies(m, asOf, cfgIn = {}) {
++  const cfg = { ...DEFAULT_ANOMALY_CONFIG, ...cfgIn };
++  const rules = cfg.claimRules ?? DEFAULT_CLAIM_RULES;
++  const bands = cfg.exposureBands ?? DEFAULT_EXPOSURE_BANDS;
++  const thresholds = { ...DEFAULT_SOL_THRESHOLDS, ...(cfg.solThresholds ?? {}) };
++  const out = [];
++  const push = (id, severity, detail) => out.push({ id, severity, detail });
++
++  // 1. overdue next deadline
++  if (m.nextDeadline && isValidIsoDate(m.nextDeadline)) {
++    const overdue = diffDays(asOf, m.nextDeadline);
++    if (overdue < 0) push('overdue-next-deadline', 'high', `next deadline ${m.nextDeadline} was ${-overdue} day(s) ago`);
++  }
++  // 2. stale matter (missing lastUpdated counts as stale: freshness unknown)
++  const age = daysSince(m.lastUpdated, asOf);
++  if (age == null) push('stale-matter', 'medium', 'lastUpdated missing — freshness unknown');
++  else if (age > cfg.staleDays) push('stale-matter', 'medium', `last updated ${age} days ago (>${cfg.staleDays})`);
++  // 3./4. conflicts unresolved + override
++  const conflicts = m.conflicts ?? {};
++  if (conflicts.status && conflicts.status !== 'cleared') {
++    push('conflicts-open', 'high', `conflicts check ${conflicts.status}`);
++  }
++  if (conflicts.override) {
++    push('conflicts-override', 'critical', `conflicts override in force: ${conflicts.overrideReason ?? 'no reason recorded'}`);
++  }
++  // 5. high/critical risk without outside counsel
++  const sol = computeSol(m, rules);
++  const st = sol.deadline ? solStatus(sol.deadline, asOf, thresholds).status : 'unverified';
++  const band = exposureBand(m, bands).band;
++  const noCounsel = !m.counsel || m.counsel === 'unassigned';
++  if (noCounsel && (st === 'expired' || st === 'critical' || band === 'high')) {
++    push('high-risk-no-counsel', 'high', `SOL ${st} / exposure ${band} but no outside counsel assigned`);
++  }
++  // 6. stale reserve
++  if (m.reserve != null) {
++    const rAge = daysSince(m.reserve.asOf, asOf);
++    if (rAge == null) push('stale-reserve', 'medium', 'reserve on file but reserve.asOf missing or unparseable');
++    else if (rAge > cfg.reserveStaleDays) {
++      push('stale-reserve', 'medium', `reserve $${Number(m.reserve.amount ?? 0).toLocaleString('en-US')} last reviewed ${rAge} days ago (>${cfg.reserveStaleDays})`);
++    }
++  }
++  // 7. legal-hold gap on matters in active litigation
++  if (['active', 'settlement', 'trial'].includes(m.status) && m.legalHold !== true) {
++    push('hold-gap', 'medium', `status ${m.status} but no legal hold confirmed`);
++  }
++  // 8. missing fields
++  const missing = [];
++  if (!m.accrualDate && !m.discoveryDate) missing.push('accrualDate');
++  if (!m.venue || m.venue === 'TBD') missing.push('venue');
++  if (!m.counsel || m.counsel === 'unassigned') missing.push('counsel');
++  if (m.exposureHigh != null && !m.exposureBasis) missing.push('exposureBasis');
++  if (missing.length) push('missing-fields', 'low', `missing: ${missing.join(', ')}`);
++
++  out.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.id.localeCompare(b.id));
++  return out;
++}
++
+ /**
+  * Build the evaluated portfolio.
+  * @param {PortfolioInput} input
+@@ -223,6 +317,7 @@ export function buildPortfolio(input) {
+   const rules = { ...DEFAULT_CLAIM_RULES, ...(input.claimRules ?? {}) };
+   const bands = input.exposureBands ?? DEFAULT_EXPOSURE_BANDS;
+   const thresholds = { ...DEFAULT_SOL_THRESHOLDS, ...(input.solThresholds ?? {}) };
++  const anomalyCfg = { ...DEFAULT_ANOMALY_CONFIG, ...(input.anomalyConfig ?? {}) };
+ 
+   const rows = input.matters.map((m) => {
+     const flags = [];
+@@ -230,12 +325,10 @@ export function buildPortfolio(input) {
+     flags.push(...sol.flags);
+     const st = sol.deadline ? solStatus(sol.deadline, asOf, thresholds) : { remaining: null, status: 'unverified' };
+     const ex = exposureBand(m, bands);
++    const age = daysSince(m.lastUpdated, asOf);
+     if (m.exposureLow != null && m.exposureHigh != null && m.exposureLow > m.exposureHigh) {
+       flags.push('exposureLow > exposureHigh — check estimates');
+     }
+-    if (m.nextDeadline && isValidIsoDate(m.nextDeadline) && diffDays(asOf, m.nextDeadline) < 0) {
+-      flags.push('nextDeadline is in the past');
+-    }
+     return {
+       id: m.id,
+       name: m.name,
+@@ -257,16 +350,62 @@ export function buildPortfolio(input) {
+         high: m.exposureHigh ?? null,
+         band: ex.band,
+         bandBasis: ex.bandBasis,
++        basis: m.exposureBasis ?? null,
++        sourceDoc: m.sourceDoc ?? null,
++      },
++      materiality: m.materiality ?? 'none',
++      freshness: {
++        lastUpdated: m.lastUpdated ?? null,
++        daysSinceUpdate: age,
++        isStale: age == null || age > anomalyCfg.staleDays,
+       },
++      anomalies: detectAnomalies(m, asOf, { ...anomalyCfg, claimRules: rules, exposureBands: bands, solThresholds: thresholds }),
+       flags,
+     };
+   });
+ 
++  const summary = summarize(rows, asOf);
++
++  return {
++    asOf,
++    matters: rows,
++    summary,
++    disclaimer:
++      'Limitation periods are configurable US defaults, not legal advice; verify ruleCite against current law in the governing jurisdiction before relying on any deadline.',
++  };
++}
++
++function tally(values) {
++  const t = {};
++  for (const v of values) t[v] = (t[v] ?? 0) + 1;
++  return t;
++}
++
++/** Summary rollups over evaluated rows (shared by buildPortfolio + applyFilters). */
++function summarize(rows, asOf) {
+   const count = (fn) => rows.filter(fn).length;
+   const bandTotal = (band) =>
+     rows.filter((r) => r.exposure.band === band).reduce((s, r) => s + (r.exposure.high ?? 0), 0);
+ 
+-  const summary = {
++  const anomalies = rows.flatMap((r) => r.anomalies);
++  const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
++  const byId = {};
++  for (const a of anomalies) {
++    bySeverity[a.severity] += 1;
++    byId[a.id] = (byId[a.id] ?? 0) + 1;
++  }
++
++  const nextDeadlines = { overdue: 0, within14: 0, days15to30: 0, days31to60: 0, beyond60: 0, none: 0 };
++  for (const r of rows) nextDeadlines[horizonBucket(r.rulesOfRoad.nextDeadline, asOf)] += 1;
++
++  const midpoint = (r) => (r.exposure.low != null && r.exposure.high != null ? (r.exposure.low + r.exposure.high) / 2 : 0);
++  const materiality = {};
++  for (const c of MATERIALITY_CLASSES) {
++    const inClass = rows.filter((r) => r.materiality === c);
++    materiality[c] = { matters: inClass.length, midpointTotal: inClass.reduce((s, r) => s + midpoint(r), 0) };
++  }
++
++  return {
+     total: rows.length,
+     byStatus: tally(rows.map((r) => r.status)),
+     solAlerts: rows.filter((r) => r.sol.status === 'expired' || r.sol.status === 'critical').length,
+@@ -277,24 +416,36 @@ export function buildPortfolio(input) {
+       high: { matters: count((r) => r.exposure.band === 'high'), totalHighEstimate: bandTotal('high') },
+       unquantified: count((r) => r.exposure.band === 'unquantified'),
+     },
++    anomalies: { total: anomalies.length, bySeverity, byId },
++    nextDeadlines,
++    materiality,
+     flagged: rows.filter((r) => r.flags.length > 0).length,
+   };
++}
+ 
++/**
++ * Pure filter layer over a built portfolio — the closed counterpart's
++ * CLI flags as data. Closed matters are excluded unless includeClosed.
++ * Returns a new portfolio with filtered matters + recomputed summary.
++ */
++export function applyFilters(p, f = {}) {
++  const includeClosed = f.includeClosed ?? false;
++  const kept = p.matters.filter((r) => {
++    if (!includeClosed && r.status === 'closed') return false;
++    if (f.stale && !r.freshness.isStale) return false;
++    if (f.band && r.exposure.band !== f.band) return false;
++    if (f.claimType && r.claimType !== f.claimType) return false;
++    if (f.counsel && (r.rulesOfRoad.counsel ?? '') !== f.counsel) return false;
++    return true;
++  });
+   return {
+-    asOf,
+-    matters: rows,
+-    summary,
+-    disclaimer:
+-      'Limitation periods are configurable US defaults, not legal advice; verify ruleCite against current law in the governing jurisdiction before relying on any deadline.',
++    ...p,
++    matters: kept,
++    summary: summarize(kept, p.asOf),
++    filtered: { applied: { ...f }, kept: kept.length, of: p.matters.length },
+   };
+ }
+ 
+-function tally(values) {
+-  const t = {};
+-  for (const v of values) t[v] = (t[v] ?? 0) + 1;
+-  return t;
+-}
+-
+ // ----------------------------------------------------------- exports
+ 
+ /** CSV export: one row per matter, ISO dates, USD plain numbers. */
+@@ -302,7 +453,8 @@ export function toCSV(portfolio) {
+   const head = [
+     'id', 'name', 'client', 'claimType', 'status', 'stage',
+     'solDeadline', 'daysRemaining', 'solStatus', 'ruleCite',
+-    'exposureLow', 'exposureHigh', 'exposureBand', 'flags',
++    'exposureLow', 'exposureHigh', 'exposureBand', 'exposureBasis', 'sourceDoc',
++    'materiality', 'lastUpdated', 'anomalies', 'flags',
+   ];
+   const esc = (v) => {
+     const s = v == null ? '' : String(v);
+@@ -314,6 +466,9 @@ export function toCSV(portfolio) {
+       r.id, r.name, r.client, r.claimType, r.status, r.stage,
+       r.sol.deadline, r.sol.daysRemaining, r.sol.status, r.sol.ruleCite,
+       r.exposure.low, r.exposure.high, r.exposure.band,
++      r.exposure.basis, r.exposure.sourceDoc, r.materiality,
++      r.freshness.lastUpdated,
++      r.anomalies.length ? r.anomalies.map((a) => `${a.id}:${a.severity}`).join('; ') : '',
+       r.flags.length ? r.flags.join('; ') : '',
+     ].map(esc).join(','));
+   }
+@@ -331,8 +486,28 @@ export function renderDashboard(p) {
+   L.push(`- SOL alerts (expired + critical): **${p.summary.solAlerts}**`);
+   L.push(`- SOL unverified (missing data/rule): **${p.summary.solUnverified}**`);
+   L.push(`- Flagged matters: **${p.summary.flagged}**`);
++  const an = p.summary.anomalies;
++  L.push(`- Anomalies: **${an.total}** (critical ${an.bySeverity.critical} · high ${an.bySeverity.high} · medium ${an.bySeverity.medium} · low ${an.bySeverity.low})`);
++  const h = p.summary.nextDeadlines;
++  L.push(`- Next deadlines: overdue ${h.overdue} · ≤14d ${h.within14} · 15–30d ${h.days15to30} · 31–60d ${h.days31to60} · >60d ${h.beyond60} · none ${h.none}`);
+   L.push(`- Status: ${Object.entries(p.summary.byStatus).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+   L.push('');
++  if (an.total > 0) {
++    L.push('## ⚠️ Anomalies — look first', '');
++    const flat = p.matters
++      .flatMap((r) => r.anomalies.map((a) => ({ r, a })))
++      .sort((x, y) =>
++        SEVERITY_RANK[x.a.severity] - SEVERITY_RANK[y.a.severity] ||
++        x.r.id.localeCompare(y.r.id) || x.a.id.localeCompare(y.a.id));
++    const first = flat[0];
++    L.push(`Look first: **${first.r.name} (${first.r.id})** — ${first.a.detail} [${first.a.severity}/${first.a.id}]`, '');
++    L.push('| Severity | Matter | Anomaly | Detail |');
++    L.push('|---|---|---|---|');
++    for (const { r, a } of flat) {
++      L.push(`| ${a.severity} | ${r.name} (${r.id}) | ${a.id} | ${a.detail} |`);
++    }
++    L.push('');
++  }
+   L.push('## Exposure bands (high estimates, USD)');
+   L.push('');
+   L.push('| Band | Matters | Total high estimate |');
+@@ -343,6 +518,15 @@ export function renderDashboard(p) {
+   }
+   L.push(`| unquantified | ${p.summary.exposureByBand.unquantified} | — |`);
+   L.push('');
++  L.push('## Stage distribution');
++  L.push('');
++  L.push('| Status/Stage | Matters |');
++  L.push('|---|---|');
++  for (const [k, v] of Object.entries(tally(p.matters.map((r) => `${r.status}/${r.stage}`)))
++    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
++    L.push(`| ${k} | ${v} |`);
++  }
++  L.push('');
+   L.push('## Matters');
+   L.push('');
+   L.push('| Matter | Status | SOL deadline | Days left | Exposure | Flags |');
+@@ -352,7 +536,11 @@ export function renderDashboard(p) {
+     const bv = b.sol.daysRemaining == null ? Infinity : b.sol.daysRemaining;
+     return av - bv;
+   })) {
+-    L.push(`| ${r.name} (${r.id}) | ${r.status}/${r.stage} | ${r.sol.deadline ?? '—'} | ${r.sol.daysRemaining ?? '—'} (${r.sol.status}) | ${r.exposure.band} | ${r.flags.length ? r.flags.join('; ') : '—'} |`);
++    const basis = r.exposure.basis
++      ? `<br/>basis: ${r.exposure.basis.length > 60 ? r.exposure.basis.slice(0, 57) + '…' : r.exposure.basis}` + (r.exposure.sourceDoc ? ` [${r.exposure.sourceDoc}]` : '')
++      : '';
++    const cells = [...r.flags, ...r.anomalies.map((a) => `[${a.severity}] ${a.id}`)];
++    L.push(`| ${r.name} (${r.id}) | ${r.status}/${r.stage} | ${r.sol.deadline ?? '—'} | ${r.sol.daysRemaining ?? '—'} (${r.sol.status}) | ${r.exposure.band}${basis} | ${cells.length ? cells.join('; ') : '—'} |`);
+   }
+   L.push('');
+   return L.join('\n');
+diff --git a/open-artifacts/litigation-portfolio/core/core.test.js b/open-artifacts/litigation-portfolio/core/core.test.js
+index c8ca6b4..0cba8bb 100644
+--- a/open-artifacts/litigation-portfolio/core/core.test.js
++++ b/open-artifacts/litigation-portfolio/core/core.test.js
+@@ -2,7 +2,7 @@ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+ import {
+   buildPortfolio, toCSV, renderDashboard, computeSol, addYears, addDays,
+-  isValidIsoDate, DEFAULT_CLAIM_RULES,
++  isValidIsoDate, DEFAULT_CLAIM_RULES, detectAnomalies, applyFilters,
+ } from './core.js';
+ 
+ const AS_OF = '2026-11-07';
+@@ -158,6 +158,147 @@ test('renderDashboard includes summary, band table, and sorted matters', () => {
+   assert.ok(md.indexOf('M0') < md.indexOf('M1'));
+ });
+ 
++test('detectAnomalies fires each of the 8 checks with ids + severity', () => {
++  const anomalies = detectAnomalies(
++    matter({
++      nextDeadline: '2026-11-01',      // overdue-next-deadline
++      lastUpdated: '2026-09-01',        // stale-matter (67d > 30)
++      conflicts: { status: 'pending', override: true, overrideReason: 'partner sign-off (fictional)' }, // conflicts-open + conflicts-override
++      accrualDate: '2026-10-01',        // PI +2y -> 2028-10-01, ok
++      exposureHigh: 800000,             // high band
++      counsel: 'unassigned',            // high-risk-no-counsel (high band, no counsel)
++      reserve: { amount: 50000, asOf: '2026-08-01' }, // stale-reserve (98d > 60)
++      status: 'active',                 // hold-gap (no legalHold)
++      // venue absent -> missing-fields
++    }),
++    AS_OF,
++  );
++  assert.deepEqual(
++    anomalies.map((a) => a.id).sort(),
++    [
++      'conflicts-open', 'conflicts-override', 'high-risk-no-counsel',
++      'hold-gap', 'missing-fields', 'overdue-next-deadline',
++      'stale-matter', 'stale-reserve',
++    ],
++  );
++  for (const a of anomalies) assert.ok(['critical', 'high', 'medium', 'low'].includes(a.severity));
++});
++
++test('buildPortfolio attaches anomalies[] and summary.anomalies counts', () => {
++  const out = buildPortfolio({ asOf: AS_OF, matters: [matter({ lastUpdated: '2026-09-01' })] });
++  assert.ok(out.matters[0].anomalies.some((a) => a.id === 'stale-matter'));
++  const total = out.matters.reduce((s, m) => s + m.anomalies.length, 0);
++  assert.equal(out.summary.anomalies.total, total);
++  assert.equal(out.summary.anomalies.total, Object.values(out.summary.anomalies.bySeverity).reduce((s, n) => s + n, 0));
++  assert.ok(out.summary.anomalies.bySeverity.medium >= 1);
++});
++
++test('staleness: 45-day-old lastUpdated is stale; staleDays is configurable', () => {
++  const m = matter({ lastUpdated: '2026-09-23' }); // 45d before AS_OF
++  assert.ok(detectAnomalies(m, AS_OF).some((a) => a.id === 'stale-matter'));
++  assert.ok(!detectAnomalies(m, AS_OF, { staleDays: 60 }).some((a) => a.id === 'stale-matter'));
++  const fresh = detectAnomalies(
++    matter({ lastUpdated: '2026-11-05', venue: 'v', counsel: 'c', legalHold: true }),
++    AS_OF,
++  );
++  assert.ok(!fresh.some((a) => a.id === 'stale-matter'));
++});
++
++test('next-deadline horizon buckets: overdue / ≤14 / 15–30 / 31–60 / beyond', () => {
++  const mk = (d) => matter({ id: d, nextDeadline: d, lastUpdated: '2026-11-06', venue: 'v', counsel: 'c', legalHold: true });
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [mk('2026-11-01'), mk('2026-11-12'), mk('2026-11-27'), mk('2026-12-22'), mk('2027-03-01'), matter({ id: 'none' })],
++  });
++  const h = out.summary.nextDeadlines;
++  assert.equal(h.overdue, 1);
++  assert.equal(h.within14, 1);      // +5d
++  assert.equal(h.days15to30, 1);    // +20d
++  assert.equal(h.days31to60, 1);    // +45d
++  assert.equal(h.beyond60, 1);
++  assert.equal(h.none, 1);
++});
++
++test('applyFilters: closed matters excluded by default, kept with includeClosed', () => {
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [
++      matter({ id: 'OPEN', lastUpdated: '2026-11-06' }),
++      matter({ id: 'CLOSED', status: 'closed', lastUpdated: '2026-11-06' }),
++    ],
++  });
++  assert.deepEqual(applyFilters(out).matters.map((m) => m.id), ['OPEN']);
++  assert.equal(applyFilters(out).summary.total, 1);
++  assert.equal(applyFilters(out, { includeClosed: true }).matters.length, 2);
++});
++
++test('applyFilters: stale / band / claimType / counsel filters compose', () => {
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [
++      matter({ id: 'A', exposureHigh: 800000, counsel: 'X', lastUpdated: '2026-11-06' }),
++      matter({ id: 'B', exposureHigh: 10000, counsel: 'Y', lastUpdated: '2026-09-01', claimType: 'fraud', discoveryDate: '2026-01-01' }),
++    ],
++  });
++  assert.deepEqual(applyFilters(out, { stale: true }).matters.map((m) => m.id), ['B']);
++  assert.deepEqual(applyFilters(out, { band: 'high' }).matters.map((m) => m.id), ['A']);
++  assert.deepEqual(applyFilters(out, { claimType: 'fraud' }).matters.map((m) => m.id), ['B']);
++  assert.deepEqual(applyFilters(out, { counsel: 'X', band: 'low' }).matters.map((m) => m.id), []);
++});
++
++test('exposure provenance: exposureBasis + sourceDoc flow to output and CSV', () => {
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [matter({
++      exposureLow: 50000, exposureHigh: 100000,
++      exposureBasis: 'Counsel memo 2026-10-12: defense range $50k–$100k (fictional)',
++      sourceDoc: 'MEMO-2026-10-12',
++    })],
++  });
++  assert.equal(out.matters[0].exposure.basis, 'Counsel memo 2026-10-12: defense range $50k–$100k (fictional)');
++  assert.equal(out.matters[0].exposure.sourceDoc, 'MEMO-2026-10-12');
++  const csv = toCSV(out);
++  assert.ok(csv.includes('defense range'));
++  assert.ok(csv.includes('MEMO-2026-10-12'));
++});
++
++test('materiality rollup: rough midpoint totals per class', () => {
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [
++      matter({ id: 'R1', materiality: 'reserved', exposureLow: 100, exposureHigh: 300 }),
++      matter({ id: 'R2', materiality: 'reserved', exposureLow: 500, exposureHigh: 1500 }),
++      matter({ id: 'D1', materiality: 'disclosed', exposureLow: 100, exposureHigh: 100 }),
++      matter({ id: 'N1' }),
++    ],
++  });
++  assert.equal(out.summary.materiality.reserved.matters, 2);
++  assert.equal(out.summary.materiality.reserved.midpointTotal, 1200); // 200 + 1000
++  assert.equal(out.summary.materiality.disclosed.midpointTotal, 100);
++  assert.equal(out.summary.materiality.none.matters, 1);
++  assert.equal(out.matters[0].materiality, 'reserved');
++  assert.equal(out.matters[3].materiality, 'none');
++});
++
++test('renderDashboard: anomalies section with look-first, severity order, stage table, horizons', () => {
++  const out = buildPortfolio({
++    asOf: AS_OF,
++    matters: [
++      matter({ id: 'CRIT', conflicts: { status: 'pending', override: true }, lastUpdated: '2026-11-06' }),
++      matter({ id: 'MED', lastUpdated: '2026-09-01' }),
++    ],
++  });
++  const md = renderDashboard(out);
++  const iSummary = md.indexOf('## Summary');
++  const iAnom = md.indexOf('## ⚠️ Anomalies');
++  const iExp = md.indexOf('## Exposure bands');
++  assert.ok(iSummary >= 0 && iAnom > iSummary && iExp > iAnom);
++  assert.match(md, /Look first: \*\*/);
++  assert.ok(md.indexOf('conflicts-override') < md.indexOf('stale-matter')); // critical before medium
++  assert.match(md, /## Stage distribution/);
++  assert.match(md, /Next deadlines: overdue/);
++});
++
+ test('isValidIsoDate rejects impossible dates', () => {
+   assert.equal(isValidIsoDate('2026-02-30'), false);
+   assert.equal(isValidIsoDate('2026-13-01'), false);
+diff --git a/open-artifacts/litigation-portfolio/demo/index.html b/open-artifacts/litigation-portfolio/demo/index.html
+index 3b2c662..efcb552 100644
+--- a/open-artifacts/litigation-portfolio/demo/index.html
++++ b/open-artifacts/litigation-portfolio/demo/index.html
+@@ -35,6 +35,13 @@
+   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
+   .rule-road { font-size: 12px; color: var(--text-secondary); }
+   details summary { cursor: pointer; font-family: var(--font-mono); font-size: 12px; }
++  .filters { display: none; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 12px; font-family: var(--font-mono); font-size: 12px; }
++  .filters.on { display: flex; }
++  .filters label { display: inline-flex; gap: 6px; align-items: center; }
++  .filters select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 4px 6px; }
++  .achip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text-secondary); color: var(--text-secondary); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
++  .achip.critical { border-color: var(--bad); color: var(--bad); background: var(--flag-tint); }
++  .achip.high { border-color: var(--bad); color: var(--bad); }
+ </style>
+ </head>
+ <body>
+@@ -52,6 +59,17 @@
+   </div>
+   <div class="err" id="err"></div>
+ 
++  <h2>Filters</h2>
++  <div class="filters" id="filters">
++    <label><input type="checkbox" id="f-closed" /> include closed</label>
++    <label><input type="checkbox" id="f-stale" /> stale only</label>
++    <label>band
++      <select id="f-band"><option value="">all</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="unquantified">unquantified</option></select>
++    </label>
++    <label>claim <select id="f-claim"></select></label>
++    <label>counsel <select id="f-counsel"></select></label>
++  </div>
++
+   <h2>Dashboard</h2>
+   <div id="summary"></div>
+   <div id="board"></div>
+@@ -64,14 +82,15 @@
+ </div>
+ 
+ <script type="module">
+-import { buildPortfolio, toCSV, renderDashboard, DEFAULT_CLAIM_RULES } from '../core/core.js';
++import { buildPortfolio, toCSV, renderDashboard, applyFilters, DEFAULT_CLAIM_RULES } from '../core/core.js';
+ 
+ const DEFAULT_INPUT = {
+   asOf: new Date().toISOString().slice(0, 10),
+   matters: [
+-    { id: 'LIT-2026-014', name: 'Harbor Bakehouse v. Northwind Logistics (fictional)', client: 'Harbor Bakehouse Co.', claimType: 'breach-of-written-contract', accrualDate: '2025-09-12', status: 'active', stage: 'discovery', exposureLow: 120000, exposureHigh: 340000, counsel: 'A. Ferreira (fictional)', venue: 'Superior Court, fictional county', strategy: 'No ex parte contact; 2-week extension courtesy', nextDeadline: '2026-11-20' },
+-    { id: 'LIT-2026-021', name: 'Delgado v. Summit Ridge Hospitality (fictional)', client: 'M. Delgado', claimType: 'personal-injury-negligence', accrualDate: '2024-11-20', status: 'active', stage: 'expert discovery', exposureLow: 15000, exposureHigh: 48000, counsel: 'J. Okafor (fictional)' },
+-    { id: 'LIT-2026-041', name: 'Tidewater Fisheries v. Unknown Vessel Operator (fictional)', client: 'Tidewater Fisheries LLC', claimType: 'admiralty-collision', accrualDate: '2026-03-04', status: 'assessing', stage: 'identifying defendant' },
++    { id: 'LIT-2026-014', name: 'Harbor Bakehouse v. Northwind Logistics (fictional)', client: 'Harbor Bakehouse Co.', claimType: 'breach-of-written-contract', accrualDate: '2025-09-12', status: 'active', stage: 'discovery', lastUpdated: '2026-11-05', legalHold: true, conflicts: { status: 'cleared' }, materiality: 'disclosed', exposureLow: 120000, exposureHigh: 340000, exposureBasis: 'Counsel memo 2026-10-12: defense-range estimate (fictional)', sourceDoc: 'MEMO-2026-10-12', counsel: 'A. Ferreira (fictional)', venue: 'Superior Court, fictional county', strategy: 'No ex parte contact; 2-week extension courtesy', nextDeadline: '2026-11-20' },
++    { id: 'LIT-2026-021', name: 'Delgado v. Summit Ridge Hospitality (fictional)', client: 'M. Delgado', claimType: 'personal-injury-negligence', accrualDate: '2024-11-20', status: 'active', stage: 'expert discovery', lastUpdated: '2026-09-01', legalHold: true, conflicts: { status: 'cleared' }, materiality: 'reserved', exposureLow: 15000, exposureHigh: 48000, exposureBasis: 'Claims memo 2026-08-18: settlement range (fictional)', sourceDoc: 'CLAIMS-2026-08-18', reserve: { amount: 25000, asOf: '2026-08-15' }, counsel: 'J. Okafor (fictional)', venue: 'District Court, fictional county' },
++    { id: 'LIT-2026-030', name: 'Okonkwo v. Meridian Foods (fictional)', client: 'P. Okonkwo', claimType: 'employment-discrimination-federal', accrualDate: '2026-08-30', status: 'assessing', stage: 'pre-charge intake', lastUpdated: '2026-08-01', conflicts: { status: 'pending' }, materiality: 'monitored', exposureHigh: 95000, counsel: 'unassigned', venue: 'EEOC (fictional region)' },
++    { id: 'LIT-2026-041', name: 'Tidewater Fisheries v. Unknown Vessel Operator (fictional)', client: 'Tidewater Fisheries LLC', claimType: 'admiralty-collision', accrualDate: '2026-03-04', status: 'assessing', stage: 'identifying defendant', conflicts: { status: 'cleared' }, materiality: 'monitored', counsel: 'unassigned', venue: 'TBD' },
+   ],
+ };
+ 
+@@ -81,7 +100,7 @@ $('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
+ function chip(s) { return `<span class="chip ${s}">${s}</span>`; }
+ function money(n) { return n == null ? '—' : '$' + n.toLocaleString('en-US'); }
+ 
+-function render() {
++function evaluate() {
+   const errEl = $('err');
+   errEl.style.display = 'none';
+   let out;
+@@ -91,17 +110,52 @@ function render() {
+   } catch (e) {
+     errEl.textContent = 'Input error: ' + e.message;
+     errEl.style.display = 'block';
+-    return;
++    return null;
+   }
++  window.__full = out;
++  $('filters').classList.add('on');
++  populateFilters(out);
++  return out;
++}
++
++function readFilters() {
++  return {
++    includeClosed: $('f-closed').checked,
++    stale: $('f-stale').checked,
++    band: $('f-band').value || undefined,
++    claimType: $('f-claim').value || undefined,
++    counsel: $('f-counsel').value || undefined,
++  };
++}
++
++function populateFilters(p) {
++  const fill = (id, values) => {
++    const sel = $(id);
++    const prev = sel.value;
++    sel.innerHTML = ['<option value="">all</option>', ...[...new Set(values)].sort().map((v) => `<option>${v}</option>`)].join('');
++    if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
++  };
++  fill('f-claim', p.matters.map((r) => r.claimType));
++  fill('f-counsel', p.matters.map((r) => r.rulesOfRoad.counsel).filter(Boolean));
++}
++
++function render() {
++  if (!window.__full) return;
++  const out = applyFilters(window.__full, readFilters());
+   const s = out.summary;
++  const h = s.nextDeadlines;
++  const an = s.anomalies;
+   $('summary').innerHTML = `
+     <div class="cards">
+       <div class="card"><div class="k">Matters</div><div class="v">${s.total}</div></div>
+       <div class="card alert"><div class="k">SOL alerts</div><div class="v">${s.solAlerts}</div></div>
+       <div class="card"><div class="k">SOL unverified</div><div class="v">${s.solUnverified}</div></div>
+       <div class="card"><div class="k">High-band exposure</div><div class="v">$${s.exposureByBand.high.totalHighEstimate.toLocaleString('en-US')}</div></div>
+-      <div class="card"><div class="k">Flagged</div><div class="v">${s.flagged}</div></div>
+-    </div>`;
++      <div class="card alert"><div class="k">Anomalies</div><div class="v">${an.total}</div></div>
++    </div>
++    <p class="lede" style="font-size:0.85rem">Next deadlines: overdue ${h.overdue} · ≤14d ${h.within14} · 15–30d ${h.days15to30} · 31–60d ${h.days31to60} · >60d ${h.beyond60} · none ${h.none}.
++    Anomalies: critical ${an.bySeverity.critical} · high ${an.bySeverity.high} · medium ${an.bySeverity.medium} · low ${an.bySeverity.low}.
++    Showing ${out.filtered.kept} of ${out.filtered.of} matters (closed excluded by default).</p>`;
+ 
+   const rows = [...out.matters].sort((a, b) => (a.sol.daysRemaining ?? Infinity) - (b.sol.daysRemaining ?? Infinity))
+     .map((r) => `
+@@ -110,19 +164,23 @@ function render() {
+         <details><summary>rules of the road</summary><div class="rule-road">counsel: ${r.rulesOfRoad.counsel ?? '—'} · venue: ${r.rulesOfRoad.venue ?? '—'} · strategy: ${r.rulesOfRoad.strategy ?? '—'} · next deadline: ${r.rulesOfRoad.nextDeadline ?? '—'}</div></details>
+       </td>
+       <td>${r.sol.deadline ?? '—'}<br />${chip(r.sol.status)}<br /><span class="cite">${r.sol.daysRemaining ?? '—'} days left · ${r.sol.ruleCite ?? 'no rule'}</span></td>
+-      <td>${r.exposure.band}<br /><span class="cite">${money(r.exposure.low)} – ${money(r.exposure.high)}</span></td>
++      <td>${r.exposure.band}<br /><span class="cite">${money(r.exposure.low)} – ${money(r.exposure.high)}</span>${r.exposure.basis ? `<br /><span class="cite">basis: ${r.exposure.basis.replace(/</g, '&lt;')}</span>` : ''}</td>
++      <td>${r.anomalies.length ? r.anomalies.map((a) => `<span class="achip ${a.severity}">${a.id}</span>`).join('') : '—'}</td>
+       <td>${r.flags.length ? `<span class="flags">${r.flags.map((f) => f.replace(/</g, '&lt;')).join('<br>')}</span>` : '—'}</td>
+     </tr>`).join('');
+-  $('board').innerHTML = `<table><thead><tr><th>Matter</th><th>SOL</th><th>Exposure</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
++  $('board').innerHTML = `<table><thead><tr><th>Matter</th><th>SOL</th><th>Exposure</th><th>Anomalies</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
+   out._csv = toCSV(out);
+   window.__portfolio = out;
+ }
+ 
+-$('run').addEventListener('click', render);
++$('run').addEventListener('click', () => { if (evaluate()) render(); });
++for (const id of ['f-closed', 'f-stale', 'f-band', 'f-claim', 'f-counsel']) {
++  $(id).addEventListener('change', render);
++}
+ $('csv').addEventListener('click', () => {
+   if (window.__portfolio) navigator.clipboard?.writeText(window.__portfolio._csv);
+ });
+-render();
++if (evaluate()) render();
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/litigation-portfolio/examples/dashboard.md b/open-artifacts/litigation-portfolio/examples/dashboard.md
+index e513ee1..b91d4eb 100644
+--- a/open-artifacts/litigation-portfolio/examples/dashboard.md
++++ b/open-artifacts/litigation-portfolio/examples/dashboard.md
+@@ -4,28 +4,59 @@ Limitation periods are configurable US defaults, not legal advice; verify ruleCi
+ 
+ ## Summary
+ 
+-- Matters: **6**
+-- SOL alerts (expired + critical): **1**
++- Matters: **7**
++- SOL alerts (expired + critical): **2**
+ - SOL unverified (missing data/rule): **1**
+ - Flagged matters: **1**
+-- Status: active 2 · settlement 1 · assessing 2 · trial 1
++- Anomalies: **9** (critical 0 · high 1 · medium 5 · low 3)
++- Next deadlines: overdue 0 · ≤14d 2 · 15–30d 0 · 31–60d 0 · >60d 0 · none 5
++- Status: active 2 · settlement 1 · assessing 2 · trial 1 · closed 1
++
++## ⚠️ Anomalies — look first
++
++Look first: **Okonkwo v. Meridian Foods (fictional) (LIT-2026-030)** — conflicts check pending [high/conflicts-open]
++
++| Severity | Matter | Anomaly | Detail |
++|---|---|---|---|
++| high | Okonkwo v. Meridian Foods (fictional) (LIT-2026-030) | conflicts-open | conflicts check pending |
++| medium | Rialto Cafe v. Ridgetop Rentals (fictional) (LIT-2023-090) | stale-matter | last updated 301 days ago (>30) |
++| medium | Delgado v. Summit Ridge Hospitality (fictional) (LIT-2026-021) | stale-matter | last updated 67 days ago (>30) |
++| medium | Delgado v. Summit Ridge Hospitality (fictional) (LIT-2026-021) | stale-reserve | reserve $25,000 last reviewed 84 days ago (>60) |
++| medium | Okonkwo v. Meridian Foods (fictional) (LIT-2026-030) | stale-matter | last updated 98 days ago (>30) |
++| medium | Tidewater Fisheries v. Unknown Vessel Operator (fictional) (LIT-2026-041) | stale-matter | lastUpdated missing — freshness unknown |
++| low | Rialto Cafe v. Ridgetop Rentals (fictional) (LIT-2023-090) | missing-fields | missing: exposureBasis |
++| low | Okonkwo v. Meridian Foods (fictional) (LIT-2026-030) | missing-fields | missing: counsel, exposureBasis |
++| low | Tidewater Fisheries v. Unknown Vessel Operator (fictional) (LIT-2026-041) | missing-fields | missing: venue, counsel |
+ 
+ ## Exposure bands (high estimates, USD)
+ 
+ | Band | Matters | Total high estimate |
+ |---|---|---|
+-| low | 1 | $48,000 |
++| low | 2 | $60,000 |
+ | medium | 3 | $645,000 |
+ | high | 1 | $1,200,000 |
+ | unquantified | 1 | — |
+ 
++## Stage distribution
++
++| Status/Stage | Matters |
++|---|---|
++| active/discovery | 1 |
++| active/expert discovery | 1 |
++| assessing/identifying defendant | 1 |
++| assessing/pre-charge intake | 1 |
++| closed/dismissed with prejudice | 1 |
++| settlement/mediation scheduled | 1 |
++| trial/pre-trial conference | 1 |
++
+ ## Matters
+ 
+ | Matter | Status | SOL deadline | Days left | Exposure | Flags |
+ |---|---|---|---|---|---|
+-| Delgado v. Summit Ridge Hospitality (fictional) (LIT-2026-021) | active/expert discovery | 2026-11-20 | 13 (critical) | low | — |
+-| Cedar Lane HOA v. Brightpath Solar (fictional) (LIT-2025-003) | settlement/mediation scheduled | 2027-02-01 | 86 (warning) | medium | — |
+-| Okonkwo v. Meridian Foods (fictional) (LIT-2026-030) | assessing/pre-charge intake | 2027-06-26 | 231 (ok) | medium | — |
+-| Vance v. Quill & Press Publishing (fictional) (LIT-2024-108) | trial/pre-trial conference | 2028-03-18 | 497 (ok) | high | — |
+-| Harbor Bakehouse v. Northwind Logistics (fictional) (LIT-2026-014) | active/discovery | 2029-09-12 | 1040 (ok) | medium | — |
+-| Tidewater Fisheries v. Unknown Vessel Operator (fictional) (LIT-2026-041) | assessing/identifying defendant | — | — (unverified) | unquantified | unknown claim type "admiralty-collision" — no limitation rule configured |
++| Rialto Cafe v. Ridgetop Rentals (fictional) (LIT-2023-090) | closed/dismissed with prejudice | 2024-07-14 | -846 (expired) | low | [medium] stale-matter; [low] missing-fields |
++| Delgado v. Summit Ridge Hospitality (fictional) (LIT-2026-021) | active/expert discovery | 2026-11-20 | 13 (critical) | low<br/>basis: Claims memo 2026-08-18: settlement range after expert rev… [CLAIMS-2026-08-18] | [medium] stale-matter; [medium] stale-reserve |
++| Cedar Lane HOA v. Brightpath Solar (fictional) (LIT-2025-003) | settlement/mediation scheduled | 2027-02-01 | 86 (warning) | medium<br/>basis: Mediation brief 2026-10-15: repair-cost range (fictional) [MED-BRIEF-2026-10-15] | — |
++| Okonkwo v. Meridian Foods (fictional) (LIT-2026-030) | assessing/pre-charge intake | 2027-06-26 | 231 (ok) | medium | [high] conflicts-open; [medium] stale-matter; [low] missing-fields |
++| Vance v. Quill & Press Publishing (fictional) (LIT-2024-108) | trial/pre-trial conference | 2028-03-18 | 497 (ok) | high<br/>basis: Trial budget 2026-10-25: verdict exposure model (fictional) [BUDGET-2026-10-25] | — |
++| Harbor Bakehouse v. Northwind Logistics (fictional) (LIT-2026-014) | active/discovery | 2029-09-12 | 1040 (ok) | medium<br/>basis: Counsel memo 2026-10-12: defense-range estimate for breac… [MEMO-2026-10-12] | — |
++| Tidewater Fisheries v. Unknown Vessel Operator (fictional) (LIT-2026-041) | assessing/identifying defendant | — | — (unverified) | unquantified | unknown claim type "admiralty-collision" — no limitation rule configured; [medium] stale-matter; [low] missing-fields |
+diff --git a/open-artifacts/litigation-portfolio/examples/input.json b/open-artifacts/litigation-portfolio/examples/input.json
+index cd5a898..a4cf1fb 100644
+--- a/open-artifacts/litigation-portfolio/examples/input.json
++++ b/open-artifacts/litigation-portfolio/examples/input.json
+@@ -9,8 +9,14 @@
+       "accrualDate": "2025-09-12",
+       "status": "active",
+       "stage": "discovery",
++      "lastUpdated": "2026-11-05",
++      "legalHold": true,
++      "conflicts": { "status": "cleared" },
++      "materiality": "disclosed",
+       "exposureLow": 120000,
+       "exposureHigh": 340000,
++      "exposureBasis": "Counsel memo 2026-10-12: defense-range estimate for breach damages (fictional)",
++      "sourceDoc": "MEMO-2026-10-12",
+       "counsel": "A. Ferreira (fictional)",
+       "venue": "Superior Court, fictional county",
+       "strategy": "No ex parte contact; meet-and-confer before motions; 2-week extension courtesy",
+@@ -24,8 +30,15 @@
+       "accrualDate": "2024-11-20",
+       "status": "active",
+       "stage": "expert discovery",
++      "lastUpdated": "2026-09-01",
++      "legalHold": true,
++      "conflicts": { "status": "cleared" },
++      "materiality": "reserved",
+       "exposureLow": 15000,
+       "exposureHigh": 48000,
++      "exposureBasis": "Claims memo 2026-08-18: settlement range after expert review (fictional)",
++      "sourceDoc": "CLAIMS-2026-08-18",
++      "reserve": { "amount": 25000, "asOf": "2026-08-15" },
+       "counsel": "J. Okafor (fictional)",
+       "venue": "District Court, fictional county",
+       "strategy": "Early mediation offer after expert reports exchange"
+@@ -41,8 +54,15 @@
+       ],
+       "status": "settlement",
+       "stage": "mediation scheduled",
++      "lastUpdated": "2026-10-20",
++      "legalHold": true,
++      "conflicts": { "status": "cleared" },
++      "materiality": "disclosed",
+       "exposureLow": 40000,
+       "exposureHigh": 210000,
++      "exposureBasis": "Mediation brief 2026-10-15: repair-cost range (fictional)",
++      "sourceDoc": "MED-BRIEF-2026-10-15",
++      "reserve": { "amount": 120000, "asOf": "2026-10-15" },
+       "counsel": "A. Ferreira (fictional)",
+       "venue": "Superior Court, fictional county",
+       "strategy": "Mediation-first; no filing until demand response"
+@@ -55,6 +75,9 @@
+       "accrualDate": "2026-08-30",
+       "status": "assessing",
+       "stage": "pre-charge intake",
++      "lastUpdated": "2026-08-01",
++      "conflicts": { "status": "pending" },
++      "materiality": "monitored",
+       "exposureHigh": 95000,
+       "counsel": "unassigned",
+       "venue": "EEOC (fictional region)",
+@@ -69,11 +92,19 @@
+       "discoveryDate": "2025-03-18",
+       "status": "trial",
+       "stage": "pre-trial conference",
++      "lastUpdated": "2026-10-30",
++      "legalHold": true,
++      "conflicts": { "status": "cleared" },
++      "materiality": "disclosed",
+       "exposureLow": 600000,
+       "exposureHigh": 1200000,
++      "exposureBasis": "Trial budget 2026-10-25: verdict exposure model (fictional)",
++      "sourceDoc": "BUDGET-2026-10-25",
++      "reserve": { "amount": 750000, "asOf": "2026-10-25" },
+       "counsel": "S. Lindqvist (fictional)",
+       "venue": "District Court, fictional county",
+-      "strategy": "No settlement communication without client sign-off"
++      "strategy": "No settlement communication without client sign-off",
++      "nextDeadline": "2026-11-12"
+     },
+     {
+       "id": "LIT-2026-041",
+@@ -83,9 +114,29 @@
+       "accrualDate": "2026-03-04",
+       "status": "assessing",
+       "stage": "identifying defendant",
++      "conflicts": { "status": "cleared" },
++      "materiality": "monitored",
+       "counsel": "unassigned",
+       "venue": "TBD",
+       "strategy": "Investigate ownership registry before filing"
++    },
++    {
++      "id": "LIT-2023-090",
++      "name": "Rialto Cafe v. Ridgetop Rentals (fictional)",
++      "client": "Rialto Cafe LLC",
++      "claimType": "breach-of-oral-contract",
++      "accrualDate": "2022-07-14",
++      "status": "closed",
++      "stage": "dismissed with prejudice",
++      "lastUpdated": "2026-01-10",
++      "legalHold": false,
++      "conflicts": { "status": "cleared" },
++      "materiality": "none",
++      "exposureLow": 8000,
++      "exposureHigh": 12000,
++      "counsel": "J. Okafor (fictional)",
++      "venue": "Superior Court, fictional county",
++      "strategy": "Closed — release executed"
+     }
+   ]
+ }
+diff --git a/open-artifacts/litigation-portfolio/examples/output.json b/open-artifacts/litigation-portfolio/examples/output.json
+index 15125c6..4a23e02 100644
+--- a/open-artifacts/litigation-portfolio/examples/output.json
++++ b/open-artifacts/litigation-portfolio/examples/output.json
+@@ -26,8 +26,17 @@
+         "low": 120000,
+         "high": 340000,
+         "band": "medium",
+-        "bandBasis": "high estimate $340,000"
++        "bandBasis": "high estimate $340,000",
++        "basis": "Counsel memo 2026-10-12: defense-range estimate for breach damages (fictional)",
++        "sourceDoc": "MEMO-2026-10-12"
+       },
++      "materiality": "disclosed",
++      "freshness": {
++        "lastUpdated": "2026-11-05",
++        "daysSinceUpdate": 2,
++        "isStale": false
++      },
++      "anomalies": [],
+       "flags": []
+     },
+     {
+@@ -55,8 +64,28 @@
+         "low": 15000,
+         "high": 48000,
+         "band": "low",
+-        "bandBasis": "high estimate $48,000"
++        "bandBasis": "high estimate $48,000",
++        "basis": "Claims memo 2026-08-18: settlement range after expert review (fictional)",
++        "sourceDoc": "CLAIMS-2026-08-18"
++      },
++      "materiality": "reserved",
++      "freshness": {
++        "lastUpdated": "2026-09-01",
++        "daysSinceUpdate": 67,
++        "isStale": true
+       },
++      "anomalies": [
++        {
++          "id": "stale-matter",
++          "severity": "medium",
++          "detail": "last updated 67 days ago (>30)"
++        },
++        {
++          "id": "stale-reserve",
++          "severity": "medium",
++          "detail": "reserve $25,000 last reviewed 84 days ago (>60)"
++        }
++      ],
+       "flags": []
+     },
+     {
+@@ -84,8 +113,17 @@
+         "low": 40000,
+         "high": 210000,
+         "band": "medium",
+-        "bandBasis": "high estimate $210,000"
++        "bandBasis": "high estimate $210,000",
++        "basis": "Mediation brief 2026-10-15: repair-cost range (fictional)",
++        "sourceDoc": "MED-BRIEF-2026-10-15"
+       },
++      "materiality": "disclosed",
++      "freshness": {
++        "lastUpdated": "2026-10-20",
++        "daysSinceUpdate": 18,
++        "isStale": false
++      },
++      "anomalies": [],
+       "flags": []
+     },
+     {
+@@ -113,8 +151,33 @@
+         "low": null,
+         "high": 95000,
+         "band": "medium",
+-        "bandBasis": "high estimate $95,000"
++        "bandBasis": "high estimate $95,000",
++        "basis": null,
++        "sourceDoc": null
++      },
++      "materiality": "monitored",
++      "freshness": {
++        "lastUpdated": "2026-08-01",
++        "daysSinceUpdate": 98,
++        "isStale": true
+       },
++      "anomalies": [
++        {
++          "id": "conflicts-open",
++          "severity": "high",
++          "detail": "conflicts check pending"
++        },
++        {
++          "id": "stale-matter",
++          "severity": "medium",
++          "detail": "last updated 98 days ago (>30)"
++        },
++        {
++          "id": "missing-fields",
++          "severity": "low",
++          "detail": "missing: counsel, exposureBasis"
++        }
++      ],
+       "flags": []
+     },
+     {
+@@ -129,7 +192,7 @@
+         "counsel": "S. Lindqvist (fictional)",
+         "venue": "District Court, fictional county",
+         "strategy": "No settlement communication without client sign-off",
+-        "nextDeadline": null
++        "nextDeadline": "2026-11-12"
+       },
+       "sol": {
+         "deadline": "2028-03-18",
+@@ -142,8 +205,17 @@
+         "low": 600000,
+         "high": 1200000,
+         "band": "high",
+-        "bandBasis": "high estimate $1,200,000"
++        "bandBasis": "high estimate $1,200,000",
++        "basis": "Trial budget 2026-10-25: verdict exposure model (fictional)",
++        "sourceDoc": "BUDGET-2026-10-25"
++      },
++      "materiality": "disclosed",
++      "freshness": {
++        "lastUpdated": "2026-10-30",
++        "daysSinceUpdate": 8,
++        "isStale": false
+       },
++      "anomalies": [],
+       "flags": []
+     },
+     {
+@@ -171,27 +243,97 @@
+         "low": null,
+         "high": null,
+         "band": "unquantified",
+-        "bandBasis": "no exposure estimate on file"
++        "bandBasis": "no exposure estimate on file",
++        "basis": null,
++        "sourceDoc": null
+       },
++      "materiality": "monitored",
++      "freshness": {
++        "lastUpdated": null,
++        "daysSinceUpdate": null,
++        "isStale": true
++      },
++      "anomalies": [
++        {
++          "id": "stale-matter",
++          "severity": "medium",
++          "detail": "lastUpdated missing — freshness unknown"
++        },
++        {
++          "id": "missing-fields",
++          "severity": "low",
++          "detail": "missing: venue, counsel"
++        }
++      ],
+       "flags": [
+         "unknown claim type \"admiralty-collision\" — no limitation rule configured"
+       ]
++    },
++    {
++      "id": "LIT-2023-090",
++      "name": "Rialto Cafe v. Ridgetop Rentals (fictional)",
++      "client": "Rialto Cafe LLC",
++      "claimType": "breach-of-oral-contract",
++      "claimLabel": "Breach of oral contract",
++      "status": "closed",
++      "stage": "dismissed with prejudice",
++      "rulesOfRoad": {
++        "counsel": "J. Okafor (fictional)",
++        "venue": "Superior Court, fictional county",
++        "strategy": "Closed — release executed",
++        "nextDeadline": null
++      },
++      "sol": {
++        "deadline": "2024-07-14",
++        "daysRemaining": -846,
++        "status": "expired",
++        "accrualUsed": "2022-07-14",
++        "ruleCite": "e.g. Cal. Code Civ. Proc. § 339 (2 yr) — US default, verify per state"
++      },
++      "exposure": {
++        "low": 8000,
++        "high": 12000,
++        "band": "low",
++        "bandBasis": "high estimate $12,000",
++        "basis": null,
++        "sourceDoc": null
++      },
++      "materiality": "none",
++      "freshness": {
++        "lastUpdated": "2026-01-10",
++        "daysSinceUpdate": 301,
++        "isStale": true
++      },
++      "anomalies": [
++        {
++          "id": "stale-matter",
++          "severity": "medium",
++          "detail": "last updated 301 days ago (>30)"
++        },
++        {
++          "id": "missing-fields",
++          "severity": "low",
++          "detail": "missing: exposureBasis"
++        }
++      ],
++      "flags": []
+     }
+   ],
+   "summary": {
+-    "total": 6,
++    "total": 7,
+     "byStatus": {
+       "active": 2,
+       "settlement": 1,
+       "assessing": 2,
+-      "trial": 1
++      "trial": 1,
++      "closed": 1
+     },
+-    "solAlerts": 1,
++    "solAlerts": 2,
+     "solUnverified": 1,
+     "exposureByBand": {
+       "low": {
+-        "matters": 1,
+-        "totalHighEstimate": 48000
++        "matters": 2,
++        "totalHighEstimate": 60000
+       },
+       "medium": {
+         "matters": 3,
+@@ -203,6 +345,47 @@
+       },
+       "unquantified": 1
+     },
++    "anomalies": {
++      "total": 9,
++      "bySeverity": {
++        "critical": 0,
++        "high": 1,
++        "medium": 5,
++        "low": 3
++      },
++      "byId": {
++        "stale-matter": 4,
++        "stale-reserve": 1,
++        "conflicts-open": 1,
++        "missing-fields": 3
++      }
++    },
++    "nextDeadlines": {
++      "overdue": 0,
++      "within14": 2,
++      "days15to30": 0,
++      "days31to60": 0,
++      "beyond60": 0,
++      "none": 5
++    },
++    "materiality": {
++      "reserved": {
++        "matters": 1,
++        "midpointTotal": 31500
++      },
++      "disclosed": {
++        "matters": 3,
++        "midpointTotal": 1255000
++      },
++      "monitored": {
++        "matters": 2,
++        "midpointTotal": 0
++      },
++      "none": {
++        "matters": 1,
++        "midpointTotal": 10000
++      }
++    },
+     "flagged": 1
+   },
+   "disclaimer": "Limitation periods are configurable US defaults, not legal advice; verify ruleCite against current law in the governing jurisdiction before relying on any deadline."
+diff --git a/open-artifacts/litigation-portfolio/examples/portfolio.csv b/open-artifacts/litigation-portfolio/examples/portfolio.csv
+index fae2d26..da728a8 100644
+--- a/open-artifacts/litigation-portfolio/examples/portfolio.csv
++++ b/open-artifacts/litigation-portfolio/examples/portfolio.csv
+@@ -1,7 +1,8 @@
+-id,name,client,claimType,status,stage,solDeadline,daysRemaining,solStatus,ruleCite,exposureLow,exposureHigh,exposureBand,flags
+-LIT-2026-014,Harbor Bakehouse v. Northwind Logistics (fictional),Harbor Bakehouse Co.,breach-of-written-contract,active,discovery,2029-09-12,1040,ok,"e.g. Cal. Code Civ. Proc. § 337 (4 yr) — US default, verify per state",120000,340000,medium,
+-LIT-2026-021,Delgado v. Summit Ridge Hospitality (fictional),M. Delgado,personal-injury-negligence,active,expert discovery,2026-11-20,13,critical,"e.g. Cal. Code Civ. Proc. § 335.1 (2 yr) — US default, verify per state",15000,48000,low,
+-LIT-2025-003,Cedar Lane HOA v. Brightpath Solar (fictional),Cedar Lane HOA,property-damage,settlement,mediation scheduled,2027-02-01,86,warning,"e.g. Cal. Code Civ. Proc. § 338(b) (3 yr) — US default, verify per state",40000,210000,medium,
+-LIT-2026-030,Okonkwo v. Meridian Foods (fictional),P. Okonkwo,employment-discrimination-federal,assessing,pre-charge intake,2027-06-26,231,ok,"42 U.S.C. § 2000e-5(e) (300-day EEOC charge window) — US default, verify",,95000,medium,
+-LIT-2024-108,Vance v. Quill & Press Publishing (fictional),R. Vance,fraud,trial,pre-trial conference,2028-03-18,497,ok,"e.g. Cal. Code Civ. Proc. § 338(d) (3 yr, discovery) — US default, verify per state",600000,1200000,high,
+-LIT-2026-041,Tidewater Fisheries v. Unknown Vessel Operator (fictional),Tidewater Fisheries LLC,admiralty-collision,assessing,identifying defendant,,,unverified,,,,unquantified,"unknown claim type ""admiralty-collision"" — no limitation rule configured"
++id,name,client,claimType,status,stage,solDeadline,daysRemaining,solStatus,ruleCite,exposureLow,exposureHigh,exposureBand,exposureBasis,sourceDoc,materiality,lastUpdated,anomalies,flags
++LIT-2026-014,Harbor Bakehouse v. Northwind Logistics (fictional),Harbor Bakehouse Co.,breach-of-written-contract,active,discovery,2029-09-12,1040,ok,"e.g. Cal. Code Civ. Proc. § 337 (4 yr) — US default, verify per state",120000,340000,medium,Counsel memo 2026-10-12: defense-range estimate for breach damages (fictional),MEMO-2026-10-12,disclosed,2026-11-05,,
++LIT-2026-021,Delgado v. Summit Ridge Hospitality (fictional),M. Delgado,personal-injury-negligence,active,expert discovery,2026-11-20,13,critical,"e.g. Cal. Code Civ. Proc. § 335.1 (2 yr) — US default, verify per state",15000,48000,low,Claims memo 2026-08-18: settlement range after expert review (fictional),CLAIMS-2026-08-18,reserved,2026-09-01,stale-matter:medium; stale-reserve:medium,
++LIT-2025-003,Cedar Lane HOA v. Brightpath Solar (fictional),Cedar Lane HOA,property-damage,settlement,mediation scheduled,2027-02-01,86,warning,"e.g. Cal. Code Civ. Proc. § 338(b) (3 yr) — US default, verify per state",40000,210000,medium,Mediation brief 2026-10-15: repair-cost range (fictional),MED-BRIEF-2026-10-15,disclosed,2026-10-20,,
++LIT-2026-030,Okonkwo v. Meridian Foods (fictional),P. Okonkwo,employment-discrimination-federal,assessing,pre-charge intake,2027-06-26,231,ok,"42 U.S.C. § 2000e-5(e) (300-day EEOC charge window) — US default, verify",,95000,medium,,,monitored,2026-08-01,conflicts-open:high; stale-matter:medium; missing-fields:low,
++LIT-2024-108,Vance v. Quill & Press Publishing (fictional),R. Vance,fraud,trial,pre-trial conference,2028-03-18,497,ok,"e.g. Cal. Code Civ. Proc. § 338(d) (3 yr, discovery) — US default, verify per state",600000,1200000,high,Trial budget 2026-10-25: verdict exposure model (fictional),BUDGET-2026-10-25,disclosed,2026-10-30,,
++LIT-2026-041,Tidewater Fisheries v. Unknown Vessel Operator (fictional),Tidewater Fisheries LLC,admiralty-collision,assessing,identifying defendant,,,unverified,,,,unquantified,,,monitored,,stale-matter:medium; missing-fields:low,"unknown claim type ""admiralty-collision"" — no limitation rule configured"
++LIT-2023-090,Rialto Cafe v. Ridgetop Rentals (fictional),Rialto Cafe LLC,breach-of-oral-contract,closed,dismissed with prejudice,2024-07-14,-846,expired,"e.g. Cal. Code Civ. Proc. § 339 (2 yr) — US default, verify per state",8000,12000,low,,,none,2026-01-10,stale-matter:medium; missing-fields:low,
+diff --git a/open-artifacts/litigation-portfolio/examples/run.js b/open-artifacts/litigation-portfolio/examples/run.js
+index 9218fa7..f3337bf 100644
+--- a/open-artifacts/litigation-portfolio/examples/run.js
++++ b/open-artifacts/litigation-portfolio/examples/run.js
+@@ -18,6 +18,7 @@ writeFileSync(join(here, 'portfolio.csv'), toCSV(out));
+ 
+ console.log(
+   `${out.summary.total} matters -> ${out.summary.solAlerts} SOL alerts, ` +
++  `${out.summary.anomalies.total} anomalies (critical ${out.summary.anomalies.bySeverity.critical}), ` +
+   `${out.summary.solUnverified} unverified, bands ` +
+   `L${out.summary.exposureByBand.low.matters}/M${out.summary.exposureByBand.medium.matters}/` +
+   `H${out.summary.exposureByBand.high.matters} -> output.json, dashboard.md, portfolio.csv`,
+diff --git a/open-artifacts/litigation-portfolio/spec.md b/open-artifacts/litigation-portfolio/spec.md
+index 52440c0..5f0ac7b 100644
+--- a/open-artifacts/litigation-portfolio/spec.md
++++ b/open-artifacts/litigation-portfolio/spec.md
+@@ -10,7 +10,12 @@ metadata per matter, and deterministic dashboard + CSV exports.
+ |---|---|
+ | SOL deadline (accrual + years/days, occurrence/discovery accrual, tolling spans) | core (deterministic) |
+ | days-remaining + status band (expired / critical ≤30d / warning ≤90d / ok) | core (deterministic) |
++| Next-deadline horizon buckets (overdue / ≤14d / 15–30d / 31–60d / >60d) | core (deterministic) |
+ | Exposure banding (low / medium / high / unquantified, configurable bands) | core (deterministic) |
++| Exposure provenance (`exposureBasis` + `sourceDoc`) carried into output/CSV | core (deterministic) |
++| Materiality classes (reserved / disclosed / monitored / none) + rough midpoint rollups | core (deterministic) |
++| 8-check anomaly engine (ids + severity, configurable thresholds) | core (deterministic) |
++| Filter layer (`applyFilters`: includeClosed / stale / band / claimType / counsel) | core (deterministic) |
+ | Dashboard rollups, Markdown dashboard, CSV | core (deterministic) |
+ | Jurisdiction limitation rules | **rules-as-data** (editable JSON with citations; US defaults) |
+ | Estimating exposure ranges for a matter | LLM / attorney (prompt schema below) |
+@@ -39,20 +44,53 @@ null` plus explicit flags — never an invented date.
+       "tollingEvents": [ { "from": "…", "to": "…", "reason": "…" } ],
+       "status": "active", "stage": "discovery",
+       "exposureLow": 120000, "exposureHigh": 340000,
++      "exposureBasis": "verbatim quote from the estimate memo",   // optional provenance
++      "sourceDoc": "MEMO-2026-10-12",                              // optional document id
++      "materiality": "disclosed",          // reserved|disclosed|monitored|none (firm-calibrated, verify)
++      "lastUpdated": "2026-11-05",         // optional; drives staleness (default >30d = stale)
++      "legalHold": true,                   // optional; hold-gap anomaly if absent on active matters
++      "conflicts": { "status": "cleared", "override": false },    // optional
++      "reserve": { "amount": 25000, "asOf": "2026-08-15" },       // optional; stale after 60d (default)
+       "counsel": "…", "venue": "…", "strategy": "…", "nextDeadline": "2026-11-20"
+     }
+   ]
+ }
+ ```
+ 
++All new fields are optional; absence is reported, never guessed (e.g. a
++missing `lastUpdated` is itself a `stale-matter` anomaly; quantified
++exposure without `exposureBasis` surfaces in `missing-fields`).
++
+ ## Output contract (JSON)
+ 
+ Per matter: `sol { deadline, daysRemaining, status, accrualUsed, ruleCite }`,
+-`exposure { low, high, band, bandBasis }`, `rulesOfRoad { counsel, venue,
+-strategy, nextDeadline }`, `flags[]`. Plus `summary` (counts by status,
+-SOL alerts, unverified, exposure rollups per band, flagged count) and a
+-standing `disclaimer`. Exports: `toCSV()` (one row per matter),
+-`renderDashboard()` (Markdown).
++`exposure { low, high, band, bandBasis, basis, sourceDoc }`, `rulesOfRoad { counsel, venue,
++strategy, nextDeadline }`, `materiality`, `freshness { lastUpdated,
++daysSinceUpdate, isStale }`, `anomalies[] { id, severity, detail }`,
++`flags[]`. Plus `summary` (counts by status, SOL alerts, unverified,
++exposure rollups per band, `anomalies { total, bySeverity, byId }`,
++`nextDeadlines` horizon buckets, `materiality` midpoint rollups,
++flagged count) and a standing `disclaimer`. Exports: `toCSV()` (one row
++per matter, incl. provenance + anomaly columns), `renderDashboard()`
++(Markdown incl. ⚠️ anomalies look-first section and stage distribution),
++`applyFilters(portfolio, filters)` (pure view over a built portfolio;
++closed matters excluded unless `includeClosed`).
++
++## Anomaly engine (8 checks, all pure + unit-tested)
++
++| # | id | severity | fires when |
++|---|---|---|---|
++| 1 | `overdue-next-deadline` | high | `nextDeadline` is in the past vs `asOf` |
++| 2 | `stale-matter` | medium | `lastUpdated` missing or older than `staleDays` (default 30) |
++| 3 | `conflicts-open` | high | `conflicts.status` present and not `cleared` |
++| 4 | `conflicts-override` | critical | `conflicts.override` true (reason recorded or flagged absent) |
++| 5 | `high-risk-no-counsel` | high | SOL expired/critical or high exposure band, and no outside counsel |
++| 6 | `stale-reserve` | medium | `reserve` set but not reviewed within `reserveStaleDays` (default 60) |
++| 7 | `hold-gap` | medium | status active/settlement/trial and `legalHold !== true` |
++| 8 | `missing-fields` | low | missing accrual/discovery date, venue, counsel, or exposure provenance |
++
++Thresholds are editable via `anomalyConfig: { staleDays, reserveStaleDays }`
++in the input. Anomalies are severity-sorted (critical → low) everywhere.
+ 
+ ## Rules-as-data
+ 
+@@ -81,6 +119,14 @@ than fall back.
+ 
+ The LLM only fills this shape; deadline arithmetic stays in the core.
+ 
++## Materiality rollups
++
++`materiality` (reserved / disclosed / monitored / none) describes the
++financial-reporting treatment and is a **firm-calibrated convention, not
++law** — defaults are illustrative and flagged for verification. Rollups
++report a rough midpoint `(low + high) / 2` per class; a class counts a
++matter even when no midpoint is computable.
++
+ ## What's better than the closed counterpart
+ 
+ - Limitation rules are **editable data with citations**, not a black box —
+@@ -89,6 +135,10 @@ The LLM only fills this shape; deadline arithmetic stays in the core.
+   diffable in git; the closed gallery item gives no such guarantee.
+ - Unknown rules and missing dates surface as `unverified` flags instead of
+   silently plausible dates.
++- Every named check of the closed counterpart's portfolio-status skill
++  (8 anomaly checks, deadline horizons, filters, materiality rollups,
++  stale reserves) is implemented as deterministic, unit-tested code —
++  see README for the check → test mapping.
+ - Runs anywhere (browser demo, Node CLI), exports CSV, no vendor lock-in.
+ 
+ ## Legal disclaimers

@@ -1,0 +1,1343 @@
+diff --git a/open-artifacts/ai-governance-benchmark/README.md b/open-artifacts/ai-governance-benchmark/README.md
+index 3e3092f..94673b9 100644
+--- a/open-artifacts/ai-governance-benchmark/README.md
++++ b/open-artifacts/ai-governance-benchmark/README.md
+@@ -5,30 +5,41 @@ Legal partner gallery). Scores an AI-governance assessment against a fully
+ transparent, versioned rubric: per-pillar maturity, weighted overall score,
+ evidence-backed gap list, Markdown report.
+ 
+-- **Deterministic core** — scoring, weighting, gaps, exports are pure
++- **Deterministic core** — scoring, weighting, gaps, ranked actions,
++  fictional-cohort percentiles, re-run diffs, and MD/CSV exports are pure
+   dependency-free JS; no LLM needed to run it. The optional LLM step only
+   interviews the user and never assigns levels itself (see `spec.md`).
+-- **Rules-as-data** — question bank, pillar weights, framework mappings, and
+-  maturity bands live in one versioned block in `core/core.js`; fork the data,
+-  not the logic.
+-- **Framework-grounded** — every gap cites NIST AI RMF / ISO/IEC 42001
+-  structures by name. Not legal advice; original questions, no clone of any
+-  firm's proprietary questionnaire.
++- **Rules-as-data** — question bank, pillar weights (incl. named sector
++  presets), framework mappings (NIST AI RMF, ISO/IEC 42001, and illustrative
++  EU AI Act arts. 5–15 refs tagged `[verify]`), high-risk flags, and maturity
++  bands live in one versioned block in `core/core.js`; fork the data, not the
++  logic.
++- **Framework-grounded** — every gap cites published structures by name, and
++  `result.actions[]` ranks what to address first (pillar weight × (3 − level)
++  × high-risk ×1.5, ties in bank order). Not legal advice; original
++  questions, no clone of any firm's proprietary questionnaire.
+ 
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 13 tests
++node --test "core/*.test.js"     # 25 tests
+ node examples/run.js             # regenerates examples/output.json + report.md
+ ```
+ 
+-Demo: open `demo/index.html` (standalone, styled with the shared design
+-tokens; prefilled with the fictional Northlake Logistics example).
++Demo: open `demo/index.html` — a guided interview (0–3 buttons + evidence per
++question) that builds the assessment JSON, then scores it: ranked next
++actions, fictional-cohort percentiles, re-run diff, MD + CSV export. Standalone
++in-repo via relative imports (`tokens.css`, `../core/core.js`) which
++`deploy/build-site.mjs` inlines at build time; prefilled with the fictional
++Northlake Logistics example.
+ 
+ ## Better than the closed counterpart
+ 
+ Goodwin's moat is its questionnaire; ours ships the rubric, the weights, and
+-the framework citations in the open, so any org can run, audit, re-weight,
+-and compare — and unanswered questions are flagged, never guessed.
++the framework citations in the open, so any org can run, audit, re-weight
++(`SECTOR_PRESETS`), benchmark (`compare()` against a clearly-labeled
++fictional cohort), re-assess (`diffAssessments()`), and act (`actions[]`)
++— and unanswered questions are flagged, never guessed.
+ 
+-All names, sectors, and evidence in `examples/` are fictional.
++All names, sectors, evidence, and cohort percentiles in `examples/` are
++fictional/illustrative.
+diff --git a/open-artifacts/ai-governance-benchmark/core/core.js b/open-artifacts/ai-governance-benchmark/core/core.js
+index b5416f2..c8f3f19 100644
+--- a/open-artifacts/ai-governance-benchmark/core/core.js
++++ b/open-artifacts/ai-governance-benchmark/core/core.js
+@@ -28,9 +28,11 @@ export const PILLARS = Object.freeze([
+ 
+ /**
+  * Rubric version. Bump when the question bank changes meaning.
++ * 1.1.0 — added euAiActRefs (illustrative, [verify]-tagged), highRisk flags,
++ *         ranked actions, fictional-cohort baseline, sector presets.
+  * @type {string}
+  */
+-export const RUBRIC_VERSION = '1.0.0';
++export const RUBRIC_VERSION = '1.1.0';
+ 
+ /**
+  * Maturity bands over the 0–3 score scale.
+@@ -46,26 +48,32 @@ export const MATURITY_BANDS = Object.freeze([
+ /**
+  * Question bank. `frameworkRefs` map each question to published-framework
+  * clauses so gaps cite something checkable — never invented.
++ * `euAiActRefs` map each question to EU AI Act arts. 5–15 structures as an
++ * ILLUSTRATIVE mapping — every ref is [verify]-tagged and must be checked
++ * against the official text; this is not legal advice.
++ * `highRisk: true` marks questions where weak governance most directly
++ * exposes high-risk AI uses; it feeds the action-priority ×1.5 multiplier.
+  * Frameworks referenced (structural mapping only, our own wording):
+  *  - NIST AI RMF 1.0 (GOVERN / MEASURE functions)
+  *  - ISO/IEC 42001:2023 (AI management-system clauses)
++ *  - EU AI Act arts. 5–15 (illustrative regime mapping, [verify])
+  * Each question answers on a 0–3 scale defined in LEVEL_LABELS.
+- * @type {ReadonlyArray<{id: string, pillar: string, text: string, frameworkRefs: string[], remediation: string}>}
++ * @type {ReadonlyArray<{id: string, pillar: string, text: string, frameworkRefs: string[], euAiActRefs: string[], highRisk?: boolean, remediation: string}>}
+  */
+ export const QUESTION_BANK = Object.freeze([
+-  { id: 'inv-1', pillar: 'inventory', text: 'Does the company maintain a current inventory of AI systems in use (built and third-party)?', frameworkRefs: ['NIST AI RMF GOVERN-1', 'ISO/IEC 42001 cl. 8.1 (operational planning)'], remediation: 'Stand up a lightweight AI-use registry with named owners and review cadence.' },
+-  { id: 'inv-2', pillar: 'inventory', text: 'Is each inventory entry assigned a business owner accountable for the system?', frameworkRefs: ['NIST AI RMF GOVERN-2', 'ISO/IEC 42001 cl. 5.3 (roles)'], remediation: 'Add an owner field to the registry; no orphan systems.' },
+-  { id: 'inv-3', pillar: 'inventory', text: 'Are data flows into and out of each AI system documented (inputs, outputs, retention)?', frameworkRefs: ['NIST AI RMF GOVERN-1', 'ISO/IEC 42001 cl. 8.1'], remediation: 'Attach a one-page data-flow note per system.' },
+-  { id: 'risk-1', pillar: 'risk_mgmt', text: 'Is a documented AI risk assessment completed before a new AI system goes live?', frameworkRefs: ['NIST AI RMF GOVERN-3 / MAP', 'ISO/IEC 42001 cl. 6.1 (risk)'], remediation: 'Adopt a pre-deployment risk template with sign-off.' },
+-  { id: 'risk-2', pillar: 'risk_mgmt', text: 'Are risks re-assessed on a set schedule or upon material change, not just at launch?', frameworkRefs: ['NIST AI RMF MEASURE-1', 'ISO/IEC 42001 cl. 9.2 (internal audit)'], remediation: 'Add quarterly or change-triggered re-assessment.' },
+-  { id: 'risk-3', pillar: 'risk_mgmt', text: 'Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?', frameworkRefs: ['NIST AI RMF GOVERN-3', 'ISO/IEC 42001 cl. 8.2'], remediation: 'Define a high-risk use list with mandatory review.' },
+-  { id: 'ven-1', pillar: 'vendor_mgmt', text: 'Are AI vendor tools reviewed (security, data use, model changes) before purchase?', frameworkRefs: ['NIST AI RMF GOVERN-4 (suppliers)'], remediation: 'Add AI vendors to procurement review with data-use questions.' },
+-  { id: 'ven-2', pillar: 'vendor_mgmt', text: 'Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?', frameworkRefs: ['NIST AI RMF GOVERN-4'], remediation: 'Adopt AI clause checklist for renewals and new deals.' },
+-  { id: 'ir-1', pillar: 'incident_response', text: 'Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?', frameworkRefs: ['NIST AI RMF GOVERN-5 / MEASURE-3', 'ISO/IEC 42001 cl. 8.3'], remediation: 'Extend the security IR plan with an AI intake path.' },
+-  { id: 'ir-2', pillar: 'incident_response', text: 'Are AI incidents triaged with severity levels and a named responder?', frameworkRefs: ['NIST AI RMF MEASURE-3'], remediation: 'Define severity rubric and on-call owner.' },
+-  { id: 'ir-3', pillar: 'incident_response', text: 'Are post-incident reviews fed back into policy or system changes?', frameworkRefs: ['NIST AI RMF MANAGE-4 / GOVERN-5', 'ISO/IEC 42001 cl. 10.2'], remediation: 'Add a lessons-learned step with tracked actions.' },
+-  { id: 'trn-1', pillar: 'training', text: 'Do employees receive training on approved vs. prohibited AI use for their role?', frameworkRefs: ['NIST AI RMF GOVERN-2', 'ISO/IEC 42001 cl. 7.2 (competence)'], remediation: 'Ship a role-based AI use training module.' },
+-  { id: 'trn-2', pillar: 'training', text: 'Is there an escalation path employees actually know for AI questions and concerns?', frameworkRefs: ['NIST AI RMF GOVERN-2 / GOVERN-5'], remediation: 'Publish one named contact and channel; test awareness.' },
++  { id: 'inv-1', pillar: 'inventory', text: 'Does the company maintain a current inventory of AI systems in use (built and third-party)?', frameworkRefs: ['NIST AI RMF GOVERN-1', 'ISO/IEC 42001 cl. 8.1 (operational planning)'], euAiActRefs: ['EU AI Act art. 11 (technical documentation) [verify]', 'EU AI Act art. 12 (record-keeping) [verify]'], remediation: 'Stand up a lightweight AI-use registry with named owners and review cadence.' },
++  { id: 'inv-2', pillar: 'inventory', text: 'Is each inventory entry assigned a business owner accountable for the system?', frameworkRefs: ['NIST AI RMF GOVERN-2', 'ISO/IEC 42001 cl. 5.3 (roles)'], euAiActRefs: ['EU AI Act art. 12 (record-keeping) [verify]'], remediation: 'Add an owner field to the registry; no orphan systems.' },
++  { id: 'inv-3', pillar: 'inventory', text: 'Are data flows into and out of each AI system documented (inputs, outputs, retention)?', frameworkRefs: ['NIST AI RMF GOVERN-1', 'ISO/IEC 42001 cl. 8.1'], euAiActRefs: ['EU AI Act art. 10 (data governance) [verify]', 'EU AI Act art. 12 (logging) [verify]'], remediation: 'Attach a one-page data-flow note per system.' },
++  { id: 'risk-1', pillar: 'risk_mgmt', text: 'Is a documented AI risk assessment completed before a new AI system goes live?', frameworkRefs: ['NIST AI RMF GOVERN-3 / MAP', 'ISO/IEC 42001 cl. 6.1 (risk)'], euAiActRefs: ['EU AI Act art. 9 (risk management system) [verify]'], remediation: 'Adopt a pre-deployment risk template with sign-off.' },
++  { id: 'risk-2', pillar: 'risk_mgmt', text: 'Are risks re-assessed on a set schedule or upon material change, not just at launch?', frameworkRefs: ['NIST AI RMF MEASURE-1', 'ISO/IEC 42001 cl. 9.2 (internal audit)'], euAiActRefs: ['EU AI Act art. 9 (risk management system) [verify]'], remediation: 'Add quarterly or change-triggered re-assessment.' },
++  { id: 'risk-3', pillar: 'risk_mgmt', text: 'Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?', frameworkRefs: ['NIST AI RMF GOVERN-3', 'ISO/IEC 42001 cl. 8.2'], euAiActRefs: ['EU AI Act art. 5 (prohibited practices) [verify]', 'EU AI Act art. 6 (classification rules) [verify]'], highRisk: true, remediation: 'Define a high-risk use list with mandatory review.' },
++  { id: 'ven-1', pillar: 'vendor_mgmt', text: 'Are AI vendor tools reviewed (security, data use, model changes) before purchase?', frameworkRefs: ['NIST AI RMF GOVERN-4 (suppliers)'], euAiActRefs: ['EU AI Act art. 9 (risk management system) [verify]'], remediation: 'Add AI vendors to procurement review with data-use questions.' },
++  { id: 'ven-2', pillar: 'vendor_mgmt', text: 'Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?', frameworkRefs: ['NIST AI RMF GOVERN-4'], euAiActRefs: ['EU AI Act art. 10 (data governance) [verify]'], remediation: 'Adopt AI clause checklist for renewals and new deals.' },
++  { id: 'ir-1', pillar: 'incident_response', text: 'Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?', frameworkRefs: ['NIST AI RMF GOVERN-5 / MEASURE-3', 'ISO/IEC 42001 cl. 8.3'], euAiActRefs: ['EU AI Act art. 12 (logs enabling incident detection) [verify]'], remediation: 'Extend the security IR plan with an AI intake path.' },
++  { id: 'ir-2', pillar: 'incident_response', text: 'Are AI incidents triaged with severity levels and a named responder?', frameworkRefs: ['NIST AI RMF MEASURE-3'], euAiActRefs: ['EU AI Act art. 9 (risk management; severity handling) [verify]'], remediation: 'Define severity rubric and on-call owner.' },
++  { id: 'ir-3', pillar: 'incident_response', text: 'Are post-incident reviews fed back into policy or system changes?', frameworkRefs: ['NIST AI RMF MANAGE-4 / GOVERN-5', 'ISO/IEC 42001 cl. 10.2'], euAiActRefs: ['EU AI Act art. 9 (risk management; corrective actions) [verify]'], remediation: 'Add a lessons-learned step with tracked actions.' },
++  { id: 'trn-1', pillar: 'training', text: 'Do employees receive training on approved vs. prohibited AI use for their role?', frameworkRefs: ['NIST AI RMF GOVERN-2', 'ISO/IEC 42001 cl. 7.2 (competence)'], euAiActRefs: ['EU AI Act art. 14 (human oversight; competence) [verify]'], remediation: 'Ship a role-based AI use training module.' },
++  { id: 'trn-2', pillar: 'training', text: 'Is there an escalation path employees actually know for AI questions and concerns?', frameworkRefs: ['NIST AI RMF GOVERN-2 / GOVERN-5'], euAiActRefs: ['EU AI Act art. 14 (human oversight; escalation to humans) [verify]'], remediation: 'Publish one named contact and channel; test awareness.' },
+ ]);
+ 
+ /** Level labels for the 0–3 answer scale. @type {ReadonlyArray<string>} */
+@@ -76,6 +84,54 @@ export const LEVEL_LABELS = Object.freeze([
+   '3 — Defined, repeatable, evidenced',
+ ]);
+ 
++/**
++ * Named sector weight presets (rules-as-data). Pass one via
++ * `scoreAssessment(input, { preset: 'healthcare' })`; explicit
++ * `pillarWeights` still win over the preset.
++ * @type {Readonly<Record<string, {label: string, rationale: string, pillarWeights: Record<string, number>}>>}
++ */
++export const SECTOR_PRESETS = Object.freeze({
++  general: {
++    label: 'General (default)',
++    rationale: 'Balanced default identical to the shipped PILLARS weights.',
++    pillarWeights: { inventory: 0.2, risk_mgmt: 0.25, vendor_mgmt: 0.2, incident_response: 0.2, training: 0.15 },
++  },
++  financial_services: {
++    label: 'Financial services',
++    rationale: 'Money-and-credit decisions put risk management and incident response first.',
++    pillarWeights: { inventory: 0.15, risk_mgmt: 0.3, vendor_mgmt: 0.2, incident_response: 0.25, training: 0.1 },
++  },
++  healthcare: {
++    label: 'Healthcare',
++    rationale: 'Clinical-adjacent AI raises risk management and vendor (device/model) scrutiny.',
++    pillarWeights: { inventory: 0.15, risk_mgmt: 0.3, vendor_mgmt: 0.25, incident_response: 0.15, training: 0.15 },
++  },
++  public_sector: {
++    label: 'Public sector',
++    rationale: 'Accountability-facing: inventory transparency and workforce training weigh heavier.',
++    pillarWeights: { inventory: 0.25, risk_mgmt: 0.2, vendor_mgmt: 0.15, incident_response: 0.15, training: 0.25 },
++  },
++});
++
++/**
++ * FICTIONAL reference cohort for percentile comparison — illustrative data,
++ * NOT market research. Breakpoints: `{ score, pctl }` = share of the fictional
++ * cohort at or below `score`. `_overall` maps the weighted overall score.
++ * Swap this block (and keep the label) to re-version against a real cohort.
++ * @type {Readonly<Record<string, ReadonlyArray<{score: number, pctl: number}>>>}
++ */
++export const COHORT_BASELINE = Object.freeze({
++  inventory: [{ score: 0, pctl: 5 }, { score: 1, pctl: 40 }, { score: 2, pctl: 75 }, { score: 3, pctl: 97 }],
++  risk_mgmt: [{ score: 0, pctl: 4 }, { score: 1, pctl: 30 }, { score: 2, pctl: 70 }, { score: 3, pctl: 95 }],
++  vendor_mgmt: [{ score: 0, pctl: 8 }, { score: 1, pctl: 45 }, { score: 2, pctl: 78 }, { score: 3, pctl: 98 }],
++  incident_response: [{ score: 0, pctl: 6 }, { score: 1, pctl: 38 }, { score: 2, pctl: 72 }, { score: 3, pctl: 96 }],
++  training: [{ score: 0, pctl: 10 }, { score: 1, pctl: 48 }, { score: 2, pctl: 80 }, { score: 3, pctl: 98 }],
++  _overall: [{ score: 0, pctl: 5 }, { score: 1, pctl: 35 }, { score: 2, pctl: 72 }, { score: 3, pctl: 96 }],
++});
++
++/** Cohort label — always surfaced with percentiles so they never read as real market data. @type {string} */
++export const COHORT_LABEL = 'fictional reference cohort (illustrative, not market data)';
++
+ /* ------------------------------------------------------------------ *
+  * Logic
+  * ------------------------------------------------------------------ */
+@@ -119,20 +175,28 @@ function normalizeAnswers(assessment) {
+  * Score a full assessment.
+  *
+  * @param {{answers: Array<{questionId: string, level: number, evidence?: string}>, org?: object}} assessment
+- * @param {{pillarWeights?: Record<string, number>, gapThreshold?: number}} [config]
++ * @param {{preset?: string, pillarWeights?: Record<string, number>, gapThreshold?: number}} [config]
+  * @returns {{
+  *   rubricVersion: string, org: object,
+  *   pillars: Array<{id: string, name: string, weight: number, score: number, maturity: {id: string, label: string},
+- *     questions: Array<{id: string, text: string, level: number, levelLabel: string, evidence: string, answered: boolean, frameworkRefs: string[], remediation: string}>}>,
++ *     questions: Array<{id: string, text: string, level: number, levelLabel: string, evidence: string, answered: boolean, frameworkRefs: string[], euAiActRefs: string[], highRisk: boolean, remediation: string}>}>,
+  *   overall: {score: number, maturity: {id: string, label: string}},
+- *   gaps: Array<{questionId: string, pillar: string, text: string, level: number, evidence: string, frameworkRefs: string[], remediation: string}>,
++ *   gaps: Array<{questionId: string, pillar: string, text: string, level: number, evidence: string, frameworkRefs: string[], euAiActRefs: string[], highRisk: boolean, remediation: string, priority: number}>,
++ *   actions: Array<{questionId: string, pillar: string, text: string, level: number, remediation: string, highRisk: boolean, priority: number}>,
+  *   unanswered: string[],
+  *   warnings: string[]
+  * }}
+- * @throws {Error} on unknown question ids, invalid levels, or bad weights
++ * @throws {Error} on unknown question ids, invalid levels, unknown preset, or bad weights
+  */
+ export function scoreAssessment(assessment, config = {}) {
+-  const weights = { ...(Object.fromEntries(PILLARS.map((p) => [p.id, p.weight]))), ...config.pillarWeights };
++  const defaults = Object.fromEntries(PILLARS.map((p) => [p.id, p.weight]));
++  let base = defaults;
++  if (config.preset != null) {
++    const preset = SECTOR_PRESETS[config.preset];
++    if (!preset) throw new Error(`Unknown preset "${config.preset}" (available: ${Object.keys(SECTOR_PRESETS).join(', ')})`);
++    base = { ...defaults, ...preset.pillarWeights };
++  }
++  const weights = { ...base, ...config.pillarWeights };
+   const weightSum = PILLARS.reduce((s, p) => s + (weights[p.id] ?? 0), 0);
+   if (Math.abs(weightSum - 1) > 1e-9) throw new Error(`Pillar weights must sum to 1 (got ${weightSum})`);
+   const gapThreshold = config.gapThreshold ?? 1;
+@@ -143,7 +207,7 @@ export function scoreAssessment(assessment, config = {}) {
+   const pillars = PILLARS.map((p) => {
+     const qs = QUESTION_BANK.filter((q) => q.pillar === p.id).map((q) => {
+       const a = byId.get(q.id);
+-      return { id: q.id, text: q.text, level: a.level, levelLabel: LEVEL_LABELS[a.level], evidence: a.evidence, answered: a.answered, frameworkRefs: [...q.frameworkRefs], remediation: q.remediation };
++      return { id: q.id, text: q.text, level: a.level, levelLabel: LEVEL_LABELS[a.level], evidence: a.evidence, answered: a.answered, frameworkRefs: [...q.frameworkRefs], euAiActRefs: [...q.euAiActRefs], highRisk: !!q.highRisk, remediation: q.remediation };
+     });
+     const score = qs.length ? qs.reduce((s, q) => s + q.level, 0) / qs.length : 0;
+     return { id: p.id, name: p.name, weight: weights[p.id], score: round2(score), maturity: maturityBand(score), questions: qs };
+@@ -155,9 +219,19 @@ export function scoreAssessment(assessment, config = {}) {
+   const unanswered = [];
+   for (const p of pillars) for (const q of p.questions) {
+     if (!q.answered) unanswered.push(q.id);
+-    if (q.level <= gapThreshold) gaps.push({ questionId: q.id, pillar: p.id, text: q.text, level: q.level, evidence: q.evidence, frameworkRefs: q.frameworkRefs, remediation: q.remediation });
++    if (q.level <= gapThreshold) gaps.push({
++      questionId: q.id, pillar: p.id, text: q.text, level: q.level, evidence: q.evidence,
++      frameworkRefs: q.frameworkRefs, euAiActRefs: q.euAiActRefs, highRisk: q.highRisk, remediation: q.remediation,
++      priority: round4(weights[p.id] * (3 - q.level) * (q.highRisk ? 1.5 : 1)),
++    });
+   }
+ 
++  // Ranked action plan: gaps sorted by descending priority (weight × (3 − level) × high-risk ×1.5).
++  // Gaps are built in question-bank order and the sort is stable, so ties keep bank order.
++  const actions = gaps
++    .map((g) => ({ questionId: g.questionId, pillar: g.pillar, text: g.text, level: g.level, remediation: g.remediation, highRisk: g.highRisk, priority: g.priority }))
++    .sort((a, b) => b.priority - a.priority);
++
+   const warnings = [];
+   if (unanswered.length) warnings.push(`${unanswered.length} unanswered question(s) scored as 0 — not guessed.`);
+ 
+@@ -165,7 +239,7 @@ export function scoreAssessment(assessment, config = {}) {
+     rubricVersion: RUBRIC_VERSION,
+     org: assessment?.org ?? {},
+     pillars, overall: { score: overallScore, maturity: maturityBand(overallScore) },
+-    gaps, unanswered, warnings,
++    gaps, actions, unanswered, warnings,
+   };
+ }
+ 
+@@ -188,11 +262,124 @@ export function exportReportMd(result) {
+     lines.push(`- **${g.questionId}** (${g.pillar}, level ${g.level}) — ${g.text}`);
+     if (g.evidence) lines.push(`  - Evidence: “${g.evidence}”`);
+     if (g.frameworkRefs.length) lines.push(`  - Framework refs: ${g.frameworkRefs.join('; ')}`);
++    if (g.euAiActRefs?.length) lines.push(`  - EU AI Act (illustrative, [verify]): ${g.euAiActRefs.join('; ')}`);
+     lines.push(`  - Remediation: ${g.remediation}`);
+   }
+-  lines.push('', '---', '', '_Deterministic output of the open ai-governance-benchmark rubric. Framework references point at published structures (NIST AI RMF 1.0, ISO/IEC 42001:2023) for verification; this tool is not legal advice and is not affiliated with any firm._');
++
++  lines.push('', '## Next actions (ranked)', '');
++  lines.push('_Priority = pillar weight × (3 − level) × (high-risk question ×1.5). Ties keep question-bank order. Address the top of this list first._', '');
++  if (!result.actions?.length) lines.push('No actions — no gaps at the configured threshold.');
++  for (const [i, a] of (result.actions ?? []).entries()) {
++    lines.push(`${i + 1}. **${a.questionId}** (priority ${a.priority.toFixed(3)}${a.highRisk ? ' · high-risk ×1.5' : ''}) — ${a.remediation}`);
++  }
++
++  const cmp = compare(result);
++  lines.push('', '## Fictional-cohort comparison (illustrative)', '',
++    `Percentile within a ${cmp.cohort} — not real market data.`, '',
++    '| Pillar | Score | Percentile |', '|---|---|---|');
++  for (const p of cmp.pillars) lines.push(`| ${p.name} | ${p.score.toFixed(2)} | p${p.percentile} |`);
++  lines.push(`| Overall | ${cmp.overall.score.toFixed(2)} | p${cmp.overall.percentile} |`);
++
++  lines.push('', 'Regime coverage: NIST AI RMF 1.0 · ISO/IEC 42001:2023 · EU AI Act arts. 5–15 (illustrative mapping — [verify] each ref against the official text; not legal advice).');
++  lines.push('', '---', '', '_Deterministic output of the open ai-governance-benchmark rubric. Framework references point at published structures (NIST AI RMF 1.0, ISO/IEC 42001:2023, EU AI Act arts. 5–15) for verification; this tool is not legal advice and is not affiliated with any firm._');
+   return lines.join('\n');
+ }
+-
+ /** @param {number} n @returns {number} */
+ function round2(n) { return Math.round(n * 100) / 100; }
++
++/** @param {number} n @returns {number} */
++function round4(n) { return Math.round(n * 10000) / 10000; }
++
++/**
++ * Percentile of `score` within a breakpoint list (piecewise-constant step:
++ * the pctl of the last breakpoint whose score it meets or beats).
++ * @param {number} score @param {ReadonlyArray<{score: number, pctl: number}>} breakpoints
++ * @returns {number}
++ */
++function percentileFor(score, breakpoints) {
++  let pctl = breakpoints[0].pctl;
++  for (const b of breakpoints) if (score >= b.score - 1e-9) pctl = b.pctl;
++  return pctl;
++}
++
++/**
++ * Compare a scoreAssessment result against the FICTIONAL reference cohort.
++ * The cohort label is part of the result — always surface it, never present
++ * these percentiles as real market data.
++ * @param {ReturnType<scoreAssessment>} result
++ * @returns {{cohort: string, pillars: Array<{id: string, name: string, score: number, percentile: number}>, overall: {score: number, percentile: number}}}
++ */
++export function compare(result) {
++  return {
++    cohort: COHORT_LABEL,
++    pillars: result.pillars.map((p) => ({ id: p.id, name: p.name, score: p.score, percentile: percentileFor(p.score, COHORT_BASELINE[p.id]) })),
++    overall: { score: result.overall.score, percentile: percentileFor(result.overall.score, COHORT_BASELINE._overall) },
++  };
++}
++
++/**
++ * Diff two assessments (e.g. baseline vs. re-run after remediation).
++ * Both are scored with the same config; per-question deltas are reported for
++ * changed answers only, with improved/regressed direction flags.
++ * @param {{answers: Array<{questionId: string, level: number, evidence?: string}>, org?: object}} prevAssessment
++ * @param {{answers: Array<{questionId: string, level: number, evidence?: string}>, org?: object}} currAssessment
++ * @param {{preset?: string, pillarWeights?: Record<string, number>, gapThreshold?: number}} [config]
++ * @returns {{
++ *   rubricVersion: string,
++ *   questions: Array<{questionId: string, pillar: string, text: string, prevLevel: number, currLevel: number, delta: number, direction: 'improved'|'regressed'}>,
++ *   pillars: Array<{id: string, name: string, prevScore: number, currScore: number, delta: number}>,
++ *   overall: {prevScore: number, currScore: number, delta: number},
++ *   summary: {improved: number, regressed: number, unchanged: number}
++ * }}
++ */
++export function diffAssessments(prevAssessment, currAssessment, config = {}) {
++  const prev = scoreAssessment(prevAssessment, config);
++  const curr = scoreAssessment(currAssessment, config);
++  let improved = 0, regressed = 0, unchanged = 0;
++  const questions = [];
++  for (const pp of prev.pillars) {
++    const cp = curr.pillars.find((x) => x.id === pp.id);
++    for (const q of pp.questions) {
++      const cq = cp.questions.find((x) => x.id === q.id);
++      const delta = cq.level - q.level;
++      if (delta > 0) { improved++; questions.push({ questionId: q.id, pillar: pp.id, text: q.text, prevLevel: q.level, currLevel: cq.level, delta, direction: 'improved' }); }
++      else if (delta < 0) { regressed++; questions.push({ questionId: q.id, pillar: pp.id, text: q.text, prevLevel: q.level, currLevel: cq.level, delta, direction: 'regressed' }); }
++      else unchanged++;
++    }
++  }
++  const pillars = prev.pillars.map((pp, i) => {
++    const cp = curr.pillars[i];
++    return { id: pp.id, name: pp.name, prevScore: pp.score, currScore: cp.score, delta: round2(cp.score - pp.score) };
++  });
++  return {
++    rubricVersion: RUBRIC_VERSION,
++    questions,
++    pillars,
++    overall: { prevScore: prev.overall.score, currScore: curr.overall.score, delta: round2(curr.overall.score - prev.overall.score) },
++    summary: { improved, regressed, unchanged },
++  };
++}
++
++/**
++ * Quote one CSV field per RFC4180 (quote fields containing comma, quote, CR, LF;
++ * double embedded quotes).
++ * @param {unknown} v @returns {string}
++ */
++function csvField(v) {
++  const s = String(v ?? '');
++  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
++}
++
++/**
++ * Render the gap list as RFC4180 CSV (CRLF line endings) for tracker import.
++ * @param {ReturnType<scoreAssessment>} result
++ * @returns {string}
++ */
++export function exportGapsCsv(result) {
++  const header = ['questionId', 'pillar', 'level', 'text', 'evidence', 'frameworkRefs', 'euAiActRefs', 'remediation', 'priority'];
++  const rows = [header];
++  for (const g of result.gaps) {
++    rows.push([g.questionId, g.pillar, String(g.level), g.text, g.evidence, g.frameworkRefs.join('; '), g.euAiActRefs.join('; '), g.remediation, g.priority.toFixed(3)]);
++  }
++  return rows.map((r) => r.map(csvField).join(',')).join('\r\n') + '\r\n';
++}
+diff --git a/open-artifacts/ai-governance-benchmark/core/core.test.js b/open-artifacts/ai-governance-benchmark/core/core.test.js
+index 8268be8..0750cca 100644
+--- a/open-artifacts/ai-governance-benchmark/core/core.test.js
++++ b/open-artifacts/ai-governance-benchmark/core/core.test.js
+@@ -1,7 +1,11 @@
+ /** Tests for ai-governance-benchmark core. Run: node --test core/ */
+ import { test, describe } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { PILLARS, QUESTION_BANK, scoreAssessment, maturityBand, exportReportMd, RUBRIC_VERSION } from './core.js';
++import { readFileSync } from 'node:fs';
++import {
++  PILLARS, QUESTION_BANK, scoreAssessment, maturityBand, exportReportMd, RUBRIC_VERSION,
++  SECTOR_PRESETS, COHORT_BASELINE, compare, diffAssessments, exportGapsCsv,
++} from './core.js';
+ 
+ /** Answer every question at the given level. */
+ function allAt(level) {
+@@ -93,3 +97,149 @@ describe('exportReportMd', () => {
+     assert.ok(md.includes('not legal advice'));
+   });
+ });
++
++describe('ranked action plan', () => {
++  test('allAt(0): actions strictly non-increasing priority, ties in bank order', () => {
++    const r = scoreAssessment(allAt(0));
++    assert.equal(r.actions.length, QUESTION_BANK.length);
++    const prios = r.actions.map((a) => a.priority);
++    for (let i = 1; i < prios.length; i++) assert.ok(prios[i - 1] >= prios[i] - 1e-9, `pos ${i}: ${prios[i - 1]} < ${prios[i]}`);
++    const bankIndex = new Map(QUESTION_BANK.map((q, i) => [q.id, i]));
++    for (let i = 1; i < r.actions.length; i++) {
++      if (Math.abs(prios[i - 1] - prios[i]) < 1e-9) {
++        assert.ok(bankIndex.get(r.actions[i - 1].questionId) < bankIndex.get(r.actions[i].questionId), 'tie not in bank order');
++      }
++    }
++  });
++  test('priority = pillarWeight × (3 − level) × (highRisk ? 1.5 : 1); high-risk risk-3 ranks first', () => {
++    const r = scoreAssessment(allAt(0));
++    const riskW = PILLARS.find((p) => p.id === 'risk_mgmt').weight;
++    assert.equal(r.actions[0].questionId, 'risk-3');
++    assert.equal(r.actions[0].priority, Math.round(riskW * 3 * 1.5 * 10000) / 10000);
++    assert.equal(r.actions[0].highRisk, true);
++    const ir1 = r.actions.find((a) => a.questionId === 'ir-1');
++    assert.equal(ir1.priority, Math.round(PILLARS.find((p) => p.id === 'incident_response').weight * 3 * 10000) / 10000);
++    assert.equal(ir1.highRisk, false);
++  });
++  test('allAt(3): no gaps → no actions', () => {
++    assert.equal(scoreAssessment(allAt(3)).actions.length, 0);
++  });
++});
++
++describe('fictional cohort baseline', () => {
++  test('fixture scores map to declared percentiles; cohort labeled fictional', () => {
++    const c = compare(scoreAssessment(allAt(0)));
++    assert.match(c.cohort, /fictional/i);
++    assert.equal(c.pillars.find((p) => p.id === 'inventory').percentile, COHORT_BASELINE.inventory[0].pctl);
++    assert.equal(c.overall.percentile, COHORT_BASELINE._overall[0].pctl);
++    const c2 = compare(scoreAssessment(allAt(1)));
++    assert.equal(c2.pillars.find((p) => p.id === 'risk_mgmt').percentile, COHORT_BASELINE.risk_mgmt[1].pctl);
++    assert.equal(c2.overall.percentile, COHORT_BASELINE._overall[1].pctl);
++  });
++});
++
++describe('diffAssessments', () => {
++  test('one +1 answer is flagged improved with positive pillar/overall deltas', () => {
++    const prev = allAt(1);
++    const curr = { ...prev, answers: prev.answers.map((a) => (a.questionId === 'ir-1' ? { ...a, level: 2 } : a)) };
++    const d = diffAssessments(prev, curr);
++    const ir1 = d.questions.find((q) => q.questionId === 'ir-1');
++    assert.equal(ir1.delta, 1);
++    assert.equal(ir1.direction, 'improved');
++    assert.equal(d.summary.improved, 1);
++    assert.equal(d.summary.regressed, 0);
++    assert.equal(d.summary.unchanged, QUESTION_BANK.length - 1);
++    const ir = d.pillars.find((p) => p.id === 'incident_response');
++    assert.equal(ir.prevScore, 1);
++    assert.equal(ir.currScore, 1.33); // (2+1+1)/3 rounded to 2dp, as scored
++    assert.ok(ir.delta > 0);
++    assert.ok(d.overall.delta > 0);
++  });
++  test('one −1 answer is flagged regressed', () => {
++    const prev = allAt(2);
++    const curr = { ...prev, answers: prev.answers.map((a) => (a.questionId === 'trn-1' ? { ...a, level: 1 } : a)) };
++    const d = diffAssessments(prev, curr);
++    assert.equal(d.questions.find((q) => q.questionId === 'trn-1').direction, 'regressed');
++    assert.equal(d.summary.regressed, 1);
++    assert.ok(d.overall.delta < 0);
++  });
++});
++
++describe('exportGapsCsv', () => {
++  /** Minimal RFC4180 parser for round-trip verification. */
++  function parseCsv(s) {
++    const rows = []; let row = []; let field = ''; let inQ = false; let i = 0;
++    while (i < s.length) {
++      const ch = s[i];
++      if (inQ) {
++        if (ch === '"') { if (s[i + 1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
++        field += ch; i++; continue;
++      }
++      if (ch === '"') { inQ = true; i++; continue; }
++      if (ch === ',') { row.push(field); field = ''; i++; continue; }
++      if (ch === '\r') { i++; continue; }
++      if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
++      field += ch; i++;
++    }
++    if (field.length || row.length) { row.push(field); rows.push(row); }
++    return rows;
++  }
++  test('RFC4180 quoting: comma + quote in evidence round-trips', () => {
++    const tricky = 'a, b "quoted", c';
++    const r = scoreAssessment({ answers: [{ questionId: 'inv-1', level: 0, evidence: tricky }] }, { gapThreshold: 1 });
++    const csv = exportGapsCsv(r);
++    const header = parseCsv(csv.split('\r\n')[0])[0];
++    const row = parseCsv(csv).find((x) => x[0] === 'inv-1');
++    assert.equal(header.length, row.length);
++    assert.equal(row[header.indexOf('evidence')], tricky);
++  });
++});
++
++describe('regime mapping', () => {
++  test('every question carries ≥1 EU AI Act ref tagged [verify]', () => {
++    for (const q of QUESTION_BANK) {
++      assert.ok(q.euAiActRefs.length >= 1, q.id);
++      for (const ref of q.euAiActRefs) {
++        assert.match(ref, /EU AI Act art\. (5|6|9|10|11|12|13|14|15)/, `${q.id}: ${ref}`);
++        assert.ok(ref.includes('[verify]'), `${q.id}: ${ref}`);
++      }
++    }
++  });
++});
++
++describe('sector presets', () => {
++  test('every preset has all pillar weights summing to 1', () => {
++    for (const [id, preset] of Object.entries(SECTOR_PRESETS)) {
++      const sum = PILLARS.reduce((s, p) => s + preset.pillarWeights[p.id], 0);
++      assert.ok(Math.abs(sum - 1) < 1e-9, `${id}: ${sum}`);
++    }
++  });
++  test('scoreAssessment applies a named preset; unknown preset throws', () => {
++    const r = scoreAssessment(allAt(2), { preset: 'healthcare' });
++    assert.equal(r.pillars.find((p) => p.id === 'risk_mgmt').weight, SECTOR_PRESETS.healthcare.pillarWeights.risk_mgmt);
++    assert.throws(() => scoreAssessment(allAt(2), { preset: 'nope' }), /nope/);
++  });
++});
++
++describe('exportReportMd additions', () => {
++  test('report includes ranked Next actions, fictional-cohort comparison, regime coverage', () => {
++    const md = exportReportMd(scoreAssessment(allAt(0)));
++    const na = md.slice(md.indexOf('## Next actions'));
++    assert.ok(na.indexOf('risk-3') < na.indexOf('inv-1'));
++    assert.match(md, /Fictional-cohort/i);
++    assert.match(md, /fictional/i);
++    assert.ok(md.includes('EU AI Act'));
++    assert.ok(md.includes('[verify]'));
++  });
++});
++
++describe('demo conventions', () => {
++  test('demo keeps the relative-import convention (deploy/build-site.mjs inlines) and ships the guided interview', () => {
++    const html = readFileSync(new URL('../demo/index.html', import.meta.url), 'utf8');
++    assert.ok(html.includes('<link rel="stylesheet" href="tokens.css">'), 'tokens.css relative link');
++    assert.ok(html.includes("from '../core/core.js'"), 'core.js relative import');
++    assert.ok(html.includes('data-qid='), 'interview question cards');
++    assert.ok(html.includes('diffAssessments'), 're-run diff');
++    assert.ok(html.includes('exportGapsCsv'), 'CSV export');
++  });
++});
+diff --git a/open-artifacts/ai-governance-benchmark/demo/index.html b/open-artifacts/ai-governance-benchmark/demo/index.html
+index cd0b01e..27fe800 100644
+--- a/open-artifacts/ai-governance-benchmark/demo/index.html
++++ b/open-artifacts/ai-governance-benchmark/demo/index.html
+@@ -13,8 +13,8 @@
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 18px 0; }
+   main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px 0 64px; }
+   @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
+-  textarea { width: 100%; min-height: 420px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
+-  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 0 24px; }
++  textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
++  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 12px 24px 0; }
+   button:hover { background: var(--accent); color: var(--text); }
+   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
+   table { border-collapse: collapse; width: 100%; font-size: 14px; }
+@@ -26,6 +26,26 @@
+   .gap code { font-family: var(--font-mono); font-size: 11px; }
+   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 8px; }
+   .muted { color: var(--text-secondary); font-size: 13px; }
++  /* Guided interview */
++  .meta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
++  .meta-row label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
++  .meta-row input, .meta-row select { border: var(--hairline); background: #fff; padding: 8px 10px; font-family: var(--font-mono); font-size: 13px; }
++  .pillar-h { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 22px 0 6px; border-bottom: var(--hairline); padding-bottom: 4px; }
++  .qcard { border: var(--hairline); background: #fff; padding: 12px 14px; margin: 8px 0; }
++  .qcard .qtext { font-size: 14px; }
++  .qcard .qtext code { font-family: var(--font-mono); font-size: 11px; }
++  .qcard .refs { margin-top: 4px; }
++  .lvls { display: flex; gap: 8px; margin: 10px 0 8px; }
++  .lvls button { margin: 0; padding: 6px 14px; background: var(--hover); color: var(--text); font-size: 12px; }
++  .lvls button.sel { background: var(--text); color: var(--bg); }
++  .lvls button:hover { background: var(--accent); color: var(--text); }
++  .ev { width: 100%; border: var(--hairline); background: var(--bg); padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; }
++  .action { display: flex; gap: 10px; align-items: baseline; border: var(--hairline); padding: 8px 12px; margin: 6px 0; background: #fff; font-size: 13px; }
++  .action .rank { font-family: var(--font-mono); font-size: 12px; }
++  .action .prio { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
++  .action.hirisk { border-left: 4px solid var(--accent); }
++  .dir-improved { color: var(--ok); font-family: var(--font-mono); font-size: 12px; }
++  .dir-regressed { color: var(--bad); font-family: var(--font-mono); font-size: 12px; }
+ </style>
+ </head>
+ <body>
+@@ -33,21 +53,29 @@
+   <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
+   <h1>ai-governance-benchmark</h1>
+   <div class="rule"></div>
+-  <p class="lede">Score an AI-governance assessment against an open, versioned rubric. Deterministic, evidence-first, framework-grounded. Fictional data below.</p>
++  <p class="lede">Guided interview → deterministic scoring against an open, versioned rubric: ranked next actions, fictional-cohort percentiles, re-run diff, MD + CSV exports. Fictional data below.</p>
+ </div></header>
+ 
+ <div class="wrap"><main>
+   <section>
+-    <div class="sec">Assessment JSON (editable)</div>
+-    <textarea id="input" spellcheck="false"></textarea>
++    <div class="sec">Guided interview</div>
++    <div class="meta-row">
++      <label for="org">Organization</label>
++      <input id="org" type="text" size="28">
++      <label for="preset">Sector preset</label>
++      <select id="preset"></select>
++    </div>
++    <div id="interview"></div>
+     <button id="run">Run benchmark →</button>
+     <div id="err" class="err"></div>
++    <div class="sec">Assessment JSON (built from the interview; edits live until the next interview change)</div>
++    <textarea id="input" spellcheck="false"></textarea>
+   </section>
+   <section id="out" aria-live="polite"></section>
+ </main></div>
+ 
+ <script type="module">
+-import { scoreAssessment, exportReportMd } from '../core/core.js';
++import { scoreAssessment, exportReportMd, compare, diffAssessments, exportGapsCsv, PILLARS, QUESTION_BANK, LEVEL_LABELS, SECTOR_PRESETS } from '../core/core.js';
+ 
+ const SAMPLE = {
+   org: { name: "Northlake Logistics (fictional)", sector: "freight brokerage", assessment_date: "2026-10-12" },
+@@ -69,30 +97,146 @@ const SAMPLE = {
+ };
+ 
+ const $ = (id) => document.getElementById(id);
+-$('input').value = JSON.stringify(SAMPLE, null, 2);
++const state = { org: { ...SAMPLE.org }, levels: {}, evidence: {} };
++for (const a of SAMPLE.answers) { state.levels[a.questionId] = a.level; state.evidence[a.questionId] = a.evidence; }
++
++/* ---- Build the interview UI from the question bank (rules-as-data) ---- */
++function buildInterview() {
++  const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
++  let h = '';
++  for (const p of PILLARS) {
++    h += `<div class="pillar-h">${escHtml(p.name)} · ${(p.weight * 100).toFixed(0)}%</div>`;
++    for (const q of QUESTION_BANK.filter((x) => x.pillar === p.id)) {
++      h += `<div class="qcard" data-qid="${escHtml(q.id)}">
++        <div class="qtext"><code>${escHtml(q.id)}</code> ${escHtml(q.text)}${q.highRisk ? ' <span class="muted">· high-risk ×1.5</span>' : ''}</div>
++        <div class="refs muted">${escHtml(q.frameworkRefs.join('; '))} · ${escHtml(q.euAiActRefs.join('; '))}</div>
++        <div class="lvls">${LEVEL_LABELS.map((label, i) =>
++          `<button type="button" data-level="${i}" title="${escHtml(label)}">${i}</button>`).join('')}</div>
++        <input class="ev" type="text" placeholder="Evidence (optional) — what you observed, verbatim where possible">
++      </div>`;
++    }
++  }
++  $('interview').innerHTML = h;
++  refreshSelection();
++}
++
++function refreshSelection() {
++  for (const card of document.querySelectorAll('.qcard')) {
++    const qid = card.dataset.qid;
++    for (const b of card.querySelectorAll('.lvls button')) {
++      b.classList.toggle('sel', Number(b.dataset.level) === (state.levels[qid] ?? 0));
++    }
++    const ev = card.querySelector('.ev');
++    if (ev.value !== (state.evidence[qid] ?? '')) ev.value = state.evidence[qid] ?? '';
++  }
++}
++
++function buildAssessment() {
++  return {
++    org: state.org,
++    answers: QUESTION_BANK.map((q) => ({ questionId: q.id, level: state.levels[q.id] ?? 0, evidence: state.evidence[q.id] ?? '' })),
++  };
++}
++function syncJson() { $('input').value = JSON.stringify(buildAssessment(), null, 2); }
++
++$('interview').addEventListener('click', (e) => {
++  const b = e.target.closest('.lvls button');
++  if (!b) return;
++  const card = b.closest('.qcard');
++  state.levels[card.dataset.qid] = Number(b.dataset.level);
++  refreshSelection();
++  syncJson();
++});
++$('interview').addEventListener('input', (e) => {
++  const ev = e.target.closest('.ev');
++  if (!ev) return;
++  state.evidence[ev.closest('.qcard').dataset.qid] = ev.value;
++  syncJson();
++});
++$('org').addEventListener('input', () => { state.org.name = $('org').value; syncJson(); });
+ 
++const presetSel = $('preset');
++for (const [id, preset] of Object.entries(SECTOR_PRESETS)) {
++  const opt = document.createElement('option');
++  opt.value = id; opt.textContent = preset.label;
++  presetSel.appendChild(opt);
++}
++
++/* ---- Run + render ---- */
++let prevAssessment = null;
+ function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+ 
+-function render(r) {
++function render(r, d) {
++  const cmp = compare(r);
+   let h = `<div class="sec">Overall — ${esc(r.org?.name ?? '')}</div>
+     <p style="font-size:26px;letter-spacing:-0.01em">${r.overall.score.toFixed(2)} <span class="muted">/ 3.00</span>
+-    · <span class="band ${r.overall.maturity.id}">${esc(r.overall.maturity.label)}</span></p>`;
++    · <span class="band ${r.overall.maturity.id}">${esc(r.overall.maturity.label)}</span>
++    <span class="muted">· p${cmp.overall.percentile} of ${esc(cmp.cohort)}</span></p>`;
+   if (r.warnings.length) h += `<p class="muted">⚠ ${esc(r.warnings.join(' '))}</p>`;
+-  h += `<div class="sec">Pillar maturity</div><table><tr><th>Pillar</th><th>Wt</th><th>Score</th><th>Maturity</th></tr>`;
+-  for (const p of r.pillars) h += `<tr><td>${esc(p.name)}</td><td>${(p.weight*100).toFixed(0)}%</td><td>${p.score.toFixed(2)}</td><td><span class="band ${p.maturity.id}">${esc(p.maturity.label)}</span></td></tr>`;
+-  h += `</table><div class="sec">Gaps (${r.gaps.length})</div>`;
++
++  h += `<div class="sec">Pillar maturity (vs fictional cohort)</div><table><tr><th>Pillar</th><th>Wt</th><th>Score</th><th>Maturity</th><th>pctl</th></tr>`;
++  for (let i = 0; i < r.pillars.length; i++) {
++    const p = r.pillars[i], pc = cmp.pillars[i];
++    h += `<tr><td>${esc(p.name)}</td><td>${(p.weight * 100).toFixed(0)}%</td><td>${p.score.toFixed(2)}</td><td><span class="band ${p.maturity.id}">${esc(p.maturity.label)}</span></td><td>p${pc.percentile}</td></tr>`;
++  }
++
++  h += `</table><div class="sec">Next actions (ranked)</div>`;
++  if (!r.actions.length) h += `<p class="muted">No actions — no gaps at the threshold.</p>`;
++  for (const [i, a] of r.actions.entries()) {
++    h += `<div class="action${a.highRisk ? ' hirisk' : ''}"><span class="rank">${i + 1}.</span>
++      <span><code class="rank">${esc(a.questionId)}</code> — ${esc(a.remediation)}</span>
++      <span class="prio">priority ${a.priority.toFixed(3)}${a.highRisk ? ' · high-risk ×1.5' : ''}</span></div>`;
++  }
++
++  if (d) {
++    h += `<div class="sec">Change vs previous run</div>
++      <p class="muted">Overall ${d.overall.prevScore.toFixed(2)} → ${d.overall.currScore.toFixed(2)}
++      (<span class="${d.overall.delta >= 0 ? 'dir-improved' : 'dir-regressed'}">${d.overall.delta >= 0 ? '+' : ''}${d.overall.delta.toFixed(2)}</span>)
++      · ${d.summary.improved} improved · ${d.summary.regressed} regressed · ${d.summary.unchanged} unchanged</p>`;
++    for (const q of d.questions) {
++      h += `<div class="gap"><code>${esc(q.questionId)}</code> · ${esc(q.text)}<br>
++        <span class="${q.direction === 'improved' ? 'dir-improved' : 'dir-regressed'}">${q.prevLevel} → ${q.currLevel} (${q.direction})</span></div>`;
++    }
++  }
++
++  h += `<div class="sec">Gaps (${r.gaps.length})</div>`;
+   for (const g of r.gaps) h += `<div class="gap"><code>${esc(g.questionId)}</code> · ${esc(g.text)}<br>
+-    <span class="muted">${esc(g.frameworkRefs.join('; '))}</span><br><span class="muted">→ ${esc(g.remediation)}</span></div>`;
+-  h += `<div class="sec">Report export</div><textarea readonly style="min-height:160px">${esc(exportReportMd(r))}</textarea>`;
++    <span class="muted">${esc(g.frameworkRefs.join('; '))}</span><br>
++    <span class="muted">${esc(g.euAiActRefs.join('; '))}</span><br><span class="muted">→ ${esc(g.remediation)}</span></div>`;
++
++  h += `<div class="sec">Report export</div><textarea readonly style="min-height:160px">${esc(exportReportMd(r))}</textarea>
++    <button id="dl-csv" type="button">Download gaps CSV ↓</button>`;
+   $('out').innerHTML = h;
++  $('dl-csv').addEventListener('click', () => {
++    const blob = new Blob([exportGapsCsv(r)], { type: 'text/csv' });
++    const a = document.createElement('a');
++    a.href = URL.createObjectURL(blob);
++    a.download = 'ai-governance-gaps.csv';
++    a.click();
++    URL.revokeObjectURL(a.href);
++  });
+ }
+ 
+-$('run').addEventListener('click', () => {
++function run() {
+   $('err').textContent = '';
+-  try { render(scoreAssessment(JSON.parse($('input').value), { gapThreshold: 1 })); }
+-  catch (e) { $('err').textContent = String(e.message ?? e); }
+-});
+-render(scoreAssessment(SAMPLE, { gapThreshold: 1 }));
++  let assessment;
++  try { assessment = JSON.parse($('input').value); }
++  catch (e) { $('err').textContent = `JSON parse error: ${e.message}`; return; }
++  try {
++    const config = { gapThreshold: 1 };
++    if (presetSel.value) config.preset = presetSel.value;
++    const r = scoreAssessment(assessment, config);
++    const d = prevAssessment ? diffAssessments(prevAssessment, assessment, config) : null;
++    render(r, d);
++    prevAssessment = assessment;
++  } catch (e) { $('err').textContent = String(e.message ?? e); }
++}
++
++$('run').addEventListener('click', run);
++$('org').value = SAMPLE.org.name;
++buildInterview();
++syncJson();
++run();
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/ai-governance-benchmark/examples/output.json b/open-artifacts/ai-governance-benchmark/examples/output.json
+index 71f3490..82823ca 100644
+--- a/open-artifacts/ai-governance-benchmark/examples/output.json
++++ b/open-artifacts/ai-governance-benchmark/examples/output.json
+@@ -1,5 +1,5 @@
+ {
+-  "rubricVersion": "1.0.0",
++  "rubricVersion": "1.1.0",
+   "org": {
+     "name": "Northlake Logistics (fictional)",
+     "sector": "freight brokerage",
+@@ -29,6 +29,11 @@
+             "NIST AI RMF GOVERN-1",
+             "ISO/IEC 42001 cl. 8.1 (operational planning)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 11 (technical documentation) [verify]",
++            "EU AI Act art. 12 (record-keeping) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Stand up a lightweight AI-use registry with named owners and review cadence."
+         },
+         {
+@@ -42,6 +47,10 @@
+             "NIST AI RMF GOVERN-2",
+             "ISO/IEC 42001 cl. 5.3 (roles)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 12 (record-keeping) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Add an owner field to the registry; no orphan systems."
+         },
+         {
+@@ -55,6 +64,11 @@
+             "NIST AI RMF GOVERN-1",
+             "ISO/IEC 42001 cl. 8.1"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 10 (data governance) [verify]",
++            "EU AI Act art. 12 (logging) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Attach a one-page data-flow note per system."
+         }
+       ]
+@@ -80,6 +94,10 @@
+             "NIST AI RMF GOVERN-3 / MAP",
+             "ISO/IEC 42001 cl. 6.1 (risk)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 9 (risk management system) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Adopt a pre-deployment risk template with sign-off."
+         },
+         {
+@@ -93,6 +111,10 @@
+             "NIST AI RMF MEASURE-1",
+             "ISO/IEC 42001 cl. 9.2 (internal audit)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 9 (risk management system) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Add quarterly or change-triggered re-assessment."
+         },
+         {
+@@ -106,6 +128,11 @@
+             "NIST AI RMF GOVERN-3",
+             "ISO/IEC 42001 cl. 8.2"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 5 (prohibited practices) [verify]",
++            "EU AI Act art. 6 (classification rules) [verify]"
++          ],
++          "highRisk": true,
+           "remediation": "Define a high-risk use list with mandatory review."
+         }
+       ]
+@@ -130,6 +157,10 @@
+           "frameworkRefs": [
+             "NIST AI RMF GOVERN-4 (suppliers)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 9 (risk management system) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Add AI vendors to procurement review with data-use questions."
+         },
+         {
+@@ -142,6 +173,10 @@
+           "frameworkRefs": [
+             "NIST AI RMF GOVERN-4"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 10 (data governance) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Adopt AI clause checklist for renewals and new deals."
+         }
+       ]
+@@ -167,6 +202,10 @@
+             "NIST AI RMF GOVERN-5 / MEASURE-3",
+             "ISO/IEC 42001 cl. 8.3"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 12 (logs enabling incident detection) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Extend the security IR plan with an AI intake path."
+         },
+         {
+@@ -179,6 +218,10 @@
+           "frameworkRefs": [
+             "NIST AI RMF MEASURE-3"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 9 (risk management; severity handling) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Define severity rubric and on-call owner."
+         },
+         {
+@@ -192,6 +235,10 @@
+             "NIST AI RMF MANAGE-4 / GOVERN-5",
+             "ISO/IEC 42001 cl. 10.2"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 9 (risk management; corrective actions) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Add a lessons-learned step with tracked actions."
+         }
+       ]
+@@ -217,6 +264,10 @@
+             "NIST AI RMF GOVERN-2",
+             "ISO/IEC 42001 cl. 7.2 (competence)"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 14 (human oversight; competence) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Ship a role-based AI use training module."
+         },
+         {
+@@ -229,6 +280,10 @@
+           "frameworkRefs": [
+             "NIST AI RMF GOVERN-2 / GOVERN-5"
+           ],
++          "euAiActRefs": [
++            "EU AI Act art. 14 (human oversight; escalation to humans) [verify]"
++          ],
++          "highRisk": false,
+           "remediation": "Publish one named contact and channel; test awareness."
+         }
+       ]
+@@ -252,7 +307,12 @@
+         "NIST AI RMF GOVERN-2",
+         "ISO/IEC 42001 cl. 5.3 (roles)"
+       ],
+-      "remediation": "Add an owner field to the registry; no orphan systems."
++      "euAiActRefs": [
++        "EU AI Act art. 12 (record-keeping) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Add an owner field to the registry; no orphan systems.",
++      "priority": 0.4
+     },
+     {
+       "questionId": "inv-3",
+@@ -264,7 +324,13 @@
+         "NIST AI RMF GOVERN-1",
+         "ISO/IEC 42001 cl. 8.1"
+       ],
+-      "remediation": "Attach a one-page data-flow note per system."
++      "euAiActRefs": [
++        "EU AI Act art. 10 (data governance) [verify]",
++        "EU AI Act art. 12 (logging) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Attach a one-page data-flow note per system.",
++      "priority": 0.6
+     },
+     {
+       "questionId": "risk-1",
+@@ -276,7 +342,12 @@
+         "NIST AI RMF GOVERN-3 / MAP",
+         "ISO/IEC 42001 cl. 6.1 (risk)"
+       ],
+-      "remediation": "Adopt a pre-deployment risk template with sign-off."
++      "euAiActRefs": [
++        "EU AI Act art. 9 (risk management system) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Adopt a pre-deployment risk template with sign-off.",
++      "priority": 0.5
+     },
+     {
+       "questionId": "risk-2",
+@@ -288,7 +359,12 @@
+         "NIST AI RMF MEASURE-1",
+         "ISO/IEC 42001 cl. 9.2 (internal audit)"
+       ],
+-      "remediation": "Add quarterly or change-triggered re-assessment."
++      "euAiActRefs": [
++        "EU AI Act art. 9 (risk management system) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Add quarterly or change-triggered re-assessment.",
++      "priority": 0.75
+     },
+     {
+       "questionId": "risk-3",
+@@ -300,7 +376,13 @@
+         "NIST AI RMF GOVERN-3",
+         "ISO/IEC 42001 cl. 8.2"
+       ],
+-      "remediation": "Define a high-risk use list with mandatory review."
++      "euAiActRefs": [
++        "EU AI Act art. 5 (prohibited practices) [verify]",
++        "EU AI Act art. 6 (classification rules) [verify]"
++      ],
++      "highRisk": true,
++      "remediation": "Define a high-risk use list with mandatory review.",
++      "priority": 1.125
+     },
+     {
+       "questionId": "ven-2",
+@@ -311,7 +393,12 @@
+       "frameworkRefs": [
+         "NIST AI RMF GOVERN-4"
+       ],
+-      "remediation": "Adopt AI clause checklist for renewals and new deals."
++      "euAiActRefs": [
++        "EU AI Act art. 10 (data governance) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Adopt AI clause checklist for renewals and new deals.",
++      "priority": 0.4
+     },
+     {
+       "questionId": "ir-1",
+@@ -323,7 +410,12 @@
+         "NIST AI RMF GOVERN-5 / MEASURE-3",
+         "ISO/IEC 42001 cl. 8.3"
+       ],
+-      "remediation": "Extend the security IR plan with an AI intake path."
++      "euAiActRefs": [
++        "EU AI Act art. 12 (logs enabling incident detection) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Extend the security IR plan with an AI intake path.",
++      "priority": 0.6
+     },
+     {
+       "questionId": "ir-2",
+@@ -334,7 +426,12 @@
+       "frameworkRefs": [
+         "NIST AI RMF MEASURE-3"
+       ],
+-      "remediation": "Define severity rubric and on-call owner."
++      "euAiActRefs": [
++        "EU AI Act art. 9 (risk management; severity handling) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Define severity rubric and on-call owner.",
++      "priority": 0.6
+     },
+     {
+       "questionId": "ir-3",
+@@ -346,7 +443,12 @@
+         "NIST AI RMF MANAGE-4 / GOVERN-5",
+         "ISO/IEC 42001 cl. 10.2"
+       ],
+-      "remediation": "Add a lessons-learned step with tracked actions."
++      "euAiActRefs": [
++        "EU AI Act art. 9 (risk management; corrective actions) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Add a lessons-learned step with tracked actions.",
++      "priority": 0.4
+     },
+     {
+       "questionId": "trn-1",
+@@ -358,7 +460,104 @@
+         "NIST AI RMF GOVERN-2",
+         "ISO/IEC 42001 cl. 7.2 (competence)"
+       ],
+-      "remediation": "Ship a role-based AI use training module."
++      "euAiActRefs": [
++        "EU AI Act art. 14 (human oversight; competence) [verify]"
++      ],
++      "highRisk": false,
++      "remediation": "Ship a role-based AI use training module.",
++      "priority": 0.3
++    }
++  ],
++  "actions": [
++    {
++      "questionId": "risk-3",
++      "pillar": "risk_mgmt",
++      "text": "Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?",
++      "level": 0,
++      "remediation": "Define a high-risk use list with mandatory review.",
++      "highRisk": true,
++      "priority": 1.125
++    },
++    {
++      "questionId": "risk-2",
++      "pillar": "risk_mgmt",
++      "text": "Are risks re-assessed on a set schedule or upon material change, not just at launch?",
++      "level": 0,
++      "remediation": "Add quarterly or change-triggered re-assessment.",
++      "highRisk": false,
++      "priority": 0.75
++    },
++    {
++      "questionId": "inv-3",
++      "pillar": "inventory",
++      "text": "Are data flows into and out of each AI system documented (inputs, outputs, retention)?",
++      "level": 0,
++      "remediation": "Attach a one-page data-flow note per system.",
++      "highRisk": false,
++      "priority": 0.6
++    },
++    {
++      "questionId": "ir-1",
++      "pillar": "incident_response",
++      "text": "Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?",
++      "level": 0,
++      "remediation": "Extend the security IR plan with an AI intake path.",
++      "highRisk": false,
++      "priority": 0.6
++    },
++    {
++      "questionId": "ir-2",
++      "pillar": "incident_response",
++      "text": "Are AI incidents triaged with severity levels and a named responder?",
++      "level": 0,
++      "remediation": "Define severity rubric and on-call owner.",
++      "highRisk": false,
++      "priority": 0.6
++    },
++    {
++      "questionId": "risk-1",
++      "pillar": "risk_mgmt",
++      "text": "Is a documented AI risk assessment completed before a new AI system goes live?",
++      "level": 1,
++      "remediation": "Adopt a pre-deployment risk template with sign-off.",
++      "highRisk": false,
++      "priority": 0.5
++    },
++    {
++      "questionId": "inv-2",
++      "pillar": "inventory",
++      "text": "Is each inventory entry assigned a business owner accountable for the system?",
++      "level": 1,
++      "remediation": "Add an owner field to the registry; no orphan systems.",
++      "highRisk": false,
++      "priority": 0.4
++    },
++    {
++      "questionId": "ven-2",
++      "pillar": "vendor_mgmt",
++      "text": "Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?",
++      "level": 1,
++      "remediation": "Adopt AI clause checklist for renewals and new deals.",
++      "highRisk": false,
++      "priority": 0.4
++    },
++    {
++      "questionId": "ir-3",
++      "pillar": "incident_response",
++      "text": "Are post-incident reviews fed back into policy or system changes?",
++      "level": 1,
++      "remediation": "Add a lessons-learned step with tracked actions.",
++      "highRisk": false,
++      "priority": 0.4
++    },
++    {
++      "questionId": "trn-1",
++      "pillar": "training",
++      "text": "Do employees receive training on approved vs. prohibited AI use for their role?",
++      "level": 1,
++      "remediation": "Ship a role-based AI use training module.",
++      "highRisk": false,
++      "priority": 0.3
+     }
+   ],
+   "unanswered": [],
+diff --git a/open-artifacts/ai-governance-benchmark/examples/report.md b/open-artifacts/ai-governance-benchmark/examples/report.md
+index cdbe213..73ff2f7 100644
+--- a/open-artifacts/ai-governance-benchmark/examples/report.md
++++ b/open-artifacts/ai-governance-benchmark/examples/report.md
+@@ -1,6 +1,6 @@
+ # AI Governance Benchmark — Northlake Logistics (fictional)
+ 
+-Rubric version: 1.0.0 · Overall maturity: **Ad hoc** (0.87 / 3.00)
++Rubric version: 1.1.0 · Overall maturity: **Ad hoc** (0.87 / 3.00)
+ 
+ ## Pillar maturity
+ 
+@@ -17,44 +17,84 @@ Rubric version: 1.0.0 · Overall maturity: **Ad hoc** (0.87 / 3.00)
+ - **inv-2** (inventory, level 1) — Is each inventory entry assigned a business owner accountable for the system?
+   - Evidence: “Owners noted for 4 of 9 tools; rest unmapped.”
+   - Framework refs: NIST AI RMF GOVERN-2; ISO/IEC 42001 cl. 5.3 (roles)
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 12 (record-keeping) [verify]
+   - Remediation: Add an owner field to the registry; no orphan systems.
+ - **inv-3** (inventory, level 0) — Are data flows into and out of each AI system documented (inputs, outputs, retention)?
+   - Evidence: “No data-flow documentation exists for any tool.”
+   - Framework refs: NIST AI RMF GOVERN-1; ISO/IEC 42001 cl. 8.1
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 10 (data governance) [verify]; EU AI Act art. 12 (logging) [verify]
+   - Remediation: Attach a one-page data-flow note per system.
+ - **risk-1** (risk_mgmt, level 1) — Is a documented AI risk assessment completed before a new AI system goes live?
+   - Evidence: “Informal security review for the pricing model only, by email thread 2026-03.”
+   - Framework refs: NIST AI RMF GOVERN-3 / MAP; ISO/IEC 42001 cl. 6.1 (risk)
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 9 (risk management system) [verify]
+   - Remediation: Adopt a pre-deployment risk template with sign-off.
+ - **risk-2** (risk_mgmt, level 0) — Are risks re-assessed on a set schedule or upon material change, not just at launch?
+   - Evidence: “No re-assessment after the March launch.”
+   - Framework refs: NIST AI RMF MEASURE-1; ISO/IEC 42001 cl. 9.2 (internal audit)
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 9 (risk management system) [verify]
+   - Remediation: Add quarterly or change-triggered re-assessment.
+ - **risk-3** (risk_mgmt, level 0) — Does the company restrict or review high-risk uses (hiring, credit, biometrics, minors)?
+   - Evidence: “AI screening of driver applicants in pilot — no heightened review.”
+   - Framework refs: NIST AI RMF GOVERN-3; ISO/IEC 42001 cl. 8.2
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 5 (prohibited practices) [verify]; EU AI Act art. 6 (classification rules) [verify]
+   - Remediation: Define a high-risk use list with mandatory review.
+ - **ven-2** (vendor_mgmt, level 1) — Do vendor contracts address AI-specific terms (training on your data, output IP, indemnity)?
+   - Evidence: “One DPA mentions no-training-on-our-data; others silent.”
+   - Framework refs: NIST AI RMF GOVERN-4
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 10 (data governance) [verify]
+   - Remediation: Adopt AI clause checklist for renewals and new deals.
+ - **ir-1** (incident_response, level 0) — Is there a defined process for reporting AI incidents (errors, bias, harms, leaks)?
+   - Evidence: “No AI-specific incident path; general IT helpdesk only.”
+   - Framework refs: NIST AI RMF GOVERN-5 / MEASURE-3; ISO/IEC 42001 cl. 8.3
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 12 (logs enabling incident detection) [verify]
+   - Remediation: Extend the security IR plan with an AI intake path.
+ - **ir-2** (incident_response, level 0) — Are AI incidents triaged with severity levels and a named responder?
+   - Evidence: “No severity levels defined for AI issues.”
+   - Framework refs: NIST AI RMF MEASURE-3
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 9 (risk management; severity handling) [verify]
+   - Remediation: Define severity rubric and on-call owner.
+ - **ir-3** (incident_response, level 1) — Are post-incident reviews fed back into policy or system changes?
+   - Evidence: “After the misrouting outage (2026-05) fixes were made but nothing written down.”
+   - Framework refs: NIST AI RMF MANAGE-4 / GOVERN-5; ISO/IEC 42001 cl. 10.2
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 9 (risk management; corrective actions) [verify]
+   - Remediation: Add a lessons-learned step with tracked actions.
+ - **trn-1** (training, level 1) — Do employees receive training on approved vs. prohibited AI use for their role?
+   - Evidence: “One all-hands slide deck on ChatGPT policy from 2025; no role-based content.”
+   - Framework refs: NIST AI RMF GOVERN-2; ISO/IEC 42001 cl. 7.2 (competence)
++  - EU AI Act (illustrative, [verify]): EU AI Act art. 14 (human oversight; competence) [verify]
+   - Remediation: Ship a role-based AI use training module.
+ 
++## Next actions (ranked)
++
++_Priority = pillar weight × (3 − level) × (high-risk question ×1.5). Ties keep question-bank order. Address the top of this list first._
++
++1. **risk-3** (priority 1.125 · high-risk ×1.5) — Define a high-risk use list with mandatory review.
++2. **risk-2** (priority 0.750) — Add quarterly or change-triggered re-assessment.
++3. **inv-3** (priority 0.600) — Attach a one-page data-flow note per system.
++4. **ir-1** (priority 0.600) — Extend the security IR plan with an AI intake path.
++5. **ir-2** (priority 0.600) — Define severity rubric and on-call owner.
++6. **risk-1** (priority 0.500) — Adopt a pre-deployment risk template with sign-off.
++7. **inv-2** (priority 0.400) — Add an owner field to the registry; no orphan systems.
++8. **ven-2** (priority 0.400) — Adopt AI clause checklist for renewals and new deals.
++9. **ir-3** (priority 0.400) — Add a lessons-learned step with tracked actions.
++10. **trn-1** (priority 0.300) — Ship a role-based AI use training module.
++
++## Fictional-cohort comparison (illustrative)
++
++Percentile within a fictional reference cohort (illustrative, not market data) — not real market data.
++
++| Pillar | Score | Percentile |
++|---|---|---|
++| AI Inventory | 1.00 | p40 |
++| Risk Management | 0.33 | p4 |
++| Vendor Management | 1.50 | p45 |
++| Incident Response | 0.33 | p6 |
++| Training & Culture | 1.50 | p48 |
++| Overall | 0.87 | p5 |
++
++Regime coverage: NIST AI RMF 1.0 · ISO/IEC 42001:2023 · EU AI Act arts. 5–15 (illustrative mapping — [verify] each ref against the official text; not legal advice).
++
+ ---
+ 
+-_Deterministic output of the open ai-governance-benchmark rubric. Framework references point at published structures (NIST AI RMF 1.0, ISO/IEC 42001:2023) for verification; this tool is not legal advice and is not affiliated with any firm._
++_Deterministic output of the open ai-governance-benchmark rubric. Framework references point at published structures (NIST AI RMF 1.0, ISO/IEC 42001:2023, EU AI Act arts. 5–15) for verification; this tool is not legal advice and is not affiliated with any firm._
+diff --git a/open-artifacts/ai-governance-benchmark/spec.md b/open-artifacts/ai-governance-benchmark/spec.md
+index 0bc5593..956da2b 100644
+--- a/open-artifacts/ai-governance-benchmark/spec.md
++++ b/open-artifacts/ai-governance-benchmark/spec.md
+@@ -11,26 +11,42 @@ transparent, versioned rubric and returns:
+ 
+ - per-pillar maturity (inventory, risk management, vendor management,
+   incident response, training) on a 0–3 scale with named maturity bands;
+-- a weighted overall score and band (weights are rules-as-data, editable);
++- a weighted overall score and band (weights are rules-as-data, editable,
++  with named sector presets);
+ - a gap list — every question at or below the gap threshold — each carrying
+-  the assessor's evidence, published-framework references, and a remediation
+-  stub;
+-- a Markdown benchmark report export.
++  the assessor's evidence, published-framework references (NIST AI RMF,
++  ISO/IEC 42001, plus illustrative EU AI Act arts. 5–15 refs tagged
++  `[verify]`), and a remediation stub;
++- a ranked action plan — gaps ordered by priority = pillar weight × (3 −
++  level) × (high-risk question ×1.5), ties in question-bank order;
++- fictional-cohort percentiles per pillar and overall (clearly labeled as
++  illustrative, never presented as market data);
++- a re-assessment diff — per-question improved/regressed flags plus pillar
++  and overall deltas;
++- a Markdown report and an RFC4180 CSV gap export.
+ 
+ ## IO contract
+ 
+ ```js
+-import { scoreAssessment, exportReportMd } from './core/core.js';
++import {
++  scoreAssessment, exportReportMd, exportGapsCsv, compare, diffAssessments,
++} from './core/core.js';
+ 
+ const result = scoreAssessment(assessment, config?);
+ // assessment: { org: object, answers: [{ questionId, level: 0|1|2|3, evidence?: string }] }
+-// config:     { pillarWeights?: {inventory: 0.2, ...} (must sum to 1),
++// config:     { preset?: 'general'|'financial_services'|'healthcare'|'public_sector',
++//               pillarWeights?: {inventory: 0.2, ...} (must sum to 1; wins over preset),
+ //               gapThreshold?: number (default 1) }
+-const md = exportReportMd(result);
++// result:     { pillars, overall, gaps, actions, unanswered, warnings, ... }
++const md = exportReportMd(result);   // includes Next actions + fictional-cohort sections
++const csv = exportGapsCsv(result);   // RFC4180, CRLF endings
++const bench = compare(result);       // { cohort, pillars: [{percentile}], overall: {percentile} }
++const d = diffAssessments(prevAssessment, currAssessment, config?);
++// d: { questions: [{delta, direction}], pillars, overall, summary }
+ ```
+ 
+ Errors (thrown, deterministic): unknown `questionId`; non-integer or
+-out-of-range `level`; pillar weights that do not sum to 1.
++out-of-range `level`; unknown `preset`; pillar weights that do not sum to 1.
+ 
+ ## Deterministic vs LLM-assisted
+ 
+@@ -72,7 +88,13 @@ The LLM never scores — the scale answer must trace to the human's statement;
+ 
+ Framework references are structural mappings to published documents
+ (NIST AI RMF 1.0; ISO/IEC 42001:2023) — jurisdiction-agnostic guidance, not
+-legal advice. Sector-specific obligations (e.g., EU AI Act, NYC Local Law
+-144, Colorado AI Act) are deliberately **not** scored here; add them as new
+-rules-as-data questions rather than editing logic. Disclaimer included in
+-every report export.
++legal advice. `euAiActRefs` add an ILLUSTRATIVE mapping to EU AI Act
++arts. 5–15 as rules-as-data: every ref is tagged `[verify]` and must be
++checked against the official text before being relied on. Cohort
++percentiles (`COHORT_BASELINE`) come from a fictional reference cohort —
++swap the data block to re-version; the “fictional / illustrative” labeling
++is part of the output contract and must stay attached wherever percentiles
++appear. Sector-specific scoring obligations (e.g., NYC Local Law 144,
++Colorado AI Act) remain out of scope; add them as new rules-as-data
++questions rather than editing logic. Disclaimer included in every report
++export.

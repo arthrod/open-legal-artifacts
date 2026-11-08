@@ -1,0 +1,2229 @@
+diff --git a/open-artifacts/tabular-review/README.md b/open-artifacts/tabular-review/README.md
+index ce01dab..768e526 100644
+--- a/open-artifacts/tabular-review/README.md
++++ b/open-artifacts/tabular-review/README.md
+@@ -2,27 +2,44 @@
+ 
+ Documents × questions review matrix with cell-level source anchors: a cell is
+ `answered` only when its quote verifiably locates in the document (exact /
+-normalized / fuzzy-with-flag, with char span + pinpoint); everything else
+-ships as `UNVERIFIED` with a machine reason (`not_answered`,
+-`missing_quote`, `quote_not_verified`, `no_such_document`) — never guessed.
+-Exports to RFC-4180 CSV and Markdown with anchors preserved. Full IO contract
+-and LLM prompt schema in [spec.md](spec.md).
++normalized / fuzzy-with-flag, with char span + pinpoint) **and** — on typed
++questions — satisfies the question's machine-checked schema. Everything else
++ships as `UNVERIFIED` with a machine reason (`not_answered`, `missing_quote`,
++`quote_not_verified`, `no_such_document`, `constraint_violation`, and the
++three not-found states `not_present` / `unclear` / `needs_review`) — never
++guessed. A deterministic consistency pass flags minority `classify` values in
++a column as `outlier_value` (answer kept), `summary.columns[]` reports the
++verification workload per question, and re-run diffs are first-class
++(`diffMatrices`). Exports: RFC-4180 CSV (with an empty reviewer `Verified`
++column), a per-cell sources audit CSV, and Markdown. Full IO contract and
++LLM prompt schema in [spec.md](spec.md).
++
++Typed question templates live in [templates/](templates/) — start with
++`ma-diligence.json` (fictional M&A diligence set: duration / currency /
++classify questions) or bring your own `Question[]`.
+ 
+ Fictional worked example in [examples/](examples/): 3 fictional agreements ×
+ 5 questions → 13 answered cells (each with a verified anchor) and 2 unverified
+ cells, including one deliberately hallucinated quote that the core rejects.
++`examples/diff.json` shows the re-run after that quote is corrected: exactly
++one changed cell.
+ 
+ ## Layout
+ 
+ - `core/` — dependency-free TypeScript, no LLM: `matrix.ts` (verifier,
+-  matrix builder, CSV/Markdown exporters), `textutil.ts` (token-span
+-  matcher), `matrix.test.ts`.
++  typed-schema enforcement, consistency pass, matrix builder, CSV / sources
++  CSV / Markdown / diff exporters), `textutil.ts` (token-span matcher),
++  `matrix.test.ts`; `core.js` is the generated browser/Node ES-module port
++  (kept in sync by a parity test).
++- `templates/` — typed question sets (`ma-diligence.json`).
+ - `examples/` — `input.json`, `run.ts`, generated `output.json` +
+-  `matrix.csv` + `matrix.md`.
++  `matrix.csv` + `matrix.md` + `diff.json`.
++- `demo/` — single-file interactive demo (relative imports; template
++  dropdown switches the same grid to the typed M&A diligence schema).
+ 
+ ## Run
+ 
+ ```bash
+-npx tsx --test core/matrix.test.ts   # 11 tests
+-npx tsx examples/run.ts              # regenerates examples/output.json, matrix.csv, matrix.md
++npx tsx --test core/*.test.ts   # 29 tests
++npx tsx examples/run.ts         # regenerates examples/output.json, matrix.csv, matrix.md, diff.json
+ ```
+diff --git a/open-artifacts/tabular-review/core/core.js b/open-artifacts/tabular-review/core/core.js
+index 43c98cd..cc51518 100644
+--- a/open-artifacts/tabular-review/core/core.js
++++ b/open-artifacts/tabular-review/core/core.js
+@@ -1,26 +1,30 @@
+ /**
+- * tabular-review core — deterministic documents × questions review matrix.
++ * tabular-review core - deterministic documents x questions review matrix.
+  * NO LLM: the core VERIFIES extraction, it never answers.
+  *
+- * Plain-JavaScript port of core/matrix.ts (+ the shared textutil subset);
+- * the TypeScript sources stay authoritative for tests. Dependency-free ES
+- * module; browser + Node compatible.
++ * GENERATED from core/matrix.ts (+ core/textutil.ts) - the TypeScript
++ * sources stay authoritative; keep this file in sync via the parity test
++ * (`core/core.js port stays in sync`). Dependency-free ES module;
++ * browser + Node compatible. Regenerate:
++ *   esbuild core/matrix.ts --bundle --format=esm
+  *
+- * Contract (catalog §2.1): one row per document, one column per question,
++ * Contract (catalog 2.1): one row per document, one column per question,
+  * every answered cell source-anchored. A cell is `answered` ONLY when the
+  * supplied answer carries a quote that locates in the document (exact or
+- * normalized; fuzzy anchors the answer but is flagged for review). Anything
+- * else is `unverified` with a machine reason — never guessed:
++ * normalized; fuzzy anchors the answer but is flagged for review) AND the
++ * answer satisfies the question's typed schema, if any. Anything else is
++ * `unverified` with a machine reason - never guessed:
+  *   not_answered | missing_quote | quote_not_verified | no_such_document
++ *   | constraint_violation | not_present | unclear | needs_review
+  *
+- * Exports: RFC-4180 CSV and Markdown, with anchors preserved in the export.
++ * Also runs a deterministic consistency pass (minority classify values in a
++ * column are flagged `outlier_value`; the answer is kept) and exports:
++ * RFC-4180 CSV (with an empty reviewer `Verified` column), Markdown, a
++ * per-cell sources audit CSV, and a re-run diff (`diffMatrices`).
+  * @module core
+  */
+-
+-/* ---------- textutil (shared subset; port of core/textutil.ts) ---------- */
+-
+-/** @param {string} text */
+-export function tokenizeWithSpans(text) {
++// core/textutil.ts
++function tokenizeWithSpans(text) {
+   const toks = [];
+   const re = /[^A-Za-z0-9.]+/g;
+   let last = 0;
+@@ -39,20 +43,15 @@ export function tokenizeWithSpans(text) {
+   push(last, text.length);
+   return toks;
+ }
+-
+-/** @param {string} text @returns {string[]} */
+-export function tokens(text) {
++function tokens(text) {
+   return tokenizeWithSpans(text).map((t) => t.norm);
+ }
+-
+ function multiset(xs) {
+-  const m = new Map();
++  const m = /* @__PURE__ */ new Map();
+   for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+   return m;
+ }
+-
+-/** @param {string} source @param {string} quote @param {number} [pad] */
+-export function bestWindow(source, quote, pad = 6) {
++function bestWindow(source, quote, pad = 6) {
+   const S = tokenizeWithSpans(source);
+   const q = tokens(quote);
+   if (S.length === 0 || q.length === 0) return null;
+@@ -66,22 +65,143 @@ export function bestWindow(source, quote, pad = 6) {
+       const union = q.length + size - inter;
+       const score = union === 0 ? 1 : inter / union;
+       const coverage = inter / q.length;
+-      if (best === null || score > best.score || (score === best.score && coverage > best.coverage)) {
+-        best = { score, coverage, start: S[st].start, end: S[st + size - 1].end, verbatim: source.slice(S[st].start, S[st + size - 1].end) };
++      if (best === null || score > best.score || score === best.score && coverage > best.coverage) {
++        best = {
++          score,
++          coverage,
++          start: S[st].start,
++          end: S[st + size - 1].end,
++          verbatim: source.slice(S[st].start, S[st + size - 1].end)
++        };
+       }
+     }
+   }
+   return best;
+ }
+-
+-/** @param {string} source @param {string} quote @returns {boolean} */
+-export function rawContains(source, quote) {
++function rawContains(source, quote) {
+   const q = quote.trim();
+   return q.length > 0 && source.includes(q);
+ }
+ 
+-/* ---------- matrix (port of core/matrix.ts) ---------- */
+-
++// core/matrix.ts
++var REASON_ORDER = [
++  "not_answered",
++  "missing_quote",
++  "quote_not_verified",
++  "no_such_document",
++  "constraint_violation",
++  "not_present",
++  "unclear",
++  "needs_review"
++];
++var MONTH_NAMES = [
++  "january",
++  "february",
++  "march",
++  "april",
++  "may",
++  "june",
++  "july",
++  "august",
++  "september",
++  "october",
++  "november",
++  "december"
++];
++var MONTH_RE = MONTH_NAMES.join("|");
++function escapeRegExp(s) {
++  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
++}
++function classifyMatch(answer, options) {
++  const norm = (s) => s.trim().replace(/\s+/g, " ").toLowerCase();
++  const a = norm(answer);
++  let best = null;
++  for (const opt of options) {
++    const o = opt.trim();
++    if (!o) continue;
++    const no = norm(o);
++    if (no === a || new RegExp(`\\b${escapeRegExp(no)}\\b`).test(a)) {
++      if (best === null || o.length > best.length) best = o;
++    }
++  }
++  return best;
++}
++function parseDate(s) {
++  const iso = s.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
++  if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
++  const mdy = s.match(new RegExp(`\\b(${MONTH_RE})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "i"));
++  if (mdy) return validDate(Number(mdy[3]), MONTH_NAMES.indexOf(mdy[1].toLowerCase()) + 1, Number(mdy[2]));
++  const dmy = s.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_RE})\\.?,?\\s+(\\d{4})\\b`, "i"));
++  if (dmy) return validDate(Number(dmy[3]), MONTH_NAMES.indexOf(dmy[2].toLowerCase()) + 1, Number(dmy[1]));
++  const my = s.match(new RegExp(`\\b(${MONTH_RE})\\.?\\s+(\\d{4})\\b`, "i"));
++  if (my) return validDate(Number(my[2]), MONTH_NAMES.indexOf(my[1].toLowerCase()) + 1, 1);
++  return null;
++}
++function validDate(year, month, day) {
++  if (month < 1 || month > 12 || year < 1) return null;
++  const leap = year % 4 === 0 && year % 100 !== 0 || year % 400 === 0;
++  const lens = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
++  if (day < 1 || day > lens[month - 1]) return null;
++  return { year, month, day };
++}
++function durationMonths(s) {
++  const m = s.match(/(\d+(?:\.\d+)?)\s*(?:calendar\s+)?(day|week|month|year)s?\b/i);
++  if (!m) return null;
++  const factors = { day: 1 / 30, week: 7 / 30, month: 1, year: 12 };
++  return Number(m[1]) * factors[m[2].toLowerCase()];
++}
++function convertMonths(v, unit) {
++  const u = (unit ?? "months").toLowerCase();
++  const per = { days: 30, weeks: 30 / 7, months: 1, years: 1 / 12 };
++  return { value: v * (per[u] ?? 1), unit: u };
++}
++function currencyAmount(s) {
++  const m = s.match(/[$£€]\s*([\d,]+(?:\.\d+)?)/) ?? s.match(/([\d,]+(?:\.\d+)?)\s*(?:USD|GBP|EUR|dollars|pounds|euros)\b/i);
++  return m ? Number(m[1].replace(/,/g, "")) : null;
++}
++function firstNumber(s) {
++  const m = s.match(/\d[\d,]*(?:\.\d+)?/);
++  return m ? Number(m[0].replace(/,/g, "")) : null;
++}
++function withinBounds(v, b) {
++  const eps = 1e-9;
++  return (b.min === void 0 || v >= b.min - eps) && (b.max === void 0 || v <= b.max + eps);
++}
++function checkSchema(q, answer, doc) {
++  switch (q.type) {
++    case void 0:
++    case "free":
++      return null;
++    case "classify": {
++      if (!q.options?.length) return null;
++      const matched = classifyMatch(answer, q.options);
++      return matched === null ? false : { type: "classify", matched };
++    }
++    case "date":
++      return parseDate(answer) === null ? false : { type: "date" };
++    case "duration": {
++      const months = durationMonths(answer);
++      if (months === null) return false;
++      const { value, unit } = convertMonths(months, q.bounds?.unit);
++      if (q.bounds && !withinBounds(value, q.bounds)) return false;
++      return { type: "duration", value, unit };
++    }
++    case "currency": {
++      const amount = currencyAmount(answer);
++      if (amount === null) return false;
++      if (q.bounds && !withinBounds(amount, q.bounds)) return false;
++      return { type: "currency", value: amount };
++    }
++    case "number": {
++      const n = firstNumber(answer);
++      if (n === null) return false;
++      if (q.bounds && !withinBounds(n, q.bounds)) return false;
++      return { type: "number", value: n };
++    }
++    case "verbatim":
++      return rawContains(doc.text, answer) ? { type: "verbatim" } : false;
++  }
++}
+ function verifyQuote(doc, cell, fuzzyThreshold) {
+   if (!cell.quote) return null;
+   const win = bestWindow(doc.text, cell.quote);
+@@ -94,7 +214,7 @@ function verifyQuote(doc, cell, fuzzyThreshold) {
+       charStart: start,
+       charEnd: start + cell.quote.trim().length,
+       verbatim: doc.text.slice(start, start + cell.quote.trim().length),
+-      pinpoint: cell.pinpoint ?? null,
++      pinpoint: cell.pinpoint ?? null
+     };
+   }
+   if (win && win.score >= 0.95 && win.coverage >= 0.95) {
+@@ -103,69 +223,101 @@ function verifyQuote(doc, cell, fuzzyThreshold) {
+   if (win && win.score >= fuzzyThreshold && win.coverage >= 0.6) {
+     return { classification: "fuzzy", similarity: win.score, charStart: win.start, charEnd: win.end, verbatim: win.verbatim, pinpoint: cell.pinpoint ?? null };
+   }
+-  return null; // quote does not locate in the document
++  return null;
+ }
+-
+-/**
+- * Build the verification matrix: one cell per document × question.
+- * @param {{ documents: any[], questions: any[], cells: any[], fuzzyThreshold?: number }} input
+- * @returns {any} MatrixOutput
+- */
+-export function buildMatrix(input) {
++function buildMatrix(input) {
+   const fuzzyThreshold = input.fuzzyThreshold ?? 0.7;
+   const docs = new Map(input.documents.map((d) => [d.id, d]));
+   const questions = new Map(input.questions.map((q) => [q.id, q]));
+   const supplied = new Map(input.cells.map((c) => [`${c.documentId}::${c.questionId}`, c]));
+-
+   const cells = [];
+   for (const doc of input.documents) {
+     for (const q of input.questions) {
+       if (!questions.has(q.id)) continue;
+       const c = supplied.get(`${doc.id}::${q.id}`);
+-      if (!c || c.answer === undefined || c.answer === null || c.answer.trim() === "") {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "not_answered", verification: null });
++      if (c?.notFound) {
++        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: c.notFound, verification: null, flags: [], schema: null });
++        continue;
++      }
++      if (!c || c.answer === void 0 || c.answer === null || c.answer.trim() === "") {
++        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "not_answered", verification: null, flags: [], schema: null });
+         continue;
+       }
+       const docObj = docs.get(c.documentId);
+       if (!docObj) {
+-        cells.push({ documentId: c.documentId, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "no_such_document", verification: null });
++        cells.push({ documentId: c.documentId, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "no_such_document", verification: null, flags: [], schema: null });
+         continue;
+       }
+       if (!c.quote || c.quote.trim() === "") {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "missing_quote", verification: null });
++        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "missing_quote", verification: null, flags: [], schema: null });
+         continue;
+       }
+       const verification = verifyQuote(docObj, c, fuzzyThreshold);
+       if (!verification) {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "quote_not_verified", verification: null });
++        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "quote_not_verified", verification: null, flags: [], schema: null });
+         continue;
+       }
+-      cells.push({ documentId: doc.id, questionId: q.id, status: "answered", answer: c.answer, unverifiedReason: null, verification });
++      const schema = checkSchema(q, c.answer, docObj);
++      if (schema === false) {
++        cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "constraint_violation", verification: null, flags: [], schema: null });
++        continue;
++      }
++      cells.push({ documentId: doc.id, questionId: q.id, status: "answered", answer: c.answer, unverifiedReason: null, verification, flags: [], schema });
+     }
+   }
+-
++  let outliers = 0;
++  for (const q of input.questions) {
++    if (q.type !== "classify" || !q.options?.length) continue;
++    const col = cells.filter((c) => c.questionId === q.id && c.status === "answered");
++    if (col.length < 2) continue;
++    const counts = /* @__PURE__ */ new Map();
++    for (const c of col) {
++      const k = c.schema?.matched ?? c.answer;
++      counts.set(k, (counts.get(k) ?? 0) + 1);
++    }
++    const threshold = Math.max(1, 0.1 * col.length);
++    if (![...counts.values()].some((n) => n > threshold)) continue;
++    for (const c of col) {
++      const k = c.schema?.matched ?? c.answer;
++      if ((counts.get(k) ?? 0) <= threshold) {
++        c.flags.push("outlier_value");
++        outliers++;
++      }
++    }
++  }
++  const columns = input.questions.map((q) => {
++    const col = cells.filter((c) => c.questionId === q.id);
++    const reasons = {};
++    for (const r of REASON_ORDER) {
++      const n = col.filter((c) => c.unverifiedReason === r).length;
++      if (n > 0) reasons[r] = n;
++    }
++    return {
++      questionId: q.id,
++      answered: col.filter((c) => c.status === "answered").length,
++      unverified: col.filter((c) => c.status === "unverified").length,
++      outliers: col.filter((c) => c.flags.includes("outlier_value")).length,
++      reasons
++    };
++  });
+   return {
+     summary: {
+       cells: cells.length,
+       answered: cells.filter((c) => c.status === "answered").length,
+       unverified: cells.filter((c) => c.status === "unverified").length,
+       flaggedForReview: cells.filter((c) => c.verification?.classification === "fuzzy").length,
++      outliers,
++      columns
+     },
+-    cells,
++    cells
+   };
+ }
+-
+-/** RFC-4180: quote fields containing commas, quotes, or newlines.
+- * @param {string} value @returns {string} */
+-export function csvEscape(value) {
++function csvEscape(value) {
+   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+ }
+-
+-/** CSV export with anchors preserved.
+- * @param {any} input @param {any} out @returns {string} */
+-export function toCSV(input, out) {
++function toCSV(input, out) {
+   const lines = [];
+-  lines.push(csvEscape("Document") + "," + input.questions.map((q) => csvEscape(q.question)).join(","));
++  lines.push(csvEscape("Document") + "," + input.questions.map((q) => csvEscape(q.question)).join(",") + ",Verified");
+   for (const doc of input.documents) {
+     const row = [csvEscape(doc.name)];
+     for (const q of input.questions) {
+@@ -174,18 +326,37 @@ export function toCSV(input, out) {
+         row.push(csvEscape(`UNVERIFIED (${cell?.unverifiedReason ?? "not_answered"})`));
+       } else {
+         const pin = cell.verification?.pinpoint ? ` [${cell.verification.pinpoint}]` : "";
+-        const flag = cell.verification?.classification === "fuzzy" ? " [quote fuzzy — review]" : "";
+-        row.push(csvEscape(`${cell.answer}${pin}${flag}`));
++        const flag = cell.verification?.classification === "fuzzy" ? " [quote fuzzy \u2014 review]" : "";
++        const outlier = cell.flags.includes("outlier_value") ? " [outlier_value]" : "";
++        row.push(csvEscape(`${cell.answer}${pin}${flag}${outlier}`));
+       }
+     }
++    row.push("");
+     lines.push(row.join(","));
+   }
+   return lines.join("\r\n") + "\r\n";
+ }
+-
+-/** Markdown export.
+- * @param {any} input @param {any} out @returns {string} */
+-export function toMarkdown(input, out) {
++function toSourcesCSV(input, out) {
++  const docName = new Map(input.documents.map((d) => [d.id, d.name]));
++  const qText = new Map(input.questions.map((q) => [q.id, q.question]));
++  const lines = [];
++  lines.push("Document,Question,Verbatim,Span,Pinpoint,Classification");
++  for (const c of out.cells) {
++    const v = c.verification;
++    lines.push(
++      [
++        csvEscape(docName.get(c.documentId) ?? c.documentId),
++        csvEscape(qText.get(c.questionId) ?? c.questionId),
++        v ? csvEscape(v.verbatim) : "",
++        v ? `${v.charStart}-${v.charEnd}` : "",
++        v?.pinpoint ? csvEscape(v.pinpoint) : "",
++        v ? v.classification : c.unverifiedReason ?? ""
++      ].join(",")
++    );
++  }
++  return lines.join("\r\n") + "\r\n";
++}
++function toMarkdown(input, out) {
+   const esc = (s) => s.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+   const lines = [];
+   lines.push(`| Document | ${input.questions.map((q) => esc(q.question)).join(" | ")} |`);
+@@ -198,11 +369,63 @@ export function toMarkdown(input, out) {
+         row.push(`**UNVERIFIED** (${cell?.unverifiedReason ?? "not_answered"})`);
+       } else {
+         const pin = cell.verification?.pinpoint ? ` [${cell.verification.pinpoint}]` : "";
+-        const flag = cell.verification?.classification === "fuzzy" ? " ⚠ quote fuzzy — review" : "";
+-        row.push(esc(cell.answer) + esc(pin) + flag);
++        const flag = cell.verification?.classification === "fuzzy" ? " \u26A0 quote fuzzy \u2014 review" : "";
++        const outlier = cell.flags.includes("outlier_value") ? " \u26A0 outlier_value" : "";
++        row.push(esc(cell.answer) + esc(pin) + flag + outlier);
+       }
+     }
+     lines.push(`| ${row.join(" | ")} |`);
+   }
+   return lines.join("\n") + "\n";
+ }
++function sideOf(c) {
++  return {
++    status: c.status,
++    answer: c.answer,
++    classification: c.verification?.classification ?? null,
++    unverifiedReason: c.unverifiedReason ?? null
++  };
++}
++function diffMatrices(prev, next) {
++  const key = (c) => `${c.documentId}::${c.questionId}`;
++  const prevMap = new Map(prev.cells.map((c) => [key(c), c]));
++  const nextMap = new Map(next.cells.map((c) => [key(c), c]));
++  const diffs = [];
++  let added = 0;
++  let removed = 0;
++  let changed = 0;
++  let unchanged = 0;
++  const emit = (k, p, n) => {
++    const [documentId, questionId] = k.split("::");
++    if (p && !n) {
++      removed++;
++      diffs.push({ documentId, questionId, added: false, removed: true, changed: false, prev: sideOf(p), next: null });
++    } else if (!p && n) {
++      added++;
++      diffs.push({ documentId, questionId, added: true, removed: false, changed: false, prev: null, next: sideOf(n) });
++    } else if (p && n) {
++      const same = JSON.stringify(sideOf(p)) === JSON.stringify(sideOf(n));
++      if (same) unchanged++;
++      else changed++;
++      diffs.push({ documentId, questionId, added: false, removed: false, changed: !same, prev: sideOf(p), next: sideOf(n) });
++    }
++  };
++  for (const c of prev.cells) emit(key(c), c, nextMap.get(key(c)));
++  for (const c of next.cells) if (!prevMap.has(key(c))) emit(key(c), void 0, c);
++  return { cells: diffs, summary: { added, removed, changed, unchanged } };
++}
++export {
++  tokenizeWithSpans,
++  tokens,
++  bestWindow,
++  rawContains,  buildMatrix,
++  classifyMatch,
++  csvEscape,
++  currencyAmount,
++  diffMatrices,
++  durationMonths,
++  parseDate,
++  toCSV,
++  toMarkdown,
++  toSourcesCSV
++};
+diff --git a/open-artifacts/tabular-review/core/matrix.test.ts b/open-artifacts/tabular-review/core/matrix.test.ts
+index ec238fb..89dfe47 100644
+--- a/open-artifacts/tabular-review/core/matrix.test.ts
++++ b/open-artifacts/tabular-review/core/matrix.test.ts
+@@ -1,6 +1,7 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { buildMatrix, toCSV, toMarkdown, csvEscape } from './matrix';
++import { readFileSync } from 'node:fs';
++import { buildMatrix, toCSV, toMarkdown, csvEscape, diffMatrices, toSourcesCSV } from './matrix';
+ import type { MatrixInput } from './matrix';
+ 
+ const A = 'This Agreement commences on the Effective Date and continues for three (3) years. Either party may terminate for convenience upon ninety (90) days written notice. Liability is capped at the fees paid in the preceding twelve months.';
+@@ -121,6 +122,254 @@ test('CSV export escapes per RFC 4180 and marks unverified cells', () => {
+   assert.equal(csvEscape('say "hi"'), '"say ""hi"""');
+ });
+ 
++const ASG_TEXT = "Neither party may assign this Agreement without the other's prior written consent.";
++
++test('classify answer outside the option set is unverified constraint_violation', () => {
++  const out = buildMatrix({
++    documents: [{ id: 'asg-1', name: 'Assignment clause (fictional)', text: ASG_TEXT }],
++    questions: [{ id: 'Q4', question: 'Is assignment permitted?', type: 'classify', options: ['yes', 'no', 'consent required'] }],
++    cells: [{ documentId: 'asg-1', questionId: 'Q4', answer: 'Banana', quote: ASG_TEXT }],
++  });
++  const c = out.cells.find((x) => x.questionId === 'Q4')!;
++  assert.equal(c.status, 'unverified');
++  assert.equal(c.unverifiedReason, 'constraint_violation');
++  assert.equal(c.answer, null);
++});
++
++test('classify answer matching an option is answered with the matched option recorded', () => {
++  const out = buildMatrix({
++    documents: [
++      { id: 'asg-1', name: 'Assignment clause (fictional)', text: ASG_TEXT },
++      { id: 'msa-2', name: 'MSA, Beta Corp (signed)', text: B },
++    ],
++    questions: [{ id: 'Q4', question: 'Is assignment permitted?', type: 'classify', options: ['yes', 'no', 'consent required'] }],
++    cells: [
++      { documentId: 'asg-1', questionId: 'Q4', answer: 'No — consent required', quote: ASG_TEXT },
++      { documentId: 'msa-2', questionId: 'Q4', answer: 'Yes, to a merger successor', quote: 'Neither party is liable for indirect damages.' },
++    ],
++  });
++  const c1 = out.cells.find((x) => x.documentId === 'asg-1')!;
++  const c2 = out.cells.find((x) => x.documentId === 'msa-2')!;
++  assert.equal(c1.status, 'answered');
++  assert.equal(c1.schema?.matched, 'consent required'); // longest contained option
++  assert.equal(c2.status, 'answered');
++  assert.equal(c2.schema?.matched, 'yes');
++});
++
++test('duration answers are machine-checked against schema bounds', () => {
++  const out = buildMatrix({
++    documents: INPUT.documents,
++    questions: [{ id: 'Q1', question: 'What is the term?', type: 'duration', bounds: { min: 1, max: 120, unit: 'months' } }],
++    cells: [
++      { documentId: 'nda-1', questionId: 'Q1', answer: '3 years from the Effective Date', quote: 'continues for three (3) years' },
++      { documentId: 'msa-2', questionId: 'Q1', answer: '99 years', quote: 'Term: two (2) years from the Effective Date' },
++    ],
++  });
++  const ok = out.cells.find((x) => x.documentId === 'nda-1')!;
++  const bad = out.cells.find((x) => x.documentId === 'msa-2')!;
++  assert.equal(ok.status, 'answered');
++  assert.equal(ok.schema?.value, 36); // 3 years -> months
++  assert.equal(bad.status, 'unverified');
++  assert.equal(bad.unverifiedReason, 'constraint_violation'); // 99 years = 1188 months > 120
++});
++
++test('currency answers must carry a parseable amount (fictional figures)', () => {
++  const out = buildMatrix({
++    documents: [
++      { id: 'liab-1', name: 'Liability clause (fictional)', text: 'Disclosing party\'s total liability is limited to $50,000.' },
++      { id: 'nda-1', name: 'NDA, "Acme" side (draft 2)', text: A },
++    ],
++    questions: [{ id: 'Q3', question: 'What is the liability cap?', type: 'currency', bounds: { min: 1, max: 10000000 } }],
++    cells: [
++      { documentId: 'liab-1', questionId: 'Q3', answer: '$50,000 total', quote: 'Disclosing party\'s total liability is limited to $50,000.' },
++      { documentId: 'nda-1', questionId: 'Q3', answer: 'Fees paid in the preceding 12 months', quote: 'Liability is capped at the fees paid in the preceding twelve months.' },
++    ],
++  });
++  const ok = out.cells.find((x) => x.documentId === 'liab-1')!;
++  const bad = out.cells.find((x) => x.documentId === 'nda-1')!;
++  assert.equal(ok.status, 'answered');
++  assert.equal(ok.schema?.value, 50000);
++  assert.equal(bad.status, 'unverified');
++  assert.equal(bad.unverifiedReason, 'constraint_violation'); // no currency amount in answer
++});
++
++test('date answers must parse as calendar dates', () => {
++  const docs = [...INPUT.documents, { id: 'dated-3', name: 'Dated letter (fictional)', text: 'This Agreement is entered into as of March 5, 2025 by the parties below.' }];
++  const out = buildMatrix({
++    documents: docs,
++    questions: [{ id: 'Q6', question: 'What is the effective date?', type: 'date' }],
++    cells: [
++      { documentId: 'dated-3', questionId: 'Q6', answer: 'March 5, 2025', quote: 'This Agreement is entered into as of March 5, 2025 by the parties below.' },
++      { documentId: 'nda-1', questionId: 'Q6', answer: 'the Effective Date', quote: 'This Agreement commences on the Effective Date and continues for three (3) years.' },
++    ],
++  });
++  const ok = out.cells.find((x) => x.documentId === 'dated-3')!;
++  const bad = out.cells.find((x) => x.documentId === 'nda-1')!;
++  assert.equal(ok.status, 'answered');
++  assert.equal(bad.status, 'unverified');
++  assert.equal(bad.unverifiedReason, 'constraint_violation');
++});
++
++test('verbatim answers must appear in the document text', () => {
++  const out = buildMatrix({
++    documents: INPUT.documents,
++    questions: [{ id: 'Q5', question: 'What law governs?', type: 'verbatim' }],
++    cells: [
++      { documentId: 'msa-2', questionId: 'Q5', answer: 'Delaware', quote: 'This Agreement is governed by Delaware law.' },
++      { documentId: 'nda-1', questionId: 'Q5', answer: 'Delaware law applies here', quote: 'Liability is capped at the fees paid in the preceding twelve months.' },
++    ],
++  });
++  const ok = out.cells.find((x) => x.documentId === 'msa-2')!;
++  const bad = out.cells.find((x) => x.documentId === 'nda-1')!;
++  assert.equal(ok.status, 'answered');
++  assert.equal(bad.status, 'unverified');
++  assert.equal(bad.unverifiedReason, 'constraint_violation');
++});
++
++test('notFound states map to their own unverified reasons', () => {
++  const out = buildMatrix({
++    ...INPUT,
++    cells: [
++      { documentId: 'msa-2', questionId: 'Q3', notFound: 'unclear' },
++      { documentId: 'nda-1', questionId: 'Q3', notFound: 'needs_review', answer: 'Fees paid in the preceding twelve months', quote: 'Liability is capped at the fees paid in the preceding twelve months.' },
++    ],
++  });
++  const unclear = out.cells.find((x) => x.documentId === 'msa-2' && x.questionId === 'Q3')!;
++  const needs = out.cells.find((x) => x.documentId === 'nda-1' && x.questionId === 'Q3')!;
++  assert.equal(unclear.status, 'unverified');
++  assert.equal(unclear.unverifiedReason, 'unclear');
++  assert.equal(needs.status, 'unverified');
++  assert.equal(needs.unverifiedReason, 'needs_review');
++});
++
++test('per-column summary reports verification workload per question', () => {
++  const out = buildMatrix({
++    ...INPUT,
++    cells: INPUT.cells.map((c) => (c.documentId === 'msa-2' && c.questionId === 'Q3' ? { documentId: 'msa-2', questionId: 'Q3', notFound: 'not_present' } : c)),
++  });
++  assert.equal(out.summary.columns.length, 3);
++  const q3 = out.summary.columns.find((col) => col.questionId === 'Q3')!;
++  assert.equal(q3.answered, 1);
++  assert.equal(q3.unverified, 1);
++  assert.equal(q3.reasons.not_present, 1);
++  assert.equal(out.summary.columns[0].questionId, 'Q1');
++});
++
++test('minority classify value in a column is flagged outlier_value but stays answered', () => {
++  const docs = [1, 2, 3, 4, 5].map((i) => ({ id: `d${i}`, name: `Doc ${i} (fictional)`, text: 'Disputes are resolved by binding arbitration in Seattle.' }));
++  const cells = docs.map((d, i) => ({
++    documentId: d.id,
++    questionId: 'QF',
++    answer: i < 4 ? 'arbitration' : 'mediation',
++    quote: 'Disputes are resolved by binding arbitration in Seattle.',
++  }));
++  const out = buildMatrix({
++    documents: docs,
++    questions: [{ id: 'QF', question: 'How are disputes resolved?', type: 'classify', options: ['arbitration', 'mediation', 'litigation'] }],
++    cells,
++  });
++  const minority = out.cells.find((c) => c.documentId === 'd5')!;
++  const majority = out.cells.find((c) => c.documentId === 'd1')!;
++  assert.equal(minority.status, 'answered'); // answer kept
++  assert.ok(minority.flags.includes('outlier_value'));
++  assert.equal(majority.status, 'answered');
++  assert.equal(majority.flags.length, 0);
++  assert.equal(out.summary.outliers, 1);
++});
++
++test('uniform classify column raises no outlier flags', () => {
++  const docs = [1, 2, 3].map((i) => ({ id: `d${i}`, name: `Doc ${i} (fictional)`, text: 'This Agreement is governed by Delaware law.' }));
++  const out = buildMatrix({
++    documents: docs,
++    questions: [{ id: 'QG', question: 'Governing law?', type: 'classify', options: ['Delaware', 'New York'] }],
++    cells: docs.map((d) => ({ documentId: d.id, questionId: 'QG', answer: 'Delaware', quote: 'This Agreement is governed by Delaware law.' })),
++  });
++  assert.equal(out.summary.outliers, 0);
++  assert.ok(out.cells.every((c) => c.flags.length === 0));
++});
++
++test('diffMatrices: changing one answer yields exactly one changed cell', () => {
++  const prev = buildMatrix(INPUT);
++  const next = buildMatrix({
++    ...INPUT,
++    cells: INPUT.cells.map((c) =>
++      c.documentId === 'nda-1' && c.questionId === 'Q1' ? { ...c, answer: 'Thirty-six (36) months from the Effective Date' } : c,
++    ),
++  });
++  const diff = diffMatrices(prev, next);
++  assert.equal(diff.summary.changed, 1);
++  assert.equal(diff.summary.unchanged, 5);
++  assert.equal(diff.summary.added, 0);
++  assert.equal(diff.summary.removed, 0);
++  const changed = diff.cells.filter((c) => c.changed);
++  assert.equal(changed.length, 1);
++  assert.equal(changed[0].documentId, 'nda-1');
++  assert.equal(changed[0].questionId, 'Q1');
++  assert.equal(changed[0].prev?.answer, '3 years from the Effective Date');
++  assert.equal(changed[0].next?.answer, 'Thirty-six (36) months from the Effective Date');
++});
++
++test('diffMatrices: added and removed documents produce added/removed cells', () => {
++  const prev = buildMatrix(INPUT);
++  const withExtra = buildMatrix({
++    ...INPUT,
++    documents: [...INPUT.documents, { id: 'extra-1', name: 'Extra doc (fictional)', text: 'Term: one (1) year.' }],
++    cells: [...INPUT.cells, { documentId: 'extra-1', questionId: 'Q1', answer: '1 year', quote: 'Term: one (1) year.' }],
++  });
++  const added = diffMatrices(prev, withExtra);
++  assert.equal(added.summary.added, 3); // 3 questions × new doc
++  assert.equal(added.cells.find((c) => c.documentId === 'extra-1' && c.questionId === 'Q1')!.added, true);
++  const removed = diffMatrices(withExtra, prev);
++  assert.equal(removed.summary.removed, 3);
++});
++
++test('toSourcesCSV emits one row per cell and main CSV gains a Verified column', () => {
++  const out = buildMatrix(INPUT);
++  const src = toSourcesCSV(INPUT, out);
++  const lines = src.split('\r\n');
++  assert.equal(lines[0], 'Document,Question,Verbatim,Span,Pinpoint,Classification');
++  assert.equal(lines.length - 2, out.summary.cells); // rows == cells (trailing CRLF)
++  const okRow = lines.find((l) => l.includes('continues for three (3) years'))!;
++  assert.ok(/\d+-\d+/.test(okRow)); // char span present
++  assert.ok(okRow.includes('exact'));
++  const csv = toCSV(INPUT, out);
++  assert.ok(csv.split('\r\n')[0].endsWith(',Verified')); // reviewer sign-off column
++});
++
++test('ma-diligence template parses as a typed Question[]', () => {
++  const tpl = JSON.parse(readFileSync(new URL('../templates/ma-diligence.json', import.meta.url), 'utf8'));
++  assert.ok(Array.isArray(tpl));
++  assert.ok(tpl.length >= 5);
++  const ids = new Set<string>();
++  const TYPES = ['classify', 'date', 'duration', 'currency', 'number', 'verbatim', 'free'];
++  for (const q of tpl) {
++    assert.equal(typeof q.id, 'string');
++    assert.equal(typeof q.question, 'string');
++    assert.ok(!ids.has(q.id));
++    ids.add(q.id);
++    assert.ok(TYPES.includes(q.type));
++    if (q.type === 'classify') assert.ok(q.options.length >= 2);
++    if (q.type === 'duration' || q.type === 'currency' || q.type === 'number') {
++      assert.equal(typeof q.bounds.min, 'number');
++      assert.equal(typeof q.bounds.max, 'number');
++    }
++  }
++});
++
++test('demo templates mirror templates/ma-diligence.json (no drift)', () => {
++  const tpl = JSON.parse(readFileSync(new URL('../templates/ma-diligence.json', import.meta.url), 'utf8'));
++  const js = readFileSync(new URL('../demo/templates.js', import.meta.url), 'utf8');
++  const m = js.match(/export default\s*(\[[\s\S]*?\])\s*;/);
++  assert.ok(m, 'demo/templates.js must export a JSON array literal');
++  assert.deepEqual(JSON.parse(m[1]), tpl);
++});
++
++test('golden: buildMatrix(examples/input.json) matches examples/output.json', () => {
++  const input = JSON.parse(readFileSync(new URL('../examples/input.json', import.meta.url), 'utf8'));
++  const golden = JSON.parse(readFileSync(new URL('../examples/output.json', import.meta.url), 'utf8'));
++  assert.deepEqual(buildMatrix(input), golden);
++});
++
+ test('Markdown export escapes pipes and marks unverified cells', () => {
+   const out = buildMatrix(INPUT);
+   const md = toMarkdown(INPUT, out);
+@@ -132,3 +381,26 @@ test('Markdown export escapes pipes and marks unverified cells', () => {
+   );
+   assert.ok(pipeDoc.includes('A\\|B'));
+ });
++test('core/core.js port stays in sync with the TypeScript core', async () => {
++  const js = await import('./core.js');
++  for (const fn of ['buildMatrix', 'toCSV', 'toMarkdown', 'toSourcesCSV', 'diffMatrices', 'csvEscape']) {
++    assert.equal(typeof js[fn], 'function', 'core.js must export ' + fn);
++  }
++  const input = JSON.parse(readFileSync(new URL('../examples/input.json', import.meta.url), 'utf8'));
++  assert.deepEqual(js.buildMatrix(input), buildMatrix(input));
++  const out = js.buildMatrix(input);
++  assert.equal(js.toCSV(input, out), toCSV(input, out));
++  assert.equal(js.toMarkdown(input, out), toMarkdown(input, out));
++});
++
++test('examples/diff.json is the deterministic re-run diff of the worked example', () => {
++  const diff = JSON.parse(readFileSync(new URL('../examples/diff.json', import.meta.url), 'utf8'));
++  assert.deepEqual(diff.summary, { added: 0, removed: 0, changed: 1, unchanged: 14 });
++  const changed = diff.cells.filter((c: any) => c.changed);
++  assert.equal(changed.length, 1);
++  assert.equal(changed[0].documentId, 'harbor-saas');
++  assert.equal(changed[0].questionId, 'Q5');
++  assert.equal(changed[0].prev?.unverifiedReason, 'quote_not_verified');
++  assert.equal(changed[0].next?.status, 'answered');
++});
++
+diff --git a/open-artifacts/tabular-review/core/matrix.ts b/open-artifacts/tabular-review/core/matrix.ts
+index cfb7ead..86bef55 100644
+--- a/open-artifacts/tabular-review/core/matrix.ts
++++ b/open-artifacts/tabular-review/core/matrix.ts
+@@ -5,11 +5,16 @@
+  * Contract (catalog §2.1): one row per document, one column per question,
+  * every answered cell source-anchored. A cell is `answered` ONLY when the
+  * supplied answer carries a quote that locates in the document (exact or
+- * normalized; fuzzy anchors the answer but is flagged for review). Anything
+- * else is `unverified` with a machine reason — never guessed:
++ * normalized; fuzzy anchors the answer but is flagged for review) AND the
++ * answer satisfies the question's typed schema, if any. Anything else is
++ * `unverified` with a machine reason — never guessed:
+  *   not_answered | missing_quote | quote_not_verified | no_such_document
++ *   | constraint_violation | not_present | unclear | needs_review
+  *
+- * Exports: RFC-4180 CSV and Markdown, with anchors preserved in the export.
++ * The core also runs a deterministic consistency pass (minority classify
++ * values in a column are flagged `outlier_value`; the answer is kept) and
++ * emits: RFC-4180 CSV (with an empty reviewer `Verified` column), Markdown,
++ * a per-cell sources audit CSV, and a re-run diff (`diffMatrices`).
+  */
+ 
+ import { bestWindow, rawContains } from './textutil';
+@@ -19,10 +24,24 @@ export interface ReviewDoc {
+   name: string;
+   text: string;
+ }
++export type QuestionType = 'classify' | 'date' | 'duration' | 'currency' | 'number' | 'verbatim' | 'free';
++export interface QuestionBounds {
++  min?: number;
++  max?: number;
++  /** unit the bounds are expressed in (duration: days|weeks|months|years, default months) */
++  unit?: string;
++}
+ export interface Question {
+   id: string;
+   question: string;
++  /** typed questions are machine-checked; untyped questions are free-text */
++  type?: QuestionType;
++  /** classify: allowed values (an answer must match one) */
++  options?: string[];
++  /** duration/currency/number: inclusive numeric bounds */
++  bounds?: QuestionBounds;
+ }
++export type NotFoundState = 'not_present' | 'unclear' | 'needs_review';
+ export interface CellInput {
+   documentId: string;
+   questionId: string;
+@@ -31,6 +50,8 @@ export interface CellInput {
+   /** verbatim supporting quote from the document */
+   quote?: string;
+   pinpoint?: string;
++  /** extractor's explicit not-found state; takes precedence over `answer` */
++  notFound?: NotFoundState;
+ }
+ export interface MatrixInput {
+   documents: ReviewDoc[];
+@@ -39,7 +60,13 @@ export interface MatrixInput {
+   fuzzyThreshold?: number;
+ }
+ 
+-export type UnverifiedReason = 'not_answered' | 'missing_quote' | 'quote_not_verified' | 'no_such_document';
++export type UnverifiedReason =
++  | 'not_answered'
++  | 'missing_quote'
++  | 'quote_not_verified'
++  | 'no_such_document'
++  | 'constraint_violation'
++  | NotFoundState;
+ export interface CellVerification {
+   classification: 'exact' | 'normalized' | 'fuzzy';
+   similarity: number;
+@@ -48,6 +75,15 @@ export interface CellVerification {
+   verbatim: string;
+   pinpoint: string | null;
+ }
++/** what the core deterministically parsed from a typed answer */
++export interface SchemaInfo {
++  type: QuestionType;
++  /** classify: the matched option */
++  matched?: string;
++  /** duration/currency/number: the parsed value in `unit` */
++  value?: number;
++  unit?: string;
++}
+ export interface Cell {
+   documentId: string;
+   questionId: string;
+@@ -55,12 +91,160 @@ export interface Cell {
+   answer: string | null;
+   unverifiedReason: UnverifiedReason | null;
+   verification: CellVerification | null;
++  /** consistency-pass flags, e.g. `outlier_value` (answer is kept) */
++  flags: string[];
++  schema: SchemaInfo | null;
++}
++export interface ColumnSummary {
++  questionId: string;
++  answered: number;
++  unverified: number;
++  outliers: number;
++  reasons: Partial<Record<UnverifiedReason, number>>;
+ }
+ export interface MatrixOutput {
+-  summary: { cells: number; answered: number; unverified: number; flaggedForReview: number };
++  summary: {
++    cells: number;
++    answered: number;
++    unverified: number;
++    flaggedForReview: number;
++    outliers: number;
++    columns: ColumnSummary[];
++  };
+   cells: Cell[];
+ }
+ 
++const REASON_ORDER: UnverifiedReason[] = [
++  'not_answered',
++  'missing_quote',
++  'quote_not_verified',
++  'no_such_document',
++  'constraint_violation',
++  'not_present',
++  'unclear',
++  'needs_review',
++];
++
++/* ---------- deterministic typed-answer parsers ---------- */
++
++const MONTH_NAMES = [
++  'january', 'february', 'march', 'april', 'may', 'june',
++  'july', 'august', 'september', 'october', 'november', 'december',
++];
++const MONTH_RE = MONTH_NAMES.join('|');
++
++function escapeRegExp(s: string): string {
++  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++}
++
++/** classify match: exact (case/whitespace-folded) equality or whole-phrase containment; longest option wins. */
++export function classifyMatch(answer: string, options: string[]): string | null {
++  const norm = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase();
++  const a = norm(answer);
++  let best: string | null = null;
++  for (const opt of options) {
++    const o = opt.trim();
++    if (!o) continue;
++    const no = norm(o);
++    if (no === a || new RegExp(`\\b${escapeRegExp(no)}\\b`).test(a)) {
++      if (best === null || o.length > best.length) best = o;
++    }
++  }
++  return best;
++}
++
++/** Parse a calendar date from free text; null when no full date locates. */
++export function parseDate(s: string): { year: number; month: number; day: number } | null {
++  const iso = s.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
++  if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
++  const mdy = s.match(new RegExp(`\\b(${MONTH_RE})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, 'i'));
++  if (mdy) return validDate(Number(mdy[3]), MONTH_NAMES.indexOf(mdy[1].toLowerCase()) + 1, Number(mdy[2]));
++  const dmy = s.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_RE})\\.?,?\\s+(\\d{4})\\b`, 'i'));
++  if (dmy) return validDate(Number(dmy[3]), MONTH_NAMES.indexOf(dmy[2].toLowerCase()) + 1, Number(dmy[1]));
++  const my = s.match(new RegExp(`\\b(${MONTH_RE})\\.?\\s+(\\d{4})\\b`, 'i'));
++  if (my) return validDate(Number(my[2]), MONTH_NAMES.indexOf(my[1].toLowerCase()) + 1, 1);
++  return null;
++}
++function validDate(year: number, month: number, day: number): { year: number; month: number; day: number } | null {
++  if (month < 1 || month > 12 || year < 1) return null;
++  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
++  const lens = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
++  if (day < 1 || day > lens[month - 1]) return null;
++  return { year, month, day };
++}
++
++/** Parse a duration to canonical months (day=1/30, week=7/30, month=1, year=12); null when none locates. */
++export function durationMonths(s: string): number | null {
++  const m = s.match(/(\d+(?:\.\d+)?)\s*(?:calendar\s+)?(day|week|month|year)s?\b/i);
++  if (!m) return null;
++  const factors: Record<string, number> = { day: 1 / 30, week: 7 / 30, month: 1, year: 12 };
++  return Number(m[1]) * factors[m[2].toLowerCase()];
++}
++function convertMonths(v: number, unit: string | undefined): { value: number; unit: string } {
++  const u = (unit ?? 'months').toLowerCase();
++  const per: Record<string, number> = { days: 30, weeks: 30 / 7, months: 1, years: 1 / 12 };
++  return { value: v * (per[u] ?? 1), unit: u };
++}
++
++/** Parse a currency amount ("$50,000", "50,000 USD"); null when none locates. */
++export function currencyAmount(s: string): number | null {
++  const m =
++    s.match(/[$£€]\s*([\d,]+(?:\.\d+)?)/) ??
++    s.match(/([\d,]+(?:\.\d+)?)\s*(?:USD|GBP|EUR|dollars|pounds|euros)\b/i);
++  return m ? Number(m[1].replace(/,/g, '')) : null;
++}
++
++function firstNumber(s: string): number | null {
++  const m = s.match(/\d[\d,]*(?:\.\d+)?/);
++  return m ? Number(m[0].replace(/,/g, '')) : null;
++}
++
++function withinBounds(v: number, b: QuestionBounds): boolean {
++  const eps = 1e-9;
++  return (b.min === undefined || v >= b.min - eps) && (b.max === undefined || v <= b.max + eps);
++}
++
++/**
++ * Enforce a question's typed schema on a quote-verified answer.
++ * Returns null when there is nothing to check (untyped/free),
++ * false on violation, or the parsed SchemaInfo on success.
++ */
++function checkSchema(q: Question, answer: string, doc: ReviewDoc): SchemaInfo | false | null {
++  switch (q.type) {
++    case undefined:
++    case 'free':
++      return null;
++    case 'classify': {
++      if (!q.options?.length) return null;
++      const matched = classifyMatch(answer, q.options);
++      return matched === null ? false : { type: 'classify', matched };
++    }
++    case 'date':
++      return parseDate(answer) === null ? false : { type: 'date' };
++    case 'duration': {
++      const months = durationMonths(answer);
++      if (months === null) return false;
++      const { value, unit } = convertMonths(months, q.bounds?.unit);
++      if (q.bounds && !withinBounds(value, q.bounds)) return false;
++      return { type: 'duration', value, unit };
++    }
++    case 'currency': {
++      const amount = currencyAmount(answer);
++      if (amount === null) return false;
++      if (q.bounds && !withinBounds(amount, q.bounds)) return false;
++      return { type: 'currency', value: amount };
++    }
++    case 'number': {
++      const n = firstNumber(answer);
++      if (n === null) return false;
++      if (q.bounds && !withinBounds(n, q.bounds)) return false;
++      return { type: 'number', value: n };
++    }
++    case 'verbatim':
++      return rawContains(doc.text, answer) ? { type: 'verbatim' } : false;
++  }
++}
++
+ function verifyQuote(doc: ReviewDoc, cell: CellInput, fuzzyThreshold: number): CellVerification | null {
+   if (!cell.quote) return null;
+   const win = bestWindow(doc.text, cell.quote);
+@@ -96,39 +280,92 @@ export function buildMatrix(input: MatrixInput): MatrixOutput {
+     for (const q of input.questions) {
+       if (!questions.has(q.id)) continue;
+       const c = supplied.get(`${doc.id}::${q.id}`);
++      if (c?.notFound) {
++        // explicit extractor assertion: the document does not answer (distinct states)
++        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: c.notFound, verification: null, flags: [], schema: null });
++        continue;
++      }
+       if (!c || c.answer === undefined || c.answer === null || c.answer.trim() === '') {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'not_answered', verification: null });
++        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'not_answered', verification: null, flags: [], schema: null });
+         continue;
+       }
+       const docObj = docs.get(c.documentId);
+       if (!docObj) {
+-        cells.push({ documentId: c.documentId, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'no_such_document', verification: null });
++        cells.push({ documentId: c.documentId, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'no_such_document', verification: null, flags: [], schema: null });
+         continue;
+       }
+       if (!c.quote || c.quote.trim() === '') {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'missing_quote', verification: null });
++        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'missing_quote', verification: null, flags: [], schema: null });
+         continue;
+       }
+       const verification = verifyQuote(docObj, c, fuzzyThreshold);
+       if (!verification) {
+-        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'quote_not_verified', verification: null });
++        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'quote_not_verified', verification: null, flags: [], schema: null });
++        continue;
++      }
++      const schema = checkSchema(q, c.answer, docObj);
++      if (schema === false) {
++        // typed question: the answer violates the schema (option set / parse / bounds)
++        cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'constraint_violation', verification: null, flags: [], schema: null });
+         continue;
+       }
+-      cells.push({ documentId: doc.id, questionId: q.id, status: 'answered', answer: c.answer, unverifiedReason: null, verification });
++      cells.push({ documentId: doc.id, questionId: q.id, status: 'answered', answer: c.answer, unverifiedReason: null, verification, flags: [], schema });
+     }
+   }
+ 
++  // consistency pass — minority classify values in a column are flagged (answer kept)
++  let outliers = 0;
++  for (const q of input.questions) {
++    if (q.type !== 'classify' || !q.options?.length) continue;
++    const col = cells.filter((c) => c.questionId === q.id && c.status === 'answered');
++    if (col.length < 2) continue;
++    const counts = new Map<string, number>();
++    for (const c of col) {
++      const k = c.schema?.matched ?? c.answer!;
++      counts.set(k, (counts.get(k) ?? 0) + 1);
++    }
++    const threshold = Math.max(1, 0.1 * col.length); // count ≤ max(1, 10% of column)
++    if (![...counts.values()].some((n) => n > threshold)) continue; // no majority to diverge from
++    for (const c of col) {
++      const k = c.schema?.matched ?? c.answer!;
++      if ((counts.get(k) ?? 0) <= threshold) {
++        c.flags.push('outlier_value');
++        outliers++;
++      }
++    }
++  }
++
++  const columns: ColumnSummary[] = input.questions.map((q) => {
++    const col = cells.filter((c) => c.questionId === q.id);
++    const reasons: Partial<Record<UnverifiedReason, number>> = {};
++    for (const r of REASON_ORDER) {
++      const n = col.filter((c) => c.unverifiedReason === r).length;
++      if (n > 0) reasons[r] = n;
++    }
++    return {
++      questionId: q.id,
++      answered: col.filter((c) => c.status === 'answered').length,
++      unverified: col.filter((c) => c.status === 'unverified').length,
++      outliers: col.filter((c) => c.flags.includes('outlier_value')).length,
++      reasons,
++    };
++  });
++
+   return {
+     summary: {
+       cells: cells.length,
+       answered: cells.filter((c) => c.status === 'answered').length,
+       unverified: cells.filter((c) => c.status === 'unverified').length,
+       flaggedForReview: cells.filter((c) => c.verification?.classification === 'fuzzy').length,
++      outliers,
++      columns,
+     },
+     cells,
+   };
+ }
+ 
++/* ---------- exports ---------- */
++
+ /** RFC-4180: quote fields containing commas, quotes, or newlines. */
+ export function csvEscape(value: string): string {
+   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+@@ -136,7 +373,7 @@ export function csvEscape(value: string): string {
+ 
+ export function toCSV(input: MatrixInput, out: MatrixOutput): string {
+   const lines: string[] = [];
+-  lines.push(csvEscape('Document') + ',' + input.questions.map((q) => csvEscape(q.question)).join(','));
++  lines.push(csvEscape('Document') + ',' + input.questions.map((q) => csvEscape(q.question)).join(',') + ',Verified');
+   for (const doc of input.documents) {
+     const row = [csvEscape(doc.name)];
+     for (const q of input.questions) {
+@@ -146,14 +383,38 @@ export function toCSV(input: MatrixInput, out: MatrixOutput): string {
+       } else {
+         const pin = cell.verification?.pinpoint ? ` [${cell.verification.pinpoint}]` : '';
+         const flag = cell.verification?.classification === 'fuzzy' ? ' [quote fuzzy — review]' : '';
+-        row.push(csvEscape(`${cell.answer}${pin}${flag}`));
++        const outlier = cell.flags.includes('outlier_value') ? ' [outlier_value]' : '';
++        row.push(csvEscape(`${cell.answer}${pin}${flag}${outlier}`));
+       }
+     }
++    row.push(''); // empty reviewer sign-off column
+     lines.push(row.join(','));
+   }
+   return lines.join('\r\n') + '\r\n';
+ }
+ 
++/** Per-cell audit companion: every cell's verbatim anchor, char span, pinpoint. */
++export function toSourcesCSV(input: MatrixInput, out: MatrixOutput): string {
++  const docName = new Map(input.documents.map((d) => [d.id, d.name]));
++  const qText = new Map(input.questions.map((q) => [q.id, q.question]));
++  const lines: string[] = [];
++  lines.push('Document,Question,Verbatim,Span,Pinpoint,Classification');
++  for (const c of out.cells) {
++    const v = c.verification;
++    lines.push(
++      [
++        csvEscape(docName.get(c.documentId) ?? c.documentId),
++        csvEscape(qText.get(c.questionId) ?? c.questionId),
++        v ? csvEscape(v.verbatim) : '',
++        v ? `${v.charStart}-${v.charEnd}` : '',
++        v?.pinpoint ? csvEscape(v.pinpoint) : '',
++        v ? v.classification : c.unverifiedReason ?? '',
++      ].join(','),
++    );
++  }
++  return lines.join('\r\n') + '\r\n';
++}
++
+ export function toMarkdown(input: MatrixInput, out: MatrixOutput): string {
+   const esc = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+   const lines: string[] = [];
+@@ -168,10 +429,72 @@ export function toMarkdown(input: MatrixInput, out: MatrixOutput): string {
+       } else {
+         const pin = cell.verification?.pinpoint ? ` [${cell.verification.pinpoint}]` : '';
+         const flag = cell.verification?.classification === 'fuzzy' ? ' ⚠ quote fuzzy — review' : '';
+-        row.push(esc(cell.answer!) + esc(pin) + flag);
++        const outlier = cell.flags.includes('outlier_value') ? ' ⚠ outlier_value' : '';
++        row.push(esc(cell.answer!) + esc(pin) + flag + outlier);
+       }
+     }
+     lines.push(`| ${row.join(' | ')} |`);
+   }
+   return lines.join('\n') + '\n';
+ }
++
++/* ---------- re-run diff ---------- */
++
++export interface CellDiffSide {
++  status: 'answered' | 'unverified';
++  answer: string | null;
++  classification: string | null;
++  unverifiedReason: UnverifiedReason | null;
++}
++export interface CellDiff {
++  documentId: string;
++  questionId: string;
++  added: boolean;
++  removed: boolean;
++  changed: boolean;
++  prev: CellDiffSide | null;
++  next: CellDiffSide | null;
++}
++export interface MatrixDiff {
++  cells: CellDiff[];
++  summary: { added: number; removed: number; changed: number; unchanged: number };
++}
++
++function sideOf(c: Cell): CellDiffSide {
++  return {
++    status: c.status,
++    answer: c.answer,
++    classification: c.verification?.classification ?? null,
++    unverifiedReason: c.unverifiedReason ?? null,
++  };
++}
++
++/** Deterministic diff between two runs: added/removed cells and status/answer/classification/reason changes. */
++export function diffMatrices(prev: MatrixOutput, next: MatrixOutput): MatrixDiff {
++  const key = (c: Cell): string => `${c.documentId}::${c.questionId}`;
++  const prevMap = new Map(prev.cells.map((c) => [key(c), c]));
++  const nextMap = new Map(next.cells.map((c) => [key(c), c]));
++  const diffs: CellDiff[] = [];
++  let added = 0;
++  let removed = 0;
++  let changed = 0;
++  let unchanged = 0;
++  const emit = (k: string, p: Cell | undefined, n: Cell | undefined): void => {
++    const [documentId, questionId] = k.split('::');
++    if (p && !n) {
++      removed++;
++      diffs.push({ documentId, questionId, added: false, removed: true, changed: false, prev: sideOf(p), next: null });
++    } else if (!p && n) {
++      added++;
++      diffs.push({ documentId, questionId, added: true, removed: false, changed: false, prev: null, next: sideOf(n) });
++    } else if (p && n) {
++      const same = JSON.stringify(sideOf(p)) === JSON.stringify(sideOf(n));
++      if (same) unchanged++;
++      else changed++;
++      diffs.push({ documentId, questionId, added: false, removed: false, changed: !same, prev: sideOf(p), next: sideOf(n) });
++    }
++  };
++  for (const c of prev.cells) emit(key(c), c, nextMap.get(key(c)));
++  for (const c of next.cells) if (!prevMap.has(key(c))) emit(key(c), undefined, c);
++  return { cells: diffs, summary: { added, removed, changed, unchanged } };
++}
+diff --git a/open-artifacts/tabular-review/demo/index.html b/open-artifacts/tabular-review/demo/index.html
+index 972d112..133cbe9 100644
+--- a/open-artifacts/tabular-review/demo/index.html
++++ b/open-artifacts/tabular-review/demo/index.html
+@@ -16,6 +16,8 @@
+   section { margin-top: 48px; }
+   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
++  .pick { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  select { font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: var(--hairline); border-radius: var(--radius); background: #fff; color: var(--text); }
+   .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
+   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
+   .counts div:last-child { border-right: none; }
+@@ -46,9 +48,10 @@
+     <div class="rule"></div>
+     <p class="lede">A documents × questions matrix where <b>the core verifies, never answers</b>: a cell counts as
+       answered ONLY when its answer carries a quote that actually locates in the document (exact or normalized;
+-      fuzzy anchors but is flagged for review). Everything else is <b>UNVERIFIED</b> with a machine reason —
+-      not_answered, missing_quote, quote_not_verified — and anchors survive CSV/Markdown export. Open
+-      reimplementation of Anthropic's closed artifact.</p>
++      fuzzy anchors but is flagged for review) — and, on typed questions, ONLY when the answer satisfies the
++      question's machine-checked schema. Everything else is <b>UNVERIFIED</b> with a machine reason —
++      not_answered, missing_quote, quote_not_verified, constraint_violation, not_present / unclear / needs_review —
++      and anchors survive CSV/Markdown export. Open reimplementation of Anthropic's closed artifact.</p>
+     <p class="lede" style="font-size:13px">Worked example (fictional): 3 agreements × 5 questions — 15 cells,
+       including one deliberately unanswered and one quote that does not locate (the California governing-law cell).</p>
+   </header>
+@@ -57,9 +60,17 @@
+     <h2>Summary</h2>
+     <div class="counts" id="counts"></div>
+     <div class="row-btns">
++      <div class="pick">
++        <label for="tpl">Question set</label>
++        <select id="tpl">
++          <option value="free">free-text (as extracted)</option>
++          <option value="typed">M&amp;A diligence (typed schema)</option>
++        </select>
++      </div>
+       <button id="csvBtn">Export matrix.csv</button>
+       <button id="mdBtn" class="ghost">Export matrix.md</button>
+       <button id="jsonBtn" class="ghost">Export output.json</button>
++      <button id="diffBtn" class="ghost">Export diff.json</button>
+     </div>
+   </section>
+ 
+@@ -77,56 +88,90 @@
+ </div>
+ 
+ <script type="module">
+-  import { buildMatrix, toCSV, toMarkdown } from "../core/core.js";
++  import { buildMatrix, toCSV, toMarkdown, diffMatrices } from "../core/core.js";
+   import EXAMPLE from "./example.js";
++  import TEMPLATE from "./templates.js";
+ 
+-  const out = buildMatrix(EXAMPLE);
+-  const s = out.summary;
+-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+-  const cellOf = (d, q) => out.cells.find((c) => c.documentId === d.id && c.questionId === q.id);
++  const NL = String.fromCharCode(10);
++  const esc = (v) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
++  const inputFor = (mode) => ({ ...EXAMPLE, questions: mode === "typed" ? TEMPLATE : EXAMPLE.questions });
+ 
+-  document.getElementById("counts").innerHTML =
+-    `<div><b>${s.cells}</b><span>cells</span></div>` +
+-    `<div><b>${s.answered}</b><span>answered (anchored)</span></div>` +
+-    `<div><b>${s.unverified}</b><span>unverified</span></div>` +
+-    `<div><b>${s.flaggedForReview}</b><span>fuzzy — review</span></div>`;
++  let currentInput, currentOut;
+ 
+-  document.getElementById("matrix").innerHTML =
+-    `<tr><th>Document</th>${EXAMPLE.questions.map((q) => `<th>${esc(q.question)}</th>`).join("")}</tr>` +
+-    EXAMPLE.documents
+-      .map(
+-        (doc) =>
+-          `<tr><td><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></td>` +
+-          EXAMPLE.questions
+-            .map((q) => {
+-              const cell = cellOf(doc, q);
+-              if (!cell || cell.status === "unverified") {
+-                return `<td class="unv">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</td>`;
+-              }
+-              const pin = cell.verification?.pinpoint ? ` <b class="pin">[${esc(cell.verification.pinpoint)}]</b>` : "";
+-              const flag = cell.verification?.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
+-              return `<td class="ans">${esc(cell.answer)}${pin}${flag}<br><b class="pin">chars ${cell.verification.charStart}–${cell.verification.charEnd} · ${esc(cell.verification.classification)}</b></td>`;
+-            })
+-            .join("") +
+-          `</tr>`
+-      )
+-      .join("");
++  function schemaBadge(cell) {
++    if (!cell.schema) return "";
++    const s = cell.schema;
++    const detail = s.type === "classify" ? ": " + s.matched : s.value !== undefined ? ": " + s.value + (s.unit ? " " + s.unit : "") : "";
++    return ` <b class="pin">[${esc(s.type)}${esc(detail)}]</b>`;
++  }
++
++  function render(mode) {
++    currentInput = inputFor(mode);
++    currentOut = buildMatrix(currentInput);
++    const out = currentOut;
++    const s = out.summary;
++    const cellOf = (d, q) => out.cells.find((c) => c.documentId === d.id && c.questionId === q.id);
++
++    document.getElementById("counts").innerHTML =
++      `<div><b>${s.cells}</b><span>cells</span></div>` +
++      `<div><b>${s.answered}</b><span>answered (anchored)</span></div>` +
++      `<div><b>${s.unverified}</b><span>unverified</span></div>` +
++      `<div><b>${s.flaggedForReview}</b><span>fuzzy — review</span></div>` +
++      `<div><b>${s.outliers}</b><span>outlier values</span></div>`;
++
++    document.getElementById("matrix").innerHTML =
++      `<tr><th>Document</th>${currentInput.questions.map((q) => `<th>${esc(q.question)}${q.type ? `<br><b class="pin">[${esc(q.type)}]</b>` : ""}</th>`).join("")}</tr>` +
++      EXAMPLE.documents
++        .map(
++          (doc) =>
++            `<tr><td><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></td>` +
++            currentInput.questions
++              .map((q) => {
++                const cell = cellOf(doc, q);
++                if (!cell || cell.status === "unverified") {
++                  return `<td class="unv">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</td>`;
++                }
++                const pin = cell.verification?.pinpoint ? ` <b class="pin">[${esc(cell.verification.pinpoint)}]</b>` : "";
++                const flag = cell.verification?.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
++                const outlier = cell.flags.includes("outlier_value") ? ` <span class="fuzzy">outlier_value</span>` : "";
++                return `<td class="ans">${esc(cell.answer)}${pin}${flag}${outlier}${schemaBadge(cell)}<br><b class="pin">chars ${cell.verification.charStart}–${cell.verification.charEnd} · ${esc(cell.verification.classification)}</b></td>`;
++              })
++              .join("") +
++            `</tr>`
++        )
++        .join("");
++
++    const unv = out.cells.filter((c) => c.status === "unverified");
++    document.getElementById("reasons").innerHTML =
++      `<b>Why unverified (machine reasons, never guesses):</b><br>` +
++      (unv.length
++        ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>")
++        : "every supplied cell verified");
++  }
+ 
+-  const unv = out.cells.filter((c) => c.status === "unverified");
+-  document.getElementById("reasons").innerHTML =
+-    `<b>Why unverified (machine reasons, never guesses):</b><br>` +
+-    (unv.length
+-      ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>")
+-      : "every supplied cell verified");
++  document.getElementById("tpl").onchange = (e) => render(e.target.value);
++  render("free");
+ 
+   function download(name, content, type) {
+     const blob = new Blob([content], { type });
+     const a = document.createElement("a");
+     a.href = URL.createObjectURL(blob); a.download = name; a.click();
+   }
+-  document.getElementById("csvBtn").onclick = () => download("matrix.csv", toCSV(EXAMPLE, out), "text/csv");
+-  document.getElementById("mdBtn").onclick = () => download("matrix.md", toMarkdown(EXAMPLE, out), "text/markdown");
+-  document.getElementById("jsonBtn").onclick = () => download("matrix-output.json", JSON.stringify(out, null, 2) + "\n", "application/json");
++  document.getElementById("csvBtn").onclick = () => download("matrix.csv", toCSV(currentInput, currentOut), "text/csv");
++  document.getElementById("mdBtn").onclick = () => download("matrix.md", toMarkdown(currentInput, currentOut), "text/markdown");
++  document.getElementById("jsonBtn").onclick = () => download("matrix-output.json", JSON.stringify(currentOut, null, 2) + NL, "application/json");
++  // Re-run diff (mirrors examples/run.ts): this run vs the same extraction with
++  // the one rejected quote (harbor-saas × Q5) corrected to real document text.
++  document.getElementById("diffBtn").onclick = () => {
++    const prev = buildMatrix(inputFor("free"));
++    const next = buildMatrix({
++      ...inputFor("free"),
++      cells: EXAMPLE.cells.map((c) =>
++        c.documentId === "harbor-saas" && c.questionId === "Q5" ? { ...c, answer: "California", quote: "Governing law: California." } : c,
++      ),
++    });
++    download("diff.json", JSON.stringify(diffMatrices(prev, next), null, 2) + NL, "application/json");
++  };
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/tabular-review/demo/templates.js b/open-artifacts/tabular-review/demo/templates.js
+new file mode 100644
+index 0000000..6edb631
+--- /dev/null
++++ b/open-artifacts/tabular-review/demo/templates.js
+@@ -0,0 +1,13 @@
++/**
++ * Typed question templates for the demo. Mirrors templates/ma-diligence.json
++ * exactly (kept in sync by a core test — `demo templates mirror`); edit both
++ * or regenerate together. IDs match the worked example so a template re-types
++ * the same documents × questions grid.
++ */
++export default [
++  { "id": "Q1", "question": "What is the term / subscription length?", "type": "duration", "bounds": { "min": 1, "max": 120, "unit": "months" } },
++  { "id": "Q2", "question": "What notice is required to terminate for convenience?", "type": "duration", "bounds": { "min": 1, "max": 365, "unit": "days" } },
++  { "id": "Q3", "question": "What is the liability cap?", "type": "currency", "bounds": { "min": 1, "max": 10000000, "unit": "USD" } },
++  { "id": "Q4", "question": "Is assignment permitted?", "type": "classify", "options": ["yes", "no", "consent required"] },
++  { "id": "Q5", "question": "What law governs the agreement?", "type": "classify", "options": ["Delaware", "New York", "England and Wales", "California"] }
++];
+diff --git a/open-artifacts/tabular-review/examples/diff.json b/open-artifacts/tabular-review/examples/diff.json
+new file mode 100644
+index 0000000..0ef3d5a
+--- /dev/null
++++ b/open-artifacts/tabular-review/examples/diff.json
+@@ -0,0 +1,295 @@
++{
++  "cells": [
++    {
++      "documentId": "cory-msa",
++      "questionId": "Q1",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "3 years from the Effective Date",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "3 years from the Effective Date",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "cory-msa",
++      "questionId": "Q2",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "90 days prior written notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "90 days prior written notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "cory-msa",
++      "questionId": "Q3",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "Fees paid in the preceding 12 months",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "Fees paid in the preceding 12 months",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "cory-msa",
++      "questionId": "Q4",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "No — consent required",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "No — consent required",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "cory-msa",
++      "questionId": "Q5",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "England and Wales",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "England and Wales",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "lightway-nda",
++      "questionId": "Q1",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "2 years from the Effective Date",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "2 years from the Effective Date",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "lightway-nda",
++      "questionId": "Q2",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "30 days written notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "30 days written notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "lightway-nda",
++      "questionId": "Q3",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "$50,000 total",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "$50,000 total",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "lightway-nda",
++      "questionId": "Q4",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "No (receiving party may not assign)",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "No (receiving party may not assign)",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "lightway-nda",
++      "questionId": "Q5",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "New York",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "New York",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "harbor-saas",
++      "questionId": "Q1",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "12 months, auto-renewing",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "12 months, auto-renewing",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "harbor-saas",
++      "questionId": "Q2",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "60 days notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "60 days notice",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "harbor-saas",
++      "questionId": "Q3",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "unverified",
++        "answer": null,
++        "classification": null,
++        "unverifiedReason": "not_answered"
++      },
++      "next": {
++        "status": "unverified",
++        "answer": null,
++        "classification": null,
++        "unverifiedReason": "not_answered"
++      }
++    },
++    {
++      "documentId": "harbor-saas",
++      "questionId": "Q4",
++      "added": false,
++      "removed": false,
++      "changed": false,
++      "prev": {
++        "status": "answered",
++        "answer": "Yes, to a merger successor",
++        "classification": "exact",
++        "unverifiedReason": null
++      },
++      "next": {
++        "status": "answered",
++        "answer": "Yes, to a merger successor",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    },
++    {
++      "documentId": "harbor-saas",
++      "questionId": "Q5",
++      "added": false,
++      "removed": false,
++      "changed": true,
++      "prev": {
++        "status": "unverified",
++        "answer": null,
++        "classification": null,
++        "unverifiedReason": "quote_not_verified"
++      },
++      "next": {
++        "status": "answered",
++        "answer": "California",
++        "classification": "exact",
++        "unverifiedReason": null
++      }
++    }
++  ],
++  "summary": {
++    "added": 0,
++    "removed": 0,
++    "changed": 1,
++    "unchanged": 14
++  }
++}
+diff --git a/open-artifacts/tabular-review/examples/matrix.csv b/open-artifacts/tabular-review/examples/matrix.csv
+index 8c69565..22711be 100644
+--- a/open-artifacts/tabular-review/examples/matrix.csv
++++ b/open-artifacts/tabular-review/examples/matrix.csv
+@@ -1,4 +1,4 @@
+-Document,What is the term / subscription length?,What notice is required to terminate for convenience?,What is the liability cap?,Is assignment permitted?,What law governs the agreement?
+-"MSA — Corydon Analytics (signed Mar. 2025, fictional)",3 years from the Effective Date [§ 2],90 days prior written notice [§ 3],Fees paid in the preceding 12 months [§ 8],No — consent required [§ 11],England and Wales [§ 14]
+-"NDA — Lightway Optics (draft v4, fictional)",2 years from the Effective Date [§ 1],30 days written notice [§ 4],"$50,000 total [§ 7]",No (receiving party may not assign) [§ 9],New York [§ 12]
+-"SaaS Order Form — Harbor Freight Data Co. (counter-signed, fictional)","12 months, auto-renewing",60 days notice,UNVERIFIED (not_answered),"Yes, to a merger successor",UNVERIFIED (quote_not_verified)
++Document,What is the term / subscription length?,What notice is required to terminate for convenience?,What is the liability cap?,Is assignment permitted?,What law governs the agreement?,Verified
++"MSA — Corydon Analytics (signed Mar. 2025, fictional)",3 years from the Effective Date [§ 2],90 days prior written notice [§ 3],Fees paid in the preceding 12 months [§ 8],No — consent required [§ 11],England and Wales [§ 14],
++"NDA — Lightway Optics (draft v4, fictional)",2 years from the Effective Date [§ 1],30 days written notice [§ 4],"$50,000 total [§ 7]",No (receiving party may not assign) [§ 9],New York [§ 12],
++"SaaS Order Form — Harbor Freight Data Co. (counter-signed, fictional)","12 months, auto-renewing",60 days notice,UNVERIFIED (not_answered),"Yes, to a merger successor",UNVERIFIED (quote_not_verified),
+diff --git a/open-artifacts/tabular-review/examples/output.json b/open-artifacts/tabular-review/examples/output.json
+index abca9d8..01b4f5a 100644
+--- a/open-artifacts/tabular-review/examples/output.json
++++ b/open-artifacts/tabular-review/examples/output.json
+@@ -3,7 +3,49 @@
+     "cells": 15,
+     "answered": 13,
+     "unverified": 2,
+-    "flaggedForReview": 0
++    "flaggedForReview": 0,
++    "outliers": 0,
++    "columns": [
++      {
++        "questionId": "Q1",
++        "answered": 3,
++        "unverified": 0,
++        "outliers": 0,
++        "reasons": {}
++      },
++      {
++        "questionId": "Q2",
++        "answered": 3,
++        "unverified": 0,
++        "outliers": 0,
++        "reasons": {}
++      },
++      {
++        "questionId": "Q3",
++        "answered": 2,
++        "unverified": 1,
++        "outliers": 0,
++        "reasons": {
++          "not_answered": 1
++        }
++      },
++      {
++        "questionId": "Q4",
++        "answered": 3,
++        "unverified": 0,
++        "outliers": 0,
++        "reasons": {}
++      },
++      {
++        "questionId": "Q5",
++        "answered": 2,
++        "unverified": 1,
++        "outliers": 0,
++        "reasons": {
++          "quote_not_verified": 1
++        }
++      }
++    ]
+   },
+   "cells": [
+     {
+@@ -19,7 +61,9 @@
+         "charEnd": 90,
+         "verbatim": "This Agreement commences on the Effective Date and continues for three (3) years.",
+         "pinpoint": "§ 2"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "cory-msa",
+@@ -34,7 +78,9 @@
+         "charEnd": 193,
+         "verbatim": "Either party may terminate for convenience upon ninety (90) days prior written notice.",
+         "pinpoint": "§ 3"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "cory-msa",
+@@ -49,7 +95,9 @@
+         "charEnd": 318,
+         "verbatim": "Each party's aggregate liability shall not exceed the fees paid in the twelve (12) months preceding the claim.",
+         "pinpoint": "§ 8"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "cory-msa",
+@@ -64,7 +112,9 @@
+         "charEnd": 417,
+         "verbatim": "Neither party may assign this Agreement without the other's prior written consent.",
+         "pinpoint": "§ 11"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "cory-msa",
+@@ -79,7 +129,9 @@
+         "charEnd": 497,
+         "verbatim": "This Agreement is governed by the laws of England and Wales.",
+         "pinpoint": "§ 14"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "lightway-nda",
+@@ -94,7 +146,9 @@
+         "charEnd": 76,
+         "verbatim": "This Agreement continues for two (2) years from the Effective Date.",
+         "pinpoint": "§ 1"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "lightway-nda",
+@@ -109,7 +163,9 @@
+         "charEnd": 188,
+         "verbatim": "Either party may terminate this Agreement for convenience upon thirty (30) days written notice.",
+         "pinpoint": "§ 4"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "lightway-nda",
+@@ -124,7 +180,9 @@
+         "charEnd": 260,
+         "verbatim": "Disclosing party's total liability is limited to $50,000.",
+         "pinpoint": "§ 7"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "lightway-nda",
+@@ -139,7 +197,9 @@
+         "charEnd": 322,
+         "verbatim": "Receiving party may not assign this Agreement.",
+         "pinpoint": "§ 9"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "lightway-nda",
+@@ -154,7 +214,9 @@
+         "charEnd": 406,
+         "verbatim": "This Agreement is governed by the laws of the State of New York.",
+         "pinpoint": "§ 12"
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "harbor-saas",
+@@ -169,7 +231,9 @@
+         "charEnd": 111,
+         "verbatim": "Subscription Term: twelve (12) months, auto-renewing unless cancelled sixty (60) days before each renewal date.",
+         "pinpoint": null
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "harbor-saas",
+@@ -184,7 +248,9 @@
+         "charEnd": 193,
+         "verbatim": "either party may cancel for convenience with sixty (60) days notice",
+         "pinpoint": null
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "harbor-saas",
+@@ -192,7 +258,9 @@
+       "status": "unverified",
+       "answer": null,
+       "unverifiedReason": "not_answered",
+-      "verification": null
++      "verification": null,
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "harbor-saas",
+@@ -207,7 +275,9 @@
+         "charEnd": 334,
+         "verbatim": "Assignment: permitted to a successor in a merger.",
+         "pinpoint": null
+-      }
++      },
++      "flags": [],
++      "schema": null
+     },
+     {
+       "documentId": "harbor-saas",
+@@ -215,7 +285,9 @@
+       "status": "unverified",
+       "answer": null,
+       "unverifiedReason": "quote_not_verified",
+-      "verification": null
++      "verification": null,
++      "flags": [],
++      "schema": null
+     }
+   ]
+ }
+diff --git a/open-artifacts/tabular-review/examples/run.ts b/open-artifacts/tabular-review/examples/run.ts
+index 9632765..a8c0d36 100644
+--- a/open-artifacts/tabular-review/examples/run.ts
++++ b/open-artifacts/tabular-review/examples/run.ts
+@@ -1,12 +1,14 @@
+ /**
+  * Reproducible worked example: reads examples/input.json, builds the matrix,
+- * writes examples/output.json + examples/matrix.csv + examples/matrix.md.
++ * writes examples/output.json + examples/matrix.csv + examples/matrix.md,
++ * plus examples/diff.json — the re-run diff after the extractor fixes the one
++ * hallucinated quote (harbor-saas × Q5) the core rejected in this run.
+  * Run:  npx tsx examples/run.ts
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { buildMatrix, toCSV, toMarkdown } from '../core/matrix';
++import { buildMatrix, toCSV, toMarkdown, diffMatrices } from '../core/matrix';
+ import type { MatrixInput } from '../core/matrix';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+@@ -15,4 +17,17 @@ const out = buildMatrix(input);
+ writeFileSync(join(here, 'output.json'), JSON.stringify(out, null, 2) + '\n');
+ writeFileSync(join(here, 'matrix.csv'), toCSV(input, out));
+ writeFileSync(join(here, 'matrix.md'), toMarkdown(input, out));
+-console.log(`${out.summary.cells} cells: ${out.summary.answered} answered, ${out.summary.unverified} unverified -> output.json, matrix.csv, matrix.md`);
++
++// Simulated re-run: the same extraction with the rejected harbor-saas × Q5
++// quote corrected to text that actually appears in the document.
++const rerun = buildMatrix({
++  ...input,
++  cells: input.cells.map((c) =>
++    c.documentId === 'harbor-saas' && c.questionId === 'Q5'
++      ? { ...c, answer: 'California', quote: 'Governing law: California.' }
++      : c,
++  ),
++});
++writeFileSync(join(here, 'diff.json'), JSON.stringify(diffMatrices(out, rerun), null, 2) + '\n');
++
++console.log(`${out.summary.cells} cells: ${out.summary.answered} answered, ${out.summary.unverified} unverified -> output.json, matrix.csv, matrix.md, diff.json`);
+diff --git a/open-artifacts/tabular-review/spec.md b/open-artifacts/tabular-review/spec.md
+index bb04486..fba4cbe 100644
+--- a/open-artifacts/tabular-review/spec.md
++++ b/open-artifacts/tabular-review/spec.md
+@@ -10,8 +10,11 @@ cell is source-anchored and **unverified cells are never guessed**.
+ |---|---|
+ | Cell verification: answer's quote must locate in the document | core (deterministic) |
+ | Anchor: classification, similarity, char span, verbatim quote, pinpoint | core (deterministic) |
++| Typed-answer schema enforcement (classify/date/duration/currency/number/verbatim) | core (deterministic) |
++| Not-found state mapping (`not_present`/`unclear`/`needs_review`) | core (deterministic) |
++| Cross-document consistency pass (minority classify values flagged) | core (deterministic) |
+ | `unverified` classification with machine reasons | core (deterministic) |
+-| CSV (RFC-4180) and Markdown export with anchors preserved | core (deterministic) |
++| CSV (RFC-4180, reviewer `Verified` column), sources CSV, Markdown, re-run diff | core (deterministic) |
+ | Reading documents and drafting candidate answers/quotes | LLM (prompt below) |
+ 
+ ## Input contract (`MatrixInput`, JSON)
+@@ -19,13 +22,21 @@ cell is source-anchored and **unverified cells are never guessed**.
+ ```jsonc
+ {
+   "documents": [ { "id": "nda-1", "name": "NDA (draft 2)", "text": "…" } ],
+-  "questions": [ { "id": "Q1", "question": "What is the term?" } ],
++  "questions": [
++    { "id": "Q1", "question": "What is the term?" },              // untyped => free text
++    { "id": "Q4", "question": "Is assignment permitted?",
++      "type": "classify", "options": ["yes", "no", "consent required"] },
++    { "id": "Q1b", "question": "Term length?", "type": "duration",
++      "bounds": { "min": 1, "max": 120, "unit": "months" } }
++  ],
+   "fuzzyThreshold": 0.7,                    // optional, default 0.7
+   "cells": [
+     { "documentId": "nda-1", "questionId": "Q1",
+       "answer": "3 years from the Effective Date",   // null/omitted => unverified
+       "quote": "continues for three (3) years",      // REQUIRED to be answered
+-      "pinpoint": "§ 2" }                            // optional
++      "pinpoint": "§ 2" },                           // optional
++    { "documentId": "nda-1", "questionId": "Q9",
++      "notFound": "not_present" }                    // extractor's explicit state
+   ]
+ }
+ ```
+@@ -33,26 +44,73 @@ cell is source-anchored and **unverified cells are never guessed**.
+ Missing cell entries are treated as `answer: null` — the matrix always covers
+ the full documents × questions grid.
+ 
++### Typed questions (`Question.type`)
++
++`classify` (answer must match an `options` entry, case/whitespace-folded;
++longest contained option wins), `date` (must parse as a calendar date),
++`duration` (parsed to canonical months; `bounds` may set `unit`
++days|weeks|months|years, default months), `currency` (must carry a parseable
++amount like `$50,000` or `50,000 USD`), `number`, `verbatim` (answer must
++appear in the document text), `free`/omitted (no schema check). A
++quote-verified answer that fails its schema becomes `unverified` with reason
++`constraint_violation`; the parsed result is recorded in `cell.schema`
++(`matched` option, `value` + `unit`).
++
++### Not-found states
++
++A cell may instead carry `notFound: "not_present" | "unclear" |
++"needs_review"` — three extractor assertions the deal team acts on
++differently. Each maps to an `unverified` cell with that exact reason,
++taking precedence over `answer`.
++
+ ## Output contract (`MatrixOutput`, JSON)
+ 
+ One `Cell` per document × question:
+ 
+ - `status: "answered"` — only when a non-empty answer carries a quote that
+-  locates in the document:
++  locates in the document AND satisfies the question's typed schema, if any:
+   - `exact` — quote is a verbatim substring;
+   - `normalized` — same tokens modulo case/punctuation (≥ 0.95);
+   - `fuzzy` — substantial overlap at `fuzzyThreshold`; the answer stands but
+     is counted in `summary.flaggedForReview` (⚠ in exports).
+   - `verification` carries `{classification, similarity, charStart, charEnd,
+-    verbatim, pinpoint}`.
++    verbatim, pinpoint}`; `schema` carries the parsed typed result.
+ - `status: "unverified"` with `unverifiedReason`:
+   `not_answered` (no answer supplied) · `missing_quote` (answer without a
+   source) · `quote_not_verified` (quote does not locate in the document —
+-  e.g. a hallucinated or stale quote) · `no_such_document`.
++  e.g. a hallucinated or stale quote) · `no_such_document` ·
++  `constraint_violation` (typed schema failed) · `not_present` · `unclear` ·
++  `needs_review`.
++
++`summary.columns[]` reports the verification workload per question
++(`answered`, `unverified`, `outliers`, per-reason counts).
++
++### Consistency pass
++
++After per-cell verification the core runs a deterministic cross-document
++check over each `classify` column: answered cells whose matched option is a
++minority (count ≤ max(1, 10% of the answered column)) are flagged
++`outlier_value` — the answer is kept, the flag surfaces in exports and
++`summary.outliers`.
++
++### Exports
++
++- `toCSV` — RFC-4180 escaping; anchors inline as `[§ 2]`; unverified cells
++  render `UNVERIFIED (reason)`; trailing empty `Verified` column for
++  reviewer sign-off.
++- `toSourcesCSV` — per-cell audit companion (one row per cell: document,
++  question, verbatim anchor, char span, pinpoint, classification/reason).
++- `toMarkdown` — pipes escaped, `⚠ quote fuzzy — review` and
++  `⚠ outlier_value` markers.
++- `diffMatrices(prev, next)` — deterministic re-run diff: per-cell
++  added/removed/changed (status, answer, classification, reason), with a
++  summary count.
++
++## Templates
+ 
+-Exports: `toCSV` (RFC-4180 escaping; anchors inline as `[§ 2]`; unverified
+-cells render `UNVERIFIED (reason)`) and `toMarkdown` (pipes escaped, `⚠ quote
+-fuzzy — review` markers).
++`templates/ma-diligence.json` is a typed `Question[]` for a fictional M&A
++diligence question set; the demo loads the same set via
++`demo/templates.js` (a parity test keeps the two from drifting).
+ 
+ ## Prompt schema for the LLM part
+ 
+@@ -64,21 +122,25 @@ The LLM drafts cells but cannot self-certify; the core decides:
+                "quote": "continues for three (3) years",   // copy verbatim
+                "pinpoint": "§ 2" } ] }
+ // If the document does not state the answer, emit answer: null — never infer.
++// If the document plainly does not address the question, emit
++// notFound: "not_present" | "unclear" | "needs_review" instead of guessing.
+ ```
+ 
+-Pipeline: extract texts → LLM drafts cells → **core verifies every quote** →
+-matrix + exports. A cell whose quote fails verification ships as UNVERIFIED,
+-which is the artifact's core promise.
++Pipeline: extract texts → LLM drafts cells → **core verifies every quote and
++schema** → matrix + exports. A cell whose quote fails verification ships as
++UNVERIFIED, which is the artifact's core promise.
+ 
+ ## Determinism
+ 
+ No timestamps/randomness; `examples/run.ts` regenerates byte-identical
+-`output.json`, `matrix.csv`, `matrix.md`.
++`output.json`, `matrix.csv`, `matrix.md`, and `diff.json` (the re-run diff
++after the extractor corrects the one rejected quote).
+ 
+ ## Known limits
+ 
+ - Verification is per-document text; page-level pinpoints require the
+   document text to be page-segmented upstream (pinpoint is carried, not
+   validated here — see the cite-check core for that).
++- The outlier heuristic is a flag for reviewers, not a legal conclusion.
+ - Version staleness (a newer amendment replacing the text) is out of scope;
+-  re-run the pipeline on the current text and diff.
++  re-run the pipeline on the current text and diff via `diffMatrices`.
+diff --git a/open-artifacts/tabular-review/templates/ma-diligence.json b/open-artifacts/tabular-review/templates/ma-diligence.json
+new file mode 100644
+index 0000000..972ac4a
+--- /dev/null
++++ b/open-artifacts/tabular-review/templates/ma-diligence.json
+@@ -0,0 +1,7 @@
++[
++  { "id": "Q1", "question": "What is the term / subscription length?", "type": "duration", "bounds": { "min": 1, "max": 120, "unit": "months" } },
++  { "id": "Q2", "question": "What notice is required to terminate for convenience?", "type": "duration", "bounds": { "min": 1, "max": 365, "unit": "days" } },
++  { "id": "Q3", "question": "What is the liability cap?", "type": "currency", "bounds": { "min": 1, "max": 10000000, "unit": "USD" } },
++  { "id": "Q4", "question": "Is assignment permitted?", "type": "classify", "options": ["yes", "no", "consent required"] },
++  { "id": "Q5", "question": "What law governs the agreement?", "type": "classify", "options": ["Delaware", "New York", "England and Wales", "California"] }
++]

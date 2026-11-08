@@ -1,0 +1,1555 @@
+diff --git a/open-artifacts/eviction-notice-check-board/README.md b/open-artifacts/eviction-notice-check-board/README.md
+index 0a10953..c187493 100644
+--- a/open-artifacts/eviction-notice-check-board/README.md
++++ b/open-artifacts/eviction-notice-check-board/README.md
+@@ -8,22 +8,36 @@ positively attested.
+ ## Run
+ 
+ - Demo: open `demo/index.html` (standalone; prefilled with fictional
+-  worked example E-1031).
+-- Tests: `node --test core/core.test.js` — 18 tests.
++  worked example E-1031; batch mode + MD/CSV/JSON export buttons).
++- Tests: `node --test core/core.test.js` (37 tests) and
++  `node --test core/extract.test.js` (7 tests) — 44 total.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+   `board.md`, `board.csv` from `examples/input.json`.
+ 
+ ## How it works
+ 
+-1. Rules-as-data: five editable example US jurisdictions (CA, TX, NY,
+-   WA, OH) with notice periods, required contents, authorized service
+-   methods, and a citation per rule. Fork the JSON to correct or extend.
++1. Rules-as-data: ten editable example US jurisdictions (CA, TX, NY, WA,
++   OH, FL, GA, AZ, IL, OR) plus a fictional city overlay showing the
++   `extends` mechanism (city content rows append to the state's). Fork the
++   JSON to correct or extend.
+ 2. You attest facts from the notice: stated period, contents present/
+-   absent, service method, optional service/filing dates.
++   absent with optional verbatim quotes, service method, optional
++   service/filing dates. A paste-the-notice extractor (`core/extract.js`)
++   drafts attestations deterministically — every draft carries its
++   verbatim quote, nothing inferred — and a human confirms them.
+ 3. The core checks each requirement deterministically; unknown
+    jurisdictions/notice types and unattested facts stay UNVERIFIED —
+-   tests pin this behavior.
+-4. Verdict: any FAIL → fail; else any UNVERIFIED → unverified; else pass.
++   tests pin this behavior. Contents attested `{present: true}` without
++   a verbatim quote also stay UNVERIFIED (evidence must be auditable).
++4. Deadline engine: with a service date, the board reports the earliest
++   lawful filing date and notice-period expiration, skipping weekends
++   and listed holiday dates where the rule requires it (holiday dates
++   are editable data).
++5. Provenance: every board is stamped with the ruleset `version`, `asOf`
++   date, and a stable content hash of the rules it used.
++6. Clinic checklists: a JSON checklist merges as extra cited rows with
++   the same never-guess semantics.
++7. Verdict: any FAIL → fail; else any UNVERIFIED → unverified; else pass.
+ 
+ ## Better than the closed counterpart
+ 
+diff --git a/open-artifacts/eviction-notice-check-board/core/core.js b/open-artifacts/eviction-notice-check-board/core/core.js
+index 686c234..526c55b 100644
+--- a/open-artifacts/eviction-notice-check-board/core/core.js
++++ b/open-artifacts/eviction-notice-check-board/core/core.js
+@@ -15,7 +15,8 @@
+ // ------------------------------------------------------ rules-as-data
+ 
+ /**
+- * Five example US jurisdictions. EDITABLE JSON-shaped data: extend,
++ * Ten example US jurisdictions plus one fictional city overlay (showing
++ * the `extends` overlay mechanism). EDITABLE JSON-shaped data: extend,
+  * correct, or replace — every check cites the `cite` it used.
+  * Values are plausible defaults for demonstration, marked verify-first.
+  */
+@@ -118,19 +119,207 @@ export const JURISDICTIONS = {
+       },
+     },
+   },
++  'florida-example': {
++    name: 'Florida (example defaults — verify locally)',
++    noticeTypes: {
++      'pay-or-quit': {
++        minDays: 3,
++        contents: [
++          { id: 'amount-due', label: 'Amount of rent due', cite: 'Fla. Stat. § 83.56(3) (example)' },
++        ],
++        service: { methods: ['personal', 'mail', 'post'], cite: 'Fla. Stat. § 83.56 (example)' },
++        cite: 'Fla. Stat. § 83.56(3) (example defaults)',
++      },
++    },
++  },
++  'georgia-example': {
++    name: 'Georgia (example defaults — verify locally)',
++    noticeTypes: {
++      'termination-month-to-month': {
++        minDays: 60,
++        contents: [
++          { id: 'termination-date', label: 'Date the tenancy ends', cite: 'Ga. Code § 44-7-7 (example)' },
++        ],
++        service: { methods: ['personal', 'mail'], cite: 'Ga. Code § 44-7-7 (example)' },
++        cite: 'Ga. Code § 44-7-7 (example defaults)',
++      },
++    },
++  },
++  'arizona-example': {
++    name: 'Arizona (example defaults — verify locally)',
++    noticeTypes: {
++      'pay-or-vacate': {
++        minDays: 5,
++        contents: [
++          { id: 'amount-due', label: 'Amount of rent due', cite: 'A.R.S. § 33-1368(B) (example)' },
++        ],
++        service: { methods: ['personal', 'mail'], cite: 'A.R.S. § 33-1368 (example)' },
++        cite: 'A.R.S. § 33-1368(B) (example defaults)',
++      },
++    },
++  },
++  'illinois-example': {
++    name: 'Illinois (example defaults — verify locally)',
++    noticeTypes: {
++      'pay-or-quit': {
++        minDays: 5,
++        contents: [
++          { id: 'amount-due', label: 'Amount of rent due', cite: '735 ILCS 5/9-209 (example)' },
++        ],
++        service: { methods: ['personal', 'mail'], cite: '735 ILCS 5/9-209 (example)' },
++        cite: '735 ILCS 5/9-209 (example defaults)',
++      },
++    },
++  },
++  'oregon-example': {
++    name: 'Oregon (example defaults — verify locally)',
++    noticeTypes: {
++      'termination-month-to-month': {
++        minDays: 90,
++        contents: [
++          { id: 'termination-date', label: 'Date the tenancy ends', cite: 'ORS 90.427 (example)' },
++        ],
++        service: { methods: ['personal', 'mail', 'post-and-mail'], cite: 'ORS 90.427 (example)' },
++        cite: 'ORS 90.427 (example defaults)',
++      },
++    },
++  },
++  'fiction-city-example': {
++    name: 'Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city)',
++    extends: 'california-example',
++    noticeTypes: {
++      'pay-or-quit': {
++        contents: [
++          { id: 'bilingual-notice', label: 'Notice also given in Spanish (Fiction City language requirement)', cite: 'Fiction City Mun. Code § 9.99 (FICTIONAL — illustrative only)' },
++        ],
++      },
++    },
++  },
+ };
+ 
++/**
++ * Editable example: 2026 US federal-holiday dates as ISO. Used only by the
++ * deadline engine when a rule excludes weekends/holidays. Replace with your
++ * court's actual holiday calendar. Jurisdiction-level `holidays` arrays are
++ * merged on top of these.
++ */
++export const HOLIDAYS = [
++  '2026-01-01', '2026-01-19', '2026-02-16', '2026-05-25', '2026-06-19',
++  '2026-07-03', '2026-09-07', '2026-11-11', '2026-11-26', '2026-12-25',
++];
++
++/** Ruleset provenance stamped into every board output. */
++export const RULESET_META = { version: '2.0.0', asOf: '2026-11-07' };
++
+ export const DISCLAIMER =
+   'Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting.';
+ 
+ // ------------------------------------------------------------- checks
+ 
+-function isoDays(a, b) {
+-  return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
++function canonical(v) {
++  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
++  if (v && typeof v === 'object') {
++    return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
++  }
++  return JSON.stringify(v);
++}
++
++function fnv1a(s) {
++  let h = 0x811c9dc5;
++  for (const ch of s) {
++    h ^= ch.codePointAt(0);
++    h = Math.imul(h, 0x01000193) >>> 0;
++  }
++  return h.toString(16).padStart(8, '0');
++}
++
++/** Stable content hash of a rules object (sorted-key canonical JSON → FNV-1a). */
++export function rulesetHash(rules) {
++  return fnv1a(canonical(rules ?? JURISDICTIONS));
++}
++
++function provenance(rules) {
++  return { version: RULESET_META.version, asOf: RULESET_META.asOf, hash: rulesetHash(rules) };
+ }
+ 
+ const VALID_ISO = /^\d{4}-\d{2}-\d{2}$/;
+ 
++function isoAddDays(iso, n) {
++  return new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
++}
++
++function isBusinessDay(iso, holidays) {
++  const dow = new Date(Date.parse(iso + 'T00:00:00Z')).getUTCDay();
++  return dow !== 0 && dow !== 6 && !holidays.includes(iso);
++}
++
++/**
++ * Deadline engine: counting starts the day AFTER service. With
++ * excludeWeekendsHolidays, Saturdays, Sundays, and listed holiday dates are
++ * skipped (not counted). The notice period expires at the end of the
++ * requiredDays-th counted day, and that day is the earliest lawful filing
++ * date (acceptance: served Fri, 3-day excl-weekend → pass only from Wed).
++ * Returns null on any invalid input — never a guess.
++ */
++export function computeDeadlines(serviceDate, requiredDays, opts) {
++  const { excludeWeekendsHolidays = false, holidays = [] } = opts ?? {};
++  if (!VALID_ISO.test(String(serviceDate ?? ''))) return null;
++  if (!Number.isFinite(requiredDays) || requiredDays < 1) return null;
++  const countedDays = [];
++  const skippedDays = [];
++  let d = serviceDate;
++  for (let i = 0; countedDays.length < requiredDays && i < 3660; i++) {
++    d = isoAddDays(d, 1);
++    if (excludeWeekendsHolidays && !isBusinessDay(d, holidays)) skippedDays.push(d);
++    else countedDays.push(d);
++  }
++  if (countedDays.length < requiredDays) return null;
++  const last = countedDays[countedDays.length - 1];
++  return {
++    serviceDate,
++    requiredDays,
++    counting: excludeWeekendsHolidays ? 'business' : 'calendar',
++    earliestFiling: last,
++    expires: last,
++    countedDays,
++    skippedDays,
++  };
++}
++
++/** Counted days in (serviceDate, filedDate] under the rule's counting mode. */
++function countElapsedDays(serviceDate, filedDate, excludeWeekendsHolidays, holidays) {
++  if (Date.parse(filedDate + 'T00:00:00Z') < Date.parse(serviceDate + 'T00:00:00Z')) return -1;
++  let d = serviceDate;
++  let counted = 0;
++  for (let i = 0; i < 4000; i++) {
++    d = isoAddDays(d, 1);
++    if (!excludeWeekendsHolidays || isBusinessDay(d, holidays)) counted++;
++    if (d === filedDate) return counted;
++  }
++  return null; // span too large — refuse rather than guess
++}
++
++/**
++ * Resolve a jurisdiction entry through its `extends` chain: an overlay
++ * (e.g. a city on top of a state) inherits the base's notice types and adds
++ * its own; overlay content rows are APPENDED to the base type's rows.
++ */
++function resolveJurisdiction(rules, key, seen = new Set()) {
++  const j = Object.prototype.hasOwnProperty.call(rules, key) ? rules[key] : null;
++  if (!j || !j.extends || seen.has(j.extends)) return j;
++  seen.add(key);
++  const base = resolveJurisdiction(rules, j.extends, seen);
++  if (!base) return j;
++  const noticeTypes = { ...base.noticeTypes };
++  for (const [t, over] of Object.entries(j.noticeTypes ?? {})) {
++    const b = base.noticeTypes ? base.noticeTypes[t] : null;
++    noticeTypes[t] = b
++      ? { ...b, ...over, contents: [...(b.contents ?? []), ...(over.contents ?? [])], service: over.service ?? b.service }
++      : over;
++  }
++  return { ...base, ...j, holidays: [...(base.holidays ?? []), ...(j.holidays ?? [])], noticeTypes };
++}
++
+ /**
+  * Check one notice against a jurisdiction ruleset.
+  *
+@@ -151,22 +340,26 @@ export function checkNotice(notice, rulesets) {
+     checks.push({ id, requirement, status, detail, ruleCite: cite ?? null });
+ 
+   const jur = Object.prototype.hasOwnProperty.call(rules, jurisdiction) ? rules[jurisdiction] : null;
++  const resolved = jur ? resolveJurisdiction(rules, jurisdiction) : null;
+   if (!jur) {
+     push('jurisdiction', 'Jurisdiction ruleset loaded', 'unverified',
+       `No ruleset for "${jurisdiction}" — add or edit the jurisdiction JSON; refusing to approximate from another jurisdiction`, null);
+-    return { jurisdiction, noticeType: notice.noticeType ?? null, checks, summary: summarize(checks), disclaimer: DISCLAIMER };
++    return { jurisdiction, noticeType: notice.noticeType ?? null, checks, summary: summarize(checks), ruleset: provenance(rules), deadlines: null, disclaimer: DISCLAIMER };
+   }
+-  push('jurisdiction', 'Jurisdiction ruleset loaded', 'pass', jur.name, null);
++  push('jurisdiction', 'Jurisdiction ruleset loaded', 'pass', resolved.name, null);
+ 
+-  const type = notice.noticeType != null && Object.prototype.hasOwnProperty.call(jur.noticeTypes, notice.noticeType)
+-    ? jur.noticeTypes[notice.noticeType]
++  const type = notice.noticeType != null && Object.prototype.hasOwnProperty.call(resolved.noticeTypes, notice.noticeType)
++    ? resolved.noticeTypes[notice.noticeType]
+     : null;
+   if (!type) {
+     push('notice-type', 'Notice type recognized under this ruleset', 'unverified',
+-      `Notice type "${notice.noticeType}" not configured for ${jur.name}; known types: ${Object.keys(jur.noticeTypes).join(', ')} — extend the rules JSON or map to a local equivalent (attorney call)`, jur.cite ?? null);
+-    return { jurisdiction, noticeType: notice.noticeType ?? null, checks, summary: summarize(checks), disclaimer: DISCLAIMER };
++      `Notice type "${notice.noticeType}" not configured for ${resolved.name}; known types: ${Object.keys(resolved.noticeTypes).join(', ')} — extend the rules JSON or map to a local equivalent (attorney call)`, resolved.cite ?? null);
++    return { jurisdiction, noticeType: notice.noticeType ?? null, checks, summary: summarize(checks), ruleset: provenance(rules), deadlines: null, disclaimer: DISCLAIMER };
+   }
+-  push('notice-type', 'Notice type recognized under this ruleset', 'pass', `${notice.noticeType} (${jur.name})`, type.cite);
++  push('notice-type', 'Notice type recognized under this ruleset', 'pass', `${notice.noticeType} (${resolved.name})`, type.cite);
++
++  const holidays = [...HOLIDAYS, ...(resolved.holidays ?? [])];
++  const excl = !!type.excludeWeekendsHolidays;
+ 
+   // --- period ---
+   let requiredDays = type.minDays;
+@@ -184,17 +377,30 @@ export function checkNotice(notice, rulesets) {
+       `notice states ${notice.statedPeriodDays} days; rule requires ${requiredDays}${type.leaseCanShorten ? ' unless the lease validly shortens it (attorney to verify lease term)' : ''}`, type.cite);
+   }
+ 
++  // --- deadlines: earliest lawful filing + expiration from serviceDate ---
++  const deadlines = notice.serviceDate && VALID_ISO.test(notice.serviceDate)
++    ? computeDeadlines(notice.serviceDate, requiredDays, { excludeWeekendsHolidays: excl, holidays })
++    : null;
++
+   // --- elapsed days between service and filing, only when a filing date is
+   //     actually in play (the notice itself can be facially compliant pre-filing) ---
+   if (notice.serviceDate || notice.filedDate) {
+     if (notice.serviceDate && notice.filedDate && VALID_ISO.test(notice.serviceDate) && VALID_ISO.test(notice.filedDate)) {
+-      const elapsed = isoDays(notice.serviceDate, notice.filedDate);
+-      if (elapsed >= requiredDays) {
++      const kind = excl ? 'lawful' : 'calendar';
++      const elapsed = countElapsedDays(notice.serviceDate, notice.filedDate, excl, holidays);
++      const dlNote = deadlines ? `; earliest lawful filing ${deadlines.earliestFiling}` : '';
++      if (elapsed === -1) {
++        push('elapsed', `≥ ${requiredDays} days between service and filing`, 'fail',
++          `filing date ${notice.filedDate} precedes service date ${notice.serviceDate} — check the dates`, type.cite);
++      } else if (elapsed == null) {
++        push('elapsed', `≥ ${requiredDays} days between service and filing`, 'unverified',
++          'service → filing span too large to count — verify the dates', type.cite);
++      } else if (elapsed >= requiredDays) {
+         push('elapsed', `≥ ${requiredDays} days between service and filing`, 'pass',
+-          `${elapsed} days elapsed (${notice.serviceDate} → ${notice.filedDate})`, type.cite);
++          `${elapsed} ${kind} days elapsed (${notice.serviceDate} → ${notice.filedDate})${dlNote}`, type.cite);
+       } else {
+         push('elapsed', `≥ ${requiredDays} days between service and filing`, 'fail',
+-          `only ${elapsed} days elapsed (${notice.serviceDate} → ${notice.filedDate})`, type.cite);
++          `only ${elapsed} ${kind} days elapsed (${notice.serviceDate} → ${notice.filedDate})${dlNote}`, type.cite);
+       }
+     } else {
+       push('elapsed', `≥ ${requiredDays} days between service and filing`, 'unverified',
+@@ -202,14 +408,30 @@ export function checkNotice(notice, rulesets) {
+     }
+   }
+ 
+-  // --- required contents ---
++  // --- required contents (+ user-supplied clinic checklist items) ---
+   const attested = notice.contents ?? {};
+-  for (const c of type.contents) {
++  const checklist = (Array.isArray(notice.checklist) ? notice.checklist : [])
++    .map((it) => ({ id: it.id, label: it.label, cite: it.cite ?? 'user-supplied checklist item (no citation given)' }));
++  const seenIds = new Set();
++  for (const c of [...type.contents, ...checklist]) {
++    if (seenIds.has(c.id)) continue;
++    seenIds.add(c.id);
+     const v = attested[c.id];
+     if (v === true) {
+-      push(`content:${c.id}`, `Contents: ${c.label}`, 'pass', 'attested present on the notice', c.cite);
++      push(`content:${c.id}`, `Contents: ${c.label}`, 'pass', 'attested present on the notice (no verbatim quote recorded)', c.cite);
+     } else if (v === false) {
+       push(`content:${c.id}`, `Contents: ${c.label}`, 'fail', 'attested ABSENT from the notice', c.cite);
++    } else if (v && typeof v === 'object') {
++      const q = typeof v.quote === 'string' && v.quote.trim() ? v.quote.trim() : null;
++      if (v.present === true && q) {
++        push(`content:${c.id}`, `Contents: ${c.label}`, 'pass', `attested present — verbatim from the notice: “${q}”`, c.cite);
++      } else if (v.present === true) {
++        push(`content:${c.id}`, `Contents: ${c.label}`, 'unverified', 'attested present but no verbatim quote recorded — add the quote from the notice so the row is auditable', c.cite);
++      } else if (v.present === false) {
++        push(`content:${c.id}`, `Contents: ${c.label}`, 'fail', `attested ABSENT from the notice${q ? ` — related text: “${q}”` : ''}`, c.cite);
++      } else {
++        push(`content:${c.id}`, `Contents: ${c.label}`, 'unverified', `present not attested (present=${JSON.stringify(v.present)}) — record true/false for "${c.id}"; never assumed`, c.cite);
++      }
+     } else {
+       push(`content:${c.id}`, `Contents: ${c.label}`, 'unverified',
+         `not attested — review the notice document and record true/false for "${c.id}"; never assumed`, c.cite);
+@@ -234,6 +456,8 @@ export function checkNotice(notice, rulesets) {
+     noticeType: notice.noticeType,
+     checks,
+     summary: summarize(checks),
++    ruleset: provenance(rules),
++    deadlines,
+     disclaimer: DISCLAIMER,
+   };
+ }
+@@ -252,6 +476,14 @@ export function renderBoard(board) {
+   L.push(board.disclaimer, '');
+   L.push(`**Verdict: ${board.summary.verdict.toUpperCase()}** ` +
+     `(pass ${board.summary.pass} · fail ${board.summary.fail} · unverified ${board.summary.unverified})`, '');
++  if (board.ruleset) {
++    L.push(`Ruleset: v${board.ruleset.version} · as of ${board.ruleset.asOf} · hash ${board.ruleset.hash}`, '');
++  }
++  if (board.deadlines) {
++    const d = board.deadlines;
++    const skipped = d.counting === 'business' && d.skippedDays.length ? `; ${d.skippedDays.length} weekend/holiday days skipped` : '';
++    L.push(`Earliest lawful filing: ${d.earliestFiling} · notice period expires ${d.expires} (${d.requiredDays} ${d.counting} days${skipped})`, '');
++  }
+   L.push('| Status | Requirement | Detail | Rule cited |');
+   L.push('|---|---|---|---|');
+   const order = { fail: 0, unverified: 1, pass: 2 };
+diff --git a/open-artifacts/eviction-notice-check-board/core/core.test.js b/open-artifacts/eviction-notice-check-board/core/core.test.js
+index daa5819..dfeeec0 100644
+--- a/open-artifacts/eviction-notice-check-board/core/core.test.js
++++ b/open-artifacts/eviction-notice-check-board/core/core.test.js
+@@ -1,6 +1,10 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { checkNotice, renderBoard, toCSV, JURISDICTIONS } from './core.js';
++import { readFileSync } from 'node:fs';
++import {
++  checkNotice, renderBoard, toCSV, JURISDICTIONS,
++  computeDeadlines, rulesetHash, RULESET_META, HOLIDAYS,
++} from './core.js';
+ 
+ const CA_PAY = {
+   jurisdiction: 'california-example',
+@@ -46,13 +50,24 @@ test('missing statedPeriodDays is unverified, never inferred', () => {
+   assert.equal(b.summary.verdict, 'unverified');
+ });
+ 
+-test('elapsed days between service and filing verified when both dates known', () => {
+-  const ok = checkNotice({ ...CA_PAY, serviceDate: '2026-10-01', filedDate: '2026-10-05' });
+-  assert.equal(ok.checks.find((c) => c.id === 'elapsed').status, 'pass');
+-  const short = checkNotice({ ...CA_PAY, serviceDate: '2026-10-01', filedDate: '2026-10-02' });
++test('elapsed days count lawful days when the rule excludes weekends/holidays (CA)', () => {
++  // served Thu 2026-10-01; 3-day excl-weekend counts Fri 10-02 (1), Mon 10-05 (2), Tue 10-06 (3)
++  const ok = checkNotice({ ...CA_PAY, serviceDate: '2026-10-01', filedDate: '2026-10-06' });
++  const okRow = ok.checks.find((c) => c.id === 'elapsed');
++  assert.equal(okRow.status, 'pass');
++  assert.match(okRow.detail, /3 lawful days/);
++  const short = checkNotice({ ...CA_PAY, serviceDate: '2026-10-01', filedDate: '2026-10-05' });
+   const e = short.checks.find((c) => c.id === 'elapsed');
+   assert.equal(e.status, 'fail');
+-  assert.match(e.detail, /only 1 days elapsed/);
++  assert.match(e.detail, /only 2 lawful days/);
++});
++
++test('elapsed days stay calendar days when the rule has no exclusion (TX)', () => {
++  const base = { jurisdiction: 'texas-example', noticeType: 'notice-to-vacate', statedPeriodDays: 3, serviceMethod: 'mail', contents: { 'vacate-demand': true } };
++  const ok = checkNotice({ ...base, serviceDate: '2026-10-01', filedDate: '2026-10-04' });
++  assert.equal(ok.checks.find((c) => c.id === 'elapsed').status, 'pass');
++  const short = checkNotice({ ...base, serviceDate: '2026-10-01', filedDate: '2026-10-03' });
++  assert.equal(short.checks.find((c) => c.id === 'elapsed').status, 'fail');
+ });
+ 
+ test('invalid dates in elapsed check are unverified, not crashed', () => {
+@@ -144,8 +159,9 @@ test('editable rules-as-data: custom jurisdiction JSON plugs in', () => {
+   assert.equal(b.checks.find((c) => c.id === 'period').ruleCite, 'Fiction Code § 1');
+ });
+ 
+-test('five example jurisdictions ship in the data', () => {
+-  assert.equal(Object.keys(JURISDICTIONS).length, 5);
++test('ten example jurisdictions plus a fictional city overlay ship in the data', () => {
++  assert.equal(Object.keys(JURISDICTIONS).length, 11);
++  assert.ok(JURISDICTIONS['fiction-city-example'].name.match(/fictional/i));
+ });
+ 
+ test('renderBoard lists verdict, disclaimer, and all rows with cites', () => {
+@@ -161,3 +177,186 @@ test('toCSV emits header plus one row per check', () => {
+   assert.equal(lines[0], 'id,requirement,status,detail,ruleCite');
+   assert.equal(lines.length, 1 + 8); // jurisdiction + type + period + 4 contents + service (no elapsed: no dates given)
+ });
++
++// --------------------------------------------- improvement 1: evidence-backed attestations
++
++test('evidence-backed contents: {present, quote} echoes the verbatim quote in the row', () => {
++  const b = checkNotice({
++    ...CA_PAY,
++    contents: {
++      'amount-due': { present: true, quote: 'Rent of $1,250.00 is now due' },
++      'payment-person': true,
++      'payment-methods': true,
++      'nonrent-fees-excluded': true,
++    },
++  });
++  const row = b.checks.find((c) => c.id === 'content:amount-due');
++  assert.equal(row.status, 'pass');
++  assert.match(row.detail, /Rent of \$1,250\.00 is now due/);
++  assert.equal(b.summary.verdict, 'pass');
++});
++
++test('evidence-backed contents: present without a quote stays unverified (auditable evidence missing)', () => {
++  const b = checkNotice({
++    ...CA_PAY,
++    contents: { 'amount-due': { present: true } },
++  });
++  const row = b.checks.find((c) => c.id === 'content:amount-due');
++  assert.equal(row.status, 'unverified');
++  assert.match(row.detail, /no verbatim quote/);
++  assert.equal(b.summary.verdict, 'unverified');
++});
++
++test('evidence-backed contents: {present: false, quote} fails and still shows the quote', () => {
++  const b = checkNotice({
++    ...CA_PAY,
++    contents: { 'payment-methods': { present: false, quote: 'online payment only' } },
++  });
++  const row = b.checks.find((c) => c.id === 'content:payment-methods');
++  assert.equal(row.status, 'fail');
++  assert.match(row.detail, /online payment only/);
++});
++
++// --------------------------------------------- improvement 2: deadline engine
++
++test('deadline engine: served Friday, 3-day excl-weekend → earliest lawful filing Wednesday', () => {
++  const d = computeDeadlines('2026-10-02', 3, { excludeWeekendsHolidays: true, holidays: [] });
++  assert.equal(d.earliestFiling, '2026-10-07'); // Mon 10-05 (1), Tue 10-06 (2), Wed 10-07 (3)
++  assert.equal(d.expires, '2026-10-07');
++  assert.deepEqual(d.skippedDays, ['2026-10-03', '2026-10-04']);
++  assert.equal(d.counting, 'business');
++});
++
++test('deadline engine: listed holidays are skipped like weekends', () => {
++  const d = computeDeadlines('2026-10-02', 3, { excludeWeekendsHolidays: true, holidays: ['2026-10-05'] });
++  assert.equal(d.earliestFiling, '2026-10-08'); // Mon 10-05 is a holiday → Tue (1), Wed (2), Thu (3)
++  assert.ok(d.skippedDays.includes('2026-10-05'));
++});
++
++test('deadline engine: calendar counting when the rule has no exclusion', () => {
++  const d = computeDeadlines('2026-10-01', 3, { excludeWeekendsHolidays: false });
++  assert.equal(d.earliestFiling, '2026-10-04');
++  assert.equal(d.counting, 'calendar');
++  assert.deepEqual(d.skippedDays, []);
++});
++
++test('deadline engine: invalid inputs return null, never a guess', () => {
++  assert.equal(computeDeadlines('Oct 1', 3), null);
++  assert.equal(computeDeadlines('2026-10-01', 0), null);
++});
++
++test('board carries deadlines and renderBoard prints the earliest lawful filing', () => {
++  const b = checkNotice({ ...CA_PAY, serviceDate: '2026-10-02' });
++  assert.equal(b.deadlines.earliestFiling, '2026-10-07');
++  const md = renderBoard(b);
++  assert.match(md, /Earliest lawful filing: 2026-10-07/);
++});
++
++test('plan acceptance: served Fri 3-day excl-weekend passes only from Wednesday', () => {
++  const tue = checkNotice({ ...CA_PAY, serviceDate: '2026-10-02', filedDate: '2026-10-06' });
++  assert.equal(tue.checks.find((c) => c.id === 'elapsed').status, 'fail');
++  const wed = checkNotice({ ...CA_PAY, serviceDate: '2026-10-02', filedDate: '2026-10-07' });
++  assert.equal(wed.checks.find((c) => c.id === 'elapsed').status, 'pass');
++});
++
++// --------------------------------------------- improvement 3: ruleset provenance
++
++test('board stamps ruleset provenance: asOf, version, stable hash', () => {
++  const b1 = checkNotice(CA_PAY);
++  const b2 = checkNotice(CA_PAY);
++  assert.ok(b1.ruleset.asOf);
++  assert.ok(b1.ruleset.version);
++  assert.match(b1.ruleset.hash, /^[0-9a-f]{8}$/);
++  assert.equal(b1.ruleset.hash, b2.ruleset.hash); // stable across calls
++  assert.equal(b1.ruleset.hash, rulesetHash(JURISDICTIONS));
++});
++
++test('ruleset hash changes when the rules change', () => {
++  const custom = { 'fiction-state': { name: 'Fiction State', noticeTypes: {} } };
++  const b = checkNotice({ ...CA_PAY }, custom);
++  assert.notEqual(b.ruleset.hash, rulesetHash(JURISDICTIONS));
++});
++
++test('renderBoard shows the ruleset version line', () => {
++  const md = renderBoard(checkNotice(CA_PAY));
++  assert.match(md, new RegExp(`Ruleset: v\\S+ · as of \\S{10} · hash [0-9a-f]{8}`));
++});
++
++// --------------------------------------------- improvement 4: clinic-checklist import
++
++test('clinic checklist items merge as extra cited rows with never-guess semantics', () => {
++  const notice = {
++    ...CA_PAY,
++    checklist: [
++      { id: 'utility-contact', label: 'Landlord/utility contact printed on notice', cite: 'Fiction Clinic intake checklist v3 (fictional)' },
++      { id: 'case-number', label: 'Clinic case number recorded', cite: 'Fiction Clinic intake checklist v3 (fictional)' },
++    ],
++    contents: {
++      ...CA_PAY.contents,
++      'utility-contact': { present: true, quote: 'Questions? Call Fiction Properties, (555) 010-1031' },
++    },
++  };
++  const b = checkNotice(notice);
++  const row = b.checks.find((c) => c.id === 'content:utility-contact');
++  assert.equal(row.status, 'pass');
++  assert.equal(row.ruleCite, 'Fiction Clinic intake checklist v3 (fictional)');
++  assert.match(row.detail, /\(555\) 010-1031/);
++  const missing = b.checks.find((c) => c.id === 'content:case-number');
++  assert.equal(missing.status, 'unverified');
++  const md = renderBoard(b);
++  assert.match(md, /Clinic case number recorded/);
++  assert.match(md, /Fiction Clinic intake checklist v3/);
++});
++
++test('checklist item without a cite is labeled user-supplied, never silently un-cited', () => {
++  const b = checkNotice({ ...CA_PAY, checklist: [{ id: 'extra-item', label: 'Extra item' }], contents: { ...CA_PAY.contents, 'extra-item': true } });
++  const row = b.checks.find((c) => c.id === 'content:extra-item');
++  assert.equal(row.status, 'pass');
++  assert.match(row.ruleCite, /user-supplied checklist/);
++});
++
++// --------------------------------------------- improvement 6: breadth + city overlay
++
++test('fiction-city overlay inherits CA types and adds its own bilingual requirement row', () => {
++  const b = checkNotice({
++    jurisdiction: 'fiction-city-example',
++    noticeType: 'pay-or-quit',
++    statedPeriodDays: 3,
++    serviceMethod: 'personal',
++    contents: {
++      'amount-due': true,
++      'payment-person': true,
++      'payment-methods': true,
++      'nonrent-fees-excluded': true,
++      'bilingual-notice': true,
++    },
++  });
++  assert.equal(b.summary.verdict, 'pass');
++  const row = b.checks.find((c) => c.id === 'content:bilingual-notice');
++  assert.equal(row.status, 'pass');
++  assert.match(row.ruleCite, /fictional/i);
++});
++
++test('overlay jurisdiction unknown-type row lists inherited + local notice types', () => {
++  const b = checkNotice({ ...CA_PAY, jurisdiction: 'fiction-city-example', noticeType: 'mystery-type' });
++  const t = b.checks.find((c) => c.id === 'notice-type');
++  assert.equal(t.status, 'unverified');
++  assert.match(t.detail, /pay-or-quit, termination-month-to-month/);
++});
++
++// --------------------------------------------- improvement 7: demo (see push-back on inlining)
++
++test('demo stays self-contained: no external src= or href="http links', () => {
++  const html = readFileSync(new URL('../demo/index.html', import.meta.url), 'utf8');
++  assert.equal(/src\s*=\s*["']https?:/.test(html), false);
++  assert.equal(/href\s*=\s*["']https?:/.test(html), false);
++});
++
++test('demo wires batch mode and MD/CSV exports through renderBoard/toCSV', () => {
++  const html = readFileSync(new URL('../demo/index.html', import.meta.url), 'utf8');
++  assert.ok(html.includes('toCSV('));
++  assert.ok(html.includes('renderBoard('));
++  assert.ok(html.includes('id="batchJson"'));
++  assert.ok(html.includes('id="mdBtn"'));
++  assert.ok(html.includes('id="csvBtn"'));
++});
+diff --git a/open-artifacts/eviction-notice-check-board/core/extract.js b/open-artifacts/eviction-notice-check-board/core/extract.js
+new file mode 100644
+index 0000000..6bba3c3
+--- /dev/null
++++ b/open-artifacts/eviction-notice-check-board/core/extract.js
+@@ -0,0 +1,124 @@
++/**
++ * eviction-notice-check-board — paste-the-notice intake bridge.
++ *
++ * Deterministic, LLM-free extractor: reads the raw text of a notice and
++ * DRAFTS attestations for a human to confirm. Extraction ≠ attestation —
++ * every drafted field carries the verbatim quote it came from, fields not
++ * found are null/absent (never guessed, never present:false), and nothing
++ * is mapped onto a ruleset enum by inference.
++ *
++ * All example text is fictional; matchers are deliberately conservative.
++ */
++
++const WORD_NUMBERS = {
++  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
++  eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
++};
++
++const MONTHS = {
++  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
++  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
++};
++
++// Gazetteer: state name literally on the notice → bundled ruleset key.
++// The extractor never maps a state to a rule it cannot see written down.
++const STATE_GAZETTEER = [
++  [/california/i, 'california-example'],
++  [/texas/i, 'texas-example'],
++  [/new york/i, 'new-york-example'],
++  [/washington/i, 'washington-example'],
++  [/ohio/i, 'ohio-example'],
++  [/florida/i, 'florida-example'],
++  [/georgia/i, 'georgia-example'],
++  [/arizona/i, 'arizona-example'],
++  [/illinois/i, 'illinois-example'],
++  [/oregon/i, 'oregon-example'],
++];
++
++const pad2 = (n) => String(n).padStart(2, '0');
++
++/**
++ * Draft facts from notice text.
++ * @param {string} text — the notice as pasted text
++ * @returns {Object} draft with every field nullable; contentHints only ever
++ *   contain {present: true, quote} entries (absence of a match is NOT
++ *   evidence of absence — the human decides).
++ */
++export function extractDraft(text) {
++  const s = typeof text === 'string' ? text : '';
++  const draft = {
++    statedPeriodDays: null,
++    statedPeriodDaysQuote: null,
++    amounts: [],
++    dates: [],
++    contentHints: {},
++    jurisdictionHint: null,
++    serviceMethod: null,
++    serviceMethodDescription: null,
++  };
++  if (!s.trim()) return draft;
++
++  // --- stated notice period: "three (3) day" / "3-day" / "fourteen (14) days" ---
++  const digitPeriod = s.match(/(\d+)\s*(?:\(\s*\d+\s*\)\s*)?-?\s*days?/i);
++  if (digitPeriod) {
++    draft.statedPeriodDays = Number(digitPeriod[1]);
++    draft.statedPeriodDaysQuote = digitPeriod[0];
++  } else {
++    const wordPeriod = s.match(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\s*(?:\(\s*\d+\s*\)\s*)?-?\s*days?/i);
++    if (wordPeriod) {
++      draft.statedPeriodDays = WORD_NUMBERS[wordPeriod[1].toLowerCase()];
++      draft.statedPeriodDaysQuote = wordPeriod[0];
++    }
++  }
++  if (draft.statedPeriodDays === 0) {
++    draft.statedPeriodDays = null;
++    draft.statedPeriodDaysQuote = null;
++  }
++
++  // --- amounts: verbatim $ figures ---
++  for (const m of s.matchAll(/\$\s?\d[\d,]*(?:\.\d{2})?/g)) {
++    draft.amounts.push({ amount: m[0], quote: m[0] });
++  }
++
++  // --- dates: ISO, "Month DD, YYYY", M/D/YYYY — raw kept verbatim ---
++  for (const m of s.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) {
++    draft.dates.push({ raw: m[0], iso: m[0] });
++  }
++  for (const m of s.matchAll(/\b([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) {
++    const mo = MONTHS[m[1].toLowerCase()];
++    if (mo && Number(m[2]) >= 1 && Number(m[2]) <= 31) {
++      draft.dates.push({ raw: m[0], iso: `${m[3]}-${pad2(mo)}-${pad2(Number(m[2]))}` });
++    }
++  }
++  for (const m of s.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)) {
++    if (Number(m[1]) >= 1 && Number(m[1]) <= 12) {
++      draft.dates.push({ raw: m[0], iso: `${m[3]}-${pad2(Number(m[1]))}-${pad2(Number(m[2]))}` });
++    }
++  }
++
++  // --- content hints: only PRESENT with a verbatim quote; no present:false ever ---
++  const hint = (id, present, quote) => { draft.contentHints[id] = { present, quote }; };
++  if (draft.amounts.length > 0 && /\brent\b|\bdue\b/i.test(s)) {
++    hint('amount-due', true, draft.amounts[0].quote);
++  }
++  const payLine = s.split('\n').map((l) => l.trim())
++    .find((l) => /\b(?:pay to|payable to|paid (?:to|at)|remit to|payment to|payments? (?:to|at|may be made)|online at|in person)\b/i.test(l));
++  if (payLine) {
++    hint('payment-instructions', true, payLine);
++  }
++  const vacate = s.match(/\b(?:surrender|vacate|deliver up)\b[^.\n]{0,120}premises[^.\n]{0,60}/i)
++    ?? s.match(/\bpremises\b[^.\n]{0,120}\b(?:surrender|vacate)\b[^.\n]{0,60}/i)
++    ?? s.match(/\bmust\s+(?:surrender|vacate)\b[^.\n]{0,120}/i);
++  if (vacate) hint('vacate-demand', true, vacate[0].trim());
++
++  // --- jurisdiction: only a state name literally written on the notice ---
++  for (const [re, key] of STATE_GAZETTEER) {
++    if (re.test(s)) { draft.jurisdictionHint = key; break; }
++  }
++
++  // --- service: verbatim description only; NEVER mapped to a ruleset enum ---
++  const svc = s.match(/\b(?:posted (?:on|and|or) [^.]{0,80}|personally (?:delivered|served)[^.]{0,80}|hand[- ]delivered[^.]{0,80}|certified mail[^.]{0,80}|first[- ]class mail[^.]{0,80}|mail(?:ed)? to[^.]{0,80})\./i);
++  if (svc) draft.serviceMethodDescription = svc[0].trim();
++
++  return draft;
++}
+diff --git a/open-artifacts/eviction-notice-check-board/core/extract.test.js b/open-artifacts/eviction-notice-check-board/core/extract.test.js
+new file mode 100644
+index 0000000..b5141f0
+--- /dev/null
++++ b/open-artifacts/eviction-notice-check-board/core/extract.test.js
+@@ -0,0 +1,85 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { extractDraft } from './extract.js';
++
++// All notice text below is FICTIONAL (Fiction City / Fiction Properties).
++const NOTICE = `THREE (3) DAY NOTICE TO PAY RENT OR QUIT
++
++To: Jamie Roe, 999 Fiction Ave, Fiction City
++
++Rent of $1,250.00 is now due and unpaid for the month of October 2026.
++Pay to Fiction Properties LLC, 1 Main St, Fiction City, or online at
++pay.example (in person during business hours also accepted).
++
++If you fail to pay within three (3) days, your tenancy will terminate
++on October 15, 2026 and you must surrender the premises.
++
++A copy of this notice was posted on the premises and mailed to the
++tenant's address of record on 2026-10-01.
++
++Dated: October 1, 2026 — Fiction Properties LLC (Fiction State)`;
++
++test('extracts the stated period with a verbatim quote', () => {
++  const d = extractDraft(NOTICE);
++  assert.equal(d.statedPeriodDays, 3);
++  assert.equal(d.statedPeriodDaysQuote, 'THREE (3) DAY');
++});
++
++test('extracts amounts and dates with verbatim quotes', () => {
++  const d = extractDraft(NOTICE);
++  assert.equal(d.amounts.length, 1);
++  assert.equal(d.amounts[0].amount, '$1,250.00');
++  assert.ok(d.dates.length >= 3);
++  const iso = d.dates.find((x) => x.iso === '2026-10-15');
++  assert.ok(iso, 'October 15, 2026 normalized to ISO');
++  assert.equal(iso.raw, 'October 15, 2026');
++  assert.ok(d.dates.some((x) => x.iso === '2026-10-01'));
++});
++
++test('content hints carry verbatim quotes and only ever draft PRESENT facts', () => {
++  const d = extractDraft(NOTICE);
++  const amount = d.contentHints['amount-due'];
++  assert.equal(amount.present, true);
++  assert.equal(amount.quote, '$1,250.00');
++  // payment instructions drafted from the payment sentence
++  assert.equal(d.contentHints['payment-instructions'].present, true);
++  assert.match(d.contentHints['payment-instructions'].quote, /Pay to Fiction Properties LLC/);
++  // vacate/surrender demand drafted from the quoted sentence
++  assert.equal(d.contentHints['vacate-demand'].present, true);
++  assert.match(d.contentHints['vacate-demand'].quote, /surrender the premises/);
++  // absence of a match is NOT evidence of absence: no present:false hints ever
++  for (const v of Object.values(d.contentHints)) assert.notEqual(v.present, false);
++  // no termination-date hint: the notice has dates but the draft must not
++  // decide which date is THE termination date — human confirms
++  assert.equal(d.contentHints['termination-date'], undefined);
++});
++
++test('jurisdiction hint only from a state name literally on the notice', () => {
++  const d = extractDraft(NOTICE);
++  assert.equal(d.jurisdictionHint, null); // "Fiction State" matches nothing
++  const ca = extractDraft('NOTICE TO PAY RENT OR QUIT — State of California');
++  assert.equal(ca.jurisdictionHint, 'california-example');
++});
++
++test('service method description is verbatim, never mapped to an enum', () => {
++  const d = extractDraft(NOTICE);
++  assert.equal(d.serviceMethod, null); // never guessed into the ruleset enum
++  assert.match(d.serviceMethodDescription, /posted on the premises and mailed/);
++});
++
++test('empty or unrelated text extracts nothing — every field null/empty', () => {
++  const d = extractDraft('Dear tenant, hope this finds you well.');
++  assert.equal(d.statedPeriodDays, null);
++  assert.equal(d.statedPeriodDaysQuote, null);
++  assert.equal(d.jurisdictionHint, null);
++  assert.equal(d.serviceMethod, null);
++  assert.equal(d.serviceMethodDescription, null);
++  assert.deepEqual(d.amounts, []);
++  assert.deepEqual(d.dates, []);
++  assert.deepEqual(d.contentHints, {});
++});
++
++test('draft is JSON-serializable (for the demo textarea round-trip)', () => {
++  const d = extractDraft(NOTICE);
++  assert.equal(typeof JSON.stringify(d), 'string');
++});
+diff --git a/open-artifacts/eviction-notice-check-board/demo/index.html b/open-artifacts/eviction-notice-check-board/demo/index.html
+index c79f7a9..fbc4f3a 100644
+--- a/open-artifacts/eviction-notice-check-board/demo/index.html
++++ b/open-artifacts/eviction-notice-check-board/demo/index.html
+@@ -15,16 +15,20 @@
+   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
+   .panel { border: var(--hairline); background: #fff; padding: 20px; }
+   label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin: 14px 0 4px; }
+-  select, input[type=number], input[type=date] { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: var(--bg); padding: 8px; width: 100%; box-sizing: border-box; }
++  select, input[type=number], input[type=date], input[type=text], textarea { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: var(--bg); padding: 8px; width: 100%; box-sizing: border-box; }
++  textarea { min-height: 110px; resize: vertical; }
+   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+   .contents label { text-transform: none; font-size: 12px; line-height: 1.4; }
+   .contents .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+-  .contents select { width: auto; }
++  .contents select { width: auto; flex: 0 0 auto; }
++  .contents input[type=text] { flex: 1 1 40%; font-size: 12px; }
+   button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 20px; }
+   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
++  .btns { display: flex; gap: 12px; flex-wrap: wrap; }
+   .verdict { font-family: var(--font-mono); font-size: 1.1rem; padding: 10px 14px; display: inline-block; border: 2px solid var(--text); margin-bottom: 16px; }
+   .verdict.fail { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+   .verdict.unverified { border-style: dashed; }
++  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin: 0 0 14px; line-height: 1.6; }
+   table { border-collapse: collapse; width: 100%; font-size: 13px; }
+   th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+@@ -34,6 +38,7 @@
+   .st.unverified { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
+   .cite { color: var(--text-secondary); font-size: 11px; }
+   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
++  .batch-section { margin-bottom: 32px; }
+ </style>
+ </head>
+ <body>
+@@ -41,7 +46,7 @@
+   <h1>Eviction notice check board</h1>
+   <div class="rule"></div>
+   <p class="lede">Check an eviction notice's facts against jurisdiction rules-as-data. Every requirement gets PASS / FAIL / UNVERIFIED with the rule cited. Anything not positively attested stays UNVERIFIED — the checker never guesses.</p>
+-  <p class="disclaimer">The five bundled jurisdiction rulesets are editable example data with US defaults (CA, TX, NY, WA, OH). Notice law varies by state, city, and lease, and changes often — verify every cited rule against current law. Not legal advice.</p>
++  <p class="disclaimer">The bundled jurisdiction rulesets are editable example data with US defaults (CA, TX, NY, WA, OH, FL, GA, AZ, IL, OR plus a fictional city overlay). Notice law varies by state, city, and lease, and changes often — verify every cited rule against current law. Not legal advice.</p>
+ 
+   <h2>Notice facts</h2>
+   <div class="panel">
+@@ -66,18 +71,33 @@
+       </div>
+     </div>
+     <div class="contents" id="contents">
+-      <label>Required contents — attest what you see on the notice (leave unverified if unsure)</label>
++      <label>Required contents — attest what you see, paste the verbatim quote (present without a quote stays unverified)</label>
+     </div>
++    <label for="checklist">Clinic checklist import (optional JSON array of {id, label, cite})</label>
++    <textarea id="checklist" placeholder='[{"id":"utility-contact","label":"Landlord contact printed on notice","cite":"Fiction Clinic checklist v1 (fictional)"}]'></textarea>
+     <button id="run">Check notice</button>
+     <div class="err" id="err"></div>
+   </div>
+ 
+   <h2>Check board</h2>
++  <div class="btns">
++    <button id="mdBtn">Download Markdown</button>
++    <button id="csvBtn">Download CSV</button>
++    <button id="jsonBtn">Download JSON</button>
++  </div>
+   <div id="board"></div>
++
++  <h2>Batch check (paste a JSON array of notices)</h2>
++  <div class="panel">
++    <textarea id="batchJson" placeholder='[{"jurisdiction":"california-example","noticeType":"pay-or-quit","statedPeriodDays":3,"serviceMethod":"personal","contents":{"amount-due":true}}]'></textarea>
++    <button id="batchRun">Check batch</button>
++    <div class="err" id="batchErr"></div>
++  </div>
++  <div id="batch"></div>
+ </div>
+ 
+ <script type="module">
+-import { checkNotice, JURISDICTIONS } from '../core/core.js';
++import { checkNotice, renderBoard, toCSV, JURISDICTIONS } from '../core/core.js';
+ 
+ const $ = (id) => document.getElementById(id);
+ const jurs = Object.keys(JURISDICTIONS);
+@@ -101,6 +121,7 @@ function fillContents() {
+         <option value="true">present</option>
+         <option value="false">absent</option>
+       </select>
++      <input type="text" data-quote="${c.id}" placeholder="verbatim quote" />
+       <span style="font-size:12px;flex:1">${c.label} <span class="cite">(${c.cite})</span></span>`;
+     $('contents').appendChild(row);
+   }
+@@ -117,18 +138,62 @@ $('days').value = '3';
+ $('sd').value = '2026-10-01'; $('fd').value = '2026-10-03';
+ $('service').value = 'post-and-mail';
+ document.querySelector('select[data-content="amount-due"]').value = 'true';
++document.querySelector('input[data-quote="amount-due"]').value = 'Rent of $1,250.00 is now due';
+ document.querySelector('select[data-content="payment-person"]').value = 'true';
+ document.querySelector('select[data-content="payment-methods"]').value = 'false';
+ document.querySelector('select[data-content="nonrent-fees-excluded"]').value = 'true';
+ 
+ function esc(s) { return String(s).replace(/</g, '&lt;'); }
+ 
+-$('run').addEventListener('click', () => {
+-  const errEl = $('err'); errEl.style.display = 'none';
++function collectContents() {
+   const contents = {};
+   document.querySelectorAll('select[data-content]').forEach((s) => {
+-    if (s.value !== '') contents[s.dataset.content] = s.value === 'true';
++    if (s.value === '') return;
++    const quote = document.querySelector(`input[data-quote="${s.dataset.content}"]`).value.trim();
++    contents[s.dataset.content] = quote ? { present: s.value === 'true', quote } : s.value === 'true';
+   });
++  return contents;
++}
++
++function parseChecklist(text, errEl) {
++  if (!text.trim()) return undefined;
++  try {
++    const arr = JSON.parse(text);
++    if (!Array.isArray(arr)) throw new Error('checklist must be a JSON array');
++    return arr;
++  } catch (e) {
++    errEl.textContent = 'Checklist JSON error: ' + e.message; errEl.style.display = 'block';
++    throw e;
++  }
++}
++
++function boardHtml(b) {
++  const order = { fail: 0, unverified: 1, pass: 2 };
++  const rows = [...b.checks].sort((a, c) => order[a.status] - order[c.status])
++    .map((c) => `<tr>
++      <td><span class="st ${c.status}">${c.status.toUpperCase()}</span></td>
++      <td>${esc(c.requirement)}<br /><span class="detail" style="font-size:12px;color:var(--text-secondary)">${esc(c.detail)}</span></td>
++      <td><span class="cite">${c.ruleCite ? esc(c.ruleCite) : '—'}</span></td>
++    </tr>`).join('');
++  const dl = b.deadlines
++    ? `<p class="meta">Earliest lawful filing: ${esc(b.deadlines.earliestFiling)} · notice period expires ${esc(b.deadlines.expires)} (${b.deadlines.requiredDays} ${b.deadlines.counting} days${b.deadlines.skippedDays.length ? `; ${b.deadlines.skippedDays.length} weekend/holiday days skipped` : ''})</p>`
++    : '';
++  const rs = b.ruleset
++    ? `<p class="meta">Ruleset: v${esc(b.ruleset.version)} · as of ${esc(b.ruleset.asOf)} · hash ${esc(b.ruleset.hash)}</p>`
++    : '';
++  return `
++    <div class="verdict ${b.summary.verdict}">VERDICT: ${b.summary.verdict.toUpperCase()} — pass ${b.summary.pass} · fail ${b.summary.fail} · unverified ${b.summary.unverified}</div>
++    ${dl}${rs}
++    <table><thead><tr><th>Status</th><th>Requirement</th><th>Rule cited</th></tr></thead><tbody>${rows}</tbody></table>
++    <p class="cite" style="margin-top:12px">${esc(b.disclaimer)}</p>`;
++}
++
++let boards = []; // current export set (single check or last batch)
++
++$('run').addEventListener('click', () => {
++  const errEl = $('err'); errEl.style.display = 'none';
++  let checklist;
++  try { checklist = parseChecklist($('checklist').value, errEl); } catch { return; }
+   const notice = {
+     jurisdiction: $('jur').value,
+     noticeType: $('type').value,
+@@ -137,25 +202,42 @@ $('run').addEventListener('click', () => {
+     serviceMethod: $('service').value || undefined,
+     serviceDate: $('sd').value || undefined,
+     filedDate: $('fd').value || undefined,
+-    contents,
++    contents: collectContents(),
++    ...(checklist ? { checklist } : {}),
+   };
+   let b;
+   try { b = checkNotice(notice); } catch (e) {
+     errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; return;
+   }
+-  const order = { fail: 0, unverified: 1, pass: 2 };
+-  const rows = [...b.checks].sort((a, c) => order[a.status] - order[c.status])
+-    .map((c) => `<tr>
+-      <td><span class="st ${c.status}">${c.status.toUpperCase()}</span></td>
+-      <td>${esc(c.requirement)}<br /><span class="detail" style="font-size:12px;color:var(--text-secondary)">${esc(c.detail)}</span></td>
+-      <td><span class="cite">${c.ruleCite ? esc(c.ruleCite) : '—'}</span></td>
+-    </tr>`).join('');
+-  $('board').innerHTML = `
+-    <div class="verdict ${b.summary.verdict}">VERDICT: ${b.summary.verdict.toUpperCase()} — pass ${b.summary.pass} · fail ${b.summary.fail} · unverified ${b.summary.unverified}</div>
+-    <table><thead><tr><th>Status</th><th>Requirement</th><th>Rule cited</th></tr></thead><tbody>${rows}</tbody></table>
+-    <p class="cite" style="margin-top:12px">${esc(b.disclaimer)}</p>`;
++  boards = [b];
++  $('board').innerHTML = boardHtml(b);
+ });
+ $('run').click();
++
++$('batchRun').addEventListener('click', () => {
++  const errEl = $('batchErr'); errEl.style.display = 'none';
++  let arr;
++  try { arr = JSON.parse($('batchJson').value); } catch (e) {
++    errEl.textContent = 'Batch JSON error: ' + e.message; errEl.style.display = 'block'; return;
++  }
++  if (!Array.isArray(arr)) {
++    errEl.textContent = 'Batch input must be a JSON array of notice objects';
++    errEl.style.display = 'block'; return;
++  }
++  boards = arr.map((n) => checkNotice(n));
++  $('batch').innerHTML = boards.map((b, i) =>
++    `<div class="batch-section"><h2>Notice ${i + 1} — ${esc(b.jurisdiction)} / ${esc(b.noticeType ?? 'unknown type')}</h2>${boardHtml(b)}</div>`).join('');
++});
++
++// --- exports: byte-for-byte what renderBoard()/toCSV() produce ---
++function download(name, content, type) {
++  const blob = new Blob([content], { type });
++  const a = document.createElement('a');
++  a.href = URL.createObjectURL(blob); a.download = name; a.click();
++}
++$('mdBtn').onclick = () => download('eviction-board.md', boards.map((b) => renderBoard(b)).join('\n\n---\n\n') + '\n', 'text/markdown');
++$('csvBtn').onclick = () => download('eviction-board.csv', boards.map((b) => toCSV(b)).join(''), 'text/csv');
++$('jsonBtn').onclick = () => download('eviction-board.json', JSON.stringify(boards, null, 2) + '\n', 'application/json');
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/eviction-notice-check-board/examples/board.csv b/open-artifacts/eviction-notice-check-board/examples/board.csv
+index b8b6199..3e31c7b 100644
+--- a/open-artifacts/eviction-notice-check-board/examples/board.csv
++++ b/open-artifacts/eviction-notice-check-board/examples/board.csv
+@@ -2,16 +2,16 @@ notice_id,notice_caption,check_id,requirement,status,detail,ruleCite
+ E-1031,"Kimura v. Bridge Street Apartments (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"California (example defaults — verify locally)",
+ E-1031,"Kimura v. Bridge Street Apartments (fictional)",notice-type,"Notice type recognized under this ruleset",pass,"pay-or-quit (California (example defaults — verify locally))",CCP §§ 1161(2), 1161.3 (example defaults)
+ E-1031,"Kimura v. Bridge Street Apartments (fictional)",period,"Notice period ≥ 3 days",pass,"notice states 3 days; rule requires 3",CCP §§ 1161(2), 1161.3 (example defaults)
+-E-1031,"Kimura v. Bridge Street Apartments (fictional)",elapsed,"≥ 3 days between service and filing",fail,"only 2 days elapsed (2026-10-01 → 2026-10-03)",CCP §§ 1161(2), 1161.3 (example defaults)
+-E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present on the notice",CCP § 1161(2) (example)
+-E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:payment-person,"Contents: Name, telephone, and street address of person to pay",pass,"attested present on the notice",CCP § 1161(2) (example)
++E-1031,"Kimura v. Bridge Street Apartments (fictional)",elapsed,"≥ 3 days between service and filing",fail,"only 1 lawful days elapsed (2026-10-01 → 2026-10-03); earliest lawful filing 2026-10-06",CCP §§ 1161(2), 1161.3 (example defaults)
++E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present — verbatim from the notice: “Rent of $1,250.00 is now due and unpaid”",CCP § 1161(2) (example)
++E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:payment-person,"Contents: Name, telephone, and street address of person to pay",pass,"attested present on the notice (no verbatim quote recorded)",CCP § 1161(2) (example)
+ E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:payment-methods,"Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",fail,"attested ABSENT from the notice",CCP § 1161(2) (example)
+-E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:nonrent-fees-excluded,"Contents: States notice is void if non-rent fees are included",pass,"attested present on the notice",CCP § 1161.3 (example)
++E-1031,"Kimura v. Bridge Street Apartments (fictional)",content:nonrent-fees-excluded,"Contents: States notice is void if non-rent fees are included",pass,"attested present on the notice (no verbatim quote recorded)",CCP § 1161.3 (example)
+ E-1031,"Kimura v. Bridge Street Apartments (fictional)",service,"Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",pass,"method ""post-and-mail"" is authorized",CCP § 1162 (example)
+ E-1032,"Abernathy v. Foxglove Rentals (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"New York (example defaults — verify locally)",
+ E-1032,"Abernathy v. Foxglove Rentals (fictional)",notice-type,"Notice type recognized under this ruleset",pass,"rent-demand (New York (example defaults — verify locally))",RPAPL § 733 (example defaults)
+ E-1032,"Abernathy v. Foxglove Rentals (fictional)",period,"Notice period ≥ 14 days",pass,"notice states 14 days; rule requires 14",RPAPL § 733 (example defaults)
+-E-1032,"Abernathy v. Foxglove Rentals (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present on the notice",RPAPL § 733(1) (example)
++E-1032,"Abernathy v. Foxglove Rentals (fictional)",content:amount-due,"Contents: Amount of rent due",pass,"attested present on the notice (no verbatim quote recorded)",RPAPL § 733(1) (example)
+ E-1032,"Abernathy v. Foxglove Rentals (fictional)",content:rent-periods,"Contents: Rent periods the demand covers",unverified,"not attested — review the notice document and record true/false for ""rent-periods""; never assumed",RPAPL § 733(1) (example)
+ E-1032,"Abernathy v. Foxglove Rentals (fictional)",service,"Service by an authorized method (personal, substituted, conspicuous-place, mail)",pass,"method ""conspicuous-place"" is authorized",RPAPL § 733(2) (example)
+ E-1033,"Sorenson v. Delta Flats HOA (fictional)",jurisdiction,"Jurisdiction ruleset loaded",pass,"Ohio (example defaults — verify locally)",
+@@ -19,3 +19,14 @@ E-1033,"Sorenson v. Delta Flats HOA (fictional)",notice-type,"Notice type recogn
+ E-1033,"Sorenson v. Delta Flats HOA (fictional)",period,"Notice period ≥ 3 days",pass,"notice states 3 days; rule requires 3",ORC 1923.04 (example defaults)
+ E-1033,"Sorenson v. Delta Flats HOA (fictional)",content:statutory-language,"Contents: Statutory leave-premises language (""You are being asked to leave the premises…"")",fail,"attested ABSENT from the notice",ORC 1923.04 (example)
+ E-1033,"Sorenson v. Delta Flats HOA (fictional)",service,"Service by an authorized method (personal-delivery, mail)",fail,"method ""certified-carrier-pigeon"" is NOT in the authorized list",ORC 1923.04 (example)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",jurisdiction,"Jurisdiction ruleset loaded",pass,"Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city)",
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",notice-type,"Notice type recognized under this ruleset",pass,"pay-or-quit (Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city))",CCP §§ 1161(2), 1161.3 (example defaults)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",period,"Notice period ≥ 3 days",pass,"notice states 3 days; rule requires 3",CCP §§ 1161(2), 1161.3 (example defaults)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",elapsed,"≥ 3 days between service and filing",pass,"3 lawful days elapsed (2026-10-02 → 2026-10-07); earliest lawful filing 2026-10-07",CCP §§ 1161(2), 1161.3 (example defaults)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:amount-due,"Contents: Amount of rent due",pass,"attested present — verbatim from the notice: “Rent of $980.00 is now due”",CCP § 1161(2) (example)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:payment-person,"Contents: Name, telephone, and street address of person to pay",pass,"attested present on the notice (no verbatim quote recorded)",CCP § 1161(2) (example)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:payment-methods,"Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",pass,"attested present on the notice (no verbatim quote recorded)",CCP § 1161(2) (example)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:nonrent-fees-excluded,"Contents: States notice is void if non-rent fees are included",pass,"attested present on the notice (no verbatim quote recorded)",CCP § 1161.3 (example)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:bilingual-notice,"Contents: Notice also given in Spanish (Fiction City language requirement)",pass,"attested present on the notice (no verbatim quote recorded)",Fiction City Mun. Code § 9.99 (FICTIONAL — illustrative only)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",content:utility-contact,"Contents: Landlord/utility contact printed on notice",pass,"attested present — verbatim from the notice: “Questions? Call Fiction Properties, (555) 010-1034”",Fiction Clinic intake checklist v3 (fictional)
++E-1034,"Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",service,"Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",pass,"method ""personal"" is authorized",CCP § 1162 (example)
+diff --git a/open-artifacts/eviction-notice-check-board/examples/board.md b/open-artifacts/eviction-notice-check-board/examples/board.md
+index 4310af5..33f1bac 100644
+--- a/open-artifacts/eviction-notice-check-board/examples/board.md
++++ b/open-artifacts/eviction-notice-check-board/examples/board.md
+@@ -6,16 +6,20 @@ Jurisdiction rulesets are editable example data with US defaults; notice periods
+ 
+ **Verdict: FAIL** (pass 7 · fail 2 · unverified 0)
+ 
++Ruleset: v2.0.0 · as of 2026-11-07 · hash 924b341c
++
++Earliest lawful filing: 2026-10-06 · notice period expires 2026-10-06 (3 business days; 2 weekend/holiday days skipped)
++
+ | Status | Requirement | Detail | Rule cited |
+ |---|---|---|---|
+-| FAIL | ≥ 3 days between service and filing | only 2 days elapsed (2026-10-01 → 2026-10-03) | CCP §§ 1161(2), 1161.3 (example defaults) |
++| FAIL | ≥ 3 days between service and filing | only 1 lawful days elapsed (2026-10-01 → 2026-10-03); earliest lawful filing 2026-10-06 | CCP §§ 1161(2), 1161.3 (example defaults) |
+ | FAIL | Contents: Permitted payment methods (incl. at least one non-electronic during business hours) | attested ABSENT from the notice | CCP § 1161(2) (example) |
+ | PASS | Jurisdiction ruleset loaded | California (example defaults — verify locally) | — |
+ | PASS | Notice type recognized under this ruleset | pay-or-quit (California (example defaults — verify locally)) | CCP §§ 1161(2), 1161.3 (example defaults) |
+ | PASS | Notice period ≥ 3 days | notice states 3 days; rule requires 3 | CCP §§ 1161(2), 1161.3 (example defaults) |
+-| PASS | Contents: Amount of rent due | attested present on the notice | CCP § 1161(2) (example) |
+-| PASS | Contents: Name, telephone, and street address of person to pay | attested present on the notice | CCP § 1161(2) (example) |
+-| PASS | Contents: States notice is void if non-rent fees are included | attested present on the notice | CCP § 1161.3 (example) |
++| PASS | Contents: Amount of rent due | attested present — verbatim from the notice: “Rent of $1,250.00 is now due and unpaid” | CCP § 1161(2) (example) |
++| PASS | Contents: Name, telephone, and street address of person to pay | attested present on the notice (no verbatim quote recorded) | CCP § 1161(2) (example) |
++| PASS | Contents: States notice is void if non-rent fees are included | attested present on the notice (no verbatim quote recorded) | CCP § 1161.3 (example) |
+ | PASS | Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent) | method "post-and-mail" is authorized | CCP § 1162 (example) |
+ 
+ 
+@@ -29,13 +33,15 @@ Jurisdiction rulesets are editable example data with US defaults; notice periods
+ 
+ **Verdict: UNVERIFIED** (pass 5 · fail 0 · unverified 1)
+ 
++Ruleset: v2.0.0 · as of 2026-11-07 · hash 924b341c
++
+ | Status | Requirement | Detail | Rule cited |
+ |---|---|---|---|
+ | UNVERIFIED | Contents: Rent periods the demand covers | not attested — review the notice document and record true/false for "rent-periods"; never assumed | RPAPL § 733(1) (example) |
+ | PASS | Jurisdiction ruleset loaded | New York (example defaults — verify locally) | — |
+ | PASS | Notice type recognized under this ruleset | rent-demand (New York (example defaults — verify locally)) | RPAPL § 733 (example defaults) |
+ | PASS | Notice period ≥ 14 days | notice states 14 days; rule requires 14 | RPAPL § 733 (example defaults) |
+-| PASS | Contents: Amount of rent due | attested present on the notice | RPAPL § 733(1) (example) |
++| PASS | Contents: Amount of rent due | attested present on the notice (no verbatim quote recorded) | RPAPL § 733(1) (example) |
+ | PASS | Service by an authorized method (personal, substituted, conspicuous-place, mail) | method "conspicuous-place" is authorized | RPAPL § 733(2) (example) |
+ 
+ 
+@@ -49,6 +55,8 @@ Jurisdiction rulesets are editable example data with US defaults; notice periods
+ 
+ **Verdict: FAIL** (pass 3 · fail 2 · unverified 0)
+ 
++Ruleset: v2.0.0 · as of 2026-11-07 · hash 924b341c
++
+ | Status | Requirement | Detail | Rule cited |
+ |---|---|---|---|
+ | FAIL | Contents: Statutory leave-premises language ("You are being asked to leave the premises…") | attested ABSENT from the notice | ORC 1923.04 (example) |
+@@ -57,3 +65,32 @@ Jurisdiction rulesets are editable example data with US defaults; notice periods
+ | PASS | Notice type recognized under this ruleset | notice-to-leave (Ohio (example defaults — verify locally)) | ORC 1923.04 (example defaults) |
+ | PASS | Notice period ≥ 3 days | notice states 3 days; rule requires 3 | ORC 1923.04 (example defaults) |
+ 
++
++---
++
++## E-1034 — Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)
++
++# Eviction notice check — fiction-city-example / pay-or-quit
++
++Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting.
++
++**Verdict: PASS** (pass 11 · fail 0 · unverified 0)
++
++Ruleset: v2.0.0 · as of 2026-11-07 · hash 924b341c
++
++Earliest lawful filing: 2026-10-07 · notice period expires 2026-10-07 (3 business days; 2 weekend/holiday days skipped)
++
++| Status | Requirement | Detail | Rule cited |
++|---|---|---|---|
++| PASS | Jurisdiction ruleset loaded | Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city) | — |
++| PASS | Notice type recognized under this ruleset | pay-or-quit (Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city)) | CCP §§ 1161(2), 1161.3 (example defaults) |
++| PASS | Notice period ≥ 3 days | notice states 3 days; rule requires 3 | CCP §§ 1161(2), 1161.3 (example defaults) |
++| PASS | ≥ 3 days between service and filing | 3 lawful days elapsed (2026-10-02 → 2026-10-07); earliest lawful filing 2026-10-07 | CCP §§ 1161(2), 1161.3 (example defaults) |
++| PASS | Contents: Amount of rent due | attested present — verbatim from the notice: “Rent of $980.00 is now due” | CCP § 1161(2) (example) |
++| PASS | Contents: Name, telephone, and street address of person to pay | attested present on the notice (no verbatim quote recorded) | CCP § 1161(2) (example) |
++| PASS | Contents: Permitted payment methods (incl. at least one non-electronic during business hours) | attested present on the notice (no verbatim quote recorded) | CCP § 1161(2) (example) |
++| PASS | Contents: States notice is void if non-rent fees are included | attested present on the notice (no verbatim quote recorded) | CCP § 1161.3 (example) |
++| PASS | Contents: Notice also given in Spanish (Fiction City language requirement) | attested present on the notice (no verbatim quote recorded) | Fiction City Mun. Code § 9.99 (FICTIONAL — illustrative only) |
++| PASS | Contents: Landlord/utility contact printed on notice | attested present — verbatim from the notice: “Questions? Call Fiction Properties, (555) 010-1034” | Fiction Clinic intake checklist v3 (fictional) |
++| PASS | Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent) | method "personal" is authorized | CCP § 1162 (example) |
++
+diff --git a/open-artifacts/eviction-notice-check-board/examples/input.json b/open-artifacts/eviction-notice-check-board/examples/input.json
+index 0893178..7a34b61 100644
+--- a/open-artifacts/eviction-notice-check-board/examples/input.json
++++ b/open-artifacts/eviction-notice-check-board/examples/input.json
+@@ -11,7 +11,7 @@
+       "filedDate": "2026-10-03",
+       "serviceMethod": "post-and-mail",
+       "contents": {
+-        "amount-due": true,
++        "amount-due": { "present": true, "quote": "Rent of $1,250.00 is now due and unpaid" },
+         "payment-person": true,
+         "payment-methods": false,
+         "nonrent-fees-excluded": true
+@@ -38,6 +38,27 @@
+       "contents": {
+         "statutory-language": false
+       }
++    },
++    {
++      "id": "E-1034",
++      "caption": "Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",
++      "jurisdiction": "fiction-city-example",
++      "noticeType": "pay-or-quit",
++      "statedPeriodDays": 3,
++      "serviceDate": "2026-10-02",
++      "filedDate": "2026-10-07",
++      "serviceMethod": "personal",
++      "checklist": [
++        { "id": "utility-contact", "label": "Landlord/utility contact printed on notice", "cite": "Fiction Clinic intake checklist v3 (fictional)" }
++      ],
++      "contents": {
++        "amount-due": { "present": true, "quote": "Rent of $980.00 is now due" },
++        "payment-person": true,
++        "payment-methods": true,
++        "nonrent-fees-excluded": true,
++        "bilingual-notice": true,
++        "utility-contact": { "present": true, "quote": "Questions? Call Fiction Properties, (555) 010-1034" }
++      }
+     }
+   ]
+ }
+diff --git a/open-artifacts/eviction-notice-check-board/examples/output.json b/open-artifacts/eviction-notice-check-board/examples/output.json
+index ca8fd98..075f09c 100644
+--- a/open-artifacts/eviction-notice-check-board/examples/output.json
++++ b/open-artifacts/eviction-notice-check-board/examples/output.json
+@@ -30,21 +30,21 @@
+         "id": "elapsed",
+         "requirement": "≥ 3 days between service and filing",
+         "status": "fail",
+-        "detail": "only 2 days elapsed (2026-10-01 → 2026-10-03)",
++        "detail": "only 1 lawful days elapsed (2026-10-01 → 2026-10-03); earliest lawful filing 2026-10-06",
+         "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+       },
+       {
+         "id": "content:amount-due",
+         "requirement": "Contents: Amount of rent due",
+         "status": "pass",
+-        "detail": "attested present on the notice",
++        "detail": "attested present — verbatim from the notice: “Rent of $1,250.00 is now due and unpaid”",
+         "ruleCite": "CCP § 1161(2) (example)"
+       },
+       {
+         "id": "content:payment-person",
+         "requirement": "Contents: Name, telephone, and street address of person to pay",
+         "status": "pass",
+-        "detail": "attested present on the notice",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
+         "ruleCite": "CCP § 1161(2) (example)"
+       },
+       {
+@@ -58,7 +58,7 @@
+         "id": "content:nonrent-fees-excluded",
+         "requirement": "Contents: States notice is void if non-rent fees are included",
+         "status": "pass",
+-        "detail": "attested present on the notice",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
+         "ruleCite": "CCP § 1161.3 (example)"
+       },
+       {
+@@ -75,6 +75,27 @@
+       "unverified": 0,
+       "verdict": "fail"
+     },
++    "ruleset": {
++      "version": "2.0.0",
++      "asOf": "2026-11-07",
++      "hash": "924b341c"
++    },
++    "deadlines": {
++      "serviceDate": "2026-10-01",
++      "requiredDays": 3,
++      "counting": "business",
++      "earliestFiling": "2026-10-06",
++      "expires": "2026-10-06",
++      "countedDays": [
++        "2026-10-02",
++        "2026-10-05",
++        "2026-10-06"
++      ],
++      "skippedDays": [
++        "2026-10-03",
++        "2026-10-04"
++      ]
++    },
+     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+   },
+   {
+@@ -108,7 +129,7 @@
+         "id": "content:amount-due",
+         "requirement": "Contents: Amount of rent due",
+         "status": "pass",
+-        "detail": "attested present on the notice",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
+         "ruleCite": "RPAPL § 733(1) (example)"
+       },
+       {
+@@ -132,6 +153,12 @@
+       "unverified": 1,
+       "verdict": "unverified"
+     },
++    "ruleset": {
++      "version": "2.0.0",
++      "asOf": "2026-11-07",
++      "hash": "924b341c"
++    },
++    "deadlines": null,
+     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+   },
+   {
+@@ -182,6 +209,125 @@
+       "unverified": 0,
+       "verdict": "fail"
+     },
++    "ruleset": {
++      "version": "2.0.0",
++      "asOf": "2026-11-07",
++      "hash": "924b341c"
++    },
++    "deadlines": null,
++    "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
++  },
++  {
++    "id": "E-1034",
++    "caption": "Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",
++    "jurisdiction": "fiction-city-example",
++    "noticeType": "pay-or-quit",
++    "checks": [
++      {
++        "id": "jurisdiction",
++        "requirement": "Jurisdiction ruleset loaded",
++        "status": "pass",
++        "detail": "Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city)",
++        "ruleCite": null
++      },
++      {
++        "id": "notice-type",
++        "requirement": "Notice type recognized under this ruleset",
++        "status": "pass",
++        "detail": "pay-or-quit (Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city))",
++        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
++      },
++      {
++        "id": "period",
++        "requirement": "Notice period ≥ 3 days",
++        "status": "pass",
++        "detail": "notice states 3 days; rule requires 3",
++        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
++      },
++      {
++        "id": "elapsed",
++        "requirement": "≥ 3 days between service and filing",
++        "status": "pass",
++        "detail": "3 lawful days elapsed (2026-10-02 → 2026-10-07); earliest lawful filing 2026-10-07",
++        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
++      },
++      {
++        "id": "content:amount-due",
++        "requirement": "Contents: Amount of rent due",
++        "status": "pass",
++        "detail": "attested present — verbatim from the notice: “Rent of $980.00 is now due”",
++        "ruleCite": "CCP § 1161(2) (example)"
++      },
++      {
++        "id": "content:payment-person",
++        "requirement": "Contents: Name, telephone, and street address of person to pay",
++        "status": "pass",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
++        "ruleCite": "CCP § 1161(2) (example)"
++      },
++      {
++        "id": "content:payment-methods",
++        "requirement": "Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",
++        "status": "pass",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
++        "ruleCite": "CCP § 1161(2) (example)"
++      },
++      {
++        "id": "content:nonrent-fees-excluded",
++        "requirement": "Contents: States notice is void if non-rent fees are included",
++        "status": "pass",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
++        "ruleCite": "CCP § 1161.3 (example)"
++      },
++      {
++        "id": "content:bilingual-notice",
++        "requirement": "Contents: Notice also given in Spanish (Fiction City language requirement)",
++        "status": "pass",
++        "detail": "attested present on the notice (no verbatim quote recorded)",
++        "ruleCite": "Fiction City Mun. Code § 9.99 (FICTIONAL — illustrative only)"
++      },
++      {
++        "id": "content:utility-contact",
++        "requirement": "Contents: Landlord/utility contact printed on notice",
++        "status": "pass",
++        "detail": "attested present — verbatim from the notice: “Questions? Call Fiction Properties, (555) 010-1034”",
++        "ruleCite": "Fiction Clinic intake checklist v3 (fictional)"
++      },
++      {
++        "id": "service",
++        "requirement": "Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",
++        "status": "pass",
++        "detail": "method \"personal\" is authorized",
++        "ruleCite": "CCP § 1162 (example)"
++      }
++    ],
++    "summary": {
++      "pass": 11,
++      "fail": 0,
++      "unverified": 0,
++      "verdict": "pass"
++    },
++    "ruleset": {
++      "version": "2.0.0",
++      "asOf": "2026-11-07",
++      "hash": "924b341c"
++    },
++    "deadlines": {
++      "serviceDate": "2026-10-02",
++      "requiredDays": 3,
++      "counting": "business",
++      "earliestFiling": "2026-10-07",
++      "expires": "2026-10-07",
++      "countedDays": [
++        "2026-10-05",
++        "2026-10-06",
++        "2026-10-07"
++      ],
++      "skippedDays": [
++        "2026-10-03",
++        "2026-10-04"
++      ]
++    },
+     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+   }
+ ]
+diff --git a/open-artifacts/eviction-notice-check-board/spec.md b/open-artifacts/eviction-notice-check-board/spec.md
+index d5e2703..f932b71 100644
+--- a/open-artifacts/eviction-notice-check-board/spec.md
++++ b/open-artifacts/eviction-notice-check-board/spec.md
+@@ -1,9 +1,10 @@
+ # eviction-notice-check-board — specification
+ 
+ Open artifact: checks an eviction notice's facts against jurisdiction
+-rules-as-data (5 example US jurisdictions, editable JSON) and outputs a
+-per-requirement PASS / FAIL / UNVERIFIED board — every row cites the rule
+-it was checked against. The checker NEVER guesses.
++rules-as-data (10 example US jurisdictions + 1 fictional city overlay,
++editable JSON) and outputs a per-requirement PASS / FAIL / UNVERIFIED
++board — every row cites the rule it was checked against, optionally
++backed by a verbatim quote from the notice. The checker NEVER guesses.
+ 
+ ## Design split: deterministic core vs. LLM
+ 
+@@ -11,7 +12,10 @@ it was checked against. The checker NEVER guesses.
+ |---|---|
+ | Period check (stated days vs required; long-tenancy tiers) | core (deterministic) |
+ | Elapsed-days check (service → filing) when dates supplied | core (deterministic) |
+-| Required-contents check (attested true/false; absent = unverified) | core (deterministic) |
++| Deadline engine (earliest lawful filing + expiration; weekend/holiday exclusion) | core (deterministic) |
++| Ruleset provenance (version, asOf, stable hash) | core (deterministic) |
++| Paste-the-notice draft extraction (verbatim quotes, all nullable) | core (deterministic, `core/extract.js`) |
++| Required-contents check (attested true/false/{present,quote}; absent = unverified) | core (deterministic) |
+ | Service-method check against authorized list | core (deterministic) |
+ | Verdict aggregation (any fail → FAIL; any unverified → UNVERIFIED) | core (deterministic) |
+ | Jurisdiction notice rules (periods, contents, service methods, cites) | **rules-as-data** (editable JSON) |
+@@ -20,9 +24,14 @@ it was checked against. The checker NEVER guesses.
+ 
+ Never-guesses guarantees (enforced in tests):
+ - unattested content → UNVERIFIED, never assumed present;
++- `{present: true}` without a verbatim quote → UNVERIFIED (auditable
++  evidence missing);
+ - missing period → UNVERIFIED, never inferred from dates alone;
+ - unknown jurisdiction → refuses to approximate from another ruleset;
+-- unknown notice type → UNVERIFIED with the known types listed.
++- unknown notice type → UNVERIFIED with the known types listed;
++- the extractor never emits `present: false` (a non-match is not
++  evidence of absence) and never maps a description onto a ruleset
++  service-method enum by inference.
+ 
+ ## Input contract (JSON)
+ 
+@@ -35,18 +44,29 @@ Never-guesses guarantees (enforced in tests):
+   "serviceDate": "2026-10-01",              // optional ISO
+   "filedDate": "2026-10-03",                // optional ISO
+   "serviceMethod": "post-and-mail",
+-  "contents": { "amount-due": true, "payment-methods": false }
+-  // content keys absent from this map are UNVERIFIED
++  "contents": {
++    "amount-due": { "present": true, "quote": "Rent of $1,250.00 is now due" },
++    "payment-methods": false
++  },
++  "checklist": [
++    { "id": "utility-contact", "label": "…", "cite": "Fiction Clinic checklist (fictional)" }
++  ]
++  // content keys absent from this map are UNVERIFIED; plain true/false
++  // attestations still work, but {present:true} without a quote is UNVERIFIED
+ }
+ ```
+ 
+ ## Output contract (JSON)
+ 
+-`{ jurisdiction, noticeType, checks[], summary, disclaimer }` where each
++`{ jurisdiction, noticeType, checks[], summary, ruleset, deadlines, disclaimer }` where each
+ check is `{ id, requirement, status: pass|fail|unverified, detail,
+-ruleCite }`. `summary.verdict` is `fail` if any check failed, else
++ruleCite }`. `ruleset` is `{ version, asOf, hash }` (stable hash of the
++effective rules object); `deadlines` (when a valid serviceDate is given)
++is `{ earliestFiling, expires, counting, countedDays, skippedDays }`.
++`summary.verdict` is `fail` if any check failed, else
+ `unverified` if any check is unverified, else `pass`. Exports:
+-`renderBoard()` (Markdown, worst-first), `toCSV()`.
++`renderBoard()` (Markdown, worst-first), `toCSV()`, `computeDeadlines()`,
++`rulesetHash()`, and `extractDraft()` from `core/extract.js`.
+ 
+ ## Rules-as-data shape
+ 
+@@ -67,7 +87,13 @@ ruleCite }`. `summary.verdict` is `fail` if any check failed, else
+ 
+ Bundled examples (all marked verify-locally): California (CCP §§ 1161–1162
+ examples), Texas (Prop. Code § 24.005), New York (RPAPL § 733),
+-Washington (RCW 59.18/59.12), Ohio (ORC 1923.04).
++Washington (RCW 59.18/59.12), Ohio (ORC 1923.04), Florida (§ 83.56),
++Georgia (§ 44-7-7), Arizona (§ 33-1368), Illinois (5/9-209), Oregon
++(ORS 90.427), plus `fiction-city-example` — a FICTIONAL city overlay
++(`extends: california-example`) adding a bilingual-notice requirement.
++A jurisdiction entry may set `extends` to inherit another's notice
++types (overlay content rows append), and `holidays: [ISO dates]`
++merged on top of the shared `HOLIDAYS` example data.
+ 
+ ## Prompt schema for the LLM part (fact extraction only)
+ 

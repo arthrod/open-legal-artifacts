@@ -1,0 +1,952 @@
+diff --git a/open-artifacts/patent-claim-comparison/README.md b/open-artifacts/patent-claim-comparison/README.md
+index 6f102ac..2c341ff 100644
+--- a/open-artifacts/patent-claim-comparison/README.md
++++ b/open-artifacts/patent-claim-comparison/README.md
+@@ -20,6 +20,30 @@
+   a counter of such rows in the totals. Silence never implies a teaching.
+ - **Dependency flags**: `The system of claim 1` → `claim 2` changes are
+   surfaced per claim.
++- **Renumber-robust pairing**: an A-only claim and a B-only claim that are
++  limitation-identical (every limitation pairs at ≥ `exactAt`, same type /
++  dependency / transitional) report as **`renumbered`** instead of a false
++  removed+added pair. Any real amendment keeps removed+added — conservative
++  on purpose.
++- **Three-way transitional scope**: `comprising` (open) / `consisting of`
++  (closed) / `consisting essentially of` (semi-open) stay distinct; a scope
++  change between sets is flagged in the chart.
++- **Construction-risk flags** (`flagConstructionRisks`): deterministic regex
++  screening for means-for (§112(f) [verify]), configured/adapted/operable-to,
++  and substantially/about/approximately — spans included, never construed.
++- **Reference mapping** (`mapLimitationsToReference`): maps each limitation
++  onto a prior-art reference as `verbatim` (span round-trips to the exact
++  quote) / `partial` (lexical overlap, flagged as first pass) / `notFound`
++  (honest "no teaching found" row). Lexical only — never "support".
++- **Coverage matrix** (`buildClaimReferenceMatrix`): claim × reference table
++  flagging `anticipation-candidate` (one ref reads on every limitation) vs
++  `combination` (minimal joint cover, listed) vs `gaps` (uncovered
++  limitations listed). Coverage counts verbatim or complete token overlap —
++  first pass, not a legal conclusion.
++- **CSV export** (`toCSV` + `toSourcesCSV`): chart CSV with a `_sources`
++  companion carrying span anchors; spreadsheet formula-injection cells
++  (`=`, `+`, `-`, `@` starts, tab/CR) are apostrophe-prefixed without
++  touching normal text. Demo has a download button.
+ 
+ ## IO contract
+ 
+@@ -34,13 +58,16 @@ console.log(toClaimChart(result)); // markdown chart
+ ## Deterministic vs LLM-assisted
+ 
+ **Deterministic:** everything in the core — parsing, alignment,
+-classification, spans, counts, rendering. Same input → identical chart
+-(covered by a determinism test).
++classification, spans, counts, rendering, reference-span mapping, risk
++flagging, CSV export. Same input → identical chart (covered by a determinism
++test).
+ 
+-**LLM-assisted (optional, outside core):** mapping limitations onto a
+-prior-art reference's disclosure and claim construction. A prompt schema with
+-verbatim-quote + `teachingFound: 'none'` constraints is in [spec.md](spec.md);
+-the core renders any `none` mapping as an explicit no-teaching row.
++**LLM-assisted (optional, outside core):** construing limitation meaning
++(claim construction) and weighing the mapped disclosures. A prompt schema
++with verbatim-quote + `teachingFound: 'none'` constraints is in
++[spec.md](spec.md); the core renders any `none` mapping as an explicit
++no-teaching row. `mapLimitationsToReference` is the deterministic first pass
++the LLM step can build on.
+ 
+ ## What's better than the closed counterpart
+ 
+@@ -49,15 +76,19 @@ the core renders any `none` mapping as an explicit no-teaching row.
+ - **Honest absence**: unmatched limitations are loud rows with a count, not
+   dropped or paraphrased into "support".
+ - **Tunable, disclosed thresholds** instead of hidden prompt judgment.
+-- **Dependency-change detection** across claim sets.
++- **Dependency-change and renumber detection** across claim sets.
++- **Machine-checkable reference rows**: every mapped span slices back to the
++  exact quote in the reference — no trusting LLM-written pin-cites.
++- **Export safety**: CSV with a `_sources` companion and formula-injection
++  neutralization, deterministic and tested.
+ - Zero dependencies, runs offline in browser or Node.
+ 
+ ## Run / test
+ 
+ ```
+-node --test core/        # 12 unit tests (node:test)
+-node examples/run.js     # regenerate examples/output.json + examples/claim-chart.md
+-open demo/index.html     # interactive two-pane comparison
++node --test core/        # 22 unit tests (node:test)
++node examples/run.js     # regenerate examples/output.json + examples/claim-chart.md (incl. coverage matrix)
++open demo/index.html     # interactive two-pane comparison + CSV/_sources download
+ ```
+ 
+ ## Data sources (future hooks)
+diff --git a/open-artifacts/patent-claim-comparison/core/core.js b/open-artifacts/patent-claim-comparison/core/core.js
+index a8a0bb8..5630232 100644
+--- a/open-artifacts/patent-claim-comparison/core/core.js
++++ b/open-artifacts/patent-claim-comparison/core/core.js
+@@ -67,7 +67,7 @@ export function similarity(a, b) {
+  *
+  * @param {string} claimText
+  * @returns {{ number: number|null, text: string, preamble: {text:string, span:[number,number]},
+- *             transitional: 'comprising'|'consisting'|null, dependsOn: number|null,
++ *             transitional: 'comprising'|'consisting'|'consisting-essentially-of'|null, dependsOn: number|null,
+  *             limitations: Array<{ id:string, text:string, span:[number,number] }>,
+  *             type: 'independent'|'dependent' }}
+  */
+@@ -90,11 +90,17 @@ export function parseClaim(claimText) {
+   const dep = body.match(/\bclaim\s+(\d+)|\bclaims\s+(\d+)\s+to\s+(\d+)/i);
+   if (dep) dependsOn = Number(dep[1] || dep[2]);
+ 
+-  // transitional phrase
+-  const transMatch = body.match(/\b(comprising|comprises|consisting\s+of|consisting\s+essentially\s+of)\b/i);
+-  const transitional = transMatch
+-    ? /^consisting/i.test(transMatch[1]) ? 'consisting' : 'comprising'
+-    : null;
++  // transitional phrase — three-way: comprising (open) / consisting of (closed) /
++  // consisting essentially of (semi-open). Collapsing the last two would hide
++  // a real scope difference, so they stay distinct values.
++  const transMatch = body.match(/\b(comprising|comprises|consisting\s+essentially\s+of|consisting\s+of)\b/i);
++  let transitional = null;
++  if (transMatch) {
++    const t = transMatch[0];
++    transitional = /^compris/i.test(t) ? 'comprising'
++      : /^consisting\s+essentially/i.test(t) ? 'consisting-essentially-of'
++      : 'consisting';
++  }
+ 
+   // split on semicolons and "wherein"/"whereby" boundaries
+   const bounds = [];
+@@ -247,9 +253,36 @@ export function compareLimitations(limsA, limsB, thresholds = {}) {
+   return { rows, counts };
+ }
+ 
++/** Transitional phrase → plain-phrase + scope reading (three-way, never collapsed). */
++export const TRANSITIONAL_SCOPE = {
++  'comprising': { phrase: 'comprising', scope: 'open' },
++  'consisting': { phrase: 'consisting of', scope: 'closed' },
++  'consisting-essentially-of': { phrase: 'consisting essentially of', scope: 'semi-open' },
++};
++
++/**
++ * Renumber-robust pairing criterion: an A-only claim and a B-only claim are
++ * the SAME claim renumbered only when type, dependency and transitional
++ * match AND every limitation pairs at ≥ exactAt (conservative on purpose —
++ * a real amendment must stay removed+added, not be laundered into
++ * "renumbered"). Returns the comparison when it qualifies, else null.
++ */
++function renumberComparison(a, b, thresholds) {
++  if (a.type !== b.type || a.dependsOn !== b.dependsOn || a.transitional !== b.transitional) return null;
++  if (!a.limitations.length || !b.limitations.length) {
++    // nothing to align (e.g. degenerate one-clause claims) — require byte-identical text
++    return a.text === b.text ? { rows: [], counts: { matched: 0, modified: 0, removed: 0, added: 0 } } : null;
++  }
++  if (a.limitations.length !== b.limitations.length) return null;
++  const cmp = compareLimitations(a.limitations, b.limitations, thresholds);
++  return cmp.counts.matched === a.limitations.length ? cmp : null;
++}
++
+ /**
+  * Compare two claim sets claim-by-claim (paired by claim number when both
+- * have numbers; otherwise by order). Unpaired claims are reported whole.
++ * have numbers; otherwise by order). Unpaired claims are reported whole —
++ * except when an A-only and a B-only claim are limitation-identical, which
++ * is reported as `renumbered` rather than a false removed+added pair.
+  *
+  * @param {string|ReturnType<typeof parseClaim>[]} setA
+  * @param {string|ReturnType<typeof parseClaim>[]} setB
+@@ -262,21 +295,15 @@ export function compareClaimSets(setA, setB, thresholds = {}) {
+   const byNum = (set) => new Map(set.filter((c) => c.number != null).map((c) => [c.number, c]));
+   const mapA = byNum(A), mapB = byNum(B);
+   const claims = [];
+-  const totals = { matched: 0, modified: 0, removed: 0, added: 0, claimsOnlyInA: 0, claimsOnlyInB: 0 };
++  const totals = { matched: 0, modified: 0, removed: 0, added: 0, renumbered: 0, claimsOnlyInA: 0, claimsOnlyInB: 0 };
+   let noTeachingFound = 0;
+ 
+   const seenB = new Set();
++  const unpairedA = [];
+   A.forEach((a, i) => {
+     const b = a.number != null ? mapB.get(a.number) : B[i] || null;
+     if (b) seenB.add(b);
+-    if (!b) {
+-      totals.claimsOnlyInA += 1;
+-      claims.push({
+-        claimNo: a.number, aClaim: a.text, bClaim: null,
+-        result: 'claim removed in set B', comparison: null,
+-      });
+-      return;
+-    }
++    if (!b) { unpairedA.push(a); return; }
+     const cmp = compareLimitations(a.limitations, b.limitations, thresholds);
+     noTeachingFound += cmp.rows.filter((r) => r.note.startsWith('no teaching found')).length;
+     totals.matched += cmp.counts.matched;
+@@ -288,12 +315,49 @@ export function compareClaimSets(setA, setB, thresholds = {}) {
+       aClaim: a.text, bClaim: b.text,
+       aDependsOn: a.dependsOn, bDependsOn: b.dependsOn,
+       dependencyChanged: a.dependsOn !== b.dependsOn,
++      aTransitional: a.transitional, bTransitional: b.transitional,
++      transitionalChanged: a.transitional !== b.transitional,
+       result: 'compared',
+       comparison: cmp,
+     });
+   });
+-  for (const b of B) {
+-    if (seenB.has(b)) continue;
++
++  // renumber pass: pair A-only with B-only claims that are limitation-identical
++  const unpairedB = B.filter((b) => !seenB.has(b));
++  for (const a of unpairedA) {
++    let hit = -1, cmp = null;
++    for (let j = 0; j < unpairedB.length; j++) {
++      if (!unpairedB[j]) continue;
++      const c = renumberComparison(a, unpairedB[j], thresholds);
++      if (c) { hit = j; cmp = c; break; }
++    }
++    if (hit >= 0) {
++      const b = unpairedB[hit];
++      unpairedB[hit] = null;
++      totals.renumbered += 1;
++      totals.matched += cmp.counts.matched;
++      totals.modified += cmp.counts.modified;
++      totals.removed += cmp.counts.removed;
++      totals.added += cmp.counts.added;
++      claims.push({
++        claimNo: a.number, aClaim: a.text, bClaim: b.text,
++        aDependsOn: a.dependsOn, bDependsOn: b.dependsOn,
++        dependencyChanged: a.dependsOn !== b.dependsOn,
++        aTransitional: a.transitional, bTransitional: b.transitional,
++        transitionalChanged: a.transitional !== b.transitional,
++        result: 'claim renumbered in set B', renumberedTo: b.number,
++        comparison: cmp,
++      });
++    } else {
++      totals.claimsOnlyInA += 1;
++      claims.push({
++        claimNo: a.number, aClaim: a.text, bClaim: null,
++        result: 'claim removed in set B', comparison: null,
++      });
++    }
++  }
++  for (const b of unpairedB) {
++    if (!b) continue;
+     totals.claimsOnlyInB += 1;
+     claims.push({ claimNo: b.number, aClaim: null, bClaim: b.text, result: 'claim added in set B', comparison: null });
+   }
+@@ -313,8 +377,13 @@ export function compareClaimSets(setA, setB, thresholds = {}) {
+ export function toClaimChart(result) {
+   const lines = ['# Claim comparison chart', ''];
+   for (const c of result.claims) {
+-    lines.push(`## Claim ${c.claimNo ?? '(unnumbered)'} — ${c.result}`);
++    lines.push(`## Claim ${c.claimNo ?? '(unnumbered)'} — ${c.result}${c.renumberedTo ? ` (as claim ${c.renumberedTo})` : ''}`);
+     if (c.dependencyChanged) lines.push(`> dependency changed: A→claim ${c.aDependsOn} vs B→claim ${c.bDependsOn}`);
++    if (c.transitionalChanged) {
++      const aT = TRANSITIONAL_SCOPE[c.aTransitional] || { phrase: c.aTransitional || 'none', scope: 'none' };
++      const bT = TRANSITIONAL_SCOPE[c.bTransitional] || { phrase: c.bTransitional || 'none', scope: 'none' };
++      lines.push(`> transitional scope changed: A "${aT.phrase}" (${aT.scope}) → B "${bT.phrase}" (${bT.scope}) — claim scope narrowed or shifted; review excluded matter`);
++    }
+     if (!c.comparison) { lines.push('', c.aClaim || c.bClaim || '', ''); continue; }
+     lines.push('',
+       '| # | Set A limitation | Relation | Set B limitation | Sim | Note |',
+@@ -329,3 +398,256 @@ export function toClaimChart(result) {
+     `${result.noTeachingFound} "no teaching found" rows (never inferred).`);
+   return lines.join('\n');
+ }
++
++// ---------------------------------------------------------------------------
++// Reference mapping: limitations → verbatim spans in a prior-art reference
++// ---------------------------------------------------------------------------
++
++/** Lexical-overlap threshold for a "partial" mapping (share of limitation
++ *  tokens found in one reference sentence). Below it → honest `notFound`. */
++export const DEFAULT_REFERENCE_THRESHOLDS = { partialAt: 0.5 };
++
++/** Escape a string for literal use inside a RegExp. */
++function escapeRegExp(s) {
++  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++}
++
++/** Split text into sentences, each with [start,end) span anchors. */
++function sentencesWithSpans(text) {
++  const out = [];
++  let start = 0, m;
++  const re = /\.(?=\s|$)/g;
++  while ((m = re.exec(text)) !== null) {
++    const end = m.index + 1;
++    if (text.slice(start, end).trim()) out.push({ text: text.slice(start, end), span: [start, end] });
++    start = end;
++  }
++  if (start < text.length && text.slice(start).trim()) {
++    out.push({ text: text.slice(start), span: [start, text.length] });
++  }
++  return out;
++}
++
++/**
++ * Map each limitation of a claim onto a reference text.
++ *
++ * States are machine-checkable, never gestured:
++ * - `verbatim`  — limitation text appears in the reference verbatim
++ *                 (whitespace-flexible); refSpan slices to the exact quote.
++ * - `partial`   — best reference sentence covers ≥ partialAt of the
++ *                 limitation's tokens; flagged as lexical first pass only.
++ * - `notFound`  — neither; an honest "no teaching found" row, never "support".
++ *
++ * @param {string|ReturnType<typeof parseClaim>} claim
++ * @param {string} refText
++ * @param {Object} [thresholds]
++ * @returns {{ rows: Array<Object>, counts: { verbatim:number, partial:number, notFound:number } }}
++ */
++export function mapLimitationsToReference(claim, refText, thresholds = {}) {
++  const { partialAt } = { ...DEFAULT_REFERENCE_THRESHOLDS, ...thresholds };
++  const c = typeof claim === 'string' ? parseClaim(claim) : claim;
++  const ref = refText || '';
++  const sents = sentencesWithSpans(ref).map((s) => ({ ...s, tokens: tokenize(s.text) }));
++  const rows = c.limitations.map((lim) => {
++    const pattern = escapeRegExp(lim.text.trim()).replace(/\s+/g, '\\s+');
++    const vm = ref.match(new RegExp(pattern, 'i'));
++    if (vm) {
++      return {
++        id: lim.id, text: lim.text, span: lim.span,
++        state: 'verbatim', quote: vm[0], refSpan: [vm.index, vm.index + vm[0].length],
++        note: 'verbatim span — machine-checkable quote; construction still requires attorney review',
++      };
++    }
++    const limTokens = tokenize(lim.text);
++    let best = null, bestCov = 0;
++    for (const s of sents) {
++      if (!limTokens.size) break;
++      let hit = 0;
++      for (const t of limTokens) if (s.tokens.has(t)) hit += 1;
++      const cov = hit / limTokens.size;
++      if (cov > bestCov) { bestCov = cov; best = s; }
++    }
++    if (best && bestCov >= partialAt) {
++      return {
++        id: lim.id, text: lim.text, span: lim.span,
++        state: 'partial', quote: best.text, refSpan: best.span,
++        tokenCoverage: Math.round(bestCov * 1000) / 1000,
++        note: 'first pass — lexical overlap only, not construction; quote is the best-matching sentence',
++      };
++    }
++    return {
++      id: lim.id, text: lim.text, span: lim.span,
++      state: 'notFound', quote: null, refSpan: null,
++      note: 'no teaching found in reference — not inferred',
++    };
++  });
++  const counts = { verbatim: 0, partial: 0, notFound: 0 };
++  for (const r of rows) counts[r.state] += 1;
++  return { rows, counts };
++}
++
++// ---------------------------------------------------------------------------
++// Construction-risk flags (deterministic, always-on)
++// ---------------------------------------------------------------------------
++
++/** Risk patterns: [kind, sourceRegExp, note]. Never construes — only flags. */
++const CONSTRUCTION_RISK_PATTERNS = [
++  ['means-plus-function', /\bmeans\s+for\b/gi,
++    'possible means-plus-function (35 U.S.C. §112(f)) [verify] — means-for language invokes functional claiming'],
++  ['functional-limitation', /\b(?:configured|adapted|operable)\s+to\b/gi,
++    'functional language ("configured/adapted/operable to") — breadth depends on the specification'],
++  ['approximate-term', /\b(?:substantially|approximately|about)\b/gi,
++    'approximate term — breadth disputed; not a definite boundary on its face'],
++];
++
++/**
++ * Flag construction-risk phrases in a claim with span anchors.
++ * Deterministic regex screening — this never construes the claim.
++ * @param {string|ReturnType<typeof parseClaim>} claim
++ * @returns {Array<{ kind:string, text:string, span:[number,number], note:string }>}
++ */
++export function flagConstructionRisks(claim) {
++  const c = typeof claim === 'string' ? parseClaim(claim) : claim;
++  const flags = [];
++  for (const [kind, re, note] of CONSTRUCTION_RISK_PATTERNS) {
++    re.lastIndex = 0;
++    let m;
++    while ((m = re.exec(c.text)) !== null) {
++      flags.push({ kind, text: m[0], span: [m.index, m.index + m[0].length], note });
++    }
++  }
++  flags.sort((a, b) => a.span[0] - b.span[0] || a.kind.localeCompare(b.kind));
++  return flags;
++}
++
++// ---------------------------------------------------------------------------
++// CSV export with spreadsheet formula-injection neutralization
++// ---------------------------------------------------------------------------
++
++/**
++ * CSV cell: apostrophe-prefix any cell that starts with = + - @ or contains
++ * tab/CR/LF (formula-injection neutralization), then quote when needed.
++ * Normal text is never prefixed and only quoted for commas/quotes.
++ */
++function csvCell(v) {
++  if (v == null) return '';
++  let s = String(v);
++  let prefixed = false;
++  if (/^[=+\-@\t\r]/.test(s) || /[\t\r\n]/.test(s)) { s = "'" + s; prefixed = true; }
++  if (prefixed || /[",]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
++  return s;
++}
++
++/**
++ * Render the comparison result as CSV (one row per chart row; whole-claim
++ * rows for claims without a limitation comparison).
++ * @param {ReturnType<typeof compareClaimSets>} result
++ * @returns {string}
++ */
++export function toCSV(result) {
++  const lines = ['claimNo,aId,aText,relation,bId,bText,similarity,note'];
++  for (const c of result.claims) {
++    if (c.comparison) {
++      for (const r of c.comparison.rows) {
++        lines.push([c.claimNo, r.aId, r.aText, r.relation, r.bId, r.bText, r.similarity, r.note].map(csvCell).join(','));
++      }
++    } else {
++      lines.push([c.claimNo, c.result === 'claim added in set B' ? null : '', '',
++        c.result, c.result === 'claim added in set B' ? '' : null, null, '', ''].map(csvCell).join(','));
++    }
++  }
++  return lines.join('\n');
++}
++
++/**
++ * Companion `_sources` CSV: one row per chart row carrying only the span
++ * anchors, so every CSV cell can be verified against the source texts.
++ * @param {ReturnType<typeof compareClaimSets>} result
++ * @returns {string}
++ */
++export function toSourcesCSV(result) {
++  const lines = ['claimNo,aId,aSpanStart,aSpanEnd,bId,bSpanStart,bSpanEnd'];
++  for (const c of result.claims) {
++    if (c.comparison) {
++      for (const r of c.comparison.rows) {
++        lines.push([c.claimNo, r.aId, r.aSpan ? r.aSpan[0] : null, r.aSpan ? r.aSpan[1] : null,
++          r.bId, r.bSpan ? r.bSpan[0] : null, r.bSpan ? r.bSpan[1] : null].map(csvCell).join(','));
++      }
++    } else {
++      lines.push([c.claimNo, '', '', '', '', '', ''].map(csvCell).join(','));
++    }
++  }
++  return lines.join('\n');
++}
++
++// ---------------------------------------------------------------------------
++// Claim × reference coverage matrix
++// ---------------------------------------------------------------------------
++
++/**
++ * Build a claim-by-reference coverage matrix: which references (if any)
++ * read on every limitation of each claim.
++ *
++ * - `anticipation-candidate` — ONE reference covers all limitations (first
++ *   pass only; anticipation is a legal conclusion, never emitted here).
++ * - `combination` — no single reference covers all, but references jointly
++ *   do; combinationRefs lists a minimal greedy cover in input order.
++ * - `gaps` — limitations no reference covers at all, listed honestly.
++ *
++ * Coverage means `verbatim`, or `partial` whose token coverage is complete
++ * (every limitation token present in one sentence) — conservative on purpose,
++ * because "anticipation-candidate" is a legally loaded label. Partial rows
++ * with weaker overlap stay visible in the per-ref counts but do NOT count as
++ * coverage. Lexical first pass, NOT a construction or support opinion.
++ *
++ * @param {string|ReturnType<typeof parseClaim>[]} claims
++ * @param {Array<{id:string, text:string}>} refs
++ * @param {Object} [thresholds]
++ * @returns {{ claims: Array<Object>, totals: Object }}
++ */
++export function buildClaimReferenceMatrix(claims, refs, thresholds = {}) {
++  const set = typeof claims === 'string' ? parseClaimSet(claims) : claims;
++  const out = { claims: [], totals: { claims: 0, anticipationCandidates: 0, combination: 0, gaps: 0 } };
++  for (const c of set) {
++    const maps = (refs || []).map((r) => {
++      const { rows, counts } = mapLimitationsToReference(c, r.text, thresholds);
++      const coveredIds = rows
++        .filter((x) => x.state === 'verbatim' || (x.state === 'partial' && x.tokenCoverage === 1))
++        .map((x) => x.id);
++      return { id: r.id, rows, counts, coveredIds };
++    });
++    const allIds = c.limitations.map((l) => l.id);
++    const refSummary = maps.map((m) => ({
++      id: m.id, covered: m.coveredIds.length,
++      verbatim: m.counts.verbatim, partial: m.counts.partial, notFound: m.counts.notFound,
++    }));
++    const single = maps.find((m) => m.coveredIds.length === allIds.length && allIds.length > 0);
++    const union = new Set();
++    for (const m of maps) for (const id of m.coveredIds) union.add(id);
++    const uncovered = allIds.filter((id) => !union.has(id));
++
++    let coverage, combinationRefs = null;
++    if (single) {
++      coverage = 'anticipation-candidate';
++      out.totals.anticipationCandidates += 1;
++    } else if (allIds.length > 0 && uncovered.length === 0) {
++      coverage = 'combination';
++      const covered = new Set();
++      const chosen = [];
++      for (const m of maps) {
++        let added = false;
++        for (const id of m.coveredIds) if (!covered.has(id)) { covered.add(id); added = true; }
++        if (added) chosen.push(m.id);
++        if (covered.size === allIds.length) break;
++      }
++      combinationRefs = chosen;
++      out.totals.combination += 1;
++    } else {
++      coverage = 'gaps';
++      out.totals.gaps += 1;
++    }
++    out.claims.push({ claimNo: c.number, coverage, refs: refSummary, uncoveredLimitations: uncovered, combinationRefs });
++    out.totals.claims += 1;
++  }
++  return out;
++}
+diff --git a/open-artifacts/patent-claim-comparison/core/core.test.js b/open-artifacts/patent-claim-comparison/core/core.test.js
+index d1794fb..2898f4e 100644
+--- a/open-artifacts/patent-claim-comparison/core/core.test.js
++++ b/open-artifacts/patent-claim-comparison/core/core.test.js
+@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
+ import {
+   tokenize, similarity, parseClaim, parseClaimSet,
+   compareLimitations, compareClaimSets, toClaimChart,
++  mapLimitationsToReference, flagConstructionRisks,
++  buildClaimReferenceMatrix, toCSV, toSourcesCSV,
+ } from './core.js';
+ 
+ const CLAIM_1_A = `1. A thermal management system for a battery module, the system comprising:
+@@ -139,3 +141,163 @@ test('toClaimChart renders explicit rows and totals, including no-teaching note'
+   assert.ok(md.includes('never inferred'));
+   assert.ok(md.includes('Totals:'));
+ });
++
++// --- reference mapping (improvement 1) ---
++
++const REF_TEXT = `The fictional reference discloses a thermal module. FIG. 1 shows a coolant channel defined through a stack of prismatic cells. A sensor skin is bonded to two faces. The housing is a moulded shell.`;
++
++const CLAIM_REF = `1. A thermal management system comprising:
++a coolant channel defined through a stack of prismatic cells;
++a sensor skin bonded to two faces; and
++a pressure-relief valve in fluid communication with the coolant channel.`;
++
++test('mapLimitationsToReference: verbatim span slices to exact quote; partial and notFound are honest', () => {
++  const { rows, counts } = mapLimitationsToReference(parseClaim(CLAIM_REF), REF_TEXT);
++  assert.equal(rows.length, 3);
++  const verb = rows.find((r) => r.id === 'L1');
++  assert.equal(verb.state, 'verbatim');
++  assert.equal(REF_TEXT.slice(verb.refSpan[0], verb.refSpan[1]), verb.quote); // span round-trips
++  assert.ok(verb.quote.toLowerCase().includes('coolant channel defined through a stack of prismatic cells'));
++  const part = rows.find((r) => r.id === 'L2');
++  assert.equal(part.state, 'partial');
++  assert.equal(REF_TEXT.slice(part.refSpan[0], part.refSpan[1]), part.quote); // slice is exact
++  assert.match(part.note, /not construction|first pass/i);
++  const none = rows.find((r) => r.id === 'L3');
++  assert.equal(none.state, 'notFound');
++  assert.equal(none.quote, null);
++  assert.equal(none.refSpan, null);
++  assert.match(none.note, /not inferred/i);
++  assert.deepEqual(counts, { verbatim: 1, partial: 1, notFound: 1 });
++});
++
++// --- construction risk flags (improvement 2) ---
++
++test('flagConstructionRisks: fictional claim yields 4 deterministic flagged spans', () => {
++  const claim = parseClaim('1. A fastening device comprising: means for clamping a panel to a frame; a processor configured to detect vibration; a housing substantially cylindrical in shape; and a lens about 5 mm in thickness.');
++  const flags = flagConstructionRisks(claim);
++  assert.equal(flags.length, 4);
++  assert.deepEqual(flags.map((f) => f.kind).sort(), ['approximate-term', 'approximate-term', 'functional-limitation', 'means-plus-function']);
++  for (const f of flags) {
++    assert.equal(claim.text.slice(f.span[0], f.span[1]), f.text); // span round-trips
++  }
++  assert.equal(flags.find((f) => f.kind === 'means-plus-function').text, 'means for');
++  assert.equal(flags.find((f) => f.kind === 'functional-limitation').text, 'configured to');
++});
++
++// --- three-way transitional + scope note (improvement 3) ---
++
++test('parseClaim distinguishes comprising / consisting of / consisting essentially of', () => {
++  assert.equal(parseClaim('1. A composition comprising: a polymer base; and a dye.').transitional, 'comprising');
++  assert.equal(parseClaim('1. A composition consisting of: a polymer base; and a dye.').transitional, 'consisting');
++  assert.equal(parseClaim('1. A composition consisting essentially of: a polymer base; and a dye.').transitional, 'consisting-essentially-of');
++});
++
++test('toClaimChart notes transitional scope change between sets', () => {
++  const A = '1. A composition comprising: a polymer base; and a dye.';
++  const B = '1. A composition consisting essentially of: a polymer base; and a dye.';
++  const res = compareClaimSets(A, B);
++  const md = toClaimChart(res);
++  assert.ok(md.includes('transitional scope changed'));
++  assert.ok(md.includes('comprising'));
++  assert.ok(md.includes('consisting essentially of'));
++  assert.ok(md.includes('semi-open'));
++});
++
++// --- renumber-robust pairing (improvement 4) ---
++
++test('identical claim renumbered across sets is "renumbered", not removed+added', () => {
++  const setA = `${CLAIM_1_A}\n2. The system of claim 1, wherein the coolant is a dielectric fluid.`;
++  const setB = `${CLAIM_1_A}\n3. The system of claim 1, wherein the coolant is a dielectric fluid.`;
++  const res = compareClaimSets(setA, setB);
++  assert.equal(res.totals.renumbered, 1);
++  assert.equal(res.totals.claimsOnlyInA, 0);
++  assert.equal(res.totals.claimsOnlyInB, 0);
++  const rn = res.claims.find((c) => c.result === 'claim renumbered in set B');
++  assert.equal(rn.claimNo, 2);
++  assert.equal(rn.renumberedTo, 3);
++  assert.ok(rn.comparison.rows.every((r) => r.relation === 'matched'));
++});
++
++test('renumber detection is conservative: amended wording stays removed+added', () => {
++  const setA = `${CLAIM_1_A}\n2. The system of claim 1, wherein the coolant is a dielectric fluid.`;
++  const setB = `${CLAIM_1_A}\n3. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.`;
++  const res = compareClaimSets(setA, setB);
++  assert.equal(res.totals.renumbered, 0);
++  assert.equal(res.totals.claimsOnlyInA, 1);
++  assert.equal(res.totals.claimsOnlyInB, 1);
++});
++
++// --- CSV export + injection neutralization (improvement 5) ---
++
++test('toCSV neutralizes formula-injection cells without corrupting normal text', () => {
++  const res = compareClaimSets(CLAIM_1_A, CLAIM_1_B);
++  const csv = toCSV(res);
++  assert.ok(csv.startsWith('claimNo,aId,aText'));
++  assert.ok(csv.includes('coolant channel')); // normal text untouched
++  assert.ok(!csv.includes("'coolant")); // no spurious apostrophe prefix
++  // crafted hostile rows
++  const crafted = {
++    claims: [{
++      claimNo: 9, result: 'compared', comparison: {
++        rows: [
++          { relation: 'added', aId: null, aText: null, aSpan: null, bId: 'L1', bText: '=cmd()', bSpan: [0, 6], similarity: 0, note: 'n' },
++          { relation: 'removed', aId: 'L2', aText: '+SUM(A1)', aSpan: [0, 8], bId: null, bText: null, bSpan: null, similarity: 0, note: 'n' },
++          { relation: 'added', aId: null, aText: null, aSpan: null, bId: 'L3', bText: 'a	b', bSpan: [0, 3], similarity: 0, note: 'n' },
++        ],
++      },
++    }],
++    totals: { matched: 0, modified: 0, removed: 1, added: 2, claimsOnlyInA: 0, claimsOnlyInB: 0 },
++    noTeachingFound: 1,
++  };
++  const hostile = toCSV(crafted);
++  assert.ok(hostile.includes('"\'=cmd()"'));
++  assert.ok(hostile.includes('"\'+SUM(A1)"'));
++  assert.ok(hostile.includes('"\'a	b"'));
++});
++
++test('toSourcesCSV emits one source row per chart row with span anchors', () => {
++  const res = compareClaimSets(CLAIM_1_A, CLAIM_1_B);
++  const src = toSourcesCSV(res);
++  const expectedRows = res.claims.reduce((n, c) => n + (c.comparison ? c.comparison.rows.length : 1), 0);
++  const dataLines = src.split('\n').filter(Boolean).length - 1;
++  assert.equal(dataLines, expectedRows);
++  assert.ok(src.startsWith('claimNo,aId,aSpanStart,aSpanEnd,bId,bSpanStart,bSpanEnd'));
++  // spans must be integers or empty
++  for (const line of src.split('\n').slice(1)) {
++    const cells = line.match(/("[^"]*"|[^,]*)/g) || [];
++    assert.ok(cells.length >= 7);
++  }
++});
++
++// --- claim × reference coverage matrix (improvement 6) ---
++
++const MATRIX_CLAIM = `1. A coating apparatus comprising:
++a rotating drum;
++a spray nozzle aimed at the drum;
++a heater surrounding the drum; and
++a collector pan beneath the drum.`;
++
++test('buildClaimReferenceMatrix: single ref covering L1-L4 flags anticipation-candidate', () => {
++  const refFull = 'The fictional prior art shows a coating apparatus with a rotating drum, a spray nozzle aimed at the drum, a heater surrounding the drum, and a collector pan beneath the drum.';
++  const m = buildClaimReferenceMatrix(parseClaimSet(MATRIX_CLAIM), [{ id: 'REF-1 (fictional)', text: refFull }]);
++  assert.equal(m.claims.length, 1);
++  const row = m.claims[0];
++  assert.equal(row.coverage, 'anticipation-candidate');
++  assert.deepEqual(row.uncoveredLimitations, []);
++  assert.equal(row.refs[0].covered, 4);
++  assert.equal(m.totals.anticipationCandidates, 1);
++});
++
++test('buildClaimReferenceMatrix: joint-only coverage flags combination; missing coverage stays gaps', () => {
++  const refA = { id: 'REF-A (fictional)', text: 'A fictional drum coater has a rotating drum and a spray nozzle aimed at the drum.' };
++  const refB = { id: 'REF-B (fictional)', text: 'A fictional oven wraps a heater surrounding the drum plus a collector pan beneath the drum.' };
++  const m = buildClaimReferenceMatrix(parseClaimSet(MATRIX_CLAIM), [refA, refB]);
++  const row = m.claims[0];
++  assert.equal(row.coverage, 'combination');
++  assert.deepEqual(row.combinationRefs, ['REF-A (fictional)', 'REF-B (fictional)']);
++  assert.deepEqual(row.uncoveredLimitations, []);
++  // no ref pair covers everything → gaps, honestly listed
++  const m2 = buildClaimReferenceMatrix(parseClaimSet(MATRIX_CLAIM), [refA]);
++  assert.equal(m2.claims[0].coverage, 'gaps');
++  assert.deepEqual(m2.claims[0].uncoveredLimitations, ['L3', 'L4']);
++});
+diff --git a/open-artifacts/patent-claim-comparison/demo/index.html b/open-artifacts/patent-claim-comparison/demo/index.html
+index b165155..07c03cc 100644
+--- a/open-artifacts/patent-claim-comparison/demo/index.html
++++ b/open-artifacts/patent-claim-comparison/demo/index.html
+@@ -45,6 +45,7 @@
+   </div>
+   <div class="row">
+     <button id="run">Compare sets</button>
++    <button id="csv">Download CSV + _sources</button>
+     <span class="muted" id="status"></span>
+   </div>
+ 
+@@ -55,7 +56,7 @@
+ </div>
+ 
+ <script type="module">
+-import { compareClaimSets } from '../core/core.js';
++import { compareClaimSets, toCSV, toSourcesCSV } from '../core/core.js';
+ 
+ const SET_A = `1. A thermal management system for a battery module, the system comprising:
+ a coolant channel defined through a stack of prismatic cells;
+@@ -77,8 +78,18 @@ const $ = (id) => document.getElementById(id);
+ $('setA').value = SET_A; $('setB').value = SET_B;
+ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ 
++let lastResult = null;
++
++function download(name, text) {
++  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
++  const a = document.createElement('a');
++  a.href = url; a.download = name; a.click();
++  URL.revokeObjectURL(url);
++}
++
+ function run() {
+   const res = compareClaimSets($('setA').value, $('setB').value);
++  lastResult = res;
+   const t = res.totals;
+   $('totals').innerHTML = `
+     <span class="pill">matched<b>${t.matched}</b></span>
+@@ -87,10 +98,11 @@ function run() {
+     <span class="pill">added<b>${t.added}</b></span>
+     <span class="pill">claims only in A<b>${t.claimsOnlyInA}</b></span>
+     <span class="pill">claims only in B<b>${t.claimsOnlyInB}</b></span>
++    <span class="pill">renumbered<b>${t.renumbered}</b></span>
+     <span class="pill">no-teaching rows<b>${res.noTeachingFound}</b></span>`;
+   let html = '';
+   for (const c of res.claims) {
+-    html += `<p class="claimhdr">Claim ${c.claimNo ?? '(unnumbered)'} — ${esc(c.result)}${c.dependencyChanged ? ' <span class="pill">dependency changed</span>' : ''}</p>`;
++    html += `<p class="claimhdr">Claim ${c.claimNo ?? '(unnumbered)'} — ${esc(c.result)}${c.renumberedTo ? ` (now claim ${c.renumberedTo})` : ''}${c.dependencyChanged ? ' <span class="pill">dependency changed</span>' : ''}${c.transitionalChanged ? ` <span class="pill">transitional scope changed</span>` : ''}</p>`;
+     if (!c.comparison) { html += `<p class="note">${esc((c.aClaim || c.bClaim || '').slice(0, 160))}…</p>`; continue; }
+     html += `<table>
+       <tr><th>#</th><th>Set A limitation</th><th>Relation</th><th>Set B limitation</th><th>Sim</th><th>Note</th></tr>
+@@ -105,6 +117,11 @@ function run() {
+   $('chart').innerHTML = html;
+   $('status').textContent = `${res.claims.length} claims compared`;
+ }
++$('csv').addEventListener('click', () => {
++  if (!lastResult) run();
++  download('claim-chart.csv', toCSV(lastResult) + '\n');
++  download('claim-chart_sources.csv', toSourcesCSV(lastResult) + '\n');
++});
+ $('run').addEventListener('click', run);
+ run();
+ </script>
+diff --git a/open-artifacts/patent-claim-comparison/examples/input.json b/open-artifacts/patent-claim-comparison/examples/input.json
+index fdc562d..5b0f7d3 100644
+--- a/open-artifacts/patent-claim-comparison/examples/input.json
++++ b/open-artifacts/patent-claim-comparison/examples/input.json
+@@ -2,5 +2,15 @@
+   "matter": "Aurora Grid Systems LLC v. Heltex Energy Corp. (fictional)",
+   "setDescription": "Claim set A: asserted claims as proposed-construed (opening brief). Set B: same claims after examiner amendment in parallel reexam.",
+   "setA": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array; and\na pressure-relief valve in fluid communication with the coolant channel.\n2. The system of claim 1, wherein the coolant is a dielectric fluid.\n3. The system of claim 1, wherein the controller derates the stack when any sensor exceeds a threshold; and wherein the derating persists for at least five minutes.",
+-  "setB": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold; and\na pressure-relief valve in fluid communication with the coolant channel.\n2. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.\n4. The system of claim 1, wherein the pressure-relief valve opens at a cracking pressure below 3 bar."
++  "setB": "1. A thermal management system for a battery module, the system comprising:\na coolant channel defined through a stack of prismatic cells;\na temperature sensor array disposed on at least two faces of the stack;\na controller configured to modulate coolant flow based on the temperature sensor array and a discharge threshold; and\na pressure-relief valve in fluid communication with the coolant channel.\n2. The system of claim 1, wherein the coolant is a dielectric fluid and includes a corrosion inhibitor.\n4. The system of claim 1, wherein the pressure-relief valve opens at a cracking pressure below 3 bar.",
++  "references": [
++    {
++      "id": "REF-A 'Kessler cooling jacket' (fictional)",
++      "text": "The fictional Kessler cooling jacket shows a coolant channel defined through a stack of prismatic cells and a temperature sensor array disposed on at least two faces of the stack."
++    },
++    {
++      "id": "REF-B 'Norlund control unit' (fictional)",
++      "text": "A fictional Norlund controller unit is wired to modulate coolant flow based on a temperature sensor array, and a fictional pressure-relief valve sits in fluid communication with the coolant channel."
++    }
++  ]
+ }
+diff --git a/open-artifacts/patent-claim-comparison/examples/output.json b/open-artifacts/patent-claim-comparison/examples/output.json
+index e17853e..260d45b 100644
+--- a/open-artifacts/patent-claim-comparison/examples/output.json
++++ b/open-artifacts/patent-claim-comparison/examples/output.json
+@@ -215,6 +215,9 @@
+         "aDependsOn": null,
+         "bDependsOn": null,
+         "dependencyChanged": false,
++        "aTransitional": "comprising",
++        "bTransitional": "comprising",
++        "transitionalChanged": false,
+         "result": "compared",
+         "comparison": {
+           "rows": [
+@@ -302,6 +305,9 @@
+         "aDependsOn": 1,
+         "bDependsOn": 1,
+         "dependencyChanged": false,
++        "aTransitional": null,
++        "bTransitional": null,
++        "transitionalChanged": false,
+         "result": "compared",
+         "comparison": {
+           "rows": [
+@@ -351,9 +357,94 @@
+       "modified": 2,
+       "removed": 0,
+       "added": 0,
++      "renumbered": 0,
+       "claimsOnlyInA": 1,
+       "claimsOnlyInB": 1
+     },
+     "noTeachingFound": 0
++  },
++  "matrix": {
++    "claims": [
++      {
++        "claimNo": 1,
++        "coverage": "combination",
++        "refs": [
++          {
++            "id": "REF-A 'Kessler cooling jacket' (fictional)",
++            "covered": 2,
++            "verbatim": 2,
++            "partial": 1,
++            "notFound": 1
++          },
++          {
++            "id": "REF-B 'Norlund control unit' (fictional)",
++            "covered": 2,
++            "verbatim": 0,
++            "partial": 2,
++            "notFound": 2
++          }
++        ],
++        "uncoveredLimitations": [],
++        "combinationRefs": [
++          "REF-A 'Kessler cooling jacket' (fictional)",
++          "REF-B 'Norlund control unit' (fictional)"
++        ]
++      },
++      {
++        "claimNo": 2,
++        "coverage": "gaps",
++        "refs": [
++          {
++            "id": "REF-A 'Kessler cooling jacket' (fictional)",
++            "covered": 0,
++            "verbatim": 0,
++            "partial": 0,
++            "notFound": 1
++          },
++          {
++            "id": "REF-B 'Norlund control unit' (fictional)",
++            "covered": 0,
++            "verbatim": 0,
++            "partial": 1,
++            "notFound": 0
++          }
++        ],
++        "uncoveredLimitations": [
++          "L1"
++        ],
++        "combinationRefs": null
++      },
++      {
++        "claimNo": 3,
++        "coverage": "gaps",
++        "refs": [
++          {
++            "id": "REF-A 'Kessler cooling jacket' (fictional)",
++            "covered": 0,
++            "verbatim": 0,
++            "partial": 0,
++            "notFound": 2
++          },
++          {
++            "id": "REF-B 'Norlund control unit' (fictional)",
++            "covered": 0,
++            "verbatim": 0,
++            "partial": 0,
++            "notFound": 2
++          }
++        ],
++        "uncoveredLimitations": [
++          "L1",
++          "L2"
++        ],
++        "combinationRefs": null
++      }
++    ],
++    "totals": {
++      "claims": 3,
++      "anticipationCandidates": 0,
++      "combination": 1,
++      "gaps": 2
++    }
+   }
+ }
+diff --git a/open-artifacts/patent-claim-comparison/examples/run.js b/open-artifacts/patent-claim-comparison/examples/run.js
+index 7402901..8373a55 100644
+--- a/open-artifacts/patent-claim-comparison/examples/run.js
++++ b/open-artifacts/patent-claim-comparison/examples/run.js
+@@ -6,21 +6,24 @@
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { compareClaimSets, toClaimChart, parseClaimSet } from '../core/core.js';
++import { compareClaimSets, toClaimChart, parseClaimSet, buildClaimReferenceMatrix } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+ 
+ const result = compareClaimSets(input.setA, input.setB);
+ const parsed = { setA: parseClaimSet(input.setA), setB: parseClaimSet(input.setB) };
++const matrix = buildClaimReferenceMatrix(parsed.setA, input.references || []);
+ 
+ writeFileSync(
+   join(here, 'output.json'),
+-  JSON.stringify({ matter: input.matter, parsed, result }, null, 2) + '\n',
++  JSON.stringify({ matter: input.matter, parsed, result, matrix }, null, 2) + '\n',
+ );
+ writeFileSync(join(here, 'claim-chart.md'), toClaimChart(result) + '\n');
+ console.log(
+   `wrote output.json + claim-chart.md — ${result.totals.matched} matched, ` +
+   `${result.totals.modified} modified, ${result.totals.removed} removed, ${result.totals.added} added, ` +
+-  `${result.noTeachingFound} "no teaching found" rows`,
++  `${result.totals.renumbered} renumbered, ${result.noTeachingFound} "no teaching found" rows; ` +
++    `matrix: ${matrix.totals.anticipationCandidates} anticipation-candidate, ` +
++    `${matrix.totals.combination} combination, ${matrix.totals.gaps} gaps (first pass, fictional refs)`,
+ );
+diff --git a/open-artifacts/patent-claim-comparison/spec.md b/open-artifacts/patent-claim-comparison/spec.md
+index c9c4690..cc329e7 100644
+--- a/open-artifacts/patent-claim-comparison/spec.md
++++ b/open-artifacts/patent-claim-comparison/spec.md
+@@ -17,8 +17,13 @@ text. Limitations with no counterpart are reported as explicit
+ | `parseClaim(claimText)` | `{number, preamble{span}, transitional, dependsOn, limitations[{id,text,span}], type}` |
+ | `parseClaimSet(text)` | Multi-claim document → parsed claims (split on leading "N.") |
+ | `compareLimitations(limsA, limsB, thresholds?)` | Greedy stable best-match alignment → `{rows, counts}` |
+-| `compareClaimSets(setA, setB, thresholds?)` | Claim-by-claim pairing by claim number → `{claims, totals, noTeachingFound}` |
+-| `toClaimChart(result)` | Markdown chart; every row explicit |
++| `compareClaimSets(setA, setB, thresholds?)` | Claim-by-claim pairing by claim number; limitation-identical A-only/B-only pairs → `renumbered` (conservative) → `{claims, totals, noTeachingFound}` |
++| `mapLimitationsToReference(claim, refText, thresholds?)` | Limitation → reference rows: `verbatim` (span round-trips to exact quote) / `partial` (lexical, `tokenCoverage`) / `notFound`; `{partialAt: 0.5}` |
++| `flagConstructionRisks(claim)` | Deterministic spans for means-for / configured-adapted-operable-to / substantially-about-approximately; never construes |
++| `buildClaimReferenceMatrix(claims, refs, thresholds?)` | Claim × reference coverage → `anticipation-candidate` / `combination` (minimal cover) / `gaps`; coverage = verbatim or complete token overlap |
++| `toCSV(result)` | Chart CSV; formula-injection cells (=+-@ starts, tab/CR) apostrophe-prefixed |
++| `toSourcesCSV(result)` | `_sources` companion CSV: one row per chart row with span anchors |
++| `toClaimChart(result)` | Markdown chart; every row explicit; flags transitional-scope changes |
+ 
+ Thresholds (rules-as-data): `{ exactAt: 0.96, modifiedAt: 0.45 }` — tune per
+ practice; matching is deterministic (ties broken by index order), so identical
+@@ -30,7 +35,11 @@ inputs always yield byte-identical charts.
+ input:  { setA: "<claims text>", setB: "<claims text>" }   // or parsed arrays
+ row:    { relation: 'matched'|'modified'|'removed'|'added',
+           aId, aText, aSpan:[start,end), bId, bText, bSpan, similarity, note }
+-claims: [{ claimNo, aClaim, bClaim, dependencyChanged, comparison:{rows,counts} }]
++claims: [{ claimNo, aClaim, bClaim, dependencyChanged, transitionalChanged,
++           result: 'compared'|'claim renumbered in set B'|'claim removed in set B'|'claim added in set B',
++           renumberedTo?, comparison:{rows,counts} }]
++refRow: { id, text, span, state: 'verbatim'|'partial'|'notFound',
++          quote, refSpan, tokenCoverage?, note }
+ ```
+ 
+ ## Deterministic vs LLM-assisted

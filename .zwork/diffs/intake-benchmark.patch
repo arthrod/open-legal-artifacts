@@ -1,0 +1,1174 @@
+diff --git a/open-artifacts/intake-benchmark/README.md b/open-artifacts/intake-benchmark/README.md
+index 631cd7d..42b1bac 100644
+--- a/open-artifacts/intake-benchmark/README.md
++++ b/open-artifacts/intake-benchmark/README.md
+@@ -8,20 +8,41 @@ Dimensions (all formulas in `spec.md`): completeness, non-redundancy,
+ fallback quality, speed, retention → weighted composite, ranks, side-by-side
+ MD/CSV tables. Unmeasured data is a blank, never a guessed zero.
+ 
++Beyond the base rubric:
++
++- **Canon library** — four practice-area starter canons (housing,
++  immigration, family, consumer), every field tagged
++  `core | deadline | conflict`. Illustrative, `[verify]` against local rules.
++- **Risk dimensions** — `deadline_capture` and `conflict_check` score
++  deadline/conflict field capture separately; unasked critical fields are
++  listed per flow (`missing_critical`).
++- **Rank stability** — `rankStability()` re-scores over deterministic
++  perturbed-weight grids (dimension drops + ±25% mixes); robust/fragile
++  verdict with flip counts.
++- **Fair mode** — `config.fairMode` recomputes composites on the dimensions
++  every flow has, so measured telemetry can't beat an unmeasured rival.
++- **Capture QA** — `validateCapture()` audits the optional LLM capture step
++  against the documented schema (missing purposes, >7-day latencies,
++  out-of-bounds abandonment).
++- **Drift diff** — `compare()` diffs two runs: per-dimension deltas + rank
++  flips. See `examples/drift.md`.
++
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 14 tests
+-node examples/run.js             # regenerates output.json, comparison.csv/.md
++node --test "core/*.test.js"     # 32 tests
++node examples/run.js             # regenerates output.json, comparison.csv/.md, drift.json/.md
+ ```
+ 
+ Demo: `demo/index.html` (standalone, shared design tokens, prefilled with
+ the fictional Bertram & Ozawa example: guided web form vs. legacy paper
+-intake).
++intake; canon picker + rank-stability badge).
+ 
+ ## Better than the closed counterpart
+ 
+ Harvey cannot fairly benchmark itself against your phone-and-paper process.
+-This rubric scores both first-class, states every formula, and keeps the
+-optional LLM step limited to observable-fact extraction. Fictional data;
+-not legal advice.
++This rubric scores both first-class, states every formula, measures legal
++risk (deadline/conflict capture) instead of asserting quality, puts error
++bars on its own rankings, and keeps the optional LLM step limited to
++observable-fact extraction — then audits it. Fictional data; not legal
++advice.
+diff --git a/open-artifacts/intake-benchmark/core/canons.js b/open-artifacts/intake-benchmark/core/canons.js
+new file mode 100644
+index 0000000..208bc4a
+--- /dev/null
++++ b/open-artifacts/intake-benchmark/core/canons.js
+@@ -0,0 +1,24 @@
++/**
++ * intake-benchmark — practice-area canon library (named entry point).
++ *
++ * The canon DATA lives in core.js on purpose: the demo's single relative
++ * import of core.js is inlined as a data-URL module by deploy/build-site.mjs,
++ * and a nested relative import inside such a module cannot resolve in
++ * browsers. This module re-exports the canon API so Node callers (and tests)
++ * can import it under its domain name; in the browser, import the same API
++ * from core.js directly.
++ *
++ * Each canon field is tagged with a risk_class:
++ *   - 'deadline': drives a clock (notice, hearing, filing, limitations) —
++ *     scored as `deadline_capture`.
++ *   - 'conflict': feeds the conflicts check (adverse parties, prior counsel)
++ *     — scored as `conflict_check`.
++ *   - 'core': everything else the scenario needs.
++ *
++ * ILLUSTRATIVE DATA: field lists and risk tags are plausible defaults, not
++ * verified law. Jurisdiction and practice requirements vary — edit the canon
++ * for your scenario before relying on it. [verify] against local rules.
++ *
++ * @module canons
++ */
++export { CANONS, listCanons, getCanon } from './core.js';
+diff --git a/open-artifacts/intake-benchmark/core/core.js b/open-artifacts/intake-benchmark/core/core.js
+index 643770f..4cfb393 100644
+--- a/open-artifacts/intake-benchmark/core/core.js
++++ b/open-artifacts/intake-benchmark/core/core.js
+@@ -26,6 +26,117 @@ export const DEFAULT_WEIGHTS = Object.freeze({
+ /** Latency target: a flow at or under this scores 100 on speed. Configurable. */
+ export const DEFAULT_LATENCY_TARGET_SECONDS = 900; // 15 minutes
+ 
++// ---------------------------------------------------------------------------
++// Practice-area canon library.
++//
++// The data lives HERE (not in a separate canons.js) on purpose: the demo's
++// single relative import of core.js gets inlined as a data-URL module by
++// deploy/build-site.mjs, and a nested relative import inside such a module
++// cannot resolve in browsers. core/canons.js re-exports this API for callers
++// that prefer the canon-named module.
++//
++// ILLUSTRATIVE DATA: field lists and risk tags are plausible defaults, not
++// verified law. Jurisdiction and practice requirements vary — edit the canon
++// for your scenario before relying on it. [verify] against local rules.
++// ---------------------------------------------------------------------------
++
++/** @typedef {'core'|'deadline'|'conflict'} RiskClass */
++
++/**
++ * Starter canon per practice area. `deadline` fields drive a clock (notice,
++ * hearing, filing, limitations) and are scored as `deadline_capture`;
++ * `conflict` fields feed the conflicts check and are scored as
++ * `conflict_check`; `core` is everything else.
++ * @type {Readonly<Record<string, {name: string, description: string, fields: ReadonlyArray<{name: string, risk_class: RiskClass}>}>>}
++ */
++export const CANONS = Object.freeze({
++  housing: {
++    name: 'Housing / tenant intake',
++    description: 'Illustrative tenant-side intake (eviction defense, habitability, subsidies). [verify] local notice periods and court deadlines.',
++    fields: Object.freeze([
++      Object.freeze({ name: 'full_name', risk_class: 'core' }),
++      Object.freeze({ name: 'contact_email', risk_class: 'core' }),
++      Object.freeze({ name: 'contact_phone', risk_class: 'core' }),
++      Object.freeze({ name: 'unit_address', risk_class: 'core' }),
++      Object.freeze({ name: 'household_size', risk_class: 'core' }),
++      Object.freeze({ name: 'rent_amount', risk_class: 'core' }),
++      Object.freeze({ name: 'subsidy_status', risk_class: 'core' }),
++      Object.freeze({ name: 'repair_requests', risk_class: 'core' }),
++      Object.freeze({ name: 'landlord_name', risk_class: 'conflict' }),
++      Object.freeze({ name: 'prior_counsel', risk_class: 'conflict' }),
++      Object.freeze({ name: 'notice_date', risk_class: 'deadline' }),
++      Object.freeze({ name: 'court_date', risk_class: 'deadline' }),
++    ]),
++  },
++  immigration: {
++    name: 'Immigration intake',
++    description: 'Illustrative immigration intake (hearings, filings, prior orders). [verify] filing windows against the applicable forum and form.',
++    fields: Object.freeze([
++      Object.freeze({ name: 'full_name', risk_class: 'core' }),
++      Object.freeze({ name: 'date_of_birth', risk_class: 'core' }),
++      Object.freeze({ name: 'contact_email', risk_class: 'core' }),
++      Object.freeze({ name: 'a_number', risk_class: 'core' }),
++      Object.freeze({ name: 'country_of_origin', risk_class: 'core' }),
++      Object.freeze({ name: 'current_status', risk_class: 'core' }),
++      Object.freeze({ name: 'prior_counsel', risk_class: 'conflict' }),
++      Object.freeze({ name: 'related_party_name', risk_class: 'conflict' }),
++      Object.freeze({ name: 'hearing_date', risk_class: 'deadline' }),
++      Object.freeze({ name: 'filing_deadline', risk_class: 'deadline' }),
++      Object.freeze({ name: 'prior_removal_order', risk_class: 'deadline' }),
++    ]),
++  },
++  family: {
++    name: 'Family-law intake',
++    description: 'Illustrative family-law intake (divorce, custody, support). [verify] statutory filing deadlines and service windows locally.',
++    fields: Object.freeze([
++      Object.freeze({ name: 'full_name', risk_class: 'core' }),
++      Object.freeze({ name: 'contact_phone', risk_class: 'core' }),
++      Object.freeze({ name: 'children_names', risk_class: 'core' }),
++      Object.freeze({ name: 'marriage_date', risk_class: 'core' }),
++      Object.freeze({ name: 'separation_date', risk_class: 'core' }),
++      Object.freeze({ name: 'asset_inventory', risk_class: 'core' }),
++      Object.freeze({ name: 'safety_concerns', risk_class: 'core' }),
++      Object.freeze({ name: 'opposing_party_name', risk_class: 'conflict' }),
++      Object.freeze({ name: 'prior_counsel', risk_class: 'conflict' }),
++      Object.freeze({ name: 'hearing_date', risk_class: 'deadline' }),
++      Object.freeze({ name: 'filing_deadline', risk_class: 'deadline' }),
++    ]),
++  },
++  consumer: {
++    name: 'Consumer-debt intake',
++    description: 'Illustrative consumer-debt intake (collections defense). [verify] limitations periods and answer deadlines locally.',
++    fields: Object.freeze([
++      Object.freeze({ name: 'full_name', risk_class: 'core' }),
++      Object.freeze({ name: 'contact_email', risk_class: 'core' }),
++      Object.freeze({ name: 'debt_amount', risk_class: 'core' }),
++      Object.freeze({ name: 'debt_account_number', risk_class: 'core' }),
++      Object.freeze({ name: 'debt_collection_practices', risk_class: 'core' }),
++      Object.freeze({ name: 'creditor_name', risk_class: 'conflict' }),
++      Object.freeze({ name: 'original_creditor', risk_class: 'conflict' }),
++      Object.freeze({ name: 'last_payment_date', risk_class: 'deadline' }),
++      Object.freeze({ name: 'first_delinquency_date', risk_class: 'deadline' }),
++      Object.freeze({ name: 'summons_date', risk_class: 'deadline' }),
++    ]),
++  },
++});
++
++/** IDs of the shipped canons, in catalog order. @returns {string[]} */
++export function listCanons() {
++  return Object.keys(CANONS);
++}
++
++/**
++ * Get a practice-area canon by id.
++ * @param {string} id
++ * @returns {{id: string, name: string, description: string, fields: Array<{name: string, risk_class: RiskClass}>}}
++ * @throws {Error} unknown canon id
++ */
++export function getCanon(id) {
++  const c = CANONS[id];
++  if (!c) throw new Error(`Unknown canon "${id}". Available: ${listCanons().join(', ')}.`);
++  return { id, name: c.name, description: c.description, fields: c.fields.map((f) => ({ ...f })) };
++}
++
+ /** @param {string} s @returns {string} */
+ function norm(s) { return String(s).trim().toLowerCase().replace(/[\s-]+/g, '_'); }
+ 
+@@ -38,16 +149,21 @@ const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(n * 100) / 100));
+  * @param {{id: string, name: string, kind?: string,
+  *          steps: Array<{id: string, purpose?: string, fields?: string[], latency_seconds?: number, fallback?: string|null}>,
+  *          abandonment_rate?: number|null}} flow
+- * @param {string[]} requiredFields
++ * @param {string[]|Array<{name: string, risk_class: 'core'|'deadline'|'conflict'}>} requiredFields
++ *        plain field names, or a tagged canon (risk_class adds the
++ *        deadline_capture / conflict_check dimensions and missing_critical)
+  * @param {{latencyTargetSeconds?: number}} config
+  * @returns {{
+  *  id: string, name: string, kind: string,
+- *  dimensions: {completeness: number, non_redundancy: number, fallback_quality: number|null, speed: number|null, retention: number|null},
++ *  dimensions: {completeness: number, non_redundancy: number, fallback_quality: number|null, speed: number|null, retention: number|null,
++ *    deadline_capture: number|null, conflict_check: number|null},
+  *  composite: number,
+  *  metrics: {steps: number, field_asks: number, duplicates: number, extra_field_asks: number,
+- *    covered_fields: string[], missing_fields: string[], total_latency_seconds: number|null, abandonment_rate: number|null},
++ *    covered_fields: string[], missing_fields: string[], missing_critical: string[],
++ *    total_latency_seconds: number|null, abandonment_rate: number|null},
+  *  warnings: string[]
+  * }}
++ * @throws {Error} unknown risk_class tag
+  */
+ export function scoreFlow(flow, requiredFields, config = {}) {
+   const warnings = [];
+@@ -56,8 +172,23 @@ export function scoreFlow(flow, requiredFields, config = {}) {
+     warnings.push('Flow has no steps; completeness is 0 and fallback quality is unscored.');
+   }
+ 
++  // ---- canon: plain names or risk-tagged fields ------------------------
++  const raw = requiredFields ?? [];
++  const tagged = raw.length > 0 && typeof raw[0] === 'object' && raw[0] !== null && 'risk_class' in raw[0];
++  /** @type {{name: string, risk_class: 'core'|'deadline'|'conflict'}[]} */
++  const taggedFields = [];
++  if (tagged) {
++    for (const f of raw) {
++      if (!f || typeof f.name !== 'string' || !f.name) throw new Error(`Canon field needs a name; got ${JSON.stringify(f)}`);
++      if (!['core', 'deadline', 'conflict'].includes(f.risk_class)) {
++        throw new Error(`Field "${f.name}" has unknown risk_class ${JSON.stringify(f.risk_class)} (need core|deadline|conflict).`);
++      }
++      taggedFields.push({ name: norm(f.name), risk_class: f.risk_class });
++    }
++  }
++
+   // ---- field asks -------------------------------------------------------
+-  const required = new Set((requiredFields ?? []).map(norm));
++  const required = new Set((tagged ? taggedFields.map((f) => f.name) : raw).map(norm));
+   const asked = [];
+   for (const st of steps) for (const f of st.fields ?? []) asked.push(norm(f));
+ 
+@@ -65,6 +196,18 @@ export function scoreFlow(flow, requiredFields, config = {}) {
+   const missingFields = [...required].filter((f) => !covered.has(f));
+   const completeness = required.size ? clamp100((covered.size / required.size) * 100) : 0;
+ 
++  // ---- risk dimensions (tagged canon only) ------------------------------
++  const share = (cls) => {
++    const fields = taggedFields.filter((f) => f.risk_class === cls);
++    if (!fields.length) return null;
++    return clamp100((fields.filter((f) => covered.has(f.name)).length / fields.length) * 100);
++  };
++  const deadline_capture = tagged ? share('deadline') : null;
++  const conflict_check = tagged ? share('conflict') : null;
++  const missingCritical = tagged
++    ? taggedFields.filter((f) => f.risk_class !== 'core' && !covered.has(f.name)).map((f) => f.name)
++    : [];
++
+   const seen = new Set();
+   let duplicates = 0;
+   for (const f of asked) { if (seen.has(f)) duplicates++; else seen.add(f); }
+@@ -102,12 +245,13 @@ export function scoreFlow(flow, requiredFields, config = {}) {
+ 
+   return {
+     id: flow.id, name: flow.name, kind: flow.kind ?? 'unspecified',
+-    dimensions: { completeness, non_redundancy, fallback_quality, speed, retention },
++    dimensions: { completeness, non_redundancy, fallback_quality, speed, retention, deadline_capture, conflict_check },
+     composite: 0, // filled by benchmark()
+     metrics: {
+       steps: steps.length, field_asks: asked.length, duplicates,
+       extra_field_asks: extraFieldAsks,
+       covered_fields: [...covered], missing_fields: missingFields,
++      missing_critical: missingCritical,
+       total_latency_seconds: total_latency, abandonment_rate: abandonment,
+     },
+     warnings,
+@@ -115,12 +259,15 @@ export function scoreFlow(flow, requiredFields, config = {}) {
+ }
+ 
+ /**
+- * Composite over available dimensions (weights renormalized).
++ * Composite over available dimensions (weights renormalized). When
++ * `allowedDims` is set, dimensions outside it are treated as unavailable.
+  * @param {{dimensions: Record<string, number|null>, warnings: string[]}} scored
+  * @param {Record<string, number>} weights
++ * @param {string[]|null} [allowedDims]
+  */
+-function composite(scored, weights) {
+-  const entries = Object.entries(scored.dimensions).filter(([, v]) => v != null);
++function composite(scored, weights, allowedDims = null) {
++  const entries = Object.entries(scored.dimensions)
++    .filter(([k, v]) => v != null && (allowedDims == null || allowedDims.includes(k)));
+   const wSum = entries.reduce((s, [k]) => s + (weights[k] ?? 0), 0);
+   if (!(wSum > 0)) return 0;
+   const total = entries.reduce((s, [k, v]) => s + (v ?? 0) * (weights[k] ?? 0), 0);
+@@ -130,13 +277,13 @@ function composite(scored, weights) {
+ /**
+  * Benchmark two or more intake flows against the same scenario canon.
+  *
+- * @param {{scenario: {name?: string, required_fields: string[]},
++ * @param {{scenario: {name?: string, required_fields?: string[]|Array<{name: string, risk_class: 'core'|'deadline'|'conflict'}>, canon?: string},
+  *          flows: Array<object>,
+- *          config?: {latencyTargetSeconds?: number, weights?: Record<string, number>}}} input
++ *          config?: {latencyTargetSeconds?: number, weights?: Record<string, number>, fairMode?: boolean}}} input
+  * @returns {{scenario: string, latencyTargetSeconds: number,
+  *   flows: Array<ReturnType<scoreFlow> & {composite: number, rank: number}>,
+  *   dimensionOrder: string[], warnings: string[]}}
+- * @throws {Error} on fewer than 1 flow, unknown weight keys, or invalid data
++ * @throws {Error} on fewer than 1 flow, unknown weight keys, unknown canon id, or invalid data
+  */
+ export function benchmark(input) {
+   const flows = input?.flows ?? [];
+@@ -145,10 +292,34 @@ export function benchmark(input) {
+   for (const k of Object.keys(weights)) if (!(k in DEFAULT_WEIGHTS)) throw new Error(`Unknown weight key "${k}"`);
+   const latencyTargetSeconds = input?.config?.latencyTargetSeconds ?? DEFAULT_LATENCY_TARGET_SECONDS;
+ 
++  const warnings = [];
++  /** @type {string[]|Array<{name: string, risk_class: 'core'|'deadline'|'conflict'}>} */
++  let fields = input.scenario?.required_fields ?? [];
++  if (input.scenario?.canon != null) {
++    const canon = getCanon(String(input.scenario.canon));
++    fields = canon.fields;
++    if (input.scenario.required_fields?.length) {
++      warnings.push(`canon "${canon.id}" overrides scenario.required_fields (${input.scenario.required_fields.length} entries ignored).`);
++    }
++    if (!input.scenario?.name) input.scenario.name = canon.name;
++  }
++
+   const scored = flows.map((f) => {
+-    const s = scoreFlow(f, input.scenario.required_fields, { latencyTargetSeconds });
++    const s = scoreFlow(f, fields, { latencyTargetSeconds });
+     return { ...s, composite: composite(s, weights) };
+   });
++
++  // ---- fair mode: score everyone only on dimensions every flow has -------
++  if (input?.config?.fairMode) {
++    const dims = Object.keys(DEFAULT_WEIGHTS);
++    const shared = dims.filter((d) => scored.every((s) => s.dimensions[d] != null));
++    const excluded = dims.filter((d) => !shared.includes(d));
++    if (excluded.length) {
++      for (const s of scored) s.composite = composite(s, weights, shared);
++      warnings.push(`fair mode: ${excluded.join(', ')} not available in every flow; composites recomputed on the remaining dimensions only.`);
++    }
++  }
++
+   scored.sort((a, b) => b.composite - a.composite || a.name.localeCompare(b.name));
+   scored.forEach((f, i) => { f.rank = i + 1; });
+ 
+@@ -156,8 +327,8 @@ export function benchmark(input) {
+     scenario: input.scenario?.name ?? 'intake scenario',
+     latencyTargetSeconds,
+     flows: scored,
+-    dimensionOrder: ['completeness', 'non_redundancy', 'fallback_quality', 'speed', 'retention', 'composite'],
+-    warnings: scored.flatMap((f) => f.warnings.map((w) => `${f.id}: ${w}`)),
++    dimensionOrder: ['completeness', 'non_redundancy', 'fallback_quality', 'speed', 'retention', 'deadline_capture', 'conflict_check', 'composite'],
++    warnings: [...scored.flatMap((f) => f.warnings.map((w) => `${f.id}: ${w}`)), ...warnings],
+   };
+ }
+ 
+@@ -202,3 +373,149 @@ export function exportMd(result) {
+   lines.push('', '---', '', '_Deterministic output of the open intake-benchmark rubric. Fictional data; not legal advice._');
+   return lines.join('\n');
+ }
++
++/**
++ * Rank-stability analysis: how much the ranking depends on the (somewhat
++ * arbitrary) rubric weights. Re-scores the same flows over a deterministic
++ * grid of perturbed weights and counts the runs whose #1 flow differs from
++ * the baseline winner. The grid has two families, in order:
++ *   1. drop runs — one rubric dimension removed entirely (weight 0),
++ *      because a reviewer may simply not care about that axis;
++ *   2. mix runs — every weight scaled by 1 ± jitter (fixed-seed LCG).
++ *
++ * Deterministic: the grid is a function of (dims, runs, jitter) only, so the
++ * same input always yields identical output.
++ *
++ * @param {Parameters<benchmark>[0]} input
++ * @param {{jitter?: number, runs?: number}} [options] jitter 0–1 (default 0.25), runs ≥ 1 (default 12)
++ * @returns {{scenario: string, jitter: number, runs: number, flips: number, flip_rate: number,
++ *   verdict: 'robust'|'fragile', baseline: Array<{id: string, name: string, rank: number}>}}
++ * @throws {Error} via benchmark(), or on bad options
++ */
++export function rankStability(input, options = {}) {
++  const jitter = options.jitter ?? 0.25;
++  const runs = options.runs ?? 12;
++  if (!(jitter >= 0) || jitter > 1) throw new Error(`jitter must be within 0–1, got ${jitter}`);
++  if (!Number.isInteger(runs) || runs < 1) throw new Error(`runs must be an integer ≥ 1, got ${runs}`);
++
++  const base = benchmark(input);
++  const weights = { ...DEFAULT_WEIGHTS, ...input?.config?.weights };
++  const dims = Object.keys(weights);
++  const baseWinner = base.flows.find((f) => f.rank === 1)?.id ?? null;
++
++  // Fixed-seed LCG for the mix runs: same grid on every call and platform.
++  let seed = 0x2f6e2b1;
++  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
++
++  /** @param {Record<string, number>} w */
++  const runGrid = (w) => {
++    const reranked = base.flows
++      .map((f) => ({ id: f.id, name: f.name, composite: composite(f, w) }))
++      .sort((a, b) => b.composite - a.composite || a.name.localeCompare(b.name));
++    return reranked[0].id !== baseWinner;
++  };
++
++  let flips = 0;
++  for (let r = 0; r < runs; r++) {
++    /** @type {Record<string, number>} */
++    const w = {};
++    if (r < dims.length) {
++      for (const [k, v] of Object.entries(weights)) w[k] = k === dims[r] ? 0 : v;
++    } else {
++      for (const [k, v] of Object.entries(weights)) w[k] = Math.max(0.01, v * (1 + jitter * (2 * rand() - 1)));
++    }
++    if (runGrid(w)) flips++;
++  }
++  const flip_rate = runs ? flips / runs : 0;
++  return {
++    scenario: base.scenario,
++    jitter, runs, flips,
++    flip_rate: Math.round(flip_rate * 10000) / 10000,
++    verdict: flips === 0 ? 'robust' : 'fragile',
++    baseline: base.flows.map((f) => ({ id: f.id, name: f.name, rank: f.rank })),
++  };
++}
++
++/** Capture-QA ceiling for a single step latency in seconds (7 days). */
++const CAPTURE_LATENCY_CEILING_SECONDS = 7 * 86400;
++
++/**
++ * Validate the output of the optional LLM capture step against the documented
++ * prompt schema — makes that step auditable instead of trusted.
++ * Errors = structural problems (missing flows/steps/ids); warnings = data
++ * smells a human should re-check (missing purpose, implausible latencies,
++ * out-of-bounds abandonment).
++ *
++ * @param {{flows?: Array<object>}} json captured JSON
++ * @returns {{valid: boolean, errors: string[], warnings: string[]}}
++ */
++export function validateCapture(json) {
++  const errors = [];
++  const warnings = [];
++  const flows = json?.flows;
++  if (!Array.isArray(flows) || flows.length === 0) {
++    errors.push('capture JSON must contain a non-empty "flows" array');
++    return { valid: false, errors, warnings };
++  }
++  for (const f of flows) {
++    if (!f || typeof f !== 'object' || typeof f.id !== 'string' || !f.id) {
++      errors.push('every flow needs a non-empty string "id"');
++      continue;
++    }
++    if (!Array.isArray(f.steps) || f.steps.length === 0) {
++      errors.push(`flow "${f.id}": missing non-empty "steps" array`);
++    } else {
++      for (const st of f.steps) {
++        if (!st || typeof st !== 'object' || typeof st.id !== 'string' || !st.id) {
++          errors.push(`flow "${f.id}": every step needs a non-empty string "id"`);
++          continue;
++        }
++        if (st.purpose == null || String(st.purpose).trim() === '') {
++          warnings.push(`${f.id}/${st.id}: missing purpose — the rubric assumes each step exists for a reason`);
++        }
++        if (typeof st.latency_seconds === 'number' && st.latency_seconds > CAPTURE_LATENCY_CEILING_SECONDS) {
++          warnings.push(`${f.id}/${st.id}: latency_seconds ${st.latency_seconds}s exceeds 7 days — likely elapsed wait time (e.g. mail), not step latency; split or omit`);
++        }
++      }
++    }
++    if (f.abandonment_rate != null
++      && (typeof f.abandonment_rate !== 'number' || !Number.isFinite(f.abandonment_rate)
++        || f.abandonment_rate < 0 || f.abandonment_rate > 1)) {
++      warnings.push(`flow "${f.id}": abandonment_rate ${JSON.stringify(f.abandonment_rate)} outside 0–1 — benchmark() will reject it`);
++    }
++  }
++  return { valid: errors.length === 0, errors, warnings };
++}
++
++/**
++ * Drift diff between two benchmark() runs of the same flows (e.g. before and
++ * after a process change): per-flow composite and per-dimension deltas
++ * (after − before) plus rank-change flags. Dimensions missing on either side
++ * are omitted rather than guessed.
++ *
++ * @param {ReturnType<benchmark>} after
++ * @param {ReturnType<benchmark>} before
++ * @returns {{scenario: string, flows: Array<{id: string, name: string, composite: number,
++ *   dimensions: Record<string, number>, rank: {from: number|null, to: number, changed: boolean}}>}}
++ */
++export function compare(after, before) {
++  const beforeById = new Map(before.flows.map((f) => [f.id, f]));
++  const round2 = (n) => Math.round(n * 100) / 100;
++  return {
++    scenario: after.scenario,
++    flows: after.flows.map((f) => {
++      const b = beforeById.get(f.id);
++      const dimensions = {};
++      for (const [k, v] of Object.entries(f.dimensions)) {
++        const bv = b ? b.dimensions[k] : null;
++        if (v != null && bv != null) dimensions[k] = round2(v - bv);
++      }
++      return {
++        id: f.id, name: f.name,
++        composite: b ? round2(f.composite - b.composite) : round2(f.composite),
++        dimensions,
++        rank: { from: b ? b.rank : null, to: f.rank, changed: !b || b.rank !== f.rank },
++      };
++    }),
++  };
++}
+diff --git a/open-artifacts/intake-benchmark/core/core.test.js b/open-artifacts/intake-benchmark/core/core.test.js
+index d85a261..ad8e827 100644
+--- a/open-artifacts/intake-benchmark/core/core.test.js
++++ b/open-artifacts/intake-benchmark/core/core.test.js
+@@ -1,7 +1,8 @@
+ /** Tests for intake-benchmark core. Run: node --test "core/*.test.js" */
+ import { test, describe } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { benchmark, scoreFlow, exportCsv, exportMd, DEFAULT_WEIGHTS } from './core.js';
++import { benchmark, scoreFlow, exportCsv, exportMd, DEFAULT_WEIGHTS, rankStability, validateCapture, compare } from './core.js';
++import { getCanon, listCanons } from './canons.js';
+ 
+ const REQUIRED = ['full_name', 'date_of_birth', 'incident_date', 'incident_location', 'contact_email', 'insurance_carrier'];
+ 
+@@ -90,6 +91,182 @@ describe('benchmark', () => {
+   });
+ });
+ 
++describe('canon library', () => {
++  test('listCanons returns the four practice areas; unknown id throws', () => {
++    assert.deepEqual(listCanons().sort(), ['consumer', 'family', 'housing', 'immigration']);
++    assert.throws(() => getCanon('nope'), /Unknown canon/);
++  });
++  test('getCanon fields are tagged core/deadline/conflict with both risk classes present', () => {
++    for (const id of listCanons()) {
++      const c = getCanon(id);
++      assert.ok(c.fields.length >= 6, `${id} canon too thin`);
++      for (const f of c.fields) {
++        assert.ok(typeof f.name === 'string' && f.name.length > 0);
++        assert.ok(['core', 'deadline', 'conflict'].includes(f.risk_class), `${id}.${f.name} bad risk_class`);
++      }
++      assert.ok(c.fields.some((f) => f.risk_class === 'deadline'), `${id} lacks a deadline field`);
++      assert.ok(c.fields.some((f) => f.risk_class === 'conflict'), `${id} lacks a conflict field`);
++    }
++  });
++  test('benchmark accepts scenario.canon and scores flow fields against it', () => {
++    const housing = getCanon('housing');
++    const r = benchmark({ scenario: { canon: 'housing' }, flows: [flow()] });
++    const covered = housing.fields.filter((f) => ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location'].includes(f.name));
++    assert.equal(r.flows[0].dimensions.completeness, Math.round((covered.length / housing.fields.length) * 10000) / 100);
++    assert.equal(r.flows[0].dimensions.deadline_capture, 0); // no deadline fields asked
++    for (const f of housing.fields.filter((x) => x.risk_class !== 'core')) {
++      assert.ok(r.flows[0].metrics.missing_critical.includes(f.name), `${f.name} should be in missing_critical`);
++    }
++  });
++  test('scenario with both canon and required_fields: canon wins with a warning', () => {
++    const r = benchmark({ scenario: { canon: 'housing', required_fields: REQUIRED }, flows: [flow()] });
++    assert.equal(r.flows[0].metrics.covered_fields.length, 2); // full_name + contact_email only in housing canon
++    assert.ok(r.warnings.some((w) => /canon "housing" overrides/.test(w)));
++  });
++});
++
++describe('risk dimensions', () => {
++  const TAGGED = [
++    { name: 'full_name', risk_class: 'core' },
++    { name: 'statute_of_limitations_date', risk_class: 'deadline' },
++    { name: 'adverse_party_name', risk_class: 'conflict' },
++  ];
++  test('untagged canon leaves deadline_capture/conflict_check null', () => {
++    const s = scoreFlow(flow(), REQUIRED);
++    assert.equal(s.dimensions.deadline_capture, null);
++    assert.equal(s.dimensions.conflict_check, null);
++    assert.deepEqual(s.metrics.missing_critical, []);
++  });
++  test('unasked deadline/conflict fields score <100 and land in missing_critical', () => {
++    const s = scoreFlow(flow({ steps: [{ id: 's1', fields: ['Full Name'], latency_seconds: 10, fallback: 'x' }] }), TAGGED);
++    assert.equal(s.dimensions.deadline_capture, 0);
++    assert.equal(s.dimensions.conflict_check, 0);
++    assert.deepEqual(s.metrics.missing_critical, ['statute_of_limitations_date', 'adverse_party_name']);
++  });
++  test('all critical fields asked score 100 with empty missing_critical', () => {
++    const s = scoreFlow(flow({ steps: [{ id: 's1', fields: ['full_name', 'statute_of_limitations_date', 'adverse_party_name'], latency_seconds: 10, fallback: 'x' }] }), TAGGED);
++    assert.equal(s.dimensions.deadline_capture, 100);
++    assert.equal(s.dimensions.conflict_check, 100);
++    assert.deepEqual(s.metrics.missing_critical, []);
++  });
++  test('unknown risk_class throws', () => {
++    assert.throws(() => scoreFlow(flow(), [{ name: 'x', risk_class: 'urgent' }]), /risk_class/);
++  });
++});
++
++describe('rankStability', () => {
++  const tenFields = Array.from({ length: 10 }, (_, i) => `f${i + 1}`);
++  const mk = (id, name, fields, latency) => ({
++    id, name, kind: 'software', abandonment_rate: 0,
++    steps: [{ id: 's1', purpose: 'all', fields, latency_seconds: latency, fallback: 'phone' }],
++  });
++  test('clear winner → zero flips, robust', () => {
++    const r = rankStability({ scenario: { required_fields: tenFields }, flows: [
++      mk('good', 'Good', tenFields, 100),
++      mk('bad', 'Bad', ['f1'], 99999),
++    ] });
++    assert.equal(r.flips, 0);
++    assert.equal(r.flip_rate, 0);
++    assert.equal(r.verdict, 'robust');
++    assert.ok(r.runs >= 4);
++  });
++  test('near-tie → some flips, fragile', () => {
++    const r = rankStability({ scenario: { required_fields: tenFields }, flows: [
++      mk('wide', 'Wide', tenFields, 3000),  // completeness 100, speed 30
++      mk('fast', 'Fast', tenFields.slice(0, 7), 300), // completeness 70, speed 100
++    ] });
++    assert.ok(r.flips > 0, `expected flips > 0, got ${r.flips}`);
++    assert.equal(r.verdict, 'fragile');
++    assert.ok(r.flip_rate > 0 && r.flip_rate <= 1);
++  });
++  test('deterministic: identical output on rerun', () => {
++    const input = { scenario: { required_fields: REQUIRED }, flows: [flow(), flow({ id: 'two', name: 'Flow Two' })] };
++    assert.deepEqual(rankStability(input), rankStability(input));
++  });
++});
++
++describe('fair mode', () => {
++  test('composites recompute on the intersection of available dimensions, with warning', () => {
++    const input = {
++      scenario: { required_fields: REQUIRED },
++      flows: [
++        flow({ id: 'with', name: 'With telemetry', abandonment_rate: 0 }),
++        flow({ id: 'without', name: 'Without telemetry', abandonment_rate: null }),
++      ],
++    };
++    const plain = benchmark(input);
++    const fair = benchmark({ ...input, config: { fairMode: true } });
++    const withT = plain.flows.find((f) => f.id === 'with');
++    const withoutT = plain.flows.find((f) => f.id === 'without');
++    // without fair mode retention boosts the flow that has it
++    assert.ok(withT.composite > withoutT.composite);
++    const fw = fair.flows.find((f) => f.id === 'with');
++    const fwOut = fair.flows.find((f) => f.id === 'without');
++    assert.equal(fw.composite, fwOut.composite); // identical once retention is excluded for both
++    assert.ok(fw.composite < withT.composite);
++    assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /retention/.test(w)));
++  });
++  test('fair mode with all dimensions shared changes nothing and stays quiet', () => {
++    const input = { scenario: { required_fields: REQUIRED }, flows: [flow({ abandonment_rate: 0.2 }), flow({ id: 'two', name: 'Flow Two', abandonment_rate: 0.4 })] };
++    const plain = benchmark(input);
++    const fair = benchmark({ ...input, config: { fairMode: true } });
++    assert.deepEqual(plain.flows.map((f) => [f.id, f.composite]), fair.flows.map((f) => [f.id, f.composite]));
++    assert.ok(!fair.warnings.some((w) => /fair mode/i.test(w)));
++  });
++});
++
++describe('capture QA (validateCapture)', () => {
++  test('latency outliers beyond 7 days are flagged', () => {
++    const r = validateCapture({ flows: [{ id: 'f1', name: 'F1', kind: 'software', steps: [{ id: 's1', purpose: 'identity', fields: ['full_name'], latency_seconds: 7 * 86400 + 1 }] }] });
++    assert.equal(r.valid, true);
++    assert.ok(r.warnings.some((w) => /latency_seconds.*7 days/.test(w)));
++  });
++  test('missing purpose and out-of-bounds abandonment warn; empty/invalid structure errors', () => {
++    const r = validateCapture({ flows: [{ id: 'f1', name: 'F1', steps: [{ id: 's1', fields: ['full_name'], latency_seconds: 5 }], abandonment_rate: 2 }] });
++    assert.ok(r.warnings.some((w) => /purpose/.test(w)));
++    assert.ok(r.warnings.some((w) => /abandonment_rate/.test(w)));
++    const bad = validateCapture({ flows: [] });
++    assert.equal(bad.valid, false);
++    assert.ok(bad.errors.length >= 1);
++  });
++  test('well-formed capture passes clean', () => {
++    const r = validateCapture({ flows: [flow({ abandonment_rate: 0.1 })] });
++    assert.equal(r.valid, true);
++    assert.deepEqual(r.warnings, []);
++  });
++});
++
++describe('drift diff (compare)', () => {
++  const mkInput = (aAb, bAb) => ({
++    scenario: { required_fields: REQUIRED },
++    flows: [
++      flow({ id: 'a', name: 'Flow A', abandonment_rate: aAb }),
++      flow({ id: 'b', name: 'Flow B', abandonment_rate: bAb }),
++    ],
++  });
++  test('changed abandonment → retention delta and rank flip flagged', () => {
++    const before = benchmark(mkInput(0.5, 0.1));
++    const after = benchmark(mkInput(0.1, 0.5));
++    const d = compare(after, before);
++    const a = d.flows.find((f) => f.id === 'a');
++    const b = d.flows.find((f) => f.id === 'b');
++    assert.equal(a.dimensions.retention, 40);
++    assert.equal(a.rank.changed, true);
++    assert.deepEqual(a.rank, { from: 2, to: 1, changed: true });
++    assert.deepEqual(b.rank, { from: 1, to: 2, changed: true });
++    assert.equal(a.composite > 0, true);
++  });
++  test('identical runs → zero deltas, no rank changes', () => {
++    const r = benchmark(mkInput(0.2, 0.3));
++    const d = compare(r, benchmark(mkInput(0.2, 0.3)));
++    for (const f of d.flows) {
++      assert.equal(f.composite, 0);
++      assert.equal(f.rank.changed, false);
++      for (const v of Object.values(f.dimensions)) assert.equal(v, 0);
++    }
++  });
++});
++
+ describe('exports', () => {
+   const r = benchmark({ scenario: { name: 'PI intake', required_fields: REQUIRED }, flows: [flow({ abandonment_rate: 0.1 }), flow({ id: 'two', name: 'Flow Two', abandonment_rate: null })] });
+   test('CSV has header row, all dimensions, rank and missing fields', () => {
+diff --git a/open-artifacts/intake-benchmark/demo/index.html b/open-artifacts/intake-benchmark/demo/index.html
+index f9e293f..0a56e77 100644
+--- a/open-artifacts/intake-benchmark/demo/index.html
++++ b/open-artifacts/intake-benchmark/demo/index.html
+@@ -27,6 +27,10 @@
+   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 4px; }
+   .muted { color: var(--text-secondary); font-size: 13px; }
+   .csv { width: 100%; min-height: 140px; font-family: var(--font-mono); font-size: 11px; border: var(--hairline); background: #fff; padding: 10px; }
++  select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 6px 8px; margin-left: 8px; }
++  .badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 8px; border: var(--hairline); margin-top: 12px; }
++  .badge.robust { border-color: var(--good, #2a7); color: var(--good, #2a7); }
++  .badge.fragile { border-color: var(--bad); color: var(--bad); }
+ </style>
+ </head>
+ <body>
+@@ -39,7 +43,7 @@
+ 
+ <div class="wrap"><main>
+   <section>
+-    <div class="sec">Runs JSON (editable)</div>
++    <div class="sec">Runs JSON (editable) <label>canon: <select id="canon"></select></label></div>
+     <textarea id="input" spellcheck="false"></textarea>
+     <button id="run">Compare flows →</button>
+     <div id="err" class="err"></div>
+@@ -48,7 +52,7 @@
+ </main></div>
+ 
+ <script type="module">
+-import { benchmark, exportCsv } from '../core/core.js';
++import { benchmark, exportCsv, rankStability, listCanons, getCanon } from '../core/core.js';
+ 
+ const SAMPLE = {
+   scenario: {
+@@ -77,6 +81,29 @@ $('input').value = JSON.stringify(SAMPLE, null, 2);
+ function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+ const fmt = (v) => v == null ? '—' : String(v);
+ 
++// Canon picker: swap the scenario for a shipped practice-area canon (fields
++// tagged core/deadline/conflict — the flows are then scored on deadline and
++// conflict capture too, and unasked critical fields are listed).
++const canonSel = $('canon');
++canonSel.appendChild(new Option('custom (as written)', ''));
++for (const id of listCanons()) canonSel.appendChild(new Option(getCanon(id).name, id));
++canonSel.addEventListener('change', () => {
++  const parsed = JSON.parse($('input').value);
++  if (canonSel.value) {
++    const c = getCanon(canonSel.value);
++    parsed.scenario = { name: `${c.name} (fictional demo flows)`, canon: c.id };
++  } else {
++    parsed.scenario = JSON.parse(JSON.stringify(SAMPLE.scenario));
++  }
++  $('input').value = JSON.stringify(parsed, null, 2);
++  run();
++});
++
++function run() {
++  $('err').textContent = '';
++  try { render(benchmark(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
++}
++
+ function render(r) {
+   let h = `<div class="sec">${esc(r.scenario)}</div>`;
+   for (const f of r.flows) h += `<p class="rank">#${f.rank} · ${esc(f.name)} (${esc(f.kind)}) — composite <strong>${f.composite}</strong></p>`;
+@@ -87,14 +114,21 @@ function render(r) {
+   }
+   h += `</table><div class="sec">Missing canon fields</div>`;
+   for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_fields.length ? esc(f.metrics.missing_fields.join(', ')) : 'none'}</p>`;
++  const anyCritical = r.flows.some((f) => f.metrics.missing_critical.length);
++  if (anyCritical) {
++    h += `<div class="sec">Missing critical (deadline/conflict) fields</div>`;
++    for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_critical.length ? esc(f.metrics.missing_critical.join(', ')) : 'none'}</p>`;
++  }
++  // Rank-stability badge: does the winner survive perturbed rubric weights?
++  try {
++    const st = rankStability(JSON.parse($('input').value));
++    h += `<div class="sec">Rank stability</div><p><span class="badge ${st.verdict}">${st.verdict}</span> <span class="muted">winner unchanged in ${st.runs - st.flips}/${st.runs} perturbed weightings (dimension drops + ±${Math.round(st.jitter * 100)}% mixes)</span></p>`;
++  } catch { /* stability analysis is best-effort; the table above stands */ }
+   if (r.warnings.length) h += `<div class="sec">Warnings</div>` + r.warnings.map((w) => `<p class="muted">⚠ ${esc(w)}</p>`).join('');
+   h += `<div class="sec">CSV export</div><textarea class="csv" readonly>${esc(exportCsv(r))}</textarea>`;
+   $('out').innerHTML = h;
+ }
+-$('run').addEventListener('click', () => {
+-  $('err').textContent = '';
+-  try { render(benchmark(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
+-});
++$('run').addEventListener('click', run);
+ render(benchmark(SAMPLE));
+ </script>
+ </body>
+diff --git a/open-artifacts/intake-benchmark/examples/comparison.csv b/open-artifacts/intake-benchmark/examples/comparison.csv
+index e7eaf7b..c963732 100644
+--- a/open-artifacts/intake-benchmark/examples/comparison.csv
++++ b/open-artifacts/intake-benchmark/examples/comparison.csv
+@@ -4,6 +4,8 @@ non_redundancy,100,71.43
+ fallback_quality,66.67,66.67
+ speed,100,1.01
+ retention,82,
++deadline_capture,,
++conflict_check,,
+ composite,90.63,67.97
+ rank,1,2
+ steps,3,3
+diff --git a/open-artifacts/intake-benchmark/examples/comparison.md b/open-artifacts/intake-benchmark/examples/comparison.md
+index 2697213..e7c9d7c 100644
+--- a/open-artifacts/intake-benchmark/examples/comparison.md
++++ b/open-artifacts/intake-benchmark/examples/comparison.md
+@@ -9,6 +9,8 @@ Speed target: 900s. Scores 0–100; blank = no data.
+ | fallback_quality | 66.67 | 66.67 |
+ | speed | 100 | 1.01 |
+ | retention | 82 | — |
++| deadline_capture | — | — |
++| conflict_check | — | — |
+ | composite | 90.63 | 67.97 |
+ 
+ ## Missing required fields
+diff --git a/open-artifacts/intake-benchmark/examples/drift.json b/open-artifacts/intake-benchmark/examples/drift.json
+new file mode 100644
+index 0000000..b2c84c4
+--- /dev/null
++++ b/open-artifacts/intake-benchmark/examples/drift.json
+@@ -0,0 +1,38 @@
++{
++  "scenario": "Personal-injury intake (fictional firm: Bertram & Ozawa LLP) — run 2",
++  "flows": [
++    {
++      "id": "paper-intake",
++      "name": "Human paper intake (legacy process)",
++      "composite": 5.05,
++      "dimensions": {
++        "completeness": 0,
++        "non_redundancy": 5.49,
++        "fallback_quality": 0,
++        "speed": -0.67
++      },
++      "rank": {
++        "from": 2,
++        "to": 1,
++        "changed": true
++      }
++    },
++    {
++      "id": "guided-form",
++      "name": "Guided web form (Meridian Intake, fictional)",
++      "composite": -32,
++      "dimensions": {
++        "completeness": 0,
++        "non_redundancy": 0,
++        "fallback_quality": -66.67,
++        "speed": -87.5,
++        "retention": -37
++      },
++      "rank": {
++        "from": 1,
++        "to": 2,
++        "changed": true
++      }
++    }
++  ]
++}
+diff --git a/open-artifacts/intake-benchmark/examples/drift.md b/open-artifacts/intake-benchmark/examples/drift.md
+new file mode 100644
+index 0000000..0f8ac67
+--- /dev/null
++++ b/open-artifacts/intake-benchmark/examples/drift.md
+@@ -0,0 +1,15 @@
++# Intake flow benchmark — drift (run 1 → run 2)
++
++Scenario: Personal-injury intake (fictional firm: Bertram & Ozawa LLP) — run 2. Deltas are run 2 − run 1; blank = no data on one side.
++
++- **Human paper intake (legacy process)**: composite +5.05, rank 2 → 1 ⚠ flip
++  - non_redundancy +5.49
++  - speed -0.67
++- **Guided web form (Meridian Intake, fictional)**: composite -32, rank 1 → 2 ⚠ flip
++  - fallback_quality -66.67
++  - speed -87.5
++  - retention -37
++
++---
++
++_Deterministic output of the open intake-benchmark rubric. Fictional data; not legal advice._
+diff --git a/open-artifacts/intake-benchmark/examples/input-v2.json b/open-artifacts/intake-benchmark/examples/input-v2.json
+new file mode 100644
+index 0000000..f146b29
+--- /dev/null
++++ b/open-artifacts/intake-benchmark/examples/input-v2.json
+@@ -0,0 +1,33 @@
++{
++  "scenario": {
++    "name": "Personal-injury intake (fictional firm: Bertram & Ozawa LLP) — run 2",
++    "required_fields": [
++      "full_name", "date_of_birth", "contact_email", "contact_phone",
++      "incident_date", "incident_location", "incident_description",
++      "injuries_claimed", "insurance_carrier", "prior_counsel"
++    ]
++  },
++  "config": { "latencyTargetSeconds": 900 },
++  "flows": [
++    {
++      "id": "guided-form",
++      "name": "Guided web form (Meridian Intake, fictional)",
++      "kind": "software",
++      "steps": [
++        { "id": "wf-1", "purpose": "single manual pass (autofill outage)", "fields": ["full_name", "date_of_birth", "contact_email", "contact_phone", "incident_date", "incident_location", "incident_description", "injuries_claimed", "insurance_carrier", "prior_counsel"], "latency_seconds": 7200, "fallback": null }
++      ],
++      "abandonment_rate": 0.55
++    },
++    {
++      "id": "paper-intake",
++      "name": "Human paper intake (legacy process)",
++      "kind": "human",
++      "steps": [
++        { "id": "pp-1", "purpose": "phone screening (broadened)", "fields": ["full_name", "contact_phone", "incident_date", "incident_description", "date_of_birth", "contact_email"], "latency_seconds": 1200, "fallback": "call back next business day; voicemail script" },
++        { "id": "pp-2", "purpose": "mail-out questionnaire (3-day turnaround)", "fields": ["incident_location", "injuries_claimed", "insurance_carrier", "prior_counsel"], "latency_seconds": 259200, "fallback": "second mailing after 14 days" },
++        { "id": "pp-3", "purpose": "paralegal data entry", "fields": ["full_name", "incident_date", "insurance_carrier"], "latency_seconds": 1500, "fallback": null }
++      ],
++      "abandonment_rate": 0.05
++    }
++  ]
++}
+diff --git a/open-artifacts/intake-benchmark/examples/output.json b/open-artifacts/intake-benchmark/examples/output.json
+index f407e1c..1c55a70 100644
+--- a/open-artifacts/intake-benchmark/examples/output.json
++++ b/open-artifacts/intake-benchmark/examples/output.json
+@@ -11,7 +11,9 @@
+         "non_redundancy": 100,
+         "fallback_quality": 66.67,
+         "speed": 100,
+-        "retention": 82
++        "retention": 82,
++        "deadline_capture": null,
++        "conflict_check": null
+       },
+       "composite": 90.63,
+       "metrics": {
+@@ -32,6 +34,7 @@
+           "prior_counsel"
+         ],
+         "missing_fields": [],
++        "missing_critical": [],
+         "total_latency_seconds": 750,
+         "abandonment_rate": 0.18
+       },
+@@ -47,7 +50,9 @@
+         "non_redundancy": 71.43,
+         "fallback_quality": 66.67,
+         "speed": 1.01,
+-        "retention": null
++        "retention": null,
++        "deadline_capture": null,
++        "conflict_check": null
+       },
+       "composite": 67.97,
+       "metrics": {
+@@ -68,6 +73,7 @@
+           "prior_counsel"
+         ],
+         "missing_fields": [],
++        "missing_critical": [],
+         "total_latency_seconds": 89100,
+         "abandonment_rate": null
+       },
+@@ -81,6 +87,8 @@
+     "fallback_quality",
+     "speed",
+     "retention",
++    "deadline_capture",
++    "conflict_check",
+     "composite"
+   ],
+   "warnings": []
+diff --git a/open-artifacts/intake-benchmark/examples/run.js b/open-artifacts/intake-benchmark/examples/run.js
+index bfe7819..89bda1a 100644
+--- a/open-artifacts/intake-benchmark/examples/run.js
++++ b/open-artifacts/intake-benchmark/examples/run.js
+@@ -1,9 +1,10 @@
+ #!/usr/bin/env node
+-/** Regenerates examples/output.json + comparison.csv + comparison.md. */
+-import { readFileSync, writeFileSync } from 'node:fs';
++/** Regenerates examples/output.json + comparison.csv + comparison.md (run 1)
++ *  and, when input-v2.json is present, drift.json + drift.md (run 1 → run 2). */
++import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { benchmark, exportCsv, exportMd } from '../core/core.js';
++import { benchmark, exportCsv, exportMd, compare } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+@@ -12,3 +13,24 @@ writeFileSync(join(here, 'output.json'), JSON.stringify(result, null, 2) + '\n')
+ writeFileSync(join(here, 'comparison.csv'), exportCsv(result));
+ writeFileSync(join(here, 'comparison.md'), exportMd(result) + '\n');
+ console.log(result.flows.map((f) => `#${f.rank} ${f.name}: composite ${f.composite}`).join('\n'));
++
++const v2Path = join(here, 'input-v2.json');
++if (existsSync(v2Path)) {
++  const before = result;
++  const after = benchmark(JSON.parse(readFileSync(v2Path, 'utf8')));
++  const drift = compare(after, before);
++  writeFileSync(join(here, 'drift.json'), JSON.stringify(drift, null, 2) + '\n');
++
++  const lines = [`# Intake flow benchmark — drift (run 1 → run 2)`, '',
++    `Scenario: ${drift.scenario}. Deltas are run 2 − run 1; blank = no data on one side.`, ''];
++  for (const f of drift.flows) {
++    const rank = f.rank.changed ? `rank ${f.rank.from} → ${f.rank.to} ⚠ flip` : `rank ${f.rank.to} (unchanged)`;
++    lines.push(`- **${f.name}**: composite ${f.composite >= 0 ? '+' : ''}${f.composite}, ${rank}`);
++    for (const [dim, delta] of Object.entries(f.dimensions)) {
++      if (delta !== 0) lines.push(`  - ${dim} ${delta >= 0 ? '+' : ''}${delta}`);
++    }
++  }
++  lines.push('', '---', '', '_Deterministic output of the open intake-benchmark rubric. Fictional data; not legal advice._');
++  writeFileSync(join(here, 'drift.md'), lines.join('\n') + '\n');
++  console.log(drift.flows.map((f) => `${f.name}: composite ${f.composite >= 0 ? '+' : ''}${f.composite}, rank ${f.rank.from} → ${f.rank.to}${f.rank.changed ? ' (flip)' : ''}`).join('\n'));
++}
+diff --git a/open-artifacts/intake-benchmark/spec.md b/open-artifacts/intake-benchmark/spec.md
+index ce258c6..03b7a5d 100644
+--- a/open-artifacts/intake-benchmark/spec.md
++++ b/open-artifacts/intake-benchmark/spec.md
+@@ -9,7 +9,7 @@ human process, on the same explicit rubric.
+ 
+ Takes scripted intake runs (JSON: steps, fields asked, per-step latency,
+ fallback behavior, measured abandonment) plus a scenario canon of required
+-fields, and scores each flow on five transparent dimensions:
++fields, and scores each flow on transparent dimensions:
+ 
+ | Dimension | Formula (0–100) |
+ |---|---|
+@@ -18,29 +18,77 @@ fields, and scores each flow on five transparent dimensions:
+ | fallback_quality | steps with a stated fallback ÷ total steps (null if no steps) |
+ | speed | min(1, latency_target ÷ total latency) × 100 |
+ | retention | (1 − abandonment_rate) × 100 (null if unmeasured) |
++| deadline_capture | deadline-class canon fields asked ÷ deadline-class fields (null if canon untagged) |
++| conflict_check | conflict-class canon fields asked ÷ conflict-class fields (null if canon untagged) |
+ 
+ Composite = weighted mean over **available** dimensions (weights
+ renormalize), so a human process without abandonment telemetry still ranks.
+-Outputs a ranked side-by-side comparison table (MD) + CSV. Field names are
+-normalized (case/spacing/hyphens) before matching, so "Date of Birth" in a
+-paper script matches `date_of_birth` in the canon.
++The risk dimensions are reported (and drive `missing_critical`) but stay
++outside the composite weights by default — they measure legal exposure, not
++vendor quality. Outputs a ranked side-by-side comparison table (MD) + CSV.
++Field names are normalized (case/spacing/hyphens) before matching, so "Date
++of Birth" in a paper script matches `date_of_birth` in the canon.
++
++## Canon library
++
++Four starter practice-area canons ship in the box — `housing`,
++`immigration`, `family`, `consumer` — each field tagged
++`risk_class: 'core' | 'deadline' | 'conflict'` (`core/canons.js`, data in
++`core/core.js`). Use one with `scenario: { canon: 'housing' }` (canon wins
++over `required_fields`, with a warning) or pass any tagged field list of
++your own as `required_fields`. Deadline fields drive a clock (notice,
++hearing, filing, limitations); conflict fields feed the conflicts check.
++Unasked deadline/conflict fields score below 100 and are listed per flow in
++`metrics.missing_critical`. The shipped canons are ILLUSTRATIVE defaults,
++not verified law — [verify] against local rules before relying on them.
+ 
+ ## IO contract
+ 
+ ```js
+-import { benchmark, exportCsv, exportMd } from './core/core.js';
++import { benchmark, exportCsv, exportMd, rankStability, validateCapture, compare } from './core/core.js';
+ const result = benchmark({
+-  scenario: { name: '...', required_fields: ['full_name', ...] },
++  scenario: { name: '...', canon: 'housing' /* or */,
++              required_fields: ['full_name', ...] /* or [{name, risk_class}] */ },
+   flows: [{ id, name, kind: 'software'|'human'|'hybrid',
+             steps: [{ id, purpose, fields: [...], latency_seconds, fallback }],
+             abandonment_rate: 0.18 | null }],
+-  config: { latencyTargetSeconds: 900, weights: { completeness: 0.3, ... } },
++  config: { latencyTargetSeconds: 900, weights: { completeness: 0.3, ... }, fairMode: true },
+ });
+ exportCsv(result); exportMd(result);
++rankStability(input, { jitter: 0.25, runs: 12 });  // ranking robustness
++validateCapture(capturedJson);                    // audit the LLM capture step
++compare(resultAfter, resultBefore);               // re-run drift diff
+ ```
+ 
+-Errors (thrown): zero flows; unknown weight keys; abandonment_rate outside
+-0–1. Warnings (not errors): flow with no steps; steps without latency.
++Errors (thrown): zero flows; unknown weight keys; unknown canon id; unknown
++risk_class tag; abandonment_rate outside 0–1. Warnings (not errors): flow
++with no steps; steps without latency; canon overriding required_fields.
++
++## Rank stability
++
++Rubric weights are a choice; a ranking that dies when they wobble is not a
++finding. `rankStability(input, {jitter = 0.25, runs = 12})` re-scores the
++same flows over a deterministic grid — one run per dimension with that
++dimension dropped (weight 0), then fixed-seed ±jitter weight mixes — and
++reports `flips` (runs whose #1 flow differs from baseline), `flip_rate`,
++and a `verdict`: `robust` (0 flips) or `fragile` (any flip). Deterministic:
++same input, byte-identical output on rerun.
++
++## Fair mode
++
++Renormalizing over *each flow's* available dimensions quietly compares
++apples to oranges when one flow has telemetry the other lacks. With
++`config.fairMode: true`, composites are recomputed on the **intersection**
++of dimensions every flow has, and a warning names what was excluded — so a
++measured abandonment rate can't win a flow points against an unmeasured
++rival.
++
++## Drift diff
++
++`compare(after, before)` diffs two benchmark() runs of the same flows:
++per-flow composite and per-dimension deltas (after − before) plus
++`rank: {from, to, changed}` flags. Dimensions missing on either side are
++omitted, never guessed. See `examples/input-v2.json` → `examples/drift.md`.
+ 
+ ## Deterministic vs LLM-assisted
+ 
+@@ -49,6 +97,7 @@ Errors (thrown): zero flows; unknown weight keys; abandonment_rate outside
+ | Rubric weights, latency target, dimension formulas | deterministic / rules-as-data |
+ | Scoring, normalization, ranking, CSV/MD export | deterministic code |
+ | Turning a recorded intake session (transcript, screen recording, paper script) into the flow JSON | LLM-assisted (optional capture step) |
++| Auditing that capture output before it enters the rubric | deterministic: `validateCapture()` |
+ 
+ ### LLM prompt schema (optional capture step)
+ 
+@@ -62,6 +111,12 @@ null>" }] }] }. A step a human performs on paper is kind "human". If a value
+ is not observable, omit the key — do not guess a number.
+ ```
+ 
++Before scoring, run the capture through `validateCapture(json)`. It returns
++`{valid, errors, warnings}`: structural errors (no flows/steps/ids) and
++warnings for data smells — steps missing a `purpose`, a single-step
++`latency_seconds` beyond 7 days (likely elapsed wait time, e.g. mail, not
++step latency), and `abandonment_rate` outside 0–1.
++
+ ## What's better than the closed counterpart
+ 
+ 1. **Vendor-neutral by construction** — Harvey can't benchmark itself against
+@@ -70,9 +125,20 @@ is not observable, omit the key — do not guess a number.
+ 2. **Every score is a formula** — no proprietary black-box "intake quality";
+    the table states exactly what completeness and redundancy mean.
+ 3. **Honest about missing data** — unmeasured abandonment is a blank, not a
+-   zero, and composites renormalize instead of silently penalizing.
++   zero, and composites renormalize instead of silently penalizing; fair
++   mode makes cross-flow comparison explicit rather than implicit.
+ 4. **Auditable capture step** — the LLM (if used) only transcribes observable
+-   behavior into JSON; scoring stays deterministic and reproducible.
++   behavior into JSON; scoring stays deterministic and reproducible, and
++   `validateCapture()` checks the transcription against the schema.
++5. **Measures legal risk, not just process polish** — canon fields tagged
++   deadline/conflict are scored separately (`deadline_capture`,
++   `conflict_check`, `missing_critical`), so a flow that never asks about
++   the court date can't hide behind a slick UI. The closed counterpart
++   asserts intake quality; this rubric measures it — on any vendor's flow,
++   including a purely human one.
++6. **Error bars on the verdict** — `rankStability()` and the drift diff
++   (`compare()`) show when a ranking is robust and when it is an artifact
++   of the weights; the closed counterpart offers no equivalent.
+ 
+ ## Legal accuracy notes
+ 

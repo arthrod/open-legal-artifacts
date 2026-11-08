@@ -1,0 +1,643 @@
+diff --git a/open-artifacts/matter-board/README.md b/open-artifacts/matter-board/README.md
+index d17c831..064825d 100644
+--- a/open-artifacts/matter-board/README.md
++++ b/open-artifacts/matter-board/README.md
+@@ -12,17 +12,26 @@ severity-classified.
+   `capturedAt`; provenance recorded) and severity (deadline changes are
+   **critical**, configurable rules-as-data).
+ - `buildBoard(snapshot, asOf)` — stage columns, deadline-sorted, overdue /
+-  due-soon flags.
+-- Export diff as **JSON** (version-control friendly) and **CSV**.
++  due-soon flags; optional `owner` / `risk` filters; rollup counts
++  (`counts.matters`, `counts.risk`, `counts.conflictsOpen`).
++- `detectAnomalies(snapshot, asOf)` — `stale` (default >30d), `missing-field`,
++  `closed-with-deadline`; rules (`staleDays`, `required`, `closedStage`) are
++  data, overridable per call.
++- `csvToSnapshot(csv, { capturedAt, source })` — spreadsheet → snapshot
++  (RFC4180 subset), zero LLM; capture time never guessed.
++- Export a diff as **JSON** (version-control friendly) or **CSV**; flagged
++  deadlines as all-day **ICS** (`flaggedToIcs`).
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 11 tests (node:test)
++node --test            # 19 tests (node:test)
+ node examples/run.js   # diffs the week-44→week-45 example, writes diff.json, diff.csv, board.json, report.md
+ ```
+ 
+-Open `demo/index.html` for the interactive demo (board + changelog + exports).
++Open `demo/index.html` — loads the worked example by default, and you can
++paste your own snapshot JSON (+ previous snapshot for a diff) and an `asOf`
++date to render a live board client-side with the same `core.js`.
+ 
+ ## What's better than the closed counterpart
+ 
+diff --git a/open-artifacts/matter-board/core/core.js b/open-artifacts/matter-board/core/core.js
+index 8192039..a242538 100644
+--- a/open-artifacts/matter-board/core/core.js
++++ b/open-artifacts/matter-board/core/core.js
+@@ -119,26 +119,37 @@ export function diffSnapshots(prev, curr, fieldSeverity = {}) {
+ 
+ /**
+  * Build a stage-grouped board from a snapshot with deadline risk flags.
++ * Optional `owner` / `risk` filters narrow the portfolio; flags and counts
++ * always agree with what is shown.
+  * @param {{ capturedAt: string, matters: Array<any> }} snapshot
+  * @param {string} asOfIso — anchor for overdue/soon computation
+- * @param {{ soonDays?: number, stageOrder?: string[] }} [opts]
+- * @returns {{ capturedAt: string, asOf: string, stages: Array<{ stage: string, matters: Array<any> }>, flagged: Array<{ id: string, name: string, flag: string, deadline: string, days: number }> }}
++ * @param {{ soonDays?: number, stageOrder?: string[], owner?: string, risk?: string }} [opts]
++ * @returns {{
++ *   capturedAt: string, asOf: string,
++ *   stages: Array<{ stage: string, matters: Array<any> }>,
++ *   flagged: Array<{ id: string, name: string, flag: string, deadline: string, days: number }>,
++ *   counts: { matters: number, risk: Record<string, number>, conflictsOpen: number }
++ * }}
+  */
+ export function buildBoard(snapshot, asOfIso, opts = {}) {
+   const soonDays = opts.soonDays ?? 14;
+   const asOf = parseDate(asOfIso);
+-  const stageOrder = opts.stageOrder ?? [...new Set((snapshot.matters ?? []).map((m) => m.stage ?? "unassigned"))];
++  const filtered = (snapshot.matters ?? []).filter(
++    (m) =>
++      (opts.owner === undefined || m.owner === opts.owner) &&
++      (opts.risk === undefined || m.risk === opts.risk)
++  );
++  const stageOrder = opts.stageOrder ?? [...new Set(filtered.map((m) => m.stage ?? "unassigned"))];
+ 
+-  const matters = [...(snapshot.matters ?? [])].sort(
++  const matters = [...filtered].sort(
+     (a, b) => String(a.nextDeadline ?? "9999").localeCompare(String(b.nextDeadline ?? "9999")) || String(a.id).localeCompare(String(b.id))
+   );
+   const stages = stageOrder.map((stage) => ({ stage, matters: matters.filter((m) => (m.stage ?? "unassigned") === stage) }));
+-  for (const s of stages.slice()) if (!stageOrder.includes(s.stage)) stages.push(s);
+ 
+   /** @type {Array<{id:string,name:string,flag:string,deadline:string,days:number}>} */
+   const flagged = [];
+   if (asOf) {
+-    for (const m of snapshot.matters ?? []) {
++    for (const m of filtered) {
+       const d = parseDate(m.nextDeadline ?? null);
+       const days = daysUntil(d, asOf);
+       if (days === null) continue;
+@@ -147,7 +158,127 @@ export function buildBoard(snapshot, asOfIso, opts = {}) {
+     }
+     flagged.sort((a, b) => a.days - b.days || a.id.localeCompare(b.id));
+   }
+-  return { capturedAt: snapshot.capturedAt, asOf: asOfIso, stages, flagged };
++
++  const counts = {
++    matters: filtered.length,
++    risk: { high: 0, medium: 0, low: 0 },
++    conflictsOpen: filtered.filter((m) => m.conflicts === "open").length,
++  };
++  for (const m of filtered) if (m.risk != null) counts.risk[m.risk] = (counts.risk[m.risk] ?? 0) + 1;
++
++  return { capturedAt: snapshot.capturedAt, asOf: asOfIso, stages, flagged, counts };
++}
++
++/* ---------- anomaly layer ---------- */
++
++/** Days after which a matter without an `updatedAt` within the window is stale.
++ * @type {number} */
++export const DEFAULT_STALE_DAYS = 30;
++
++/** Fields every matter should carry; a null/missing one is an anomaly.
++ * @type {string[]} */
++export const DEFAULT_REQUIRED_FIELDS = ["name", "owner", "stage", "nextDeadline"];
++
++/**
++ * Rules-as-data anomaly checks over a snapshot (parity with the closed
++ * counterpart's prompt-prose rules, but deterministic and tested):
++ * - `stale` — no `updatedAt`, or last update older than `staleDays` before `asOf`;
++ * - `missing-field` — a required field is null/missing/empty;
++ * - `closed-with-deadline` — matter at `closedStage` still carries a parseable deadline.
++ * @param {{ capturedAt: string, matters: Array<any> }} snapshot
++ * @param {string} asOfIso — anchor for staleness computation (no hidden clocks)
++ * @param {{ staleDays?: number, required?: string[], closedStage?: string }} [opts]
++ * @returns {Array<{ id: string, name: string, anomaly: string, detail: string }>}
++ */
++export function detectAnomalies(snapshot, asOfIso, opts = {}) {
++  const staleDays = opts.staleDays ?? DEFAULT_STALE_DAYS;
++  const required = opts.required ?? DEFAULT_REQUIRED_FIELDS;
++  const closedStage = opts.closedStage ?? "closed";
++  const asOf = parseDate(asOfIso);
++
++  /** @type {Array<{id:string,name:string,anomaly:string,detail:string}>} */
++  const anomalies = [];
++  for (const m of snapshot.matters ?? []) {
++    const id = String(m.id);
++    const name = m.name ?? id;
++
++    const updated = m.updatedAt ? new Date(m.updatedAt) : null;
++    if (!updated || Number.isNaN(updated.getTime())) {
++      anomalies.push({ id, name, anomaly: "stale", detail: "no updatedAt" });
++    } else if (asOf) {
++      const ageDays = -Math.round((updated.getTime() - asOf.getTime()) / 86400000);
++      if (ageDays > staleDays) anomalies.push({ id, name, anomaly: "stale", detail: `updatedAt ${m.updatedAt} is ${ageDays}d before asOf` });
++    }
++
++    for (const f of required) {
++      if (m[f] === undefined || m[f] === null || m[f] === "") anomalies.push({ id, name, anomaly: "missing-field", detail: f });
++    }
++
++    if ((m.stage ?? "") === closedStage && parseDate(m.nextDeadline ?? null)) {
++      anomalies.push({ id, name, anomaly: "closed-with-deadline", detail: `deadline ${m.nextDeadline} stands after stage=${closedStage}` });
++    }
++  }
++  anomalies.sort((a, b) => a.id.localeCompare(b.id) || a.anomaly.localeCompare(b.anomaly) || a.detail.localeCompare(b.detail));
++  return anomalies;
++}
++
++/* ---------- CSV ingest ---------- */
++
++/** RFC4180 subset parser: quoted cells, embedded commas/quotes/newlines, CRLF or LF.
++ * @param {string} text @returns {string[][]} */
++function parseCsvRows(text) {
++  /** @type {string[][]} */
++  const rows = [];
++  let row = [];
++  let cell = "";
++  let inQuotes = false;
++  const s = String(text);
++  const endRow = () => {
++    row.push(cell);
++    cell = "";
++    if (row.length > 1 || row[0] !== "") rows.push(row); // skip blank lines
++    row = [];
++  };
++  for (let i = 0; i < s.length; i++) {
++    const c = s[i];
++    if (inQuotes) {
++      if (c === '"') {
++        if (s[i + 1] === '"') { cell += '"'; i++; }
++        else inQuotes = false;
++      } else cell += c;
++    } else if (c === '"') inQuotes = true;
++    else if (c === ",") { row.push(cell); cell = ""; }
++    else if (c === "\n" || c === "\r") {
++      if (c === "\r" && s[i + 1] === "\n") i++;
++      endRow();
++    } else cell += c;
++  }
++  if (cell !== "" || row.length) endRow();
++  return rows;
++}
++
++/**
++ * Ingest a CSV export (header row + one matter per row) into a snapshot —
++ * the closed counterpart's headline input ("spreadsheets"), with zero LLM.
++ * Empty cells become explicit `null` so the anomaly layer can catch them.
++ * The capture time must come from the caller; it is never guessed.
++ * @param {string} csv
++ * @param {{ capturedAt: string, source?: string }} opts
++ * @returns {{ capturedAt: string, source: string, matters: Array<any> }}
++ */
++export function csvToSnapshot(csv, opts = {}) {
++  if (typeof opts.capturedAt !== "string" || !opts.capturedAt) {
++    throw new Error("csvToSnapshot: opts.capturedAt is required — capture time comes from the caller, never guessed (no hidden clocks)");
++  }
++  const rows = parseCsvRows(csv);
++  const header = rows.length ? rows[0].map((h) => h.trim()) : [];
++  const matters = rows.slice(1).map((r) => {
++    /** @type {any} */
++    const m = {};
++    header.forEach((h, i) => { m[h] = r[i] === undefined || r[i] === "" ? null : r[i]; });
++    return m;
++  });
++  return { capturedAt: opts.capturedAt, source: opts.source ?? "csv", matters };
+ }
+ 
+ /* ---------- exports ---------- */
+@@ -179,3 +310,56 @@ export function diffToCsv(diff) {
+ export function diffToJson(diff) {
+   return JSON.stringify(diff, null, 2) + "\n";
+ }
++
++/* ---------- ICS export ---------- */
++
++/** Escape TEXT values per RFC 5545 (backslash, semicolon, comma).
++ * @param {any} v @returns {string} */
++function icsEscape(v) {
++  return String(v ?? "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
++}
++
++/** "YYYY-MM-DD" → "YYYYMMDD". @param {string} iso @returns {string} */
++function toIcsDate(iso) {
++  return String(iso).replace(/-/g, "");
++}
++
++/** Day after a DATE (DTEND is exclusive for all-day events).
++ * @param {string} iso @returns {string} */
++function nextDayIso(iso) {
++  const d = parseDate(iso);
++  d.setUTCDate(d.getUTCDate() + 1);
++  return d.toISOString().slice(0, 10);
++}
++
++/**
++ * Calendar export of flagged deadlines — one all-day VEVENT per overdue /
++ * due-soon flag, DATE values only (no timezone math). `DTSTAMP` derives from
++ * the board's caller-supplied `asOf`, so output is byte-stable and
++ * reproducible (no hidden clocks).
++ * @param {{ asOf: string, flagged: Array<{ id: string, name: string, flag: string, deadline: string, days: number }> }} board
++ * @returns {string}
++ */
++export function flaggedToIcs(board) {
++  const asOf = parseDate(board.asOf ?? null);
++  const stamp = asOf ? asOf.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "") + "Z" : "19700101T000000Z";
++  const lines = [
++    "BEGIN:VCALENDAR",
++    "VERSION:2.0",
++    "PRODID:-//open-legal-artifacts//matter-board//EN",
++    "CALSCALE:GREGORIAN",
++  ];
++  for (const f of board.flagged ?? []) {
++    lines.push(
++      "BEGIN:VEVENT",
++      `UID:${f.id}:${f.deadline}@matter-board`,
++      `DTSTAMP:${stamp}`,
++      `DTSTART;VALUE=DATE:${toIcsDate(f.deadline)}`,
++      `DTEND;VALUE=DATE:${toIcsDate(nextDayIso(f.deadline))}`,
++      `SUMMARY:${f.flag === "overdue" ? "[OVERDUE]" : "[DUE SOON]"} ${icsEscape(f.name)}`,
++      `DESCRIPTION:flag=${f.flag}; days=${f.days}; deadline=${f.deadline}; matter=${icsEscape(f.id)}`
++    );
++  }
++  lines.push("END:VCALENDAR");
++  return lines.join("\r\n") + "\r\n";
++}
+diff --git a/open-artifacts/matter-board/core/core.test.js b/open-artifacts/matter-board/core/core.test.js
+index 6591c65..67b3217 100644
+--- a/open-artifacts/matter-board/core/core.test.js
++++ b/open-artifacts/matter-board/core/core.test.js
+@@ -1,7 +1,7 @@
+ /** Tests for matter-board core. Run: node --test (from artifact root) */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { parseDate, diffSnapshots, buildBoard, diffToCsv, diffToJson, DEFAULT_FIELD_SEVERITY } from "./core.js";
++import { parseDate, diffSnapshots, buildBoard, diffToCsv, diffToJson, DEFAULT_FIELD_SEVERITY, detectAnomalies, csvToSnapshot, flaggedToIcs } from "./core.js";
+ 
+ const PREV = {
+   capturedAt: "2026-11-01T09:00:00Z",
+@@ -15,10 +15,10 @@ const PREV = {
+ const CURR = {
+   capturedAt: "2026-11-07T09:00:00Z",
+   matters: [
+-    { id: "M-101", name: "Halberd v. Perigee (fictional)", client: "Halberd Logistics", owner: "t.nguyen", stage: "discovery", nextStep: "Deposition prep", nextDeadline: "2026-11-18", updatedAt: "2026-11-05T11:30:00Z" },
+-    { id: "M-102", name: "Quill trademark opposition", client: "Quill Coffee Co.", owner: "s.okafor", stage: "filing", nextStep: "File opposition", nextDeadline: "2026-11-12", status: "awaiting-signature", updatedAt: "2026-11-06T08:45:00Z" },
+-    { id: "M-103", name: "Brightwater lease review", client: "Brightwater LLC", owner: "t.nguyen", stage: "closed", nextStep: "Send execution copies", nextDeadline: "2026-11-08", updatedAt: null },
+-    { id: "M-105", name: "Northwind vendor suite", client: "Northwind Robotics", owner: "a.fern", stage: "intake", nextStep: "Conflicts check", nextDeadline: "2026-11-21" },
++    { id: "M-101", name: "Halberd v. Perigee (fictional)", client: "Halberd Logistics", owner: "t.nguyen", stage: "discovery", nextStep: "Deposition prep", nextDeadline: "2026-11-18", risk: "high", conflicts: "clear", updatedAt: "2026-11-05T11:30:00Z" },
++    { id: "M-102", name: "Quill trademark opposition", client: "Quill Coffee Co.", owner: "s.okafor", stage: "filing", nextStep: "File opposition", nextDeadline: "2026-11-12", status: "awaiting-signature", risk: "low", conflicts: "clear", updatedAt: "2026-11-06T08:45:00Z" },
++    { id: "M-103", name: "Brightwater lease review", client: "Brightwater LLC", owner: "t.nguyen", stage: "closed", nextStep: "Send execution copies", nextDeadline: "2026-11-08", risk: "low", conflicts: "clear", updatedAt: null },
++    { id: "M-105", name: "Northwind vendor suite", client: "Northwind Robotics", owner: "a.fern", stage: "intake", nextStep: "Conflicts check", nextDeadline: "2026-11-21", risk: "high", conflicts: "open" },
+   ],
+ };
+ 
+@@ -113,3 +113,102 @@ test("parseDate rejects rollover dates", () => {
+   assert.equal(parseDate("2026-02-30"), null);
+   assert.ok(parseDate("2026-02-28"));
+ });
++
++/* ---------- anomaly layer ---------- */
++
++const ANOMALY_SNAP = {
++  capturedAt: "2026-11-07T09:00:00Z",
++  matters: [
++    { id: "A-1", name: "Fresh matter", owner: "x.ray", stage: "discovery", nextDeadline: "2026-12-01", updatedAt: "2026-11-06T10:00:00Z" },
++    { id: "A-2", name: "Stale matter", owner: "y.lee", stage: "discovery", nextDeadline: "2026-12-01", updatedAt: "2026-09-01T10:00:00Z" },
++    { id: "A-3", name: "Sparse matter", stage: "intake" }, // no updatedAt, no owner, no deadline
++    { id: "A-4", name: "Closed matter", owner: "z.kim", stage: "closed", nextDeadline: "2026-11-08", updatedAt: "2026-11-06T10:00:00Z" },
++  ],
++};
++
++test("detectAnomalies surfaces stale, missing-field, closed-with-deadline", () => {
++  const anomalies = detectAnomalies(ANOMALY_SNAP, "2026-11-07");
++  assert.deepEqual(anomalies, [
++    { id: "A-2", name: "Stale matter", anomaly: "stale", detail: "updatedAt 2026-09-01T10:00:00Z is 67d before asOf" },
++    { id: "A-3", name: "Sparse matter", anomaly: "missing-field", detail: "nextDeadline" },
++    { id: "A-3", name: "Sparse matter", anomaly: "missing-field", detail: "owner" },
++    { id: "A-3", name: "Sparse matter", anomaly: "stale", detail: "no updatedAt" },
++    { id: "A-4", name: "Closed matter", anomaly: "closed-with-deadline", detail: "deadline 2026-11-08 stands after stage=closed" },
++  ]);
++});
++
++test("detectAnomalies rules are data: staleDays/required/closedStage overridable; clean snapshot yields none", () => {
++  // default staleDays=30: A-2 (67d) stale; with staleDays=90 it is fresh (A-4 still closed-with-deadline)
++  assert.deepEqual(detectAnomalies(ANOMALY_SNAP, "2026-11-07", { staleDays: 90, required: ["name", "owner", "stage"] }).map((a) => a.id), ["A-3", "A-3", "A-4"]);
++  // closedStage vocabulary is firm data
++  const reNamed = detectAnomalies(ANOMALY_SNAP, "2026-11-07", { closedStage: "wrapped" });
++  assert.ok(!reNamed.some((a) => a.anomaly === "closed-with-deadline"));
++  // fully clean snapshot → empty list
++  const clean = { capturedAt: "x", matters: [{ id: "A-1", name: "Fresh matter", owner: "x.ray", stage: "discovery", nextDeadline: "2026-12-01", updatedAt: "2026-11-06T10:00:00Z" }] };
++  assert.deepEqual(detectAnomalies(clean, "2026-11-07"), []);
++});
++
++/* ---------- CSV ingest ---------- */
++
++test("csvToSnapshot parses RFC4180 subset (quotes, embedded commas, CRLF) to an equivalent snapshot", () => {
++  const csv = [
++    "id,name,client,owner,stage,nextStep,nextDeadline,risk,conflicts",
++    'M-201,"Quill ""QC"" opposition","Quill, Inc.",s.okafor,filing,"File opposition, pay fee",2026-11-12,low,open',
++    "M-202,Plain row,Brightwater LLC,t.nguyen,closing,Send copies,,high,clear",
++  ].join("\r\n") + "\r\n";
++  const snap = csvToSnapshot(csv, { capturedAt: "2026-11-07T09:00:00Z", source: "practice-export.csv (fictional)" });
++  assert.deepEqual(snap, {
++    capturedAt: "2026-11-07T09:00:00Z",
++    source: "practice-export.csv (fictional)",
++    matters: [
++      { id: "M-201", name: 'Quill "QC" opposition', client: "Quill, Inc.", owner: "s.okafor", stage: "filing", nextStep: "File opposition, pay fee", nextDeadline: "2026-11-12", risk: "low", conflicts: "open" },
++      { id: "M-202", name: "Plain row", client: "Brightwater LLC", owner: "t.nguyen", stage: "closing", nextStep: "Send copies", nextDeadline: null, risk: "high", conflicts: "clear" },
++    ],
++  });
++  // empty cell → explicit null, which the anomaly layer can then catch
++  assert.equal(snap.matters[1].nextDeadline, null);
++});
++
++test("csvToSnapshot refuses to invent capturedAt (no hidden clocks)", () => {
++  assert.throws(() => csvToSnapshot("id,name\r\nM-1,X", {}), /capturedAt/);
++});
++
++/* ---------- ICS export ---------- */
++
++test("flaggedToIcs emits one all-day VEVENT per flag with SUMMARY/DTSTART", () => {
++  const board = buildBoard(CURR, "2026-11-07", { soonDays: 14 });
++  const ics = flaggedToIcs(board);
++  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, board.flagged.length);
++  assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n"));
++  assert.ok(ics.includes("SUMMARY:[DUE SOON] Quill trademark opposition"));
++  assert.ok(ics.includes("DTSTART;VALUE=DATE:20261112"));
++  assert.ok(ics.includes("DTSTAMP:20261107T000000Z")); // deterministic: derived from asOf, not wall clock
++  assert.ok(ics.endsWith("END:VCALENDAR\r\n"));
++  // every flag's deadline appears as an all-day DATE
++  for (const f of board.flagged) assert.ok(ics.includes(`DTSTART;VALUE=DATE:${f.deadline.replace(/-/g, "")}`));
++});
++
++test("flaggedToIcs marks overdue distinctly", () => {
++  const snap = { capturedAt: "x", matters: [{ id: "M-9", name: "Late thing", stage: "discovery", nextDeadline: "2026-11-01" }] };
++  const ics = flaggedToIcs(buildBoard(snap, "2026-11-07"));
++  assert.ok(ics.includes("SUMMARY:[OVERDUE] Late thing"));
++  assert.ok(ics.includes("DTSTART;VALUE=DATE:20261101"));
++});
++
++/* ---------- risk / conflicts rollups + filters ---------- */
++
++test("buildBoard rolls up risk and open-conflicts counts", () => {
++  const b = buildBoard(CURR, "2026-11-07");
++  assert.deepEqual(b.counts, { matters: 4, risk: { high: 2, medium: 0, low: 2 }, conflictsOpen: 1 });
++});
++
++test("buildBoard filters by owner and risk (board, flags, and counts agree)", () => {
++  const byOwner = buildBoard(CURR, "2026-11-07", { owner: "t.nguyen" });
++  assert.deepEqual(byOwner.stages.flatMap((s) => s.matters.map((m) => m.id)), ["M-101", "M-103"]);
++  assert.deepEqual(byOwner.flagged.map((f) => f.id), ["M-103", "M-101"]);
++  assert.equal(byOwner.counts.matters, 2);
++
++  const byRisk = buildBoard(CURR, "2026-11-07", { risk: "high" });
++  assert.deepEqual(byRisk.stages.flatMap((s) => s.matters.map((m) => m.id)).sort(), ["M-101", "M-105"]);
++  assert.equal(byRisk.counts.conflictsOpen, 1); // M-105
++});
+diff --git a/open-artifacts/matter-board/demo/index.html b/open-artifacts/matter-board/demo/index.html
+index b25536d..1347a3c 100644
+--- a/open-artifacts/matter-board/demo/index.html
++++ b/open-artifacts/matter-board/demo/index.html
+@@ -66,6 +66,7 @@
+     <div class="row">
+       <button id="jsonBtn">Export diff JSON</button>
+       <button id="csvBtn" class="ghost">Export diff CSV</button>
++      <button id="icsBtn" class="ghost">Export deadlines .ics</button>
+     </div>
+   </section>
+ 
+@@ -74,6 +75,22 @@
+     <div class="board" id="board"></div>
+   </section>
+ 
++  <section>
++    <h2>Your own snapshot</h2>
++    <p class="lede" style="font-size:13px">Paste snapshot JSON (schema in <code>spec.md</code>), optionally a previous snapshot
++      for the diff, and an <code>asOf</code> date. Everything renders client-side with the same <code>core.js</code> —
++      nothing is sent anywhere.</p>
++    <div class="row" style="align-items:flex-start">
++      <textarea id="currIn" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='{"capturedAt":"…","matters":[…]}'></textarea>
++      <textarea id="prevIn" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='previous snapshot (optional — enables the diff changelog)'></textarea>
++    </div>
++    <div class="row">
++      <label style="font-family:var(--font-mono);font-size:12px">asOf <input id="asOfIn" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)" /></label>
++      <button id="loadBtn">Load snapshots</button>
++      <span id="formMsg" style="font-family:var(--font-mono);font-size:12px;align-self:center"></span>
++    </div>
++  </section>
++
+   <footer class="disclaimer">
+     Deterministic diff — an optional LLM may structure emails/engagement letters into snapshots (schema in spec.md),
+     but change detection, severity, and timestamps are pure code. All example data fictional. Not legal advice.
+@@ -82,41 +99,74 @@
+ </div>
+ 
+ <script type="module">
+-  import { diffSnapshots, buildBoard, diffToCsv, diffToJson } from "../core/core.js";
++  import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+-  const diff = diffSnapshots(EXAMPLE.previous, EXAMPLE.current);
+-  const board = buildBoard(EXAMPLE.current, EXAMPLE.asOf, { soonDays: 14 });
+-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+-  const flagOf = (id) => board.flagged.find((f) => f.id === id);
+-  const changedIds = new Set(diff.changed.filter((c) => c.severity === "critical").map((c) => c.id));
++  let diff = null, board = null;
++
++  function render() {
++    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
++    document.getElementById("counts").innerHTML =
++      `<div><b>${diff.counts.changed}</b><span>field changes</span></div>` +
++      `<div><b>${diff.counts.critical}</b><span>critical</span></div>` +
++      `<div><b>${diff.counts.added}</b><span>matters added</span></div>` +
++      `<div><b>${diff.counts.removed}</b><span>matters removed</span></div>`;
+ 
+-  document.getElementById("counts").innerHTML =
+-    `<div><b>${diff.counts.changed}</b><span>field changes</span></div>` +
+-    `<div><b>${diff.counts.critical}</b><span>critical</span></div>` +
+-    `<div><b>${diff.counts.added}</b><span>matters added</span></div>` +
+-    `<div><b>${diff.counts.removed}</b><span>matters removed</span></div>`;
++    const flagOf = (id) => board.flagged.find((f) => f.id === id);
++    const changedIds = new Set(diff.changed.filter((c) => c.severity === "critical").map((c) => c.id));
+ 
+-  document.getElementById("changelog").innerHTML = [
+-    ...diff.changed.map((c) =>
+-      `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
+-      `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
+-      `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
+-    ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
+-    ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
+-  ].join("");
++    const items = [
++      ...diff.changed.map((c) =>
++        `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
++        `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
++        `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
++      ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
++      ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
++    ];
++    document.getElementById("changelog").innerHTML = items.length
++      ? items.join("")
++      : `<li><span class="ts">no changes — paste a previous snapshot below to see a diff</span></li>`;
+ 
+-  document.getElementById("board").innerHTML = board.stages.map((s) =>
+-    `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
+-    s.matters.map((m) => {
+-      const fl = flagOf(String(m.id));
+-      const dl = m.nextDeadline
+-        ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
+-      return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
+-        `<div class="nm">${esc(m.name)}</div>` +
+-        `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
+-        `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
+-    }).join("") + "</div>").join("");
++    document.getElementById("board").innerHTML = board.stages.map((s) =>
++      `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
++      s.matters.map((m) => {
++        const fl = flagOf(String(m.id));
++        const dl = m.nextDeadline
++          ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
++        return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
++          `<div class="nm">${esc(m.name)}</div>` +
++          `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
++          `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
++      }).join("") + "</div>").join("");
++  }
++
++  function load(prev, curr, asOf, msg) {
++    diff = prev ? diffSnapshots(prev, curr) : diffSnapshots(curr, curr); // no prev → empty diff, board still renders
++    board = buildBoard(curr, asOf, { soonDays: 14 });
++    render();
++    document.getElementById("formMsg").textContent = msg ?? "";
++  }
++
++  function parseSnapshot(text, label) {
++    let snap;
++    try { snap = JSON.parse(text); }
++    catch (e) { throw new Error(`${label}: invalid JSON — ${e.message}`); }
++    if (!snap || !Array.isArray(snap.matters)) throw new Error(`${label}: expected { capturedAt, matters: [...] }`);
++    return snap;
++  }
++
++  document.getElementById("loadBtn").onclick = () => {
++    try {
++      const curr = parseSnapshot(document.getElementById("currIn").value, "current snapshot");
++      const prevText = document.getElementById("prevIn").value.trim();
++      const prev = prevText ? parseSnapshot(prevText, "previous snapshot") : null;
++      const asOf = document.getElementById("asOfIn").value;
++      if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("asOf: expected YYYY-MM-DD");
++      load(prev, curr, asOf, prev ? "board + diff rendered from pasted snapshots" : "board rendered (no previous snapshot pasted — diff empty)");
++    } catch (e) {
++      document.getElementById("formMsg").textContent = e.message;
++    }
++  };
+ 
+   function download(name, content, type) {
+     const blob = new Blob([content], { type });
+@@ -125,6 +175,9 @@
+   }
+   document.getElementById("jsonBtn").onclick = () => download("matter-diff.json", diffToJson(diff), "application/json");
+   document.getElementById("csvBtn").onclick = () => download("matter-diff.csv", diffToCsv(diff), "text/csv");
++  document.getElementById("icsBtn").onclick = () => download("matter-deadlines.ics", flaggedToIcs(board), "text/calendar");
++
++  load(EXAMPLE.previous, EXAMPLE.current, EXAMPLE.asOf, "");
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/matter-board/examples/board.json b/open-artifacts/matter-board/examples/board.json
+index 3324e57..1540238 100644
+--- a/open-artifacts/matter-board/examples/board.json
++++ b/open-artifacts/matter-board/examples/board.json
+@@ -94,5 +94,14 @@
+       "deadline": "2026-11-21",
+       "days": 14
+     }
+-  ]
++  ],
++  "counts": {
++    "matters": 4,
++    "risk": {
++      "high": 0,
++      "medium": 0,
++      "low": 0
++    },
++    "conflictsOpen": 0
++  }
+ }
+diff --git a/open-artifacts/matter-board/spec.md b/open-artifacts/matter-board/spec.md
+index eeec8f3..07d165c 100644
+--- a/open-artifacts/matter-board/spec.md
++++ b/open-artifacts/matter-board/spec.md
+@@ -18,18 +18,33 @@ is flagged with a timestamp, severity, and the timestamp's provenance.
+ 2. **Severity classification** — rules-as-data field severity (deadline
+    changes are `critical`, owner/stage `major`, …; configurable).
+ 3. **Board view** — stage columns, deadline-sorted, with overdue / due-soon
+-   flags anchored to caller-supplied `asOf`.
+-4. **Export JSON + CSV** — diff exports suitable for commit-to-git review or
+-   pasting into status memos.
++   flags anchored to caller-supplied `asOf`; optional `owner` / `risk`
++   filters, and rollup counts (`counts.matters`, `counts.risk`,
++   `counts.conflictsOpen`) that always agree with what is shown.
++4. **Anomaly layer** — `detectAnomalies(snapshot, asOf)`: `stale` (no
++   `updatedAt` within `staleDays`, default 30), `missing-field` (required
++   field null/missing; `required` list is data), `closed-with-deadline`.
++   Rules-as-data and overridable per call (`staleDays`, `required`,
++   `closedStage`).
++5. **Ingest + exports** — `csvToSnapshot(csv, { capturedAt, source })`
++   ingests a spreadsheet export (RFC4180 subset: quotes, embedded commas,
++   CRLF) with zero LLM; diff exports as JSON or CSV; flagged deadlines
++   export as all-day ICS (`flaggedToIcs(board)`, `DTSTAMP` derived from
++   `asOf` — byte-stable, no hidden clocks).
+ 
+ ## IO contract
+ 
+ ```js
+-import { diffSnapshots, buildBoard, diffToCsv, diffToJson } from "./core/core.js";
++import { diffSnapshots, buildBoard, diffToCsv, diffToJson, detectAnomalies, csvToSnapshot, flaggedToIcs } from "./core/core.js";
+ 
+ const diff = diffSnapshots(previousSnapshot, currentSnapshot, fieldSeverity?);
+ //   => { prevCapturedAt, currCapturedAt, added[], removed[], changed[{id,name,field,from,to,severity,changedAt,source}], counts }
+-const board = buildBoard(currentSnapshot, asOfIso, { soonDays: 14, stageOrder? });
++const board = buildBoard(currentSnapshot, asOfIso, { soonDays: 14, stageOrder?, owner?, risk? });
++//   => { capturedAt, asOf, stages[], flagged[], counts: { matters, risk: {high,medium,low}, conflictsOpen } }
++detectAnomalies(currentSnapshot, asOfIso, { staleDays?, required?, closedStage? });
++//   => [{ id, name, anomaly: "stale"|"missing-field"|"closed-with-deadline", detail }]
++csvToSnapshot(csvText, { capturedAt: "…", source? });  // spreadsheet → snapshot (capturedAt required, never guessed)
++flaggedToIcs(board);                                    // all-day VEVENT per overdue/due-soon flag
+ diffToCsv(diff); diffToJson(diff);
+ ```
+ 
+@@ -40,9 +55,9 @@ diffToCsv(diff); diffToJson(diff);
+ 
+ | Layer | Who |
+ |---|---|
+-| Diffing, severity, timestamps, deadline flags, board, exports | **code** |
+-| Turning emails/engagement letters/spreadsheets into snapshot JSON | optional LLM (extraction) |
+-| Choosing stage vocabularies + severity policy | **firm** (rules-as-data) |
++| Diffing, severity, timestamps, deadline flags, anomalies, CSV parse, board, exports | **code** |
++| Turning emails/engagement letters into snapshot JSON | optional LLM (extraction) |
++| Choosing stage vocabularies + severity/anomaly policy (stale window, required fields) | **firm** (rules-as-data) |
+ 
+ ### LLM prompt schema (extraction step, optional)
+ 
+@@ -65,7 +80,15 @@ diffToCsv(diff); diffToJson(diff);
+ - **Configurable severity** — firms can treat e.g. `owner` changes as
+   critical for conflicts purposes by editing one data object.
+ - **Reproducible exports** — JSON diff stable for version control; CSV for
+-  status meetings; no platform lock-in.
++  status meetings; ICS so flagged deadlines land on a real calendar; no
++  platform lock-in.
++- **Anomaly rules as data, not prose.** The closed counterpart ships its
++  staleness/missing-field/conflicts rules inside prompt text; here they are
++  tested functions over caller-supplied data (`staleDays`, `required`,
++  `closedStage`), deterministic and auditable.
++- **Spreadsheets in, zero LLM.** A CSV export enters as a first-class
++  snapshot via `csvToSnapshot`; the capture time is always caller-supplied,
++  never guessed.
+ 
+ ## Disclaimer
+ 

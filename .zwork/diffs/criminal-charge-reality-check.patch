@@ -1,0 +1,1058 @@
+diff --git a/open-artifacts/criminal-charge-reality-check/README.md b/open-artifacts/criminal-charge-reality-check/README.md
+index 7df3f94..8e583cb 100644
+--- a/open-artifacts/criminal-charge-reality-check/README.md
++++ b/open-artifacts/criminal-charge-reality-check/README.md
+@@ -3,8 +3,13 @@
+ Charge outcome expectations for defense teams. Charge facts JSON → typical
+ process timeline stages from **rules-as-data** (arraignment → discovery →
+ motions → trial day windows, defaults per jurisdiction and configurable),
+-likely-outcome bands per charge class with a provenance field, and a
+-what-affects-the-range factors list matched to client facts.
++likely-outcome bands per charge class with structured provenance
++(`bandSource: {kind, url?, asOf?, cohort?, sample?}`), a
++what-affects-the-range factors list matched to client facts via explicit
++`when` rules, a release playbook with dated advocacy steps when the client
++is detained, fictional charge-code resolution (`resolveCharge`) with an
++uncertain-candidate multi-run (`realityCheckMulti`), and a plain-language
++client summary (`renderPlainLanguage`).
+ 
+ **These bands are statistical heuristics from illustrative example data —
+ not a prediction of any case's outcome, and not legal advice.** The
+@@ -16,25 +21,36 @@ Open reimplementation of the Zealous "Criminal charge reality check"
+ ## Run
+ 
+ ```bash
+-node --test 'core/*.test.js'   # 13 tests
++node --test 'core/*.test.js'   # 26 tests
+ node examples/run.js           # regenerates examples/output.json + report.md
+ ```
+ 
+-Open `demo/index.html` for the interactive demo (prefilled fictional
+-NY felony_class_D charge with trial-window overrides).
++Open `demo/index.html` for the interactive demo: prefilled fictional
++NY felony_class_D charge with trial-window overrides, an uncertain-degree
++example that runs both candidate classes side-by-side, the release playbook
++for detained clients, and a plain-language summary toggle. Charge codes in
++the demo (XPL-9xx) are fictional — they cite no real statute.
+ 
+ ## Layout
+ 
+ - `spec.md` — IO contract, deterministic/LLM split, prompt schema
+ - `core/core.js` — dependency-free ES module (browser + Node)
+-- `core/core.test.js` — node:test suite
++- `core/core.test.js` — node:test suite (26 tests)
+ - `examples/` — fictional charge → expectations outputs
+ - `demo/index.html` — standalone interactive demo (design tokens)
+ 
+ ## Better than the closed counterpart
+ 
+-- Every outcome band carries a `bandSource` provenance field — open
+-  deployments must cite dated court data instead of hiding methodology.
++- Every outcome band carries a structured `bandSource` provenance object
++  (validated by `validateBandSource`) — open deployments must cite dated
++  court data (`kind: "cited"`, url + asOf required) instead of hiding
++  methodology; illustrative bands render as "no empirical claim".
++- Release playbook: dated steps + motions computed from the arraignment
++  anchor when the client is detained (`test: release playbook …`).
++- Explicit uncertainty: `realityCheckMulti` runs every uncertain
++  charge-class candidate and shows both — never collapsed to one guess.
++- Plain-language client summary (`renderPlainLanguage`) — disclaimer
++  first, ≤200 words, no leaked unset fields.
+ - Unknown charge classes are explicitly unset, never mapped to a nearest class.
+ - Timeline day counts are editable data + per-run overrides (calibrate to
+   the local court).
+diff --git a/open-artifacts/criminal-charge-reality-check/core/core.js b/open-artifacts/criminal-charge-reality-check/core/core.js
+index 8fa5e19..a5f9dee 100644
+--- a/open-artifacts/criminal-charge-reality-check/core/core.js
++++ b/open-artifacts/criminal-charge-reality-check/core/core.js
+@@ -64,20 +64,38 @@ export const JURISDICTION_RULES = {
+       felony_class_C: { minMonths: 0, maxMonths: 180, ruleId: "NY-SR-C" },
+       felony_class_B: { minMonths: 1, maxMonths: 300, ruleId: "NY-SR-B" },
+     },
++    releasePlaybook: {
++      ruleId: "NY-RP-1",
++      note: "Illustrative advocacy sequence — not advice; verify every motion against current local rules.",
++      steps: [
++        { step: "Custody interview: community ties, employment, family, treatment needs", motion: null, dayOffset: 0 },
++        { step: "File written release application with a ties package", motion: "release application", dayOffset: 1 },
++        { step: "Move for supervised release or non-monetary conditions", motion: "conditions motion", dayOffset: 3 },
++        { step: "Request a source-of-funds hearing (fictional example procedure)", motion: "source hearing", dayOffset: 7 },
++        { step: "Move for release review on changed circumstances", motion: "review motion", dayOffset: 14 },
++      ],
++    },
+     outcomeBands: {
+       // illustrative % of comparable fictional cohorts — NOT court data
+-      violation: { bandSource: "illustrative", dismissal: [15, 30], plea_conviction: [55, 75], trial_conviction: [3, 10], acquittal: [2, 8] },
+-      misdemeanor: { bandSource: "illustrative", dismissal: [10, 25], plea_conviction: [60, 78], trial_conviction: [5, 12], acquittal: [2, 6] },
+-      felony_class_E: { bandSource: "illustrative", dismissal: [8, 20], plea_conviction: [62, 80], trial_conviction: [6, 14], acquittal: [2, 5] },
+-      felony_class_D: { bandSource: "illustrative", dismissal: [6, 18], plea_conviction: [65, 82], trial_conviction: [7, 15], acquittal: [1, 5] },
+-      felony_class_C: { bandSource: "illustrative", dismissal: [5, 15], plea_conviction: [68, 84], trial_conviction: [8, 16], acquittal: [1, 4] },
+-      felony_class_B: { bandSource: "illustrative", dismissal: [4, 12], plea_conviction: [70, 86], trial_conviction: [9, 18], acquittal: [1, 3] },
++      violation: { bandSource: { kind: "illustrative" }, dismissal: [15, 30], plea_conviction: [55, 75], trial_conviction: [3, 10], acquittal: [2, 8] },
++      misdemeanor: { bandSource: { kind: "illustrative" }, dismissal: [10, 25], plea_conviction: [60, 78], trial_conviction: [5, 12], acquittal: [2, 6] },
++      felony_class_E: { bandSource: { kind: "illustrative" }, dismissal: [8, 20], plea_conviction: [62, 80], trial_conviction: [6, 14], acquittal: [2, 5] },
++      felony_class_D: { bandSource: { kind: "illustrative" }, dismissal: [6, 18], plea_conviction: [65, 82], trial_conviction: [7, 15], acquittal: [1, 5] },
++      felony_class_C: { bandSource: { kind: "illustrative" }, dismissal: [5, 15], plea_conviction: [68, 84], trial_conviction: [8, 16], acquittal: [1, 4] },
++      felony_class_B: { bandSource: { kind: "illustrative" }, dismissal: [4, 12], plea_conviction: [70, 86], trial_conviction: [9, 18], acquittal: [1, 3] },
+     },
+     factors: [
+-      { id: "NY-F1", label: "Detention status", direction: "worsens", note: "Pretrial detention correlates with higher plea rates and faster timelines in published research." },
+-      { id: "NY-F2", label: "Prior convictions", direction: "worsens", note: "Prior record typically raises plea terms and lowers dismissal likelihood." },
+-      { id: "NY-F3", label: "Counsel at arraignment", direction: "improves", note: "Early representation correlates with better bail and discovery outcomes." },
+-      { id: "NY-F4", label: "Weak or circumstantial evidence", direction: "improves", note: "Proof problems raise dismissal and suppression prospects." },
++      { id: "NY-F1", label: "Detention status", direction: "worsens", note: "Pretrial detention correlates with higher plea rates and faster timelines in published research.",
++        when: [
++          { field: "detained", equals: true, basis: "client.detained = true" },
++          { field: "detained", equals: false, basis: "client.detained = false (factor may run the other way)" },
++        ] },
++      { id: "NY-F2", label: "Prior convictions", direction: "worsens", note: "Prior record typically raises plea terms and lowers dismissal likelihood.",
++        when: [{ field: "priorConvictions", gt: 0, basis: "client.priorConvictions = {value}" }] },
++      { id: "NY-F3", label: "Counsel at arraignment", direction: "improves", note: "Early representation correlates with better bail and discovery outcomes.",
++        when: [{ field: "counselAtArraignment", equals: true, basis: "client.counselAtArraignment = true" }] },
++      { id: "NY-F4", label: "Weak or circumstantial evidence", direction: "improves", note: "Proof problems raise dismissal and suppression prospects.",
++        when: [{ field: "evidenceIssues", equals: true, basis: "client.evidenceIssues = true" }] },
+     ],
+   },
+   PA: {
+@@ -96,16 +114,33 @@ export const JURISDICTION_RULES = {
+       felony_class_2: { minMonths: 3, maxMonths: 120, ruleId: "PA-SR-2" },
+       felony_class_1: { minMonths: 12, maxMonths: 240, ruleId: "PA-SR-1" },
+     },
++    releasePlaybook: {
++      ruleId: "PA-RP-1",
++      note: "Illustrative advocacy sequence — not advice; verify every motion against current local rules.",
++      steps: [
++        { step: "Custody interview and preliminary-arrangement prep", motion: null, dayOffset: 0 },
++        { step: "Present a non-monetary release proposal at arraignment", motion: "release proposal", dayOffset: 0 },
++        { step: "File a bail-modification motion with the ties package", motion: "modification motion", dayOffset: 5 },
++        { step: "Seek a diversion-screen referral while the motion is pending", motion: "diversion referral", dayOffset: 10 },
++        { step: "Move for review on changed circumstances", motion: "review motion", dayOffset: 21 },
++      ],
++    },
+     outcomeBands: {
+-      misdemeanor: { bandSource: "illustrative", dismissal: [12, 28], plea_conviction: [58, 76], trial_conviction: [5, 12], acquittal: [2, 7] },
+-      felony_class_3: { bandSource: "illustrative", dismissal: [8, 20], plea_conviction: [63, 81], trial_conviction: [7, 14], acquittal: [1, 5] },
+-      felony_class_2: { bandSource: "illustrative", dismissal: [6, 16], plea_conviction: [66, 83], trial_conviction: [8, 16], acquittal: [1, 4] },
+-      felony_class_1: { bandSource: "illustrative", dismissal: [5, 13], plea_conviction: [69, 85], trial_conviction: [9, 18], acquittal: [1, 3] },
++      misdemeanor: { bandSource: { kind: "illustrative" }, dismissal: [12, 28], plea_conviction: [58, 76], trial_conviction: [5, 12], acquittal: [2, 7] },
++      felony_class_3: { bandSource: { kind: "illustrative" }, dismissal: [8, 20], plea_conviction: [63, 81], trial_conviction: [7, 14], acquittal: [1, 5] },
++      felony_class_2: { bandSource: { kind: "illustrative" }, dismissal: [6, 16], plea_conviction: [66, 83], trial_conviction: [8, 16], acquittal: [1, 4] },
++      felony_class_1: { bandSource: { kind: "illustrative" }, dismissal: [5, 13], plea_conviction: [69, 85], trial_conviction: [9, 18], acquittal: [1, 3] },
+     },
+     factors: [
+-      { id: "PA-F1", label: "Diversion program eligibility", direction: "improves", note: "First-time defendants may route to diversion, changing the timeline entirely." },
+-      { id: "PA-F2", label: "Prior convictions", direction: "worsens", note: "Prior record score raises sentencing ranges." },
+-      { id: "PA-F3", label: "Detention status", direction: "worsens", note: "Detained defendants resolve cases faster, often less favorably." },
++      { id: "PA-F1", label: "Diversion program eligibility", direction: "improves", note: "First-time defendants may route to diversion, changing the timeline entirely.",
++        when: [{ field: "diversionEligible", equals: true, basis: "client.diversionEligible = true" }] },
++      { id: "PA-F2", label: "Prior convictions", direction: "worsens", note: "Prior record score raises sentencing ranges.",
++        when: [{ field: "priorConvictions", gt: 0, basis: "client.priorConvictions = {value}" }] },
++      { id: "PA-F3", label: "Detention status", direction: "worsens", note: "Detained defendants resolve cases faster, often less favorably.",
++        when: [
++          { field: "detained", equals: true, basis: "client.detained = true" },
++          { field: "detained", equals: false, basis: "client.detained = false (factor may run the other way)" },
++        ] },
+     ],
+   },
+   OH: {
+@@ -124,20 +159,66 @@ export const JURISDICTION_RULES = {
+       felony_class_4: { minMonths: 0, maxMonths: 18, ruleId: "OH-SR-4" },
+       felony_class_3: { minMonths: 0, maxMonths: 36, ruleId: "OH-SR-3" },
+     },
++    releasePlaybook: {
++      ruleId: "OH-RP-1",
++      note: "Illustrative advocacy sequence — not advice; verify every motion against current local rules.",
++      steps: [
++        { step: "Custody interview: ties, employment, and treatment needs", motion: null, dayOffset: 0 },
++        { step: "Argue for personal recognizance at arraignment", motion: "recognizance argument", dayOffset: 0 },
++        { step: "File a bond-reduction motion with the ties package", motion: "bond-reduction motion", dayOffset: 4 },
++        { step: "Request intervention-in-lieu screening (fictional example procedure)", motion: "intervention screening", dayOffset: 12 },
++        { step: "Move for review on changed circumstances", motion: "review motion", dayOffset: 18 },
++      ],
++    },
+     outcomeBands: {
+-      misdemeanor: { bandSource: "illustrative", dismissal: [14, 30], plea_conviction: [56, 74], trial_conviction: [4, 11], acquittal: [2, 8] },
+-      felony_class_5: { bandSource: "illustrative", dismissal: [10, 24], plea_conviction: [60, 78], trial_conviction: [5, 12], acquittal: [2, 6] },
+-      felony_class_4: { bandSource: "illustrative", dismissal: [8, 20], plea_conviction: [63, 80], trial_conviction: [6, 13], acquittal: [1, 5] },
+-      felony_class_3: { bandSource: "illustrative", dismissal: [6, 17], plea_conviction: [66, 82], trial_conviction: [7, 15], acquittal: [1, 4] },
++      misdemeanor: { bandSource: { kind: "illustrative" }, dismissal: [14, 30], plea_conviction: [56, 74], trial_conviction: [4, 11], acquittal: [2, 8] },
++      felony_class_5: { bandSource: { kind: "illustrative" }, dismissal: [10, 24], plea_conviction: [60, 78], trial_conviction: [5, 12], acquittal: [2, 6] },
++      felony_class_4: { bandSource: { kind: "illustrative" }, dismissal: [8, 20], plea_conviction: [63, 80], trial_conviction: [6, 13], acquittal: [1, 5] },
++      felony_class_3: { bandSource: { kind: "illustrative" }, dismissal: [6, 17], plea_conviction: [66, 82], trial_conviction: [7, 15], acquittal: [1, 4] },
+     },
+     factors: [
+-      { id: "OH-F1", label: "Intervention in lieu of conviction", direction: "improves", note: "Eligible defendants may avoid conviction entirely." },
+-      { id: "OH-F2", label: "Prior convictions", direction: "worsens", note: "Repeat-offender enhancements narrow the favorable band." },
+-      { id: "OH-F3", label: "Detention status", direction: "worsens", note: "Detention pressure tends to accelerate pleas." },
++      { id: "OH-F1", label: "Intervention in lieu of conviction", direction: "improves", note: "Eligible defendants may avoid conviction entirely.",
++        when: [{ field: "diversionEligible", equals: true, basis: "client.diversionEligible = true" }] },
++      { id: "OH-F2", label: "Prior convictions", direction: "worsens", note: "Repeat-offender enhancements narrow the favorable band.",
++        when: [{ field: "priorConvictions", gt: 0, basis: "client.priorConvictions = {value}" }] },
++      { id: "OH-F3", label: "Detention status", direction: "worsens", note: "Detention pressure tends to accelerate pleas.",
++        when: [
++          { field: "detained", equals: true, basis: "client.detained = true" },
++          { field: "detained", equals: false, basis: "client.detained = false (factor may run the other way)" },
++        ] },
+     ],
+   },
+ };
+ 
++/**
++ * FICTIONAL charge-code map for the NY example ruleset. Codes use the made-up
++ * "XPL-" prefix with 9xx article numbers that exist in no real penal law —
++ * deliberately unmistakably fictional. Real-looking codes are never resolved.
++ * @type {Record<string, Object>}
++ */
++export const CHARGE_CODES = {
++  "XPL-901.10": { chargeClass: "misdemeanor", label: "Fictional petty offense (XPL-901.10)" },
++  "XPL-910.40": { chargeClass: "felony_class_E", label: "Fictional stolen-property offense, 5th degree (XPL-910.40)" },
++  "XPL-910.45": { chargeClass: "felony_class_D", label: "Fictional stolen-property offense, 4th degree (XPL-910.45)" },
++  "XPL-910.90": { chargeClass: "felony_class_C", label: "Fictional stolen-property offense, 3rd degree (XPL-910.90)" },
++  "XPL-911.20": { label: "Fictional value-dependent offense (XPL-911.20)", candidates: [
++    { chargeClass: "felony_class_D", reason: "value of property exceeds the class-D threshold" },
++    { chargeClass: "felony_class_E", reason: "value of property falls below the class-D threshold" },
++  ] },
++};
++
++/** Resolve a fictional charge code to a class, ambiguous candidates, or unknown.
++ * Never guesses: real-looking or unmapped codes come back `unknown`.
++ * @param {string} code @returns {{status:"resolved"|"ambiguous"|"unknown", code:string, label?:string, chargeClass?:string, candidates?:Array}} */
++export function resolveCharge(code) {
++  const hit = typeof code === "string" ? CHARGE_CODES[code.trim()] : undefined;
++  if (!hit) return { status: "unknown", code };
++  if (Array.isArray(hit.candidates)) {
++    return { status: "ambiguous", code, label: hit.label, candidates: hit.candidates.map((c) => ({ ...c })) };
++  }
++  return { status: "resolved", code, label: hit.label, chargeClass: hit.chargeClass };
++}
++
+ /** The structural disclaimer attached to EVERY output, without exception.
+  * @type {{statisticalHeuristics:boolean, prediction:boolean, legalAdvice:boolean, text:string}} */
+ export const DISCLAIMER = {
+@@ -159,6 +240,39 @@ export function getRuleset(id) {
+   return JURISDICTION_RULES[id] ?? null;
+ }
+ 
++/* ---------- band provenance (structured, machine-checkable) ---------- */
++
++/**
++ * Validate a band `bandSource` provenance object.
++ * `illustrative` = fictional example data, no empirical claim (and no data
++ * source allowed). `cited` = real published statistics — requires an http(s)
++ * url and an asOf date; cohort/sample optional but encouraged.
++ * @param {Object} bs @returns {{ok:boolean, errors:string[]}} */
++export function validateBandSource(bs) {
++  const errors = [];
++  if (!bs || typeof bs !== "object" || Array.isArray(bs)) {
++    errors.push("bandSource must be a structured object, not a string");
++  } else if (bs.kind === "illustrative") {
++    if (bs.url != null || bs.asOf != null) errors.push('illustrative bandSource must not carry a data source — that would imply an empirical claim');
++  } else if (bs.kind === "cited") {
++    if (typeof bs.url !== "string" || !/^https:\/\//.test(bs.url)) errors.push("cited bandSource needs an https url");
++    if (typeof bs.asOf !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(bs.asOf)) errors.push("cited bandSource needs an asOf date (YYYY-MM-DD)");
++  } else {
++    errors.push('bandSource.kind must be "illustrative" or "cited"');
++  }
++  return { ok: errors.length === 0, errors };
++}
++
++/** Human-readable provenance line for reports.
++ * @param {Object} bs @returns {string} */
++export function formatBandSource(bs) {
++  const v = validateBandSource(bs);
++  if (!v.ok) return `(malformed provenance: ${v.errors.join("; ")})`;
++  if (bs.kind === "illustrative") return "illustrative — no empirical claim";
++  const bits = [`cited data as of ${bs.asOf}`, bs.url, bs.cohort ? `cohort: ${bs.cohort}` : null, bs.sample != null ? `sample: ${bs.sample}` : null];
++  return bits.filter(Boolean).join(" · ");
++}
++
+ /* ---------- engine ---------- */
+ 
+ /**
+@@ -209,7 +323,12 @@ export function outcomeBand(rules, chargeClass) {
+ }
+ 
+ /**
+- * Which what-affects-the-range factors apply given client facts (deterministic matching).
++ * Which what-affects-the-range factors apply given client facts. Matching is
++ * driven ONLY by each factor's explicit `when` rules-as-data (first matching
++ * rule wins) — never by factor id or label strings, which broke across
++ * jurisdictions (e.g. PA-F1 is diversion, not detention).
++ * Each rule: `{ field, equals }` (strict equality) or `{ field, gt }` (number
++ * comparison), with a `basis` template where `{value}` is the matched value.
+  * @param {Object} rules
+  * @param {ChargeInput["client"]} client
+  * @returns {Array} factors with `applies` flags
+@@ -218,24 +337,44 @@ export function applicableFactors(rules, client = {}) {
+   return rules.factors.map((f) => {
+     let applies = false;
+     let basis = "";
+-    if (f.id.endsWith("F1") || f.label === "Detention status") {
+-      if (client.detained === true) { applies = true; basis = "client.detained = true"; }
+-      else if (client.detained === false) { applies = true; basis = "client.detained = false (factor may run the other way)"; }
+-    } else if (f.label === "Prior convictions") {
+-      if (typeof client.priorConvictions === "number" && client.priorConvictions > 0) {
+-        applies = true; basis = `client.priorConvictions = ${client.priorConvictions}`;
++    for (const w of f.when ?? []) {
++      const v = client[w.field];
++      const hit = "gt" in w ? typeof v === "number" && v > w.gt : v === w.equals;
++      if (hit) {
++        applies = true;
++        basis = w.basis.replace("{value}", String(v));
++        break;
+       }
+-    } else if (f.label === "Counsel at arraignment") {
+-      if (client.counselAtArraignment === true) { applies = true; basis = "client.counselAtArraignment = true"; }
+-    } else if (f.label === "Weak or circumstantial evidence") {
+-      if (client.evidenceIssues === true) { applies = true; basis = "client.evidenceIssues = true"; }
+-    } else if (f.label === "Diversion program eligibility" || f.label === "Intervention in lieu of conviction") {
+-      if (client.diversionEligible === true) { applies = true; basis = "client.diversionEligible = true"; }
+     }
+     return { ...f, applies, basis };
+   });
+ }
+ 
++/**
++ * Build the release playbook for a detained client: each ruleset's steps and
++ * motions with day offsets from arraignment, anchored on the arraignment
++ * window's typical date, converted to calendar dates. Null when the client is
++ * not detained or the ruleset has no playbook — never fabricated.
++ * @param {Object} rules @param {Date} filedOn @param {boolean} detained
++ * @returns {Object|null}
++ */
++export function buildReleasePlan(rules, filedOn, detained) {
++  if (detained !== true || !rules.releasePlaybook) return null;
++  const pb = rules.releasePlaybook;
++  const anchor = rules.stageDayOffsets.arraignment.typical;
++  const anchoredOn = fmtDate(addDays(filedOn, anchor));
++  return {
++    applies: true,
++    ruleId: pb.ruleId,
++    note: pb.note,
++    anchoredOn,
++    anchorBasis: `arraignment typical date (filing + ${anchor} days)`,
++    steps: pb.steps
++      .map((s) => ({ step: s.step, motion: s.motion ?? null, dayOffset: s.dayOffset, date: fmtDate(addDays(filedOn, anchor + s.dayOffset)) }))
++      .sort((a, b) => a.dayOffset - b.dayOffset),
++  };
++}
++
+ /**
+  * Run the reality check.
+  * @param {ChargeInput} input
+@@ -266,6 +405,7 @@ export function realityCheck(input) {
+     return report;
+   }
+   report.timeline = buildTimeline(rules, filedOn, input.stageOverrides ?? {});
++  report.release = buildReleasePlan(rules, filedOn, input.client?.detained === true);
+   const sr = rules.sentencingRanges[input.chargeClass] ?? null;
+   if (sr) report.sentencingRange = { ...sr };
+   else report.errors.push(`chargeClass "${input.chargeClass}" has no sentencing range in the ${rules.id} example ruleset — left unset rather than guessed`);
+@@ -276,6 +416,54 @@ export function realityCheck(input) {
+   return report;
+ }
+ 
++/**
++ * Uncertain charge class? Run the core once per candidate and show both —
++ * uncertainty is surfaced, never collapsed into one guess. Accepts a
++ * `ChargeInput` with an optional `uncertain: [{field:"chargeClass",
++ * candidates:[...], reason}]` block; without it, runs once.
++ * @param {ChargeInput & {uncertain?:Array}} input
++ * @returns {{candidateField:string|null, reason:string|null, reports:{chargeClass:string, report:Object}[]}} */
++export function realityCheckMulti(input) {
++  const unc = input?.uncertain?.find((u) => u?.field === "chargeClass" && Array.isArray(u.candidates) && u.candidates.length > 0);
++  const candidates = unc ? unc.candidates : [input?.chargeClass ?? null];
++  return {
++    candidateField: unc ? "chargeClass" : null,
++    reason: unc?.reason ?? null,
++    reports: candidates.map((c) => ({
++      chargeClass: c,
++      report: realityCheck({ ...input, chargeClass: c, uncertain: undefined }),
++    })),
++  };
++}
++
++/**
++ * Plain-language client-facing summary: disclaimer first, ≤200 words, short
++ * deterministic sentences assembled only from fields that are actually set.
++ * A readability aid, not a validated readability instrument.
++ * @param {ReturnType<realityCheck>} report @returns {string} */
++export function renderPlainLanguage(report) {
++  const S = ["This plain-language summary is not a prediction and is not legal advice."];
++  if (!report || !Array.isArray(report.errors)) {
++    S.push("No report is available.");
++    return S.join(" ");
++  }
++  if (report.errors.length) {
++    S.push("Some information for this case is not available, and the tool leaves it blank rather than guessing.");
++  } else {
++    const chargeName = report.charge ?? report.chargeClass ?? "this charge";
++    S.push(`It describes the charge "${chargeName}" under the example ${report.jurisdiction} ruleset, filed ${report.filedOn}.`);
++    const arr = report.timeline?.find((s) => s.stage === "arraignment");
++    if (arr) S.push(`Arraignment usually happens between ${arr.window.min} and ${arr.window.max}.`);
++    const trial = report.timeline?.find((s) => s.stage === "trial");
++    if (trial) S.push(`If the case goes to trial, it would usually start between ${trial.window.min} and ${trial.window.max}.`);
++    if (report.sentencingRange) S.push(`The illustrative sentencing range is ${report.sentencingRange.minMonths} to ${report.sentencingRange.maxMonths} months.`);
++    if (report.release) S.push(`Because the client is held in custody, an example release plan lists ${report.release.steps.length} advocacy steps starting ${report.release.steps[0].date}.`);
++  }
++  S.push("The numbers are example figures, not real court statistics.");
++  S.push("Talk to a defense attorney about what this means for this case.");
++  return S.join(" ");
++}
++
+ /** Markdown report with the disclaimer rendered prominently.
+  * @param {ReturnType<realityCheck>} report
+  * @returns {string} */
+@@ -302,12 +490,24 @@ export function renderReport(report) {
+     }
+     L.push("");
+   }
++  if (report.release) {
++    L.push(`## Release playbook (client detained — illustrative advocacy steps, not advice)`);
++    L.push("");
++    L.push(`Anchored on the ${report.release.anchorBasis} = **${report.release.anchoredOn}** · playbook \`${report.release.ruleId}\``);
++    L.push("");
++    L.push("| Day | Step | Motion | Target date |");
++    L.push("|---:|---|---|---|");
++    for (const s of report.release.steps) {
++      L.push(`| +${s.dayOffset} | ${s.step} | ${s.motion ?? "—"} | ${s.date} |`);
++    }
++    L.push("");
++  }
+   if (report.sentencingRange) {
+     L.push(`## Illustrative sentencing range\n\n${report.sentencingRange.minMonths}–${report.sentencingRange.maxMonths} months \`${report.sentencingRange.ruleId}\``);
+     L.push("");
+   }
+   if (report.outcomeBands) {
+-    L.push(`## Likely-outcome bands (${report.outcomeBands.bandSource} data — heuristics, NOT predictions)`);
++    L.push(`## Likely-outcome bands (${formatBandSource(report.outcomeBands.bandSource)} — heuristics, NOT predictions)`);
+     L.push("");
+     L.push("| Outcome | Band |");
+     L.push("|---|---:|");
+diff --git a/open-artifacts/criminal-charge-reality-check/core/core.test.js b/open-artifacts/criminal-charge-reality-check/core/core.test.js
+index 045f9dd..2511255 100644
+--- a/open-artifacts/criminal-charge-reality-check/core/core.test.js
++++ b/open-artifacts/criminal-charge-reality-check/core/core.test.js
+@@ -3,7 +3,9 @@ import { test } from "node:test";
+ import assert from "node:assert/strict";
+ import {
+   parseDate, fmtDate, addDays, getRuleset, buildTimeline, outcomeBand,
+-  applicableFactors, realityCheck, renderReport, DISCLAIMER, JURISDICTION_RULES,
++  applicableFactors, realityCheck, renderReport, renderPlainLanguage,
++  realityCheckMulti, resolveCharge, validateBandSource, formatBandSource,
++  DISCLAIMER, JURISDICTION_RULES,
+ } from "./core.js";
+ 
+ const base = (over = {}) => ({
+@@ -73,12 +75,45 @@ test("factors: empty client facts => none flagged, list still shown", () => {
+   assert.ok(fs.every((f) => !f.applies || f.label === "Detention status"));
+ });
+ 
++test("factors: PA-F1/OH-F1 are diversion factors — never flagged by detention (cross-jurisdiction bug)", () => {
++  const pa = applicableFactors(getRuleset("PA"), { detained: true });
++  assert.equal(pa.find((f) => f.id === "PA-F1").applies, false); // was mis-flagged via id.endsWith("F1")
++  const paF3 = pa.find((f) => f.id === "PA-F3");
++  assert.ok(paF3.applies);
++  assert.match(paF3.basis, /detained/);
++  const oh = applicableFactors(getRuleset("OH"), { detained: true });
++  assert.equal(oh.find((f) => f.id === "OH-F1").applies, false);
++});
++
++test("factors: diversionEligible flags PA-F1/OH-F1 diversion factors", () => {
++  const pa = applicableFactors(getRuleset("PA"), { diversionEligible: true });
++  const paF1 = pa.find((f) => f.id === "PA-F1");
++  assert.ok(paF1.applies);
++  assert.match(paF1.basis, /diversionEligible/);
++  const oh = applicableFactors(getRuleset("OH"), { diversionEligible: true, detained: true });
++  assert.ok(oh.find((f) => f.id === "OH-F1").applies);
++  assert.ok(oh.find((f) => f.id === "OH-F3").applies); // detention still flags OH-F3
++});
++
++test("factors: every factor carries explicit when-rules (data, not id/label matching)", () => {
++  for (const rs of Object.values(JURISDICTION_RULES)) {
++    for (const f of rs.factors) {
++      assert.ok(Array.isArray(f.when) && f.when.length > 0, `${f.id} missing when rules`);
++      for (const w of f.when) {
++        assert.ok(typeof w.field === "string" && w.field.length > 0, `${f.id} rule missing field`);
++        assert.ok(("equals" in w) !== ("gt" in w), `${f.id} rule needs exactly one of equals|gt`);
++        assert.ok(typeof w.basis === "string" && w.basis.includes(w.field), `${f.id} basis should name the field`);
++      }
++    }
++  }
++});
++
+ test("full report: timeline + sentencing range + bands + factors assembled", () => {
+   const r = realityCheck(base());
+   assert.equal(r.errors.length, 0);
+   assert.equal(r.timeline.length, 4);
+   assert.equal(r.sentencingRange.ruleId, "NY-SR-D");
+-  assert.equal(r.outcomeBands.bandSource, "illustrative");
++  assert.equal(r.outcomeBands.bandSource.kind, "illustrative");
+   assert.ok(r.factors.some((f) => f.applies));
+ });
+ 
+@@ -114,6 +149,131 @@ test("jurisdiction portability: PA and OH produce their own timelines and bands"
+   assert.notEqual(pa.outcomeBands.plea_conviction[0], oh.outcomeBands.plea_conviction[0]);
+ });
+ 
++/* ---------- release playbook (shown when client detained) ---------- */
++
++test("release playbook: dated steps computed from arraignment when client detained", () => {
++  const r = realityCheck(base()); // client.detained: true
++  assert.ok(r.release, "detained client must get a release playbook");
++  assert.equal(r.release.applies, true);
++  assert.ok(r.release.steps.length >= 3);
++  const arr = r.timeline.find((s) => s.stage === "arraignment");
++  assert.equal(r.release.anchoredOn, arr.window.typical); // anchor = arraignment typical date
++  const offs = r.release.steps.map((s) => s.dayOffset);
++  assert.deepEqual(offs, [...offs].sort((a, b) => a - b)); // ascending
++  for (const st of r.release.steps) {
++    assert.match(st.date, /^\d{4}-\d{2}-\d{2}$/);
++    assert.equal(st.date, fmtDate(addDays(parseDate(r.release.anchoredOn), st.dayOffset)));
++    assert.ok(typeof st.step === "string" && st.step.length > 0);
++  }
++});
++
++test("release playbook: null when not detained; each ruleset carries its own playbook", () => {
++  assert.equal(realityCheck(base({ client: { detained: false } })).release, null);
++  const pa = realityCheck({ jurisdiction: "PA", chargeClass: "felony_class_2", filedOn: "2026-01-05", client: { detained: true } });
++  const oh = realityCheck({ jurisdiction: "OH", chargeClass: "misdemeanor", filedOn: "2026-01-05", client: { detained: true } });
++  assert.equal(pa.release.applies, true);
++  assert.equal(oh.release.applies, true);
++  assert.notEqual(pa.release.ruleId, oh.release.ruleId);
++  assert.ok(pa.release.steps.some((s) => s.motion));
++});
++
++test("markdown renders the release playbook section only when detained", () => {
++  assert.match(renderReport(realityCheck(base())), /Release playbook/);
++  assert.doesNotMatch(renderReport(realityCheck(base({ client: { detained: false } }))), /Release playbook/);
++});
++
++/* ---------- structured band provenance ---------- */
++
++test("bandSource is structured provenance; every ruleset band validates", () => {
++  for (const rs of Object.values(JURISDICTION_RULES)) {
++    for (const [cls, band] of Object.entries(rs.outcomeBands)) {
++      const v = validateBandSource(band.bandSource);
++      assert.ok(v.ok, `${rs.id} ${cls}: ${v.errors.join("; ")}`);
++      assert.equal(band.bandSource.kind, "illustrative");
++    }
++  }
++});
++
++test("validateBandSource rejects malformed provenance", () => {
++  assert.ok(!validateBandSource("illustrative").ok); // string, not a structured object
++  assert.ok(!validateBandSource(null).ok);
++  assert.ok(!validateBandSource({}).ok); // missing kind
++  assert.ok(!validateBandSource({ kind: "wild-guess" }).ok); // unknown kind
++  assert.ok(!validateBandSource({ kind: "cited" }).ok); // cited needs url + asOf
++  assert.ok(!validateBandSource({ kind: "cited", url: "not-a-url", asOf: "2026-01-01" }).ok);
++  assert.ok(!validateBandSource({ kind: "cited", url: "https://example.gov/x", asOf: "January 2026" }).ok);
++  assert.ok(!validateBandSource({ kind: "illustrative", url: "https://example.gov/x" }).ok); // illustrative must not imply a data source
++  assert.ok(validateBandSource({ kind: "cited", url: "https://example.gov/x", asOf: "2026-01-01", cohort: "fictional cohort", sample: 500 }).ok);
++});
++
++test("render: cited bands show asOf/url/cohort; illustrative says 'no empirical claim'", () => {
++  assert.match(renderReport(realityCheck(base())), /no empirical claim/);
++  const r = realityCheck(base());
++  r.outcomeBands = { ...r.outcomeBands, bandSource: { kind: "cited", url: "https://fictional.gov/report", asOf: "2026-01-01", cohort: "fictional cohort", sample: 500 } };
++  const md = renderReport(r);
++  assert.match(md, /2026-01-01/);
++  assert.match(md, /fictional\.gov/);
++  assert.match(md, /fictional cohort/);
++  assert.match(formatBandSource({ kind: "illustrative" }), /illustrative/);
++});
++
++/* ---------- charge-code resolution + uncertain-candidate multi-run ---------- */
++
++test("resolveCharge: fictional code map resolves a class, surfaces ambiguity, never guesses reals", () => {
++  const r = resolveCharge("XPL-910.45");
++  assert.equal(r.status, "resolved");
++  assert.equal(r.chargeClass, "felony_class_D");
++  assert.match(r.label, /fictional/i);
++  const amb = resolveCharge("XPL-911.20");
++  assert.equal(amb.status, "ambiguous");
++  assert.equal(amb.candidates.length, 2);
++  assert.ok(amb.candidates.every((c) => JURISDICTION_RULES.NY.sentencingRanges[c.chargeClass]));
++  assert.equal(resolveCharge("PL-165.45").status, "unknown"); // real-looking codes never guessed
++  assert.equal(resolveCharge("XPL-000.00").status, "unknown");
++});
++
++test("realityCheckMulti: runs once per uncertain candidate and shows both", () => {
++  const multi = realityCheckMulti(base({
++    chargeClass: undefined,
++    uncertain: [{ field: "chargeClass", candidates: ["felony_class_D", "felony_class_E"], reason: "degree depends on value of property" }],
++  }));
++  assert.equal(multi.reports.length, 2);
++  assert.deepEqual(multi.reports.map((x) => x.report.chargeClass), ["felony_class_D", "felony_class_E"]);
++  assert.ok(multi.reports.every((x) => x.report.errors.length === 0));
++  assert.equal(multi.reason, "degree depends on value of property");
++  // candidate unknown to the ruleset => that run reports it unset (still shown, never guessed)
++  const bad = realityCheckMulti(base({ chargeClass: undefined, uncertain: [{ field: "chargeClass", candidates: ["super_felony"] }] }));
++  assert.equal(bad.reports[0].report.sentencingRange, null);
++  // no uncertain block => single run, no candidate field
++  const single = realityCheckMulti(base());
++  assert.equal(single.reports.length, 1);
++  assert.equal(single.candidateField, null);
++});
++
++/* ---------- plain-language client-facing output ---------- */
++
++test("renderPlainLanguage: <=200 words, disclaimer first, no leaked nulls, readable sentences", () => {
++  const text = renderPlainLanguage(realityCheck(base()));
++  const words = text.trim().split(/\s+/);
++  assert.ok(words.length > 20 && words.length <= 200, `got ${words.length} words`);
++  const firstSentence = text.split(/(?<=[.!?])\s/)[0];
++  assert.match(firstSentence, /not a prediction/i);
++  assert.match(firstSentence, /not legal advice/i);
++  assert.ok(!text.includes("undefined"), "leaked undefined");
++  assert.ok(!text.includes("null"), "leaked null");
++  assert.ok(!text.includes("[object"), "leaked object coercion");
++  const sentences = text.split(/(?<=[.!?])\s/).filter((s) => s.trim());
++  const avg = words.length / sentences.length;
++  assert.ok(avg <= 25, `avg sentence length ${avg} > 25`);
++});
++
++test("renderPlainLanguage: error reports say what is not available; still disclaimer-first", () => {
++  const text = renderPlainLanguage(realityCheck({ jurisdiction: "ZZ", chargeClass: "x", filedOn: "2026-01-01" }));
++  assert.match(text.split(/(?<=[.!?])\s/)[0], /not a prediction/i);
++  assert.match(text, /not available/i);
++  assert.ok(!text.includes("undefined"));
++});
++
+ test("markdown report renders timeline table, bands, factors, and the strong disclaimer", () => {
+   const md = renderReport(realityCheck(base()));
+   assert.match(md, /Typical process timeline/);
+diff --git a/open-artifacts/criminal-charge-reality-check/demo/index.html b/open-artifacts/criminal-charge-reality-check/demo/index.html
+index 5d39a49..657c54e 100644
+--- a/open-artifacts/criminal-charge-reality-check/demo/index.html
++++ b/open-artifacts/criminal-charge-reality-check/demo/index.html
+@@ -18,9 +18,17 @@
+   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
+     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
+   button:hover { background: #333; }
++  button.ghost { background: transparent; color: var(--text); border: var(--hairline); }
++  button.ghost:hover { background: var(--flag-tint); }
++  .btnrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
++  select { font-family: var(--font-mono); font-size: 12px; background: #fff; color: var(--text); border: var(--hairline); border-radius: var(--radius); padding: 8px 10px; }
+   .cols { display: grid; gap: 24px; margin-top: 32px; }
+   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
++  .candidates { display: grid; gap: 20px; margin-top: 12px; }
++  @media (min-width: 768px) { .candidates { grid-template-columns: 1fr 1fr; } }
++  .cand { border: var(--hairline); padding: 14px; background: #fff; }
+   .disclaimer { border: 2px solid var(--text); background: var(--flag-tint); padding: 14px 16px; font-size: 13px; line-height: 1.55; font-weight: 600; margin-bottom: 18px; }
++  .pl { border: 2px dashed var(--text); background: #fff; padding: 14px 16px; font-size: 14px; line-height: 1.65; margin-bottom: 18px; }
+   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; margin-bottom: 16px; }
+   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); }
+   th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+@@ -39,15 +47,19 @@
+   <h1>Criminal charge reality check</h1>
+   <div class="rule"></div>
+   <p class="lede">Charge facts in → typical process timeline (arraignment → discovery → motions → trial,
+-  day counts configurable per jurisdiction), likely-outcome bands per charge class, and the factors
+-  that move the range. Example jurisdictions: NY, PA, OH. The bands are statistical heuristics from
+-  illustrative data — <strong>not predictions, not legal advice</strong>.</p>
++  day counts configurable per jurisdiction), likely-outcome bands per charge class, the factors
++  that move the range, a release playbook when the client is detained, and an explicit
++  both-candidates run when the charge class is uncertain. Example jurisdictions: NY, PA, OH. The bands are
++  statistical heuristics from illustrative data — <strong>not predictions, not legal advice</strong>.</p>
+ 
+   <div class="cols">
+     <div>
+       <div class="kicker">Charge facts (JSON)</div>
+       <textarea id="input" spellcheck="false"></textarea>
+-      <p><button id="run">Run reality check</button></p>
++      <p class="btnrow">
++        <button id="run">Run reality check</button>
++        <select id="example" aria-label="Prefilled example"></select>
++      </p>
+       <div class="err" id="err"></div>
+     </div>
+     <div>
+@@ -58,52 +70,105 @@
+ </div>
+ 
+ <script type="module">
+-import { realityCheck } from "../core/core.js";
++import { realityCheck, realityCheckMulti, renderPlainLanguage, formatBandSource } from "../core/core.js";
+ 
+-const EXAMPLE = {
+-  jurisdiction: "NY",
+-  charge: "Criminal possession of stolen property, 4th degree (fictional)",
+-  chargeClass: "felony_class_D",
+-  filedOn: "2026-11-02",
+-  client: { priorConvictions: 1, detained: true, counselAtArraignment: true, evidenceIssues: false },
+-  stageOverrides: { trial: { min: 240, typical: 330, max: 420 } },
++const EXAMPLES = {
++  "Single charge (detained)": {
++    jurisdiction: "NY",
++    charge: "Fictional stolen-property offense, 4th degree (code XPL-910.45)",
++    chargeClass: "felony_class_D",
++    filedOn: "2026-11-02",
++    client: { priorConvictions: 1, detained: true, counselAtArraignment: true, evidenceIssues: false },
++    stageOverrides: { trial: { min: 240, typical: 330, max: 420 } },
++  },
++  "Uncertain degree (shows both)": {
++    jurisdiction: "NY",
++    charge: "Fictional value-dependent offense (code XPL-911.20)",
++    filedOn: "2026-11-02",
++    client: { priorConvictions: 1, detained: true, counselAtArraignment: true },
++    uncertain: [{ field: "chargeClass", candidates: ["felony_class_D", "felony_class_E"],
++                  reason: "degree depends on value of property" }],
++  },
+ };
+ 
+ const $input = document.getElementById("input");
+ const $out = document.getElementById("out");
+ const $err = document.getElementById("err");
+-$input.value = JSON.stringify(EXAMPLE, null, 2);
++const $example = document.getElementById("example");
++for (const label of Object.keys(EXAMPLES)) $example.add(new Option(label));
++$example.addEventListener("change", () => { $input.value = JSON.stringify(EXAMPLES[$example.value], null, 2); });
++$input.value = JSON.stringify(EXAMPLES[$example.value], null, 2);
+ 
+ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ const bandBar = ([lo, hi]) => `<span class="band"><i style="left:${lo}%;width:${hi - lo}%"></i></span> ${lo}–${hi}%`;
+ 
++function renderOne(r) {
++  let html = `<div class="disclaimer">⚠️ ${esc(r.disclaimer.text)}</div>`;
++  if (r.errors.length) html += `<div class="unset">unset (never guessed): ${r.errors.map(esc).join(" · ")}</div>`;
++  html += `<table><tr><th>Stage</th><th>Earliest</th><th>Typical</th><th>Latest</th></tr>`;
++  for (const s of r.timeline) {
++    html += `<tr><td>${esc(s.stage)} <span style="color:var(--text-secondary)">day ${s.dayOffset.min}–${s.dayOffset.max}</span></td><td class="mono">${esc(s.window.min)}</td><td class="mono">${esc(s.window.typical)}</td><td class="mono">${esc(s.window.max)}</td></tr>`;
++  }
++  html += `</table>`;
++  if (r.release) {
++    html += `<div class="kicker" style="margin-bottom:6px">Release playbook (detained · ${esc(r.release.ruleId)} · anchored ${esc(r.release.anchoredOn)})</div>`;
++    html += `<table><tr><th>Day</th><th>Step</th><th>Motion</th><th>Target date</th></tr>`;
++    for (const s of r.release.steps) {
++      html += `<tr><td class="mono">+${s.dayOffset}</td><td>${esc(s.step)}</td><td>${s.motion ? esc(s.motion) : "—"}</td><td class="mono">${esc(s.date)}</td></tr>`;
++    }
++    html += `</table><p class="lede" style="font-size:12px">${esc(r.release.note)}</p>`;
++  }
++  if (r.sentencingRange) {
++    html += `<p style="font-size:13px">Illustrative sentencing range: <strong>${r.sentencingRange.minMonths}–${r.sentencingRange.maxMonths} months</strong></p>`;
++  }
++  if (r.outcomeBands) {
++    html += `<table><tr><th>Outcome (heuristic band · ${esc(formatBandSource(r.outcomeBands.bandSource))})</th><th>Range</th></tr>`;
++    for (const k of ["dismissal", "plea_conviction", "trial_conviction", "acquittal"]) {
++      if (r.outcomeBands[k]) html += `<tr><td>${esc(k.replace(/_/g, " "))}</td><td>${bandBar(r.outcomeBands[k])}</td></tr>`;
++    }
++    html += `</table>`;
++  }
++  html += `<div class="kicker" style="margin-bottom:6px">What affects the range</div><ul class="factors">`;
++  for (const f of r.factors) {
++    html += `<li class="${f.applies ? "applies" : ""}">${esc(f.label)} (${esc(f.direction)}) — ${esc(f.note)}${f.basis ? ` [${esc(f.basis)}]` : ""}</li>`;
++  }
++  html += `</ul>`;
++  return html;
++}
++
++function attachPlainToggle(report) {
++  const $btn = document.getElementById("plain-btn");
++  const $box = document.getElementById("plain");
++  $box.style.display = "none";
++  $box.textContent = renderPlainLanguage(report);
++  $btn.style.display = "";
++  $btn.onclick = () => {
++    const show = $box.style.display === "none";
++    $box.style.display = show ? "" : "none";
++    $btn.textContent = show ? "Hide plain-language summary" : "Show plain-language summary";
++  };
++}
++
+ document.getElementById("run").addEventListener("click", () => {
+   $err.textContent = "";
+   try {
+-    const r = realityCheck(JSON.parse($input.value));
+-    let html = `<div class="disclaimer">⚠️ ${esc(r.disclaimer.text)}</div>`;
+-    if (r.errors.length) html += `<div class="unset">unset (never guessed): ${r.errors.map(esc).join(" · ")}</div>`;
+-    html += `<table><tr><th>Stage</th><th>Earliest</th><th>Typical</th><th>Latest</th></tr>`;
+-    for (const s of r.timeline) {
+-      html += `<tr><td>${esc(s.stage)} <span style="color:var(--text-secondary)">day ${s.dayOffset.min}–${s.dayOffset.max}</span></td><td class="mono">${esc(s.window.min)}</td><td class="mono">${esc(s.window.typical)}</td><td class="mono">${esc(s.window.max)}</td></tr>`;
+-    }
+-    html += `</table>`;
+-    if (r.sentencingRange) {
+-      html += `<p style="font-size:13px">Illustrative sentencing range: <strong>${r.sentencingRange.minMonths}–${r.sentencingRange.maxMonths} months</strong></p>`;
+-    }
+-    if (r.outcomeBands) {
+-      html += `<table><tr><th>Outcome (heuristic band, ${esc(r.outcomeBands.bandSource)} data)</th><th>Range</th></tr>`;
+-      for (const k of ["dismissal", "plea_conviction", "trial_conviction", "acquittal"]) {
+-        if (r.outcomeBands[k]) html += `<tr><td>${esc(k.replace(/_/g, " "))}</td><td>${bandBar(r.outcomeBands[k])}</td></tr>`;
+-      }
+-      html += `</table>`;
+-    }
+-    html += `<div class="kicker" style="margin-bottom:6px">What affects the range</div><ul class="factors">`;
+-    for (const f of r.factors) {
+-      html += `<li class="${f.applies ? "applies" : ""}">${esc(f.label)} (${esc(f.direction)}) — ${esc(f.note)}${f.basis ? ` [${esc(f.basis)}]` : ""}</li>`;
++    const input = JSON.parse($input.value);
++    const uncertain = Array.isArray(input.uncertain) && input.uncertain.some((u) => u.field === "chargeClass");
++    let html = "";
++    let report = null;
++    if (uncertain) {
++      const multi = realityCheckMulti(input);
++      html = `<p class="lede" style="font-size:12px;margin-top:0">Charge class uncertain — ${esc(multi.reason ?? "")}. Both candidates run; uncertainty is never collapsed into one guess.</p>`;
++      html += `<div class="candidates">` + multi.reports.map(({ chargeClass, report: r }) =>
++        `<div class="cand"><div class="kicker" style="margin-bottom:10px">Candidate: ${esc(chargeClass)}</div>${renderOne(r)}</div>`).join("") + `</div>`;
++      report = multi.reports[0].report; // plain-language toggle shows the first candidate
++    } else {
++      report = realityCheck(input);
++      html = renderOne(report);
+     }
+-    html += `</ul>`;
++    html += `<p class="btnrow" style="margin-top:14px"><button id="plain-btn" class="ghost" style="display:none">Show plain-language summary</button></p><div class="pl" id="plain" style="display:none"></div>`;
+     $out.innerHTML = html;
++    attachPlainToggle(report);
+   } catch (e) {
+     $err.textContent = "Input error: " + e.message;
+   }
+diff --git a/open-artifacts/criminal-charge-reality-check/examples/output.json b/open-artifacts/criminal-charge-reality-check/examples/output.json
+index 0b449a6..e5183c3 100644
+--- a/open-artifacts/criminal-charge-reality-check/examples/output.json
++++ b/open-artifacts/criminal-charge-reality-check/examples/output.json
+@@ -68,7 +68,9 @@
+     "ruleId": "NY-SR-D"
+   },
+   "outcomeBands": {
+-    "bandSource": "illustrative",
++    "bandSource": {
++      "kind": "illustrative"
++    },
+     "dismissal": [
+       6,
+       18
+@@ -92,6 +94,18 @@
+       "label": "Detention status",
+       "direction": "worsens",
+       "note": "Pretrial detention correlates with higher plea rates and faster timelines in published research.",
++      "when": [
++        {
++          "field": "detained",
++          "equals": true,
++          "basis": "client.detained = true"
++        },
++        {
++          "field": "detained",
++          "equals": false,
++          "basis": "client.detained = false (factor may run the other way)"
++        }
++      ],
+       "applies": true,
+       "basis": "client.detained = true"
+     },
+@@ -100,6 +114,13 @@
+       "label": "Prior convictions",
+       "direction": "worsens",
+       "note": "Prior record typically raises plea terms and lowers dismissal likelihood.",
++      "when": [
++        {
++          "field": "priorConvictions",
++          "gt": 0,
++          "basis": "client.priorConvictions = {value}"
++        }
++      ],
+       "applies": true,
+       "basis": "client.priorConvictions = 1"
+     },
+@@ -108,6 +129,13 @@
+       "label": "Counsel at arraignment",
+       "direction": "improves",
+       "note": "Early representation correlates with better bail and discovery outcomes.",
++      "when": [
++        {
++          "field": "counselAtArraignment",
++          "equals": true,
++          "basis": "client.counselAtArraignment = true"
++        }
++      ],
+       "applies": true,
+       "basis": "client.counselAtArraignment = true"
+     },
+@@ -116,6 +144,13 @@
+       "label": "Weak or circumstantial evidence",
+       "direction": "improves",
+       "note": "Proof problems raise dismissal and suppression prospects.",
++      "when": [
++        {
++          "field": "evidenceIssues",
++          "equals": true,
++          "basis": "client.evidenceIssues = true"
++        }
++      ],
+       "applies": false,
+       "basis": ""
+     }
+@@ -126,5 +161,44 @@
+     "legalAdvice": false,
+     "text": "STRONG DISCLAIMER: these are STATISTICAL HEURISTICS from illustrative example data — not a prediction of this case's outcome, not legal advice, and no substitute for a defense attorney. Bands describe typical ranges for comparable fictional cohorts; individual outcomes vary enormously. Nothing here should be communicated to a client as a likelihood for their case."
+   },
+-  "errors": []
++  "errors": [],
++  "release": {
++    "applies": true,
++    "ruleId": "NY-RP-1",
++    "note": "Illustrative advocacy sequence — not advice; verify every motion against current local rules.",
++    "anchoredOn": "2026-11-03",
++    "anchorBasis": "arraignment typical date (filing + 1 days)",
++    "steps": [
++      {
++        "step": "Custody interview: community ties, employment, family, treatment needs",
++        "motion": null,
++        "dayOffset": 0,
++        "date": "2026-11-03"
++      },
++      {
++        "step": "File written release application with a ties package",
++        "motion": "release application",
++        "dayOffset": 1,
++        "date": "2026-11-04"
++      },
++      {
++        "step": "Move for supervised release or non-monetary conditions",
++        "motion": "conditions motion",
++        "dayOffset": 3,
++        "date": "2026-11-06"
++      },
++      {
++        "step": "Request a source-of-funds hearing (fictional example procedure)",
++        "motion": "source hearing",
++        "dayOffset": 7,
++        "date": "2026-11-10"
++      },
++      {
++        "step": "Move for release review on changed circumstances",
++        "motion": "review motion",
++        "dayOffset": 14,
++        "date": "2026-11-17"
++      }
++    ]
++  }
+ }
+diff --git a/open-artifacts/criminal-charge-reality-check/examples/report.md b/open-artifacts/criminal-charge-reality-check/examples/report.md
+index f658eb2..5222f5f 100644
+--- a/open-artifacts/criminal-charge-reality-check/examples/report.md
++++ b/open-artifacts/criminal-charge-reality-check/examples/report.md
+@@ -13,11 +13,23 @@ Filed **2026-11-02** · ruleset NY v2026-11-example
+ | motions (day 60–180, typical 120) | 2027-01-01 | 2027-03-02 | 2027-05-01 |
+ | trial (day 240–420, typical 330) | 2027-06-30 | 2027-09-28 | 2027-12-27 |
+ 
++## Release playbook (client detained — illustrative advocacy steps, not advice)
++
++Anchored on the arraignment typical date (filing + 1 days) = **2026-11-03** · playbook `NY-RP-1`
++
++| Day | Step | Motion | Target date |
++|---:|---|---|---|
++| +0 | Custody interview: community ties, employment, family, treatment needs | — | 2026-11-03 |
++| +1 | File written release application with a ties package | release application | 2026-11-04 |
++| +3 | Move for supervised release or non-monetary conditions | conditions motion | 2026-11-06 |
++| +7 | Request a source-of-funds hearing (fictional example procedure) | source hearing | 2026-11-10 |
++| +14 | Move for release review on changed circumstances | review motion | 2026-11-17 |
++
+ ## Illustrative sentencing range
+ 
+ 0–84 months `NY-SR-D`
+ 
+-## Likely-outcome bands (illustrative data — heuristics, NOT predictions)
++## Likely-outcome bands (illustrative — no empirical claim — heuristics, NOT predictions)
+ 
+ | Outcome | Band |
+ |---|---:|
+diff --git a/open-artifacts/criminal-charge-reality-check/spec.md b/open-artifacts/criminal-charge-reality-check/spec.md
+index 8ebdcb0..1d6f11f 100644
+--- a/open-artifacts/criminal-charge-reality-check/spec.md
++++ b/open-artifacts/criminal-charge-reality-check/spec.md
+@@ -12,7 +12,11 @@ usually end, and what moves the range — with strong, structural disclaimers.
+ | Timeline stages (arraignment → discovery → motions → trial) with min/typical/max day offsets → calendar windows | core (deterministic, rules-as-data) |
+ | Configurable stage day counts (per-jurisdiction defaults + per-run `stageOverrides`) | rules-as-data |
+ | Sentencing-range and outcome-band lookup per charge class | core (deterministic; unknown class ⇒ explicitly unset) |
+-| What-affects-the-range factors matched against client facts | core (deterministic) |
++| What-affects-the-range factors matched against client facts | core (deterministic `when` rules-as-data — never id/label strings) |
++| Release playbook (steps + motions, day offsets from arraignment → calendar dates) | core (deterministic; per-ruleset `releasePlaybook` data) |
++| Fictional charge-code resolution (`resolveCharge`) and uncertain-candidate multi-run (`realityCheckMulti`) | core (deterministic; real-looking codes never guessed) |
++| Plain-language client summary (`renderPlainLanguage`) with readability guard | core (deterministic) |
++| Band provenance validation (`validateBandSource`) | core (illustrative bands cannot claim a data source; cited bands need url + asOf) |
+ | Strong disclaimers (heuristics ≠ prediction ≠ legal advice) | core (structural, on every report) |
+ | Mapping a real charge to a charge class + client facts | LLM or human (out of core) |
+ | Maintaining real outcome statistics with cited methodology | data maintainers (the open analytics problem below) |
+@@ -43,9 +47,14 @@ usually end, and what moves the range — with strong, structural disclaimers.
+   calendar dates.
+ - `sentencingRange`: `{ minMonths, maxMonths, ruleId }` from the ruleset.
+ - `outcomeBands`: per-class bands for `dismissal`, `plea_conviction`,
+-  `trial_conviction`, `acquittal` with a `bandSource` field. Example data is
+-  marked `illustrative`; maintainers point it at published court statistics
+-  and record the source and date there.
++  `trial_conviction`, `acquittal` with a structured `bandSource` object:
++  `{kind:"illustrative"}` (fictional example data — rendered as
++  "illustrative — no empirical claim") or `{kind:"cited", url, asOf,
++  cohort?, sample?}` for published court statistics. `validateBandSource`
++  enforces the shape; `formatBandSource` renders it.
++- `release`: when `client.detained === true`, the ruleset's release
++  playbook with every step's calendar date computed from the arraignment
++  typical date (`anchoredOn`, `anchorBasis`); null otherwise.
+ - `factors[]`: what-affects-the-range list with `applies` + `basis` derived
+   deterministically from client facts.
+ - `errors[]`: unknown jurisdiction, unparseable filing date, or a charge
+@@ -76,18 +85,56 @@ The LLM only maps a raw charge description into the input contract:
+                    "reason": "degree depends on value of property" } ] }
+ ```
+ 
+-When the class is uncertain, the pipeline runs the core once per candidate
+-and shows both — it never collapses uncertainty into one guess.
++When the class is uncertain, `realityCheckMulti(input)` (in the core) runs
++once per candidate and returns both reports — it never collapses
++uncertainty into one guess. `resolveCharge("XPL-910.45")` maps fictional
++charge codes (made-up "XPL-" prefix, 9xx articles that exist in no real
++penal law) to a class or to `ambiguous` candidates; real-looking codes
++such as "PL-165.45" come back `unknown`.
++
++## Plain-language output
++
++`renderPlainLanguage(report)` renders a client-facing summary: disclaimer
++in the first sentence, ≤200 words, short deterministic sentences, and no
++leaked unset fields. It is a readability aid, not a validated readability
++instrument.
+ 
+ ## What's BETTER than the closed counterpart
+ 
+-1. **Provenance field on every band** — `bandSource` makes "where did this
+-   number come from" machine-checkable; the closed artifact's data
+-   methodology is unpublished.
++1. **Provenance object on every band** — `bandSource` makes "where did
++   this number come from" machine-checkable and validated
++   (`validateBandSource`); the closed artifact's data methodology is
++   unpublished. *(test: "bandSource is structured provenance; every
++   ruleset band validates", "validateBandSource rejects malformed
++   provenance")*
+ 2. **Unknown ⇒ unset** — charge classes missing from the ruleset are
+    surfaced as errors, never silently mapped to a nearest class.
++   *(test: "charge class unknown to ruleset => explicitly unset…",*
++   *"realityCheckMulti…")*
+ 3. **Configurable timelines** — stage day counts are data + per-run
+    overrides, so defenders calibrate to their local court's actual pace.
++   *(test: "timeline: stage day counts configurable via overrides")*
+ 4. **Structural disclaimers** — heuristics/prediction/legal-advice flags in
+-   the output object, not a prompt instruction that can drift.
+-5. **Portable beyond NY** by editing rules-as-data.
++   the output object, not a prompt instruction that can drift. *(test:
++   "disclaimer is structural on every report, including errors")*
++5. **Portable beyond NY** by editing rules-as-data. *(test:
++   "jurisdiction portability: PA and OH produce their own timelines and
++   bands")*
++6. **Deterministic factor matching** — factors fire only on explicit
++   `when` rules-as-data, so a diversion factor is never mis-flagged as
++   detention across jurisdictions (closed prompt logic can't be tested).
++   *(test: "factors: PA-F1/OH-F1 are diversion factors — never flagged by
++   detention")*
++7. **Release playbook with computed dates** — dated advocacy steps +
++   motions from the arraignment anchor when the client is detained; the
++   counterpart's playbook has no published structure or dates. *(test:
++   "release playbook: dated steps computed from arraignment when client
++   detained")*
++8. **Explicit uncertainty multi-run** — an uncertain charge class runs
++   every candidate and shows both, instead of one silent guess.
++   *(test: "realityCheckMulti: runs once per uncertain candidate and shows
++   both")*
++9. **Plain-language client output** — a deterministic, disclaimer-first
++   ≤200-word summary; the catalog recommends client-facing output and the
++   counterpart publishes none. *(test: "renderPlainLanguage: <=200 words,
++   disclaimer first…")*

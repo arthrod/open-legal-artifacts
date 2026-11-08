@@ -1,0 +1,883 @@
+diff --git a/open-artifacts/docket-watch-wall/README.md b/open-artifacts/docket-watch-wall/README.md
+index e479764..edee939 100644
+--- a/open-artifacts/docket-watch-wall/README.md
++++ b/open-artifacts/docket-watch-wall/README.md
+@@ -14,7 +14,18 @@
+   new; the store is plain JSON you own (file/localStorage/KV).
+ - Applies **escalation rules** (sanctions, default, show cause, injunction,
+   hearing, trial, contempt…) as rules-as-data with `urgent`/`important`
+-  levels; fully overridable.
++  levels; fully overridable — and the override now flows end-to-end through
++  `processFeed` → `toMarkdown`.
++- Extracts **candidate deadlines** from entry text (`"response due within
++  14 days"`) as rules-as-data: `{date, basis, confidence,
++  needsVerification}` — blank/unknown court drops to low confidence, no
++  match invents nothing. Each gets a `withinHorizon` flag against the
++  watcher's `deadlineHorizonDays` (default 14) and exports to **iCal**
++  (`toDeadlineFeed`, every VEVENT carries `X-NEEDS-VERIFICATION:TRUE`).
++- **Regex-lints every rule** before compiling it over untrusted filer text
++  (`lintRule` / `SafeRuleError`: nested quantifiers, deep alternation,
++  oversize patterns — fail closed).
++- Keeps the seen-store bounded with `pruneSeenStore(store, {keep, maxIds})`.
+ - Renders the wall to markdown for digests.
+ - **No live API**: CourtListener RECAP ingestion is a spec'd future hook —
+   a pure normalizer seam (`fromRecapPayload`) is implemented; fetching is
+@@ -23,13 +34,20 @@
+ ## IO contract
+ 
+ ```
+-processFeed(entries, watchers, seenStore) ->
++processFeed(entries, watchers, seenStore, {escalationRules?, asOf?, horizonDays?}) ->
+ {
+   wall: [{ watcher, newEntries: [...] }],          // per-watcher new items
+   escalatedNew: [{ watcherId, entry, escalations }],
++  deadlinesNew: [{ watcherId, entry, deadlines: [{date, label, basis,
++                 confidence, needsVerification, withinHorizon}] }],
+   nextSeenStore: { ids: [...], updatedAt: null, count },  // caller stamps clock
+-  stats: { entriesInFeed, watchers, newEntries, escalated }
++  stats: { entriesInFeed, watchers, newEntries, escalated, deadlines }
+ }
++
++extractDeadlines(entry, {asOf}) -> [{date, label, basis, confidence, needsVerification}]
++toDeadlineFeed(result) -> iCal text (VEVENT + X-NEEDS-VERIFICATION:TRUE)
++lintRule(rule) -> true | throws SafeRuleError
++pruneSeenStore(store, {keep, maxIds}) -> { ids, updatedAt, count }
+ ```
+ 
+ ## Deterministic vs LLM-assisted
+@@ -43,14 +61,19 @@ clustering, alert drafting — prompt schema in [spec.md](spec.md).
+ 
+ - Watchers, rules, and the seen-store are **your JSON** — exportable,
+   diffable, no platform lock-in.
+-- Escalation rules are **auditable data**, not a hidden prompt.
++- Escalation rules are **auditable data**, not a hidden prompt — and every
++  pattern is linted before touching untrusted filer text.
++- **Deterministic deadline mapping** with the same safety semantics as the
++  closed counterpart (confidence + needs-verification, never a silent
++  default) — but pinned by tests and replay-identical, plus a
++  calendar-ingestible iCal export.
+ - **Offline core** with the open-data path (CourtListener RECAP) documented
+   as an explicit integration seam instead of a captive connector.
+ 
+ ## Run / test
+ 
+ ```
+-node --test core/        # 10 unit tests (node:test)
+-node examples/run.js     # regenerates examples/wall.md + output.json
+-open demo/index.html     # paste a feed, see the wall
++node --test core/        # 17 unit tests (node:test)
++node examples/run.js     # regenerates examples/wall.md + output.json + deadlines.ics
++open demo/index.html     # paste a feed, see the wall, export the deadline feed
+ ```
+diff --git a/open-artifacts/docket-watch-wall/core/core.js b/open-artifacts/docket-watch-wall/core/core.js
+index 0b2c902..cd21512 100644
+--- a/open-artifacts/docket-watch-wall/core/core.js
++++ b/open-artifacts/docket-watch-wall/core/core.js
+@@ -34,6 +34,134 @@ export const DEFAULT_ESCALATION_RULES = [
+   { id: 'trial-date', label: 'Trial date set', pattern: '\\btrial\\b', level: 'important' },
+ ];
+ 
++// ---------------------------------------------------------------------------
++// Deadline rules (deterministic heuristics — ALL fictional, always [verify])
++// ---------------------------------------------------------------------------
++
++/**
++ * Deadline phrases as data. SIMPLIFIED FICTION — no jurisdiction rule tables
++ * (out of scope, see spec.md). Every extracted deadline carries
++ * needsVerification:true; nothing is invented when no rule matches.
++ * Each pattern has one capture group = day count.
++ * @type {Array<{id: string, label: string, pattern: string, confidence: 'medium'}>}
++ */
++export const DEADLINE_RULES = [
++  { id: 'response-days', label: 'Response due', pattern: 'response\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
++  { id: 'answer-days', label: 'Answer due', pattern: 'answer\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
++  { id: 'opposition-days', label: 'Opposition due', pattern: 'opposition\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
++  { id: 'reply-brief-days', label: 'Reply brief due', pattern: 'reply\\s+brief\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
++];
++
++// ---------------------------------------------------------------------------
++// Safe-rule linting (untrusted-text hardening)
++// ---------------------------------------------------------------------------
++
++/** Thrown by lintRule/escalate when a rule pattern is unsafe or invalid. */
++export class SafeRuleError extends Error {
++  constructor(message, rule) {
++    super(`${message} (rule: ${JSON.stringify(rule && rule.id !== undefined ? rule.id : rule)})`);
++    this.name = 'SafeRuleError';
++  }
++}
++
++// quantified group whose body itself contains a quantifier, e.g. (a+)+, (?:x{2})?
++const NESTED_QUANTIFIER = /\((?:\?:)?[^()+]*[+*{][^()]*\)[*+{?]/;
++// alternation inside a quantified group, e.g. (a|b)+
++const QUANTIFIED_ALTERNATION = /\((?:\?:)?[^()]*(?:\|[^()]*)+\)[*+{?]/;
++
++/**
++ * Lint one escalation/deadline rule before its pattern is compiled and run
++ * over untrusted filer text. Heuristic ReDoS screen — not a proof. Throws
++ * SafeRuleError on: empty/oversized (>200 chars) pattern, invalid regex,
++ * nested quantifiers, alternation inside a quantified group, or more than 4
++ * alternation branches. Returns true when the rule passes.
++ * @param {{pattern: string}} rule
++ * @returns {boolean}
++ */
++export function lintRule(rule) {
++  if (!rule || typeof rule.pattern !== 'string' || rule.pattern.length === 0) {
++    throw new SafeRuleError('rule.pattern must be a non-empty string', rule);
++  }
++  if (rule.pattern.length > 200) {
++    throw new SafeRuleError('rule.pattern exceeds 200 characters', rule);
++  }
++  try {
++    new RegExp(rule.pattern, 'i'); // eslint-disable-line no-new
++  } catch (e) {
++    throw new SafeRuleError(`rule.pattern is not a valid regular expression (${e.message})`, rule);
++  }
++  if (NESTED_QUANTIFIER.test(rule.pattern)) {
++    throw new SafeRuleError('nested quantifier (quantified group containing a quantifier) — ReDoS risk', rule);
++  }
++  if (QUANTIFIED_ALTERNATION.test(rule.pattern)) {
++    throw new SafeRuleError('alternation inside a quantified group — ReDoS risk', rule);
++  }
++  if ((rule.pattern.match(/\|/g) || []).length > 4) {
++    throw new SafeRuleError('more than 4 alternation branches', rule);
++  }
++  return true;
++}
++
++// ---------------------------------------------------------------------------
++// Deadline extraction
++// ---------------------------------------------------------------------------
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++/** Parse 'YYYY-MM-DD' (first 10 chars) as UTC ms; null when unusable. */
++function parseUTCDate(value) {
++  const s = typeof value === 'string' ? value.slice(0, 10) : '';
++  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
++  if (!m) return null;
++  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
++  return Number.isFinite(ms) ? ms : null;
++}
++
++/** UTC ms → 'YYYY-MM-DD'. */
++function fmtUTCDate(ms) {
++  return new Date(ms).toISOString().slice(0, 10);
++}
++
++/**
++ * Deadline anchor: caller-supplied asOf wins, else the entry's filing date.
++ * Documented recipe — the core never reads a clock (see spec.md).
++ */
++function anchorMs(entry, asOf) {
++  return (asOf ? parseUTCDate(asOf) : null) ?? parseUTCDate(entry.date);
++}
++
++/**
++ * Extract candidate deadlines from one entry's description. Deterministic:
++ * each DEADLINE_RULES match yields {date, label, basis, confidence,
++ * needsVerification:true}. Blank/unknown court → confidence 'low' (never a
++ * silent default). No matching basis → [] (no deadline is invented).
++ *
++ * @param {Object} entry
++ * @param {{asOf?: string}} [options]  anchor date ('YYYY-MM-DD'); defaults to entry.date
++ * @returns {Array<{date: string, label: string, basis: string, confidence: string, needsVerification: boolean}>}
++ */
++export function extractDeadlines(entry, { asOf } = {}) {
++  const anchor = anchorMs(entry, asOf);
++  if (anchor === null) return [];
++  const court = norm(entry.case && entry.case.court);
++  const out = [];
++  for (const rule of DEADLINE_RULES) {
++    lintRule(rule);
++    const m = new RegExp(rule.pattern, 'i').exec(entry.description || '');
++    if (!m) continue;
++    const days = Number.parseInt(m[1], 10);
++    if (!Number.isFinite(days)) continue;
++    out.push({
++      date: fmtUTCDate(anchor + days * DAY_MS),
++      label: rule.label,
++      basis: rule.id,
++      confidence: court ? rule.confidence : 'low',
++      needsVerification: true,
++    });
++  }
++  return out;
++}
++
+ // ---------------------------------------------------------------------------
+ // Feed normalization (future CourtListener RECAP hook — pure, no network)
+ // ---------------------------------------------------------------------------
+@@ -92,8 +220,8 @@ function entryMatchesWatcher(entry, watcher) {
+  */
+ export function escalate(entry, rules = DEFAULT_ESCALATION_RULES) {
+   const out = [];
+-  const text = norm(entry.description);
+   for (const rule of rules) {
++    lintRule(rule); // fail closed: never compile an unlinted pattern over untrusted text
+     const re = new RegExp(rule.pattern, 'i');
+     const m = re.exec(entry.description || '');
+     if (m) out.push({ ruleId: rule.id, label: rule.label, level: rule.level, match: m[0] });
+@@ -110,16 +238,24 @@ export function escalate(entry, rules = DEFAULT_ESCALATION_RULES) {
+  * @param {Object[]} entries   feed entries (shape as fromRecapPayload)
+  * @param {Object[]} watchers  [{id, name, judge?, party?, practiceArea?, deadlineHorizonDays?}]
+  * @param {{ ids?: string[]|Set<string> }} [seenStore]  previously seen entry ids
++ * @param {{ escalationRules?: EscalationRule[], asOf?: string, horizonDays?: number }} [options]
++ *        escalationRules override the defaults end-to-end (escalatedNew + toMarkdown);
++ *        asOf anchors deadline date math (defaults to each entry's filing date);
++ *        horizonDays is the fallback deadline horizon (watcher value wins, default 14)
+  * @returns {{ wall: Array<{ watcher: Object, newEntries: Array<Object> }>,
+  *             escalatedNew: Array<{ watcherId: string, entry: Object, escalations: Object[] }>,
++ *             deadlinesNew: Array<{ watcherId: string, entry: Object, deadlines: Object[] }>,
+  *             nextSeenStore: { ids: string[], updatedAt: string|null, count: number },
+  *             stats: Object }}
+  */
+-export function processFeed(entries, watchers, seenStore = {}) {
++export function processFeed(entries, watchers, seenStore = {}, options = {}) {
+   const seen = new Set(Array.isArray(seenStore.ids) ? seenStore.ids : []);
++  const rules = options.escalationRules || DEFAULT_ESCALATION_RULES;
+   const wall = [];
+   const escalatedNew = [];
++  const deadlinesNew = [];
+   let totalNew = 0;
++  let totalDeadlines = 0;
+ 
+   for (const watcher of watchers) {
+     const matching = entries.filter((e) => entryMatchesWatcher(e, watcher));
+@@ -127,8 +263,19 @@ export function processFeed(entries, watchers, seenStore = {}) {
+     totalNew += fresh.length;
+     wall.push({ watcher, newEntries: fresh });
+     for (const entry of fresh) {
+-      const esc = escalate(entry);
++      const esc = escalate(entry, rules);
+       if (esc.length) escalatedNew.push({ watcherId: watcher.id, entry, escalations: esc });
++      const anchor = anchorMs(entry, options.asOf);
++      const dls = extractDeadlines(entry, { asOf: options.asOf });
++      if (dls.length) {
++        const horizon = watcher.deadlineHorizonDays ?? options.horizonDays ?? 14;
++        const flagged = dls.map((d) => {
++          const daysUntil = anchor !== null ? (parseUTCDate(d.date) - anchor) / DAY_MS : Infinity;
++          return { ...d, withinHorizon: daysUntil >= 0 && daysUntil <= horizon };
++        });
++        deadlinesNew.push({ watcherId: watcher.id, entry, deadlines: flagged });
++        totalDeadlines += flagged.length;
++      }
+     }
+   }
+ 
+@@ -138,6 +285,7 @@ export function processFeed(entries, watchers, seenStore = {}) {
+   return {
+     wall,
+     escalatedNew,
++    deadlinesNew,
+     nextSeenStore: {
+       ids: [...nextIds].sort(),
+       updatedAt: null, // set by the caller's clock when persisting (keeps core deterministic)
+@@ -148,10 +296,38 @@ export function processFeed(entries, watchers, seenStore = {}) {
+       watchers: watchers.length,
+       newEntries: totalNew,
+       escalated: escalatedNew.length,
++      deadlines: totalDeadlines,
+     },
+   };
+ }
+ 
++/**
++ * Prune a seen-store snapshot: `keep` ids (the current feed's ids) always
++ * survive — even over a smaller cap; remaining capacity is filled from the
++ * tail of the existing id list (ids are stored sorted, so the head is the
++ * stalest-looking). Deterministic — no clock reads.
++ * @param {{ ids: string[], updatedAt?: string|null, count?: number }} store
++ * @param {{ keep?: string[]|Set<string>, maxIds?: number }} [options]
++ * @returns {{ ids: string[], updatedAt: string|null, count: number }}
++ */
++export function pruneSeenStore(store, { keep = [], maxIds = 500 } = {}) {
++  const ids = Array.isArray(store && store.ids) ? store.ids : [];
++  const keepSet = new Set(Array.from(keep, String));
++  const retained = [];
++  const have = new Set();
++  const add = (id) => { if (!have.has(id)) { have.add(id); retained.push(id); } };
++  for (const k of keepSet) add(k); // keep ids win, even beyond maxIds
++  for (const id of ids) if (keepSet.has(String(id))) add(String(id));
++  if (retained.length < maxIds) {
++    for (let i = ids.length - 1; i >= 0 && retained.length < maxIds; i--) {
++      const id = String(ids[i]);
++      if (!keepSet.has(id)) add(id);
++    }
++  }
++  const out = retained.sort();
++  return { ids: out, updatedAt: (store && store.updatedAt) ?? null, count: out.length };
++}
++
+ /**
+  * Convenience: update the seen-store snapshot after review.
+  * @param {ReturnType<typeof processFeed>['nextSeenStore']} nextSeenStore
+@@ -172,11 +348,16 @@ export function stampSeenStore(nextSeenStore, isoTimestamp) {
+  */
+ export function toMarkdown(result) {
+   const lines = ['# Docket watch wall — new entries since last review', ''];
++  // render stored escalations only — no re-derivation, so caller-supplied
++  // escalationRules flow through processFeed → toMarkdown unchanged
++  const escBy = new Map();
++  for (const x of result.escalatedNew || []) escBy.set(`${x.watcherId}|${String(x.entry.id)}`, x.escalations);
+   for (const col of result.wall) {
+     lines.push(`## ${col.watcher.name} (${col.newEntries.length} new)`);
+     if (!col.newEntries.length) { lines.push('_no new matching entries_', ''); continue; }
+     for (const e of col.newEntries) {
+-      const esc = escalate(e).map((x) => `[${x.level.toUpperCase()}: ${x.label}]`).join(' ');
++      const esc = (escBy.get(`${col.watcher.id}|${String(e.id)}`) || [])
++        .map((x) => `[${x.level.toUpperCase()}: ${x.label}]`).join(' ');
+       lines.push(`- **${e.date}** ${e.case.name} — ${e.description} ${esc}`.trim());
+     }
+     lines.push('');
+@@ -186,3 +367,56 @@ export function toMarkdown(result) {
+   lines.push('_Feed data is fictional. CourtListener RECAP ingestion is a spec\'d future hook (see spec.md); this core makes no network calls._');
+   return lines.join('\n');
+ }
++
++// ---------------------------------------------------------------------------
++// Deadline feed export (iCal) — deterministic deadlines.yaml analog
++// ---------------------------------------------------------------------------
++
++/**
++ * Render extracted deadlines of a processFeed result as iCal (RFC 5545
++ * dialect) text — every VEVENT carries X-NEEDS-VERIFICATION:TRUE. All-day
++ * dates only; DTSTAMP is pinned to the entry's filing date so output is
++ * replay-identical (the core never reads a clock). Deadlines seen by
++ * multiple watchers are emitted once. Lines are not RFC-folded at 75 octets
++ * (calendar parsers tolerate long lines; kept simple + deterministic).
++ * @param {ReturnType<typeof processFeed>} result
++ * @returns {string}
++ */
++export function toDeadlineFeed(result) {
++  const seen = new Set();
++  const events = [];
++  for (const row of result.deadlinesNew || []) {
++    const stamp = (row.entry && row.entry.date) || '1970-01-01';
++    for (const d of row.deadlines) {
++      const uid = `${String(row.entry.id)}-${d.basis}@docket-watch-wall`;
++      if (seen.has(uid)) continue;
++      seen.add(uid);
++      events.push({ d, uid, stamp });
++    }
++  }
++  events.sort((a, b) => (a.d.date < b.d.date ? -1 : a.d.date > b.d.date ? 1 : (a.uid < b.uid ? -1 : 1)));
++  const escText = (s) => String(s).replace(/([,;\\])/g, '\\$1');
++  const ymd = (iso) => iso.replaceAll('-', '');
++  const lines = [
++    'BEGIN:VCALENDAR',
++    'VERSION:2.0',
++    'PRODID:-//docket-watch-wall//open-legal-artifacts//EN',
++    'CALSCALE:GREGORIAN',
++  ];
++  for (const ev of events) {
++    const end = fmtUTCDate(parseUTCDate(ev.d.date) + DAY_MS); // DTEND is exclusive
++    lines.push(
++      'BEGIN:VEVENT',
++      `UID:${ev.uid}`,
++      `DTSTAMP:${ymd(ev.stamp)}T000000Z`,
++      `DTSTART;VALUE=DATE:${ymd(ev.d.date)}`,
++      `DTEND;VALUE=DATE:${ymd(end)}`,
++      `SUMMARY:${escText(`${ev.d.label} [verify]`)}`,
++      `DESCRIPTION:${escText(`basis=${ev.d.basis} confidence=${ev.d.confidence} fictional data — verify against the actual docket`)}`,
++      'X-NEEDS-VERIFICATION:TRUE',
++      'END:VEVENT',
++    );
++  }
++  lines.push('END:VCALENDAR');
++  return lines.join('\r\n') + '\r\n';
++}
+diff --git a/open-artifacts/docket-watch-wall/core/core.test.js b/open-artifacts/docket-watch-wall/core/core.test.js
+index 23edb22..b779ace 100644
+--- a/open-artifacts/docket-watch-wall/core/core.test.js
++++ b/open-artifacts/docket-watch-wall/core/core.test.js
+@@ -2,8 +2,9 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import {
+-  DEFAULT_ESCALATION_RULES, fromRecapPayload, escalate,
+-  processFeed, stampSeenStore, toMarkdown,
++  DEFAULT_ESCALATION_RULES, DEADLINE_RULES, fromRecapPayload, escalate,
++  processFeed, stampSeenStore, toMarkdown, extractDeadlines, lintRule,
++  pruneSeenStore, toDeadlineFeed, SafeRuleError,
+ } from './core.js';
+ 
+ const entry = (over = {}) => ({
+@@ -125,3 +126,110 @@ test('custom escalation rules replace defaults cleanly', () => {
+   assert.deepEqual(escalate(entry(), custom), []);
+   assert.ok(DEFAULT_ESCALATION_RULES.length >= 6);
+ });
++
++test('extractDeadlines: "response due within 14 days" → asOf+14d, needsVerification', () => {
++  const e = entry({ id: 'E-1', date: '2026-04-02', description: 'Order re motions; response due within 14 days of entry' });
++  const d = extractDeadlines(e, { asOf: '2026-04-02' });
++  assert.equal(d.length, 1);
++  assert.equal(d[0].date, '2026-04-16');
++  assert.equal(d[0].label, 'Response due');
++  assert.equal(d[0].basis, 'response-days');
++  assert.equal(d[0].confidence, 'medium');
++  assert.equal(d[0].needsVerification, true);
++  // no deadline basis in the text → no deadline, never a silent default
++  assert.deepEqual(
++    extractDeadlines(entry({ description: 'Stipulation extending discovery deadlines' }), { asOf: '2026-04-02' }),
++    [],
++  );
++});
++
++test('extractDeadlines: blank/unknown court → low confidence; unusable anchor → []', () => {
++  const noCourt = entry({
++    description: 'answer due within 21 days',
++    case: { name: 'X v. Y', judge: null, parties: [], practiceArea: null, court: '' },
++  });
++  assert.equal(extractDeadlines(noCourt, { asOf: '2026-04-02' })[0].confidence, 'low');
++  // asOf falls back to entry.date; when neither parses there is no anchor → no deadlines
++  const noDate = entry({ date: '', description: 'response due within 14 days' });
++  assert.deepEqual(extractDeadlines(noDate, {}), []);
++});
++
++test('processFeed threads escalationRules end-to-end through toMarkdown (no re-derive)', () => {
++  const custom = [{ id: 'arb', label: 'Arbitration watch', pattern: 'arbitrat', level: 'important' }];
++  const r = processFeed(
++    [entry({ id: 'E-7', description: 'Petition to compel arbitration filed' })],
++    [watcher], { ids: [] }, { escalationRules: custom },
++  );
++  assert.equal(r.escalatedNew.length, 1);
++  assert.equal(r.escalatedNew[0].escalations[0].ruleId, 'arb');
++  const md = toMarkdown(r);
++  assert.ok(md.includes('[IMPORTANT: Arbitration watch]'));
++  assert.ok(!md.includes('Sanctions'));
++});
++
++test('deadline horizon flags: 10d within default 14 → true; 20d → false; watcher override wins', () => {
++  const r = processFeed(
++    [
++      entry({ id: 'A', date: '2026-04-02', description: 'response due within 10 days' }),
++      entry({ id: 'B', date: '2026-04-02', description: 'response due within 20 days' }),
++    ],
++    [watcher], { ids: [] }, { asOf: '2026-04-02' },
++  );
++  const byId = Object.fromEntries(r.deadlinesNew.map((d) => [d.entry.id, d.deadlines]));
++  assert.equal(byId.A[0].withinHorizon, true);
++  assert.equal(byId.B[0].withinHorizon, false);
++  assert.equal(r.stats.deadlines, 2);
++  const tight = processFeed(
++    [entry({ id: 'A', date: '2026-04-02', description: 'response due within 10 days' })],
++    [{ ...watcher, deadlineHorizonDays: 5 }], { ids: [] }, { asOf: '2026-04-02' },
++  );
++  assert.equal(tight.deadlinesNew[0].deadlines[0].withinHorizon, false);
++});
++
++test('lintRule rejects unsafe patterns with SafeRuleError; shipped rule sets pass', () => {
++  const mk = (pattern) => ({ id: 'x', label: 'x', pattern, level: 'urgent' });
++  assert.throws(() => lintRule(mk('(a+)+$')), SafeRuleError);          // nested quantifier
++  assert.throws(() => lintRule(mk('a'.repeat(201))), SafeRuleError);   // >200 chars
++  assert.throws(() => lintRule(mk('one|two|three|four|five|six')), SafeRuleError); // >4 branches
++  assert.throws(() => lintRule(mk('(a|b)+c')), SafeRuleError);         // alternation in quantified group
++  assert.throws(() => lintRule(mk('(')), SafeRuleError);               // invalid regex
++  assert.throws(() => lintRule(mk('')), SafeRuleError);                // empty pattern
++  for (const rule of [...DEFAULT_ESCALATION_RULES, ...DEADLINE_RULES]) {
++    assert.doesNotThrow(() => lintRule(rule));
++  }
++  // escalate refuses to compile an unsafe rule over untrusted filer text
++  assert.throws(
++    () => escalate(entry(), [{ id: 'x', label: 'x', pattern: '(a+)+$', level: 'urgent' }]),
++    SafeRuleError,
++  );
++});
++
++test('pruneSeenStore caps ids while always keeping current feed ids', () => {
++  const ids = Array.from({ length: 100 }, (_, i) => `E-${String(i).padStart(3, '0')}`);
++  const store = { ids, updatedAt: '2026-04-03T09:00:00Z', count: 100 };
++  const pruned = pruneSeenStore(store, { keep: ['E-097', 'E-098', 'E-099'], maxIds: 50 });
++  assert.equal(pruned.ids.length, 50);
++  assert.equal(pruned.count, 50);
++  for (const k of ['E-097', 'E-098', 'E-099']) assert.ok(pruned.ids.includes(k));
++  assert.equal(pruned.updatedAt, '2026-04-03T09:00:00Z');
++  // keep ids win even over a smaller cap
++  const tiny = pruneSeenStore(store, { keep: ['E-001', 'E-002'], maxIds: 1 });
++  assert.deepEqual(tiny.ids, ['E-001', 'E-002']);
++});
++
++test('toDeadlineFeed emits a deduped iCal VEVENT with X-NEEDS-VERIFICATION', () => {
++  const r = processFeed(
++    [entry({ id: 'E-11', date: '2026-04-02', description: 'Order; response due within 14 days' })],
++    [watcher, { id: 'w2', name: 'Party watch', party: 'meridian' }],
++    { ids: [] }, { asOf: '2026-04-02' },
++  );
++  const ics = toDeadlineFeed(r);
++  assert.ok(ics.startsWith('BEGIN:VCALENDAR'));
++  assert.ok(ics.includes('BEGIN:VEVENT'));
++  assert.ok(ics.includes('DTSTART;VALUE=DATE:20260416'));
++  assert.ok(ics.includes('X-NEEDS-VERIFICATION:TRUE'));
++  assert.ok(ics.includes('END:VCALENDAR'));
++  // same entry seen by two watchers → one VEVENT, not two
++  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
++  assert.ok(ics.endsWith('\r\n'));
++});
+diff --git a/open-artifacts/docket-watch-wall/demo/index.html b/open-artifacts/docket-watch-wall/demo/index.html
+index d4ecb96..39e96c4 100644
+--- a/open-artifacts/docket-watch-wall/demo/index.html
++++ b/open-artifacts/docket-watch-wall/demo/index.html
+@@ -28,6 +28,8 @@
+   .tag { font-family:var(--font-mono); font-size: 11px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
+   .tag.urgent { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
+   .tag.important { border:1px solid var(--border); }
++  .tag.deadline { border:1px dashed var(--warn); color: var(--warn); }
++  pre.ics { font-family:var(--font-mono); font-size:11px; line-height:1.5; border:1px solid var(--border); background:#fff; padding:12px 14px; overflow:auto; margin:8px 0 0; white-space:pre; }
+   .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
+   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
+   .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
+@@ -44,17 +46,19 @@
+   <div class="row">
+     <button id="run">Review wall</button>
+     <button class="ghost" id="mark">Mark all seen (update store)</button>
++    <button class="ghost" id="ics">Deadline feed (.ics)</button>
+     <span class="muted" id="status"></span>
+   </div>
+ 
+   <div class="stats" id="stats"></div>
+   <div class="cols" id="wall"></div>
++  <pre class="ics" id="ical" style="display:none"></pre>
+ 
+   <p class="muted">Deterministic core · <code>open-artifacts/docket-watch-wall/core/core.js</code> · no network calls · not legal advice.</p>
+ </div>
+ 
+ <script type="module">
+-import { processFeed, stampSeenStore } from '../core/core.js';
++import { processFeed, stampSeenStore, toDeadlineFeed } from '../core/core.js';
+ 
+ const watchers = [
+   { id: 'w1', name: 'Judge Whitfield — commercial', judge: 'whitfield', practiceArea: 'commercial-litigation' },
+@@ -80,32 +84,47 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
+ function run() {
+   let entries;
+   try { entries = JSON.parse($('feed').value); } catch (e) { $('status').textContent = 'bad JSON: ' + e.message; return; }
+-  const r = processFeed(entries, watchers, seen);
++  const r = processFeed(entries, watchers, seen, { asOf: '2026-04-03' });
++  // stored escalations/deadlines only — no client-side re-derivation
++  window.__result = r;
+   $('stats').innerHTML = `
+     <span class="pill">feed<b>${r.stats.entriesInFeed}</b></span>
+     <span class="pill">new (per watcher)<b>${r.stats.newEntries}</b></span>
+     <span class="pill">escalated<b>${r.stats.escalated}</b></span>
++    <span class="pill">deadlines<b>${r.stats.deadlines}</b></span>
+     <span class="pill">seen-store<b>${seen.count}</b></span>`;
+   $('wall').innerHTML = r.wall.map((col) => `
+     <div class="col-card">
+       <div class="col-head"><span>${esc(col.watcher.name)}</span><span>${col.newEntries.length} new</span></div>
+       ${col.newEntries.length ? col.newEntries.map((e) => `
+         <div class="entry">
+-          <div>${esc(e.description)}${escalateTags(e)}</div>
++          <div>${esc(e.description)}${escalateTags(col.watcher.id, e)}${deadlineTags(col.watcher.id, e)}</div>
+           <div class="meta">${esc(e.date)} · ${esc(e.case.name)} · ${esc(e.case.court)}</div>
+         </div>`).join('') : '<div class="entry muted">no new matching entries</div>'}
+     </div>`).join('');
+   window.__next = r.nextSeenStore;
+-  $('status').textContent = `${r.stats.newEntries} new across ${r.stats.watchers} watchers · ${r.stats.escalated} escalated`;
++  $('status').textContent = `${r.stats.newEntries} new across ${r.stats.watchers} watchers · ${r.stats.escalated} escalated · ${r.stats.deadlines} deadline(s)`;
+ }
+ 
+-// client-side re-application of the core rules for tags (same data as core)
+-import { escalate } from '../core/core.js';
+-function escalateTags(e) {
+-  return escalate(e).map((x) => `<span class="tag ${x.level}">${esc(x.label)}</span>`).join('');
++function escalateTags(watcherId, e) {
++  const row = window.__result.escalatedNew.find((x) => x.watcherId === watcherId && String(x.entry.id) === String(e.id));
++  return (row ? row.escalations : [])
++    .map((x) => `<span class="tag ${x.level}">${esc(x.label)}</span>`).join('');
++}
++function deadlineTags(watcherId, e) {
++  const row = window.__result.deadlinesNew.find((x) => x.watcherId === watcherId && String(x.entry.id) === String(e.id));
++  return (row ? row.deadlines : [])
++    .map((d) => `<span class="tag deadline">${esc(d.label)} ${esc(d.date)} · verify</span>`).join('');
+ }
+ 
+ $('run').addEventListener('click', run);
++$('ics').addEventListener('click', () => {
++  if (!window.__result) return;
++  const ics = toDeadlineFeed(window.__result);
++  $('ical').style.display = 'block';
++  $('ical').textContent = ics;
++  if (navigator.clipboard) navigator.clipboard.writeText(ics).catch(() => {});
++});
+ $('mark').addEventListener('click', () => {
+   seen = stampSeenStore(window.__next || { ids: [], updatedAt: null, count: 0 }, new Date().toISOString());
+   $('status').textContent = `seen-store updated: ${seen.count} ids @ ${seen.updatedAt}`;
+diff --git a/open-artifacts/docket-watch-wall/examples/deadlines.ics b/open-artifacts/docket-watch-wall/examples/deadlines.ics
+new file mode 100644
+index 0000000..e398cd7
+--- /dev/null
++++ b/open-artifacts/docket-watch-wall/examples/deadlines.ics
+@@ -0,0 +1,14 @@
++BEGIN:VCALENDAR
++VERSION:2.0
++PRODID:-//docket-watch-wall//open-legal-artifacts//EN
++CALSCALE:GREGORIAN
++BEGIN:VEVENT
++UID:E-103-response-days@docket-watch-wall
++DTSTAMP:20260402T000000Z
++DTSTART;VALUE=DATE:20260417
++DTEND;VALUE=DATE:20260418
++SUMMARY:Response due [verify]
++DESCRIPTION:basis=response-days confidence=medium fictional data — verify against the actual docket
++X-NEEDS-VERIFICATION:TRUE
++END:VEVENT
++END:VCALENDAR
+diff --git a/open-artifacts/docket-watch-wall/examples/input.json b/open-artifacts/docket-watch-wall/examples/input.json
+index e69f3c3..40362fb 100644
+--- a/open-artifacts/docket-watch-wall/examples/input.json
++++ b/open-artifacts/docket-watch-wall/examples/input.json
+@@ -6,10 +6,11 @@
+     { "id": "w3", "name": "Employment docket", "practiceArea": "employment" }
+   ],
+   "seenStore": { "ids": ["E-100", "E-101"], "updatedAt": "2026-03-28T09:00:00Z", "count": 2 },
++  "options": { "asOf": "2026-04-03" },
+   "entries": [
+     { "id": "E-102", "date": "2026-04-01", "description": "Joint stipulation extending expert disclosures",
+       "case": { "name": "Meridian Foods v. Bluecrest Logistics", "judge": "Hon. A. Whitfield", "parties": ["Meridian Foods, Inc.", "Bluecrest Logistics LLC"], "practiceArea": "commercial-litigation", "court": "N.D. Ill. (fictional)" } },
+-    { "id": "E-103", "date": "2026-04-02", "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
++    { "id": "E-103", "date": "2026-04-02", "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+       "case": { "name": "Meridian Foods v. Bluecrest Logistics", "judge": "Hon. A. Whitfield", "parties": ["Meridian Foods, Inc.", "Bluecrest Logistics LLC"], "practiceArea": "commercial-litigation", "court": "N.D. Ill. (fictional)" } },
+     { "id": "E-104", "date": "2026-04-02", "description": "Order to show cause re: failure to appear at mediation",
+       "case": { "name": "Orr v. Talos Systems", "judge": "Hon. M. Delgado", "parties": ["Dana Orr", "Talos Systems, Inc."], "practiceArea": "employment", "court": "C.D. Cal. (fictional)" } },
+diff --git a/open-artifacts/docket-watch-wall/examples/output.json b/open-artifacts/docket-watch-wall/examples/output.json
+index 7391039..bee158f 100644
+--- a/open-artifacts/docket-watch-wall/examples/output.json
++++ b/open-artifacts/docket-watch-wall/examples/output.json
+@@ -26,7 +26,7 @@
+         {
+           "id": "E-103",
+           "date": "2026-04-02",
+-          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
++          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+           "case": {
+             "name": "Meridian Foods v. Bluecrest Logistics",
+             "judge": "Hon. A. Whitfield",
+@@ -65,7 +65,7 @@
+         {
+           "id": "E-103",
+           "date": "2026-04-02",
+-          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
++          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+           "case": {
+             "name": "Meridian Foods v. Bluecrest Logistics",
+             "judge": "Hon. A. Whitfield",
+@@ -125,7 +125,7 @@
+       "entry": {
+         "id": "E-103",
+         "date": "2026-04-02",
+-        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
++        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+         "case": {
+           "name": "Meridian Foods v. Bluecrest Logistics",
+           "judge": "Hon. A. Whitfield",
+@@ -151,7 +151,7 @@
+       "entry": {
+         "id": "E-103",
+         "date": "2026-04-02",
+-        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
++        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+         "case": {
+           "name": "Meridian Foods v. Bluecrest Logistics",
+           "judge": "Hon. A. Whitfield",
+@@ -199,6 +199,64 @@
+       ]
+     }
+   ],
++  "deadlinesNew": [
++    {
++      "watcherId": "w1",
++      "entry": {
++        "id": "E-103",
++        "date": "2026-04-02",
++        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
++        "case": {
++          "name": "Meridian Foods v. Bluecrest Logistics",
++          "judge": "Hon. A. Whitfield",
++          "parties": [
++            "Meridian Foods, Inc.",
++            "Bluecrest Logistics LLC"
++          ],
++          "practiceArea": "commercial-litigation",
++          "court": "N.D. Ill. (fictional)"
++        }
++      },
++      "deadlines": [
++        {
++          "date": "2026-04-17",
++          "label": "Response due",
++          "basis": "response-days",
++          "confidence": "medium",
++          "needsVerification": true,
++          "withinHorizon": true
++        }
++      ]
++    },
++    {
++      "watcherId": "w2",
++      "entry": {
++        "id": "E-103",
++        "date": "2026-04-02",
++        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
++        "case": {
++          "name": "Meridian Foods v. Bluecrest Logistics",
++          "judge": "Hon. A. Whitfield",
++          "parties": [
++            "Meridian Foods, Inc.",
++            "Bluecrest Logistics LLC"
++          ],
++          "practiceArea": "commercial-litigation",
++          "court": "N.D. Ill. (fictional)"
++        }
++      },
++      "deadlines": [
++        {
++          "date": "2026-04-17",
++          "label": "Response due",
++          "basis": "response-days",
++          "confidence": "medium",
++          "needsVerification": true,
++          "withinHorizon": true
++        }
++      ]
++    }
++  ],
+   "nextSeenStore": {
+     "ids": [
+       "E-100",
+@@ -215,6 +273,7 @@
+     "entriesInFeed": 5,
+     "watchers": 3,
+     "newEntries": 6,
+-    "escalated": 3
++    "escalated": 3,
++    "deadlines": 2
+   }
+ }
+diff --git a/open-artifacts/docket-watch-wall/examples/run.js b/open-artifacts/docket-watch-wall/examples/run.js
+index af6f1cb..b178d3c 100644
+--- a/open-artifacts/docket-watch-wall/examples/run.js
++++ b/open-artifacts/docket-watch-wall/examples/run.js
+@@ -1,17 +1,17 @@
+ #!/usr/bin/env node
+ /**
+- * examples/run.js — regenerates examples/wall.md + examples/output.json.
++ * examples/run.js — regenerates examples/wall.md + output.json + deadlines.ics.
+  * Deterministic. Run: node examples/run.js
+  */
+ import { readFileSync, writeFileSync } from 'node:fs';
+ import { fileURLToPath } from 'node:url';
+ import { dirname, join } from 'node:path';
+-import { processFeed, stampSeenStore, toMarkdown } from '../core/core.js';
++import { processFeed, stampSeenStore, toMarkdown, toDeadlineFeed } from '../core/core.js';
+ 
+ const here = dirname(fileURLToPath(import.meta.url));
+ const input = JSON.parse(readFileSync(join(here, 'input.json'), 'utf8'));
+ 
+-const result = processFeed(input.entries, input.watchers, input.seenStore || {});
++const result = processFeed(input.entries, input.watchers, input.seenStore || {}, input.options || {});
+ const stamped = stampSeenStore(result.nextSeenStore, '2026-04-03T09:00:00Z');
+ 
+ writeFileSync(
+@@ -19,7 +19,8 @@ writeFileSync(
+   JSON.stringify({ ...result, nextSeenStore: stamped }, null, 2) + '\n',
+ );
+ writeFileSync(join(here, 'wall.md'), toMarkdown(result) + '\n');
++writeFileSync(join(here, 'deadlines.ics'), toDeadlineFeed(result));
+ console.log(
+-  `wrote wall.md + output.json — ${result.stats.newEntries} new of ${result.stats.entriesInFeed} in feed, ` +
+-  `${result.stats.escalated} escalated; next seen-store holds ${stamped.count} ids`,
++  `wrote wall.md + output.json + deadlines.ics — ${result.stats.newEntries} new of ${result.stats.entriesInFeed} in feed, ` +
++  `${result.stats.escalated} escalated, ${result.stats.deadlines} deadline(s); next seen-store holds ${stamped.count} ids`,
+ );
+diff --git a/open-artifacts/docket-watch-wall/examples/wall.md b/open-artifacts/docket-watch-wall/examples/wall.md
+index bfdfe48..2ab13cc 100644
+--- a/open-artifacts/docket-watch-wall/examples/wall.md
++++ b/open-artifacts/docket-watch-wall/examples/wall.md
+@@ -2,11 +2,11 @@
+ 
+ ## Judge Whitfield — commercial docket (2 new)
+ - **2026-04-01** Meridian Foods v. Bluecrest Logistics — Joint stipulation extending expert disclosures
+-- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs [URGENT: Sanctions motion/order]
++- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days [URGENT: Sanctions motion/order]
+ 
+ ## Bluecrest Logistics — party watch (2 new)
+ - **2026-04-01** Meridian Foods v. Bluecrest Logistics — Joint stipulation extending expert disclosures
+-- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs [URGENT: Sanctions motion/order]
++- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days [URGENT: Sanctions motion/order]
+ 
+ ## Employment docket (2 new)
+ - **2026-04-02** Orr v. Talos Systems — Order to show cause re: failure to appear at mediation [URGENT: Order to show cause]
+diff --git a/open-artifacts/docket-watch-wall/spec.md b/open-artifacts/docket-watch-wall/spec.md
+index b194a1a..f6795fb 100644
+--- a/open-artifacts/docket-watch-wall/spec.md
++++ b/open-artifacts/docket-watch-wall/spec.md
+@@ -15,11 +15,15 @@ in this core, ever.
+ | Export | Purpose |
+ |---|---|
+ | `DEFAULT_ESCALATION_RULES` | Rules-as-data: `{id, label, pattern, level: urgent\|important}` (case-insensitive regexes) |
+-| `escalate(entry, rules?)` | Applied rules for one entry, with the matched text |
+-| `processFeed(entries, watchers, seenStore?)` | `{wall, escalatedNew, nextSeenStore, stats}` |
++| `escalate(entry, rules?)` | Applied rules for one entry, with the matched text (every rule is linted first) |
++| `processFeed(entries, watchers, seenStore?, options?)` | `{wall, escalatedNew, deadlinesNew, nextSeenStore, stats}` — `options`: `{escalationRules?, asOf?, horizonDays?}` |
+ | `stampSeenStore(store, isoTs)` | Caller clocks the snapshot (keeps core deterministic) |
+ | `fromRecapPayload(recap)` | Pure RECAP → internal-entry normalizer (future hook seam) |
+-| `toMarkdown(result)` | Wall rendering for email/commit digest |
++| `toMarkdown(result)` | Wall rendering for email/commit digest — renders *stored* escalations, no re-derivation |
++| `DEADLINE_RULES` + `extractDeadlines(entry, {asOf}?)` | Candidate deadlines from entry text: `{date, label, basis, confidence, needsVerification}` |
++| `pruneSeenStore(store, {keep, maxIds})` | Cap the seen-store; `keep` (current feed ids) always survive |
++| `lintRule(rule)` / `SafeRuleError` | Heuristic ReDoS screen every pattern must pass before compilation |
++| `toDeadlineFeed(result)` | Deterministic iCal export of extracted deadlines (VEVENT + `X-NEEDS-VERIFICATION`)
+ 
+ Entry shape: `{id, date, description, case: {name, judge, parties[],
+ practiceArea, court}}`. Watcher shape: `{id, name, judge?, party?,
+@@ -27,7 +31,48 @@ practiceArea?}` — judge/party match case-insensitively as substrings;
+ practiceArea matches exactly (your taxonomy, your rules).
+ 
+ Seen-store shape: `{ids: string[], updatedAt, count}` — persist anywhere
+-(file, localStorage, KV store). Diffing is by entry `id`.
++(file, localStorage, KV store). Diffing is by entry `id`. Long-running
++stores grow without bound; `pruneSeenStore(store, {keep, maxIds})` caps them
++— `keep` (the current feed's ids) always survive, remaining capacity fills
++from the tail of the sorted id list. Default cap: 500.
++
++## Deadline extraction (heuristic — always `[verify]`)
++
++`extractDeadlines(entry, {asOf})` maps deadline phrases in the entry
++description to candidate dates via `DEADLINE_RULES` (rules-as-data, each
++pattern captures a day count):
++
++- **Anchor recipe**: `asOf` (caller-supplied, `YYYY-MM-DD`) wins; otherwise
++  the entry's own filing date is the anchor; if neither parses there is no
++  anchor and the result is `[]` — the core never reads a clock, so a wrong
++  `asOf` skews the math. Pass it explicitly in scheduled runs.
++- **Never a silent default**: a rule match yields
++  `{date, label, basis, confidence, needsVerification: true}`; no match
++  yields `[]` — nothing is invented.
++- **Confidence**: rule tier is `medium` (explicit day count in the order
++text); a blank/unknown court drops it to `low`. Every deadline is
++`needsVerification` regardless of confidence.
++- **Jurisdiction tables are out of scope**: these phrases are simplified
++  fiction, not any court's actual rules. Statutory text in examples is
++  illustrative and `[verify]`-tagged. Verify against the real docket.
++- **Horizon**: in `processFeed`, each deadline gets `withinHorizon: true`
++  when it falls within the watcher's `deadlineHorizonDays` (default 14,
++  `options.horizonDays` as fallback) — a deterministic daily-cadence
++  trigger.
++
++`toDeadlineFeed(result)` exports them as iCal: all-day `VEVENT`s with
++`X-NEEDS-VERIFICATION:TRUE`, deduped across watchers, `DTSTAMP` pinned to
++the filing date so replays are byte-identical. All-day dates only; lines
++are not RFC-folded at 75 octets.
++
++## Untrusted-text hardening
++
++Docket descriptions are filer-supplied untrusted text. Every pattern
++(escalation and deadline rules alike) passes `lintRule` before it is
++compiled: max 200 chars, valid regex, no nested quantifiers (`(a+)+`), no
++alternation inside a quantified group (`(a|b)+`), max 4 alternation
++branches. Violations throw `SafeRuleError` (fail closed). This is a
++heuristic screen, not a proof — keep patterns small and specific.
+ 
+ ## Deterministic vs LLM-assisted
+ 
