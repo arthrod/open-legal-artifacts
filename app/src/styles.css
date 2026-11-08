@@ -5,10 +5,22 @@
    #e8e8e5, hover #f0f0ee, Manrope + Departure Mono, radius 0, 1100px.
    ========================================================================= */
 
+/* Manrope — self-hosted variable font from /fonts/ (no Google Fonts).
+   Dual src so it resolves on both the root host and the GH Pages
+   /open-legal-artifacts/ base; the browser falls through on 404. */
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/Manrope-Variable.woff2") format("woff2"),
+    url("/open-legal-artifacts/fonts/Manrope-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 /* Departure Mono — self-hosted from /fonts/ */
 @font-face {
   font-family: "Departure Mono";
-  src: url("/fonts/DepartureMono-Regular.woff2") format("woff2");
+  src: url("/fonts/DepartureMono-Regular.woff2") format("woff2"),
+    url("/open-legal-artifacts/fonts/DepartureMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -113,7 +125,7 @@ main {
 
 code {
   font-family: var(--font-mono);
-  font-size: 0.85em;
+  font-size: max(0.85em, 12px);
   background: var(--hover);
   padding: 0.1em 0.35em;
   border-radius: var(--radius);
@@ -208,7 +220,7 @@ pre {
 
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -248,7 +260,7 @@ pre {
 .counts {
   margin-top: 1.4rem;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -271,7 +283,7 @@ pre {
 
 .section-title {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -279,7 +291,7 @@ pre {
 
 .section-meta {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -345,7 +357,7 @@ pre {
 
 .tile-meta {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -353,7 +365,7 @@ pre {
 
 .chip {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -393,7 +405,7 @@ pre {
 .meta-box a,
 .backlink {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   border-bottom: 2px solid transparent;
@@ -448,7 +460,7 @@ pre {
 
 .filter-btn {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -474,7 +486,7 @@ pre {
 /* Provenance glyph + word (replaces the chip) */
 .prov {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -483,7 +495,7 @@ pre {
 /* Result count line (filtered/searched states) */
 .result-count {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -507,7 +519,7 @@ pre {
 
 .group-title {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -515,7 +527,7 @@ pre {
 
 .group-count {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -629,7 +641,7 @@ pre {
 
 .meta-box h3 {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -667,7 +679,7 @@ pre {
 .demo label {
   display: block;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -736,7 +748,7 @@ button.secondary {
 .pill {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 2px 8px;
@@ -788,7 +800,7 @@ td {
 th {
   background: var(--hover);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -838,7 +850,7 @@ td.unverified {
 
 .timeline .date {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 
@@ -881,7 +893,7 @@ td.unverified {
 
 .footer-inner p {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-secondary);
