@@ -8,6 +8,8 @@
 .brand .wm i{font-style:normal;color:var(--muted)}
 .brand .sub{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hright{display:flex;align-items:center;gap:14px}
+.progwrap{display:flex;align-items:center;gap:8px}
+.pcap{font-family:var(--mono);font-weight:var(--mono-weight);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .prog{display:flex;gap:3px}
 .prog b{display:block;width:14px;height:8px;border:1px solid var(--ink);background:transparent}
 .prog b.on{background:var(--ink)}

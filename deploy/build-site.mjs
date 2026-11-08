@@ -79,7 +79,7 @@ function decorate(html, info) {
   if (!html.includes("ola-backlink") && !html.includes("ola-navbar")) {
     const M = `font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;`;
     const L = `color:#6b6b6b;text-decoration:none;`;
-    const bar = `<div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;${M}font-size:11px;">` +
+    const bar = `<div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;${M}font-size:11px;">` +
       `<a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open\u00b7legal\u00b7artifacts</a>` +
       `<span style="display:inline-flex;gap:16px;white-space:nowrap;">` +
       `<a href="/" style="${L}">Catalog</a>` +
@@ -106,7 +106,17 @@ console.log("building app…");
 execSync("npm run build", { cwd: join(ROOT, "app"), stdio: "inherit" });
 const distIndex = join(ROOT, "app", "dist", "index.html");
 if (existsSync(distIndex)) {
-  writeFileSync(join(SITE, "index.html"), bundle(distIndex));
+  // GOOGLE_FONTS_FIX: the VT val cannot serve binary woff2 — the landing's
+  // @font-face url()s 404 there (Manrope + Departure Mono silently fall back
+  // to system fonts). Strip them; load Manrope + JetBrains Mono from CDN.
+  let landing = bundle(distIndex);
+  landing = landing.replace(/@font-face\{font-family:Manrope;[^}]*\}/g, "");
+  landing = landing.replace(/@font-face\{font-family:Departure Mono;[^}]*\}/g, "");
+  landing = landing.replace(
+    "</title>",
+    '</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">',
+  );
+  writeFileSync(join(SITE, "index.html"), landing);
   console.log(`site/index.html (${(statSync(join(SITE, "index.html")).size / 1024).toFixed(1)} KB)`);
 }
 

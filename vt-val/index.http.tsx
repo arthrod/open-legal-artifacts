@@ -4,8 +4,19 @@
 //   /a/<artifact>                          → one self-contained page per artifact
 //   /course/*                              → prompting-for-attorneys static course files
 //   /open-artifacts/<n>/demo/index.html    → gh-pages-compatible alias
+//   POST /api/ask-legal|/api/triage|/api/prop-support → live-AI routes (see api/)
 import { readFile } from "https://esm.town/v/std/utils/index.ts";
 import { notFoundHtml } from "./notfound.ts";
+import { handleAskLegal } from "./api/ask-legal.ts";
+import { handleTriage } from "./api/triage.ts";
+import { handlePropSupport } from "./api/prop-support.ts";
+
+/** Live-AI POST routes — shared 10 req/min/IP budget, strict validation, safe errors. */
+const API_ROUTES: Record<string, (req: Request) => Promise<Response>> = {
+  "/api/ask-legal": handleAskLegal,
+  "/api/triage": handleTriage,
+  "/api/prop-support": handlePropSupport,
+};
 
 /** HTML 404 — the on-brand not-found page with proper content-type. */
 function html404(p: string): Response {
@@ -83,6 +94,25 @@ export default async function (req: Request): Promise<Response> {
   const p = url.pathname.replace(/\/+$/, "") || "/";
 
   if (p === "/" || p === "/index.html") return page("/site/index.html");
+
+  // live-AI routes (demos probe them with OPTIONS to feature-detect the val)
+  if (p.startsWith("/api/")) {
+    const handler = API_ROUTES[p];
+    if (!handler) {
+      return new Response(JSON.stringify({ error: "unknown API route" }), {
+        status: 404,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+    if (req.method === "POST") return handler(req);
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: { "allow": "POST, OPTIONS" } });
+    }
+    return new Response(JSON.stringify({ error: "POST only" }), {
+      status: 405,
+      headers: { "content-type": "application/json; charset=utf-8", "allow": "POST, OPTIONS" },
+    });
+  }
 
   // prompting-for-attorneys course (multi-file static app).
   // Redirect (not rewrite) so the browser's base URL is /course/ and the

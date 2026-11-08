@@ -37,9 +37,18 @@ export function citeCheckPage(): HTMLElement {
     repoName: "cite-check",
   });
 
+  // The standalone demo is the real artifact (worked example, 10 quotes);
+  // this in-app page is only a taste of the core — lead with the link, keep
+  // the quick demo below, clearly labeled (round-7: dual-shells cleanup).
+  const fullTool = el(`<a class="fulltool-card" href="open-artifacts/cite-check/demo/index.html" rel="noopener" target="_blank">
+    <span class="fulltool-title">Open the full tool \u2197</span>
+    <span class="fulltool-sub">The standalone cite-check demo — a fictional appellant's brief with 10 quotes checked against the record, on its own page.</span>
+  </a>`);
+  root.appendChild(fullTool);
+
   const demo = el(`<section class="demo">
-    <h2>Interactive demo (mock data, computed in your browser)</h2>
-    <p class="demo-sub">Try: (1) the pre-filled quote → exact; (2) change "three" to "3" and curly quotes to straight → normalized; (3) alter a few words → fuzzy; (4) replace with text not in the source → not_found.</p>
+    <h2>Quick preview (mock data, computed in your browser)</h2>
+    <p class="demo-sub">Try: (1) the pre-filled quote \u2192 exact; (2) change "three" to "3" and curly quotes to straight \u2192 normalized; (3) alter a few words \u2192 fuzzy; (4) replace with text not in the source \u2192 not_found.</p>
     <label for="cc-quote">Quote (from the legal document)</label>
     <textarea id="cc-quote" rows="3">"an employer who fails to maintain accurate payroll records for three consecutive quarters may be deemed to have acted with gross negligence."</textarea>
     <label for="cc-source">Source text</label>

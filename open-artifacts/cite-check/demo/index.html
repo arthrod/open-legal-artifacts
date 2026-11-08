@@ -1114,6 +1114,10 @@ let input=store.get('input')??EXAMPLE;
 let decisions=store.get('decisions')??{};
 let signoff=store.get('signoff')??null;
 let selected=null,filter="all",srcModels=null;
+/* live-AI prop-support state: verdicts keyed by quote id; AI_OK flips only when the val's /api/prop-support answers */
+const propSupport={};let AI_OK=false;
+const PROP_CAN={supported:["VERIFIED","v-verified","quote supports the proposition"],partial:["SUPPORTED","v-supported","partial support — attorney review"],unrelated:["NOT FOUND","v-notfound","quote does not establish the proposition"]};
+const propPill=(v)=>{const m=PROP_CAN[v.verdict];return `Proposition support (live AI): ${m?`<span class="pill ${m[1]}">${m[0]}<small> ${esc(m[2])}</small></span>`:esc(v.verdict)} — ${esc(v.reason)}`};
 let bootNotice=null;
 let report;
 try{report=runCiteCheck(input)}
@@ -1133,7 +1137,7 @@ function audit(action,detail,quoteId){store.append('audit',{ts:new Date().toISOS
 
 function runCheck(newInput,label){
 let r;try{r=runCiteCheck(newInput)}catch(err){toast("Check failed: "+err.message);live("Check failed: "+err.message);return false}
-report=r;input=newInput;srcModels=null;selected=null;renderAll();
+report=r;input=newInput;srcModels=null;selected=null;for(const k of Object.keys(propSupport))delete propSupport[k];renderAll();
 const m=`Checked ${report.summary.checked} of ${report.summary.total} quotes`+(label?` — ${label}`:"");live(m);return true}
 
 /* source model mirrors core buildDoc: doc.text, then pages, sections, paragraphs, joined by "\n" */
@@ -1170,6 +1174,7 @@ return `<tr class="${rowCls}" data-q="${esc(r.id)}"><td class="mono"><code>${esc
 for(const tr of $('results').querySelectorAll('tr[data-q]'))tr.addEventListener("click",()=>selectQuote(tr.dataset.q,true))}
 
 function renderQueue(){
+const firstLocated=report.results.find((x)=>x.anchor);
 const rs=report.results.filter((r)=>{const d=decisions[r.id];
 if(filter==="attention")return attention(r);
 if(filter==="undecided")return !d;
@@ -1191,10 +1196,12 @@ return `<article class="q ${selected===r.id?"sel":""}" data-q="${esc(r.id)}"><he
 (r.diff&&formatDiffOps(r.diff)?`<br>Token diff: <code>${esc(formatDiffOps(r.diff))}</code>`:"")+
 (notesOf.get(r.id)??[]).map((n)=>`<br>· ${esc(n)}`).join("")+`</div>`+
 `<div class="decide" role="group" aria-label="Decision for ${esc(r.id)}">${DECISIONS.map(([v,l])=>`<button data-d="${v}" data-q="${esc(r.id)}" aria-pressed="${d?.d===v?"true":"false"}">${l}</button>`).join("")}</div>`+
+((AI_OK&&r===firstLocated)?`<div class="decide" role="group" aria-label="Live AI proposition support for ${esc(r.id)}"><button class="icon" data-propsup="${esc(r.id)}">${propSupport[r.id]?"Re-judge":"Judge"} proposition support — live AI</button></div><div class="meta" data-propsupout="${esc(r.id)}">${propSupport[r.id]?propPill(propSupport[r.id]):""}</div>`:"")+
 `<div class="note"><label for="note-${esc(r.id)}">Note</label><input id="note-${esc(r.id)}" data-note="${esc(r.id)}" value="${esc(d?.note??"")}" placeholder="optional"></div></article>`}).join("")||`<p class="hint">No quotations match this filter.</p>`;
 for(const b of $('queue').querySelectorAll('button[data-d]'))b.addEventListener("click",(e)=>{e.stopPropagation();setDecision(b.dataset.q,b.dataset.d)});
 for(const b of $('queue').querySelectorAll('button[data-anchor]'))b.addEventListener("click",(e)=>{e.stopPropagation();selectQuote(b.dataset.anchor,false)});
 for(const i of $('queue').querySelectorAll('input[data-note]'))i.addEventListener("change",()=>setNote(i.dataset.note,i.value));
+for(const b of $('queue').querySelectorAll('button[data-propsup]'))b.addEventListener("click",(e)=>{e.stopPropagation();judgePropsup(b)});
 for(const art of $('queue').querySelectorAll('article.q'))art.addEventListener("click",()=>selectQuote(art.dataset.q,false))}
 
 function renderSourcePane(){
@@ -1262,6 +1269,31 @@ $('copyQuote').addEventListener("click",async()=>{
 const r=report.results.find((x)=>x.id===selected);const a=r?.anchor??r?.bestCandidate;
 if(!a){toast("No located quote to copy — select a located quotation first.");return}
 try{await navigator.clipboard.writeText(a.verbatim);toast("Verbatim quote copied.");live("Quote copied to clipboard.")}catch{toast("Clipboard unavailable in this context.")}});
+
+/* live AI proposition support — judgment only, on the first located quote; classification/anchoring stay pure code */
+async function judgePropsup(btn){
+const r=report.results.find((x)=>x.id===btn.dataset.propsup);
+const a=r?.anchor;
+if(!a){toast("No located quote to judge.");return}
+if(!r.proposition){toast("This quotation carries no proposition to judge.");return}
+btn.disabled=true;btn.textContent="judging…";
+try{
+const res=await fetch("/api/prop-support",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({quote:a.verbatim,proposition:r.proposition})});
+const d=await res.json();
+if(!res.ok)throw new Error(d.error||"unavailable");
+propSupport[r.id]=d;
+audit("ai prop-support",`${r.id}: ${d.verdict} — ${d.reason}`,r.id);
+live(`Proposition support for ${r.id}: ${d.verdict}.`);
+renderQueue();
+}catch(err){toast("Live AI unavailable — "+((err&&err.message)||""));live("Proposition support judging failed.")}
+}
+(async()=>{
+try{
+if(!/^https?:$/.test(location.protocol))return; // file:// — no API
+const p=await fetch("/api/prop-support",{method:"OPTIONS"});
+if(!(p.ok||p.status===204))return; // gh-pages — affordance absent
+AI_OK=true;renderQueue();
+}catch{}})();
 
 /* guided input */
 $('runGuided').addEventListener("click",()=>{

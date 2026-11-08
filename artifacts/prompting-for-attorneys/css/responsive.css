@@ -18,6 +18,6 @@
 .mbar .r{justify-content:flex-end}
 .mbar .c{color:var(--on-dark-muted)}
 .mbar .c b{color:var(--on-dark);font-weight:400}
-.hdr .sub,.hdr .prog{display:none}
+.hdr .sub,.hdr .progwrap{display:none}
 .ftr{padding-bottom:100px}
 }

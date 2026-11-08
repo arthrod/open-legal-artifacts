@@ -609,6 +609,38 @@
     }
   });
   $("askBtn").onclick = ask;
+  /* ---------- live AI mode (only when the val's /api route answers; gh-pages/file:// stay deterministic) ---------- */
+  async function askAi(ev) {
+    const btn = ev.target;
+    const question = $("q").value.trim();
+    if (!question) { toast("Type a question first."); $("q").focus(); return; }
+    btn.disabled = true; btn.textContent = "asking…";
+    try {
+      const res = await fetch("/api/ask-legal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || "unavailable");
+      $("answer").innerHTML =
+        `<div class="card"><div class="q">${esc(question)} <small style="font-weight:400;color:var(--text-secondary)">· live AI, grounded in the guidance register</small></div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
+        (r.answered
+          ? `<div class="answer">${esc(r.answer)}` + (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
+            `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · live-ai mode — not in the audit log</small></div>`
+          : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
+        `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    } catch (e) { toast("Live AI unavailable — the deterministic Ask still works." + (e && e.message ? ` (${e.message})` : "")); }
+    btn.disabled = false; btn.textContent = "Ask — live AI";
+  }
+  (async () => {
+    try {
+      if (!/^https?:$/.test(location.protocol)) return; // file:// — no API
+      const probe = await fetch("/api/ask-legal", { method: "OPTIONS" });
+      if (!(probe.ok || probe.status === 204)) return; // gh-pages — affordance absent
+      const b = document.createElement("button");
+      b.id = "askAiBtn"; b.className = "ghost"; b.textContent = "Ask — live AI";
+      b.title = "Grounded answer via the val's /api/ask-legal route (gpt-5-nano, restates approved guidance only)";
+      $("askBtn").after(b);
+      b.onclick = askAi;
+    } catch { /* probe failed — deterministic engine only */ }
+  })();
   $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
   $("asker").onchange = persist;
   $("tabAsk").onclick = () => showDesk("ask");

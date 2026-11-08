@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PII detection, pt-BR / LGPD — open artifact</title>
+<title>PII detection, pt-BR / LGPD, open artifact</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
@@ -194,16 +194,16 @@ textarea { max-width: 100%; }
   .empty { color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
-<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/pii-ptbr-lgpd" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
+<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/pii-ptbr-lgpd" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <header><div class="wrap">
   <span class="t-eyebrow">Open legal artifacts · pii-ptbr-lgpd</span>
   <h1>PII detection, pt-BR / LGPD</h1>
   <div class="rule"></div>
-  <p class="lede">Detecção de dados pessoais em texto em português (contexto LGPD): CPF, CNPJ, RG, telefone, e-mail, endereço, nome completo, data de nascimento — mais menções a categorias sensíveis do Art. 5º, II (saúde, religião, origem). Dados do exemplo são fictícios.</p>
+  <p class="lede">Detecção de dados pessoais em texto em português (contexto LGPD): CPF, CNPJ, RG, telefone, e-mail, endereço, nome completo, data de nascimento, mais menções a categorias sensíveis do Art. 5º, II (saúde, religião, origem). Dados do exemplo são fictícios.</p>
   <div class="sim-note">rules-based demo; the fine-tuned GLiNER/OPF models run on HF Spaces:
     <a href="https://huggingface.co/spaces/arthrod/gliner-ptbr-pii-demo">gliner-ptbr-pii-demo</a> ·
     <a href="https://huggingface.co/spaces/arthrod/gliner-opf-ptbr-pii-demo">gliner-opf-ptbr-pii-demo</a>
-    — deterministic simulation of the live app</div>
+   , deterministic simulation of the live app</div>
 </div></header>
 
 <div class="wrap">
@@ -214,7 +214,7 @@ textarea { max-width: 100%; }
     <div class="toggle"><input type="checkbox" id="custom"><label for="custom">usar texto próprio (libera a caixa para colar)</label></div>
     <button id="run">Reanalisar →</button>
     <div id="err" class="err"></div>
-    <p class="note">detector determinístico por regras: padrões (com checksum de CPF/CNPJ) + gazetteers. Confiança fixa por regra — correspondência por regra, não pontuação de modelo.</p>
+    <p class="note">detector determinístico por regras: padrões (com checksum de CPF/CNPJ) + gazetteers. Confiança fixa por regra, correspondência por regra, não pontuação de modelo.</p>
   </section>
 
   <section id="out" aria-live="polite"></section>
@@ -227,7 +227,7 @@ textarea { max-width: 100%; }
     <tr><td>Partial F1 (mensagens com PII)</td><td>0.888</td><td class="best">0.897</td></tr>
     <tr><td>Falsos positivos em 2,419 mensagens sem PII</td><td>8,666</td><td class="best">64</td></tr>
   </table>
-  <p class="bench-note">Números reais publicados no <a href="https://huggingface.co/datasets/arthrod/gliner-opf-ptbr-pii-bench-v1">benchmark dataset <code>arthrod/gliner-opf-ptbr-pii-bench-v1</code></a>: qualidade comparável nas mensagens que contêm PII, mas ~135× menos falsos positivos em mensagens limpas — a assimetria é o ponto. Esta página não roda os modelos; veja os spaces acima.</p>
+  <p class="bench-note">Números reais publicados no <a href="https://huggingface.co/datasets/arthrod/gliner-opf-ptbr-pii-bench-v1">benchmark dataset <code>arthrod/gliner-opf-ptbr-pii-bench-v1</code></a>: qualidade comparável nas mensagens que contêm PII, mas ~135× menos falsos positivos em mensagens limpas, a assimetria é o ponto. Esta página não roda os modelos; veja os spaces acima.</p>
 </section>
 </div>
 
@@ -238,7 +238,7 @@ const EXAMPLE = `Prezado Dr. Rafael Moraes Santana,
 
 Encaminho a paciente Sra. Fernanda Costa Ribeiro, CPF 529.982.247-25, RG 31.582.904-7, nascida em 14/03/1985.
 
-Contato: fernanda.ribeiro@example.com ou (11) 98765-4321. Endereço: Rua Harmonia 772, apto 42, Vila Madalena — encaminhamento patrocinado pela Construtora Vale Verde Ltda. (CNPJ 45.723.174/0001-10).
+Contato: fernanda.ribeiro@example.com ou (11) 98765-4321. Endereço: Rua Harmonia 772, apto 42, Vila Madalena, encaminhamento patrocinado pela Construtora Vale Verde Ltda. (CNPJ 45.723.174/0001-10).
 
 A paciente é portadora de diabetes tipo 2, é espírita praticante e neta de imigrantes japoneses.
 
@@ -281,7 +281,7 @@ function render(text) {
         `<div class="lbl">${esc(c.label)}</div><div class="types">${esc(c.types.join(' · '))}</div></div>`).join('')
     : `<p class="empty">nenhuma categoria</p>`;
 
-  h += `<div class="sec">Pré-visualização de redação — cada trecho vira [TIPO]</div>`;
+  h += `<div class="sec">Pré-visualização de redação, cada trecho vira [TIPO]</div>`;
   h += `<div class="redact">${esc(redactPreview(text, entities))}</div>`;
   $('out').innerHTML = h;
 }

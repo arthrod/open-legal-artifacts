@@ -48,3 +48,49 @@ test('low-confidence escalate renders the clarifying question and pick buttons f
   assert.match(html, /class="pick"/);
   assert.match(html, /Possibilities reviewed but not served automatically/);
 });
+
+// Live-AI mode: /api/triage responses (served when the val API is reachable)
+// render through the same renderer. They carry no matchedKeywords (nothing is
+// fabricated) and resolvedBy 'live-ai', which must NOT render as a
+// clarifying-question resolution.
+
+test('live-AI classified result (server shape) renders through the same renderer', () => {
+  const r = triage('My landlord gave me an eviction notice and I am behind on rent.');
+  const aiResult = {
+    status: 'classified',
+    primaryIssue: r.primaryIssue,
+    primaryLabel: r.primaryLabel,
+    confidence: 0.83,
+    multiIssue: false,
+    matchedKeywords: [],
+    resolvedBy: 'live-ai',
+    referrals: r.referrals,
+    otherCandidates: [],
+    disclaimer: r.disclaimer,
+    urgency: 'routine',
+    dates: [],
+  };
+  const html = renderResult(aiResult);
+  assert.match(html, /Matched: Eviction \/ loss of housing · confidence 0.83/);
+  assert.match(html, /matched keywords: <\/p>/); // empty — AI mode fabricates no keyword hits
+  assert.ok(!html.includes('resolved by clarifying question'));
+  assert.ok(!html.includes('undefined'), 'no "undefined" may leak into rendered output');
+  assert.match(html, /referral information only/i);
+});
+
+test('live-AI escalate result renders as a plain escalation, no clarifying question', () => {
+  const aiEscalate = {
+    status: 'escalate',
+    reason: 'low-confidence',
+    escalate: 'We could not confidently classify this description. A staff member will review it and follow up — no automated categorization was applied.',
+    disclaimer: 'This tool provides referral information only.',
+    candidates: [],
+    matchedFragments: [],
+    urgency: 'routine',
+    dates: [],
+  };
+  const html = renderResult(aiEscalate);
+  assert.match(html, /Escalated to a human — low-confidence/);
+  assert.ok(!html.includes('class="pick"'), 'no pick buttons for an AI escalation');
+  assert.ok(!html.includes('undefined'));
+});

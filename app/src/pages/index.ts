@@ -116,9 +116,8 @@ export function indexPage(): HTMLElement {
         Every legal AI artifact, open and better. Arthur's originals running in
         production, an open counterpart for every artifact in Anthropic's Claude
         for Legal gallery — deterministic cores where code beats guessing,
-        rules-as-data where law is the logic — and the adjacent benchmarks and
-        datasets that already have a better home elsewhere, linked, not forked.
-        Everything MIT.
+        rules-as-data where law is the logic — adjacent benchmarks linked, not
+        forked. Everything MIT.
       </p>
       <p class="counts">${counts.originals} originals · ${counts.open} open artifacts · ${counts.external} external</p>
     </section>
@@ -174,6 +173,20 @@ export function indexPage(): HTMLElement {
     if (areaLabel) parts.push(areaLabel);
     if (state.q) parts.push(`matches “${state.q}”`);
     openSection.appendChild(el(`<p class="result-count" aria-live="polite">${esc(parts.join(" · "))}</p>`));
+
+    // Deep-link confirmation: landing on #/?area=x applies a filter the user
+    // never chose — the count line announces *that* results are filtered;
+    // this says *what* is active and offers the one-click way out.
+    if (state.area !== null) {
+      const active = el(`<div class="filter-active">
+        <span>Filtered: <strong>${esc(areaLabel ?? state.area)}</strong>${state.q ? ` · “${esc(state.q)}”` : ""}</span>
+        <button type="button" class="filter-clear" data-action="clear">Clear</button>
+      </div>`);
+      active.querySelector("button[data-action='clear']")!.addEventListener("click", () => {
+        location.hash = "#/";
+      });
+      openSection.appendChild(active);
+    }
 
     if (results.length === 0) {
       const where = areaLabel ? ` in ${areaLabel}` : "";
