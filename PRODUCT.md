@@ -40,7 +40,7 @@ The repo is deliberately two registers. The catalog at `/` is brand: the page it
   3. The open version is not a stub — deterministic cores replace LLM guessing where law permits.
   4. It runs in this browser right now, with no key, no account, no upload.
   5. Therefore this is the reference index for open legal artifacts, and worth bookmarking.
-- **Proof on hand:** four production originals with live Val Town URLs and public source; 33 open artifacts, each with a `spec.md`, a dependency-free TypeScript core, tests, and recorded sample outputs; 46 green `node:test` assertions (12+12+11+11) recorded in `evidence/test-run.log`; four inspection rounds and browser verification in `evidence/`; MIT `LICENSE` for the whole repo; benchmark claims (live-contracts, neurotic_docx_bench, editors_trial) linked to their published reports rather than asserted. There are no testimonials, press mentions, client logos, or usage metrics — none exist, and none may be invented.
+- **Proof on hand:** four production originals with live Val Town URLs and public source; 33 open artifacts, each with a `spec.md`, a dependency-free TypeScript core, tests, and recorded sample outputs; 890 green test assertions (775 `node:test` + 115 tsx) recorded in `evidence/test-run.log`; four inspection rounds and browser verification in `evidence/`; MIT `LICENSE` for the whole repo; benchmark claims (live-contracts, neurotic_docx_bench, editors_trial) linked to their published reports rather than asserted. There are no testimonials, press mentions, client logos, or usage metrics — none exist, and none may be invented.
 
 ## Brand Personality
 
