@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -138,19 +148,19 @@ a {
   .stats { display: flex; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { padding: 14px 22px; border-right: var(--hairline); }
   .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
-  .stat span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .stat span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   .tl { border-left: 2px solid var(--border); margin-left: 8px; padding-left: 24px; }
   .tl-item { position: relative; padding: 12px 0 20px; border-bottom: var(--hairline); }
   .tl-item::before { content: ""; position: absolute; left: -31px; top: 18px; width: 12px; height: 12px;
     background: var(--bg); border: 2px solid var(--text); }
-  .tl-item.amb::before { background: var(--accent); }
+  .tl-item.amb::before { background: var(--flag-tint); }
   .tl-date { font-family: var(--font-mono); font-size: 12px; }
   .tl-date b { font-size: 15px; }
-  .tl-item.amb .tl-date b { background: var(--accent); padding: 0 4px; }
+  .tl-item.amb .tl-date b { background: var(--flag-tint); padding: 0 4px; }
   .tl-name { font-weight: 600; margin-top: 4px; }
   .tl-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-mono); }
   .tl-quote { font-size: 12px; border-left: 3px solid var(--border); padding-left: 10px; margin-top: 8px; color: var(--text-secondary); }
-  .ambflag { margin-top: 8px; font-size: 12px; background: var(--accent); padding: 6px 10px; }
+  .ambflag { margin-top: 8px; font-size: 12px; background: var(--flag-tint); padding: 6px 10px; color: var(--bad); border-color: var(--bad);}
   .unresolved li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
@@ -230,6 +240,5 @@ a {
     a.href = URL.createObjectURL(blob); a.download = "renewal-calendar.ics"; a.click();
   };
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

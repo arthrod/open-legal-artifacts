@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -135,7 +145,6 @@ a {
   .rule { height:2px; width:56px; background:var(--accent); border:0; margin:0 0 32px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.14em; color:var(--text-secondary); margin:40px 0 12px; font-family:var(--font-mono); font-weight:400; }
   textarea { width:100%; min-height:300px; box-sizing:border-box; font-family:var(--font-mono); font-size:12px; line-height:1.6; border:1px solid var(--border); border-radius:0; background:#fff; padding:14px; color:var(--text); resize:vertical; }
-  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
   .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
   button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
   button:hover { background:#333; }
@@ -143,7 +152,7 @@ a {
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { font-family:var(--font-mono); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
   td { border-bottom:1px solid var(--border); padding:10px; vertical-align:top; }
-  .flag { background:var(--accent); padding:1px 5px; font-family:var(--font-mono); font-size:11px; }
+  .flag { background: var(--flag-tint); padding:1px 5px; font-family:var(--font-mono); font-size:11px; color: var(--warn); border-color: var(--warn);}
   .pill { font-family:var(--font-mono); font-size:11px; border:1px solid var(--border); padding:1px 6px; white-space:nowrap; }
   .card { border:1px solid var(--border); padding:16px 18px; margin:12px 0; background:#fff; }
   .deadline { font-family:var(--font-mono); font-size:22px; margin:0 0 6px; }
@@ -151,7 +160,7 @@ a {
   .muted { color:var(--text-secondary); font-size:12px; }
   .err { background:#fff; border-left:3px solid var(--text); padding:10px 14px; font-family:var(--font-mono); font-size:12px; white-space:pre-wrap; }
   .versions { font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); margin:6px 0 0; line-height:1.7; }
-  .versions b { color:var(--text); font-weight:400; background:var(--accent); padding:0 3px; }
+  .versions b { color:var(--text); font-weight:400; background: var(--flag-tint); padding:0 3px; }
   details summary { cursor:pointer; font-family:var(--font-mono); font-size:11.5px; color:var(--text-secondary); }
 </style>
 </head>
@@ -260,6 +269,5 @@ $('mc').addEventListener('click', () => {
 });
 run();
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

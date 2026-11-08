@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -142,17 +152,17 @@ a {
   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
   .counts div:last-child { border-right: none; }
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
   td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
-  tr.flag td { background: #fffbe6; }
-  .pill { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
-  .pill.exact { background: var(--text); color: var(--bg); }
-  .pill.fuzzy, .pill.mismatch { background: var(--accent); }
-  .pill.not_found { background: transparent; color: var(--text); border-style: dashed; }
-  .ev { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+  tr.flag td { background: var(--flag-tint); border-bottom: 1.5px solid var(--text); }
+  .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill.exact, .pill.normalized { background: transparent; color: var(--ok); border: var(--hairline); }
+  .pill.fuzzy { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
+  .pill.mismatch, .pill.not_found { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .ev { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
   .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
   .ev .q { font-family: var(--font-mono); font-size: 12px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
@@ -217,6 +227,7 @@ a {
     `<div><b>${s.not_found}</b><span>not found</span></div>` +
     `<div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
 
+  let firstFlagDone = false;
   document.getElementById("results").innerHTML =
     `<tr><th>Quote</th><th>Verdict</th><th>Similarity</th><th>Anchor</th><th>Pinpoint</th></tr>` +
     report.results
@@ -227,7 +238,9 @@ a {
             ? `closest: ${esc(r.bestCandidate.sourceName)} <code>${r.bestCandidate.charStart}–${r.bestCandidate.charEnd}</code>`
             : "—";
         const pin = r.pinpoint ? `<span class="pill ${r.pinpoint.status === "mismatch" ? "mismatch" : r.pinpoint.status === "ok" ? "exact" : ""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}` : "—";
-        return `<tr class="${r.classification !== "exact" ? "flag" : ""}"><td class="mono"><code>${esc(r.id)}</code></td>` +
+        const adverse = r.classification === "not_found" || r.pinpoint?.status === "mismatch";
+        const cls = adverse && !firstFlagDone ? (firstFlagDone = true, "flag") : "";
+        return `<tr class="${cls}"><td class="mono"><code>${esc(r.id)}</code></td>` +
           `<td><span class="pill ${r.classification}">${r.classification}</span></td>` +
           `<td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td></tr>`;
       })
@@ -253,6 +266,5 @@ a {
   document.getElementById("mdBtn").onclick = () => download("cite-check-report.md", renderReport(report), "text/markdown");
   document.getElementById("jsonBtn").onclick = () => download("cite-check-output.json", JSON.stringify(report, null, 2) + "\n", "application/json");
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

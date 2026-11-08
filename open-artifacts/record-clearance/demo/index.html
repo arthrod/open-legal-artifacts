@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -130,7 +140,7 @@ a {
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
-  @media (min-width: 768px) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
+  @media (min-width: var(--bp-mobile)) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
   .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
   h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
@@ -141,11 +151,11 @@ a {
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
   button:hover { background: #333; }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
-  @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
   .item { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
   .item h3 { margin: 0 0 4px; font-size: 14.5px; }
   .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; }
-  .badge.ready_to_file { background: var(--accent); }
+  .badge.ready_to_file { background: var(--flag-tint); }
   .badge.blocked, .badge.data_needed { background: var(--text); color: var(--bg); }
   .badge.waiting { background: var(--border); }
   .badge.filed { background: var(--hover); border: var(--hairline); }
@@ -154,9 +164,9 @@ a {
   ul.ck li.met::before { content: "☒"; }
   ul.ck li.unknown::before { content: "？"; }
   .meta { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
-  .ref { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
-  .gate { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
-  .err { color: #8a1f1f; font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  .ref { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
+  .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+  .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
   code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
 </style>
 </head>
@@ -232,6 +242,5 @@ document.getElementById("run").addEventListener("click", () => {
   }
 });
 </script>
-<footer style="max-width:1100px;margin:32px auto 0;padding:16px 20px;border-top:1px solid #e8e8e5;color:#6b6b6b;font-size:12px;line-height:1.5;">Rules-as-data defaults are illustrative examples, not verified law. Not legal advice. <a href="https://github.com/arthrod/open-legal-artifacts" style="color:inherit;">MIT · open-legal-artifacts</a></footer><style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
-<script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
+<footer style="max-width:1100px;margin:32px auto 0;padding:16px 20px;border-top:1px solid #e8e8e5;color:#6b6b6b;font-size:12px;line-height:1.5;">Rules-as-data defaults are illustrative examples, not verified law. Not legal advice. <a href="https://github.com/arthrod/open-legal-artifacts" style="color:inherit;">MIT · open-legal-artifacts</a></footer><script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

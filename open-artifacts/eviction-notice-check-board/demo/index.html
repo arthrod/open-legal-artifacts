@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -133,7 +143,7 @@ a {
   h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
   .lede { color: var(--text-secondary); max-width: 64ch; line-height: 1.6; margin: 0 0 8px; }
-  .disclaimer { color: var(--text-secondary); font-size: 0.8rem; border-left: var(--hairline); padding-left: 12px; margin: 16px 0 32px; max-width: 72ch; }
+  .disclaimer { color: var(--text-secondary); font-size: 0.8rem; border: var(--hairline); padding: 8px 12px; margin: 16px 0 32px; max-width: 72ch; }
   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
   .panel { border: var(--hairline); background: #fff; padding: 20px; }
   label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin: 14px 0 4px; }
@@ -145,17 +155,17 @@ a {
   button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 20px; }
   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
   .verdict { font-family: var(--font-mono); font-size: 1.1rem; padding: 10px 14px; display: inline-block; border: 2px solid var(--text); margin-bottom: 16px; }
-  .verdict.fail { background: var(--accent); }
+  .verdict.fail { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .verdict.unverified { border-style: dashed; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
   .st { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border: 1px solid var(--text); white-space: nowrap; }
-  .st.fail { background: var(--accent); }
+  .st.fail { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .st.unverified { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
   .cite { color: var(--text-secondary); font-size: 11px; }
-  .err { border: 2px solid var(--text); background: var(--accent); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; }
+  .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
 </style>
 </head>
 <body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
@@ -279,6 +289,5 @@ $('run').addEventListener('click', () => {
 });
 $('run').click();
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

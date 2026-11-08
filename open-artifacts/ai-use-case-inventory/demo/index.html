@@ -34,6 +34,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -135,24 +145,23 @@ a {
   .rule { height:2px; width:56px; background:var(--accent); border:0; margin:0 0 32px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.14em; color:var(--text-secondary); margin:40px 0 12px; font-family:var(--font-mono); font-weight:400; }
   textarea { width:100%; box-sizing:border-box; min-height:220px; font-family:var(--font-mono); font-size:12px; line-height:1.6; border:1px solid var(--border); border-radius:0; background:#fff; padding:14px; color:var(--text); resize:vertical; }
-  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
   .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
   button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
   button:hover { background:#333; }
   .muted { color:var(--text-secondary); font-size:12px; }
   .bars { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 20px; }
   .bar { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
-  .bar b { font-weight:400; background:var(--accent); padding:0 4px; margin-left:6px; }
+  .bar b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
   table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
   th { font-family:var(--font-mono); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
   td { border-bottom:1px solid var(--border); padding:9px 10px; vertical-align:top; }
   .tier { font-family:var(--font-mono); font-size:11px; white-space:nowrap; padding:1px 5px; }
-  .tier.prohibited { background:var(--accent); }
-  .tier.high { background:var(--accent); opacity:0.85; }
+  .tier.prohibited { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+  .tier.high { background: var(--flag-tint); opacity:0.85; color: var(--warn); border-color: var(--warn);}
   .tier.limited { border:1px solid var(--border); }
   .tier.minimal { border:1px solid var(--border); color:var(--text-secondary); }
   .gap { font-family:var(--font-mono); font-size:11px; margin:2px 0; }
-  .gap.blocker { background:var(--accent); display:inline-block; padding:0 4px; }
+  .gap.blocker { background: var(--flag-tint); display:inline-block; padding:0 4px; color: var(--bad); border-color: var(--bad);}
   .basis { color:var(--text-secondary); font-size:11.5px; font-family:var(--font-mono); }
 </style>
 </head>
@@ -224,6 +233,5 @@ $('csv').addEventListener('click', async () => {
 });
 run();
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>
