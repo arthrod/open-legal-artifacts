@@ -11,7 +11,7 @@ diffs, iCalendar alerts, CSV export.
 - Demo: open `demo/index.html` (prefilled with the fictional worked
   example; imports `tokens.css` + `../core/core.js`, which the site
   build inlines for the deployed single-file page).
-- Tests: `node --test core/core.test.js` — 30 tests.
+- Tests: `node --test core/core.test.js` — 35 tests.
 - Example: `node examples/run.js` → regenerates `examples/output.json`,
   `register.md`, `register.csv`, `register.ics`, and `diff.md` from
   `examples/input.json` (8 obligations: 2 breach risk — one a recurring
@@ -54,7 +54,7 @@ obligations in the contract's own words, and links outputs to sources.
 Ours, verifiably:
 
 - Reproducible and auditable: statuses are pure functions of
-  (obligations, satisfaction, asOf) — 30 green `node:test` tests,
+  (obligations, satisfaction, asOf) — 35 green `node:test` tests,
   deterministic at any as-of date, diffable in git.
 - The quote-level audit trail is data, not prose: every row carries the
   verbatim `sourceQuote` through JSON, CSV, and the Markdown Sources

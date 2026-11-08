@@ -24,7 +24,10 @@ and diff exports.
 Never guesses: invalid dates (including invalid recurrence cadence or
 anchor) → `unscheduled` with an "unverified, never guessed" flag;
 satisfaction records for unknown ids are ignored (no phantom
-obligations).
+obligations); satisfaction records dated after `asOf` are excluded
+from the status machine and flagged `future_dated` — the register is
+a function of facts known as of `asOf`, so a date typo can never turn
+overdue into satisfied.
 
 ## Input contract (JSON)
 
@@ -55,9 +58,11 @@ practice; recurrence takes precedence in the status machine.
 - Cycle due dates = anchor + k·cadence months, day clamped to the
   target month's last day (Jan 31 monthly → Feb 28; Feb 29 annual →
   Feb 28 in non-leap years).
-- Each cycle is its own duty. The latest satisfaction record covers at
-  most the most recent past cycle (when it falls in that cycle's
-  window); every earlier unmet cycle counts as a miss.
+- Each cycle is its own duty. The latest satisfaction record covers
+  the cycle whose window contains `satisfiedOn` — the window of a
+  cycle due D is (previous due date, D], so a record dated exactly D
+  discharges that cycle on time (never the next one); every other
+  unmet cycle counts as a miss.
 - Misses > 0 → `overdue` + breach-risk flag listing the missed dates;
   otherwise the next cycle date drives due-soon/pending/satisfied.
 

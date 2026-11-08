@@ -18,16 +18,7 @@
 - commentWindow +0 (no comment deadline)
 - status +15 (status="final")
 
-### 2. Texas Biometric Retention Schedule — score 93
-
-`tx-biometric-retention` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
-- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
-- topic +25 (core topic)
-- proximity +15 (effective in 145d (<= 180d threshold))
-- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
-- status +8 (status="proposed")
-
-### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
+### 2. FCC AI Voice Disclosure in Outreach Calls — score 85
 
 `us-fcc-ai-disclosure` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
 - jurisdiction +30 (exact profile jurisdiction match)
@@ -35,6 +26,15 @@
 - proximity +15 (effective in 100d (<= 180d threshold))
 - commentWindow +0 (no comment deadline)
 - status +15 (status="final")
+
+### 3. Texas Biometric Retention Schedule — score 78
+
+`tx-biometric-retention` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
+- jurisdiction +15 (US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state))
+- topic +25 (core topic)
+- proximity +15 (effective in 145d (<= 180d threshold))
+- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
+- status +8 (status="proposed")
 
 ## Medium band (2 items)
 

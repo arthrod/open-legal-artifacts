@@ -19,14 +19,17 @@ cite-before-claim contract: **unverified cells are never guessed.**
   content but carry a re-verification warning.
 - Coverage stats (overall + per-jurisdiction + per-question), a prioritized
   re-verification worklist (`toWorklist`), and CSV + Markdown exports where
-  UNVERIFIED stays explicit and citations render as links.
+  UNVERIFIED stays explicit and citations render as links (http/https only —
+  unsafe schemes like `javascript:` are never linked; they render as inert
+  text with a warning, and CSV export neutralizes spreadsheet formula
+  injection).
 - Demo loads your own survey (paste JSON or file, as-of picker) — client-side
   only, no data leaves the machine.
 
 ## Run
 
 ```bash
-node --test            # 16 tests (node:test)
+node --test            # 24 tests (node:test)
 node examples/run.js   # builds the 7×4 worked example, writes matrix.json, survey.csv, survey.md
 ```
 

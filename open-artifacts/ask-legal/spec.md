@@ -44,7 +44,7 @@ of approved guidance. Deterministically:
 ## IO contract
 
 ```js
-import { answerQuestion, createAuditLog, exportAuditLog, validateKb,
+import { answerQuestion, createAuditLog, exportAuditLog, saveAudit, loadAudit, validateKb,
          escalationTicket, applyCorrection, approveEntry, overdueEscalations } from "./core/core.js";
 
 validateKb(kb);            // [] — serve; non-empty — refuse (answerQuestion throws)
@@ -57,7 +57,14 @@ const { entry } = applyCorrection(kb, log, { auditId: result.auditId, answer, ta
 approveEntry(kb, entry.id, "Approver (fictional)");  // pending → approved, now retrievable
 overdueEscalations(log, routing, asOf);              // SLA breaches, no hidden clocks
 exportAuditLog(log);                                 // JSON-lines string for persistence
+const reloaded = loadAudit(saveAudit(log));           // durable round-trip: reload continues the log (and AUD numbering)
 ```
+
+`loadAudit`/`saveAudit` are the persistence pair: `saveAudit(log)` validates
+(unique non-empty `auditId`s, objects only) and emits the same JSONL bytes as
+`exportAuditLog`; `loadAudit(jsonl)` parses it back with line-numbered refusal
+of malformed or duplicate-id input — never silently repaired. Handing the
+reloaded array back to `answerQuestion` appends after the last existing entry.
 
 - `kb`: `[{ id, question, answer, tags: string[], jurisdiction, updated, approvedBy }]`
 - `thresholds` (rules-as-data, US-flavored defaults): `{ high: 9, medium: 5, freshnessDays: 365 }`

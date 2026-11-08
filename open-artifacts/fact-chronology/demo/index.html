@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Fact chronology — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
@@ -20,23 +21,23 @@
   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
   .counts div:last-child { border-right: none; }
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
+  .counts span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); }
   .tl { border: var(--hairline); background: #fff; }
   .tl .row { display: grid; grid-template-columns: 150px 1fr; gap: 0; border-bottom: var(--hairline); }
   .tl .row:last-child { border-bottom: none; }
-  .tl .when { font-family: var(--font-mono); font-size: 11px; padding: 12px 12px; border-right: var(--hairline); color: var(--text-secondary); }
+  .tl .when { font-family: var(--font-mono); font-size: 12px; padding: 12px 12px; border-right: var(--hairline); color: var(--text-secondary); }
   .tl .when b { color: var(--text); font-weight: 500; display: block; }
   .tl .what { padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
   .tl .src { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
   .tl .src + .src { margin-top: 2px; }
   .tl .src b { color: var(--text); }
-  .prec { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; border: 1px solid var(--border); padding: 0 4px; margin-left: 6px; color: var(--text-secondary); }
+  .prec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; border: 1px solid var(--border); padding: 0 4px; margin-left: 6px; color: var(--text-secondary); }
   .sig { margin-left: 6px; }
-  .tag { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+  .tag { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 0 5px; margin-left: 6px; white-space: nowrap; }
   .tag.warn { border-color: var(--accent); color: var(--text); background: rgba(234,209,130,.25); }
   .conflict, .gapbox, .diffbox { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
-  .k { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
-  .computed { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+  .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
+  .computed { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
   blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
   .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
@@ -79,8 +80,8 @@
     <h2>Views</h2>
     <div class="row-btns" style="margin-top:0">
       <button id="vWorking" aria-pressed="true">Working chronology</button>
-      <button id="vSof">Statement of facts</button>
-      <button id="vWitness">Witness prep</button>
+      <button id="vSof" aria-pressed="false">Statement of facts</button>
+      <button id="vWitness" aria-pressed="false">Witness prep</button>
     </div>
     <p class="variant-note" id="variantNote"></p>
   </section>
@@ -97,7 +98,7 @@
 
   <section>
     <h2>Timeline</h2>
-    <div class="tl" id="timeline"></div>
+    <div class="tl" id="timeline" aria-live="polite"></div>
   </section>
 
   <section id="undatedSection">

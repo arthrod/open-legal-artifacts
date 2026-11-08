@@ -44,6 +44,22 @@ function multiset(xs: string[]): Map<string, number> {
   return m;
 }
 
+/**
+ * A document tokenized once, reused across every quote verification.
+ * `makeLocator` + `bestWindowIn` exist so a many-cell run never
+ * re-tokenizes the same source per cell (buildMatrix caches one locator
+ * per document).
+ */
+export interface Locator {
+  source: string;
+  toks: Tok[];
+}
+
+/** Tokenize `source` once; pass the result to `bestWindowIn` per quote. */
+export function makeLocator(source: string): Locator {
+  return { source, toks: tokenizeWithSpans(source) };
+}
+
 export interface WindowMatch {
   score: number; // Jaccard similarity between quote tokens and best window
   coverage: number; // fraction of quote tokens found in the best window
@@ -54,19 +70,45 @@ export interface WindowMatch {
 
 /**
  * Slide windows of ~quote length (± padding) over the source and return the
- * best-scoring window. Purely deterministic; O(sourceTokens * windowSizes).
+ * best-scoring window. Purely deterministic.
+ *
+ * Uses an incrementally-maintained window multiset (O(sourceTokens) map ops
+ * per window size instead of O(sourceTokens × windowSize)), which selects
+ * the identical best window — same scores (integer intersections), same
+ * iteration order, same tie-breaking — as the naive per-window rebuild.
  */
-export function bestWindow(source: string, quote: string, pad = 6): WindowMatch | null {
-  const S = tokenizeWithSpans(source);
+export function bestWindowIn(loc: Locator, quote: string, pad = 6): WindowMatch | null {
+  const S = loc.toks;
   const q = tokens(quote);
   if (S.length === 0 || q.length === 0) return null;
   const qSet = multiset(q);
+  const wSet = new Map<string, number>();
+  const bump = (tok: string, delta: number): number => {
+    // update window count; return change in min(qCount, wCount)
+    const qc = qSet.get(tok);
+    if (qc === undefined) {
+      const wc = (wSet.get(tok) ?? 0) + delta;
+      if (wc === 0) wSet.delete(tok);
+      else wSet.set(tok, wc);
+      return 0;
+    }
+    const before = Math.min(qc, wSet.get(tok) ?? 0);
+    const wc = (wSet.get(tok) ?? 0) + delta;
+    if (wc === 0) wSet.delete(tok);
+    else wSet.set(tok, wc);
+    return Math.min(qc, wc) - before;
+  };
   let best: WindowMatch | null = null;
   for (let size = Math.max(1, q.length - 2); size <= q.length + pad; size++) {
+    wSet.clear();
+    for (let i = 0; i < size && i < S.length; i++) wSet.set(S[i].norm, (wSet.get(S[i].norm) ?? 0) + 1);
+    let inter = 0;
+    for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
     for (let st = 0; st + size <= S.length; st++) {
-      let inter = 0;
-      const wSet = multiset(S.slice(st, st + size).map((t) => t.norm));
-      for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
+      if (st > 0) {
+        inter += bump(S[st - 1].norm, -1);
+        inter += bump(S[st + size - 1].norm, +1);
+      }
       const union = q.length + size - inter;
       const score = union === 0 ? 1 : inter / union;
       const coverage = inter / q.length;
@@ -76,12 +118,22 @@ export function bestWindow(source: string, quote: string, pad = 6): WindowMatch 
           coverage,
           start: S[st].start,
           end: S[st + size - 1].end,
-          verbatim: source.slice(S[st].start, S[st + size - 1].end),
+          verbatim: loc.source.slice(S[st].start, S[st + size - 1].end),
         };
       }
     }
   }
   return best;
+}
+
+/**
+ * Slide windows of ~quote length (± padding) over the source and return the
+ * best-scoring window. Purely deterministic; O(sourceTokens * windowSizes).
+ * Tokenizes per call — for many quotes over one source prefer
+ * `makeLocator` + `bestWindowIn`.
+ */
+export function bestWindow(source: string, quote: string, pad = 6): WindowMatch | null {
+  return bestWindowIn(makeLocator(source), quote, pad);
 }
 
 /** Whitespace-tolerant verbatim containment check on the raw strings. */

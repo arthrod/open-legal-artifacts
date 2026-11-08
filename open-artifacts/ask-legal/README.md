@@ -25,11 +25,15 @@ escalation that never guesses, and a full audit log.
 - **Full audit log** — every question recorded append-only (JSONL export),
   with per-team routing SLAs (`overdueEscalations`) flagging breaches;
   `answerQuestion` cannot answer without logging.
+- **Durable audit log** — `saveAudit`/`loadAudit` round-trip the log through
+  its JSONL form (validated: unique audit ids, line-numbered refusal of
+  malformed input) so a reloaded demo or new process continues the same
+  append-only history and AUD numbering instead of restarting it.
 
 ## Run
 
 ```bash
-node --test            # 21 tests (node:test)
+node --test            # 28 tests (node:test)
 node examples/run.js   # answers 5 fictional questions, drafts the escalation ticket, writes answers.json + audit-log.jsonl + report.md
 ```
 

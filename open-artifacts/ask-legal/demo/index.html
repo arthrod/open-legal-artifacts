@@ -4,42 +4,100 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ask legal — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23ffd400'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 40px var(--pad-x-mobile) 96px; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
   h1 { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.02em; font-weight: 400; }
-  .lede { font-size: 17px; color: var(--text-secondary); max-width: 62ch; margin-bottom: 8px; }
-  section { margin-top: 48px; }
-  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  .lede { font-size: 16px; color: var(--text-secondary); max-width: 64ch; margin-bottom: 6px; }
+  section { margin-top: 40px; }
+  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
-  .ask { display: flex; gap: 12px; flex-wrap: wrap; }
-  input[type="text"] { flex: 1; min-width: 260px; font-family: var(--font-mono); font-size: 14px;
-    padding: 12px; border: var(--hairline); background: #fff; }
-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+  h3 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  /* desk tabs */
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
+  .tabs button[role="tab"] { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em; padding: 8px 14px;
+    border: var(--hairline); background: #fff; color: var(--text); cursor: pointer; }
+  .tabs button[role="tab"][aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .ask { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  input[type="text"], select, textarea { font-family: var(--font-mono); font-size: 13px; padding: 10px;
+    border: var(--hairline); background: #fff; color: var(--text); }
+  #q { min-width: 260px; flex: 1; }
+  button { font-family: var(--font-mono); font-size: 12.5px; padding: 9px 16px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; }
   button:hover { background: var(--accent); color: var(--text); }
-  button.ghost { background: transparent; color: var(--text); }
-  .card { border: var(--hairline); background: #fff; padding: 16px; margin-top: 16px; position: relative; }
-  .card .q { font-weight: 600; margin-bottom: 8px; padding-right: 90px; }
-  .lvl { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 11px;
+  button.ghost { background: transparent; color: var(--text); border: var(--hairline); }
+  button.chip { font-size: 12px; padding: 6px 10px; border: var(--hairline); background: #fff; color: var(--text); }
+  .examples button { margin: 4px 6px 0 0; }
+  .card { border: var(--hairline); background: #fff; padding: 16px; margin-top: 14px; position: relative; }
+  .card .q { font-weight: 600; margin-bottom: 8px; padding-right: 92px; }
+  .lvl { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 12px;
     text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--text); }
-  .lvl-high { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
+  .lvl-high { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
   .lvl-medium { background: #fff; }
   .lvl-low { background: var(--text); color: var(--bg); }
   .answer { padding: 10px 12px; margin: 10px 0; background: var(--hover); font-size: 14px; }
-  .esc { padding: 10px 12px; margin: 10px 0; background: var(--flag-tint); font-size: 14px; font-weight: 600; color: var(--warn); border-color: var(--warn);}
+  .esc { padding: 10px 12px; margin: 10px 0; background: var(--flag-tint); font-size: 14px; font-weight: 600; color: var(--warn); border: 1px solid var(--warn); }
   .reasons { margin: 6px 0 0; }
   .reasons li { list-style: none; font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 3px; }
   .reasons li::before { content: "· "; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; text-align: left;
+  th[scope="col"] { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; text-align: left;
     border-bottom: 2px solid var(--text); padding: 6px 8px; }
-  td { border-bottom: var(--hairline); padding: 6px 8px; font-family: var(--font-mono); vertical-align: top; }
+  td { border-bottom: var(--hairline); padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
-  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
-  .examples button { margin: 4px 6px 0 0; font-size: 11px; padding: 6px 10px; border: var(--hairline); background: #fff; color: var(--text); }
+  button.kbcite { border: none; background: none; color: var(--text); font-family: var(--font-mono); font-size: 12px;
+    text-decoration: underline; padding: 0 2px; cursor: pointer; }
+  button.kbcite:hover { background: var(--accent); }
+  /* counts strip */
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .counts span { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 6px 10px; }
+  .counts b { font-weight: 400; }
+  .counts .bad { border-color: var(--bad); color: var(--bad); }
+  .counts .warn { border-color: var(--warn); color: var(--warn); }
+  /* register rows */
+  .reg { border: var(--hairline); background: #fff; padding: 12px 14px; margin-top: 8px; }
+  .reg .rh { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-family: var(--font-mono); font-size: 12px; }
+  .reg .rh .idr { font-weight: 700; }
+  .reg .st { padding: 1px 7px; border: 1px solid var(--text); font-size: 12px; }
+  .reg .st.pending { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
+  .reg .rq { font-weight: 600; margin: 4px 0; font-size: 14px; }
+  .reg .ra { font-size: 13px; color: var(--text); }
+  .reg .rmeta { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .flash { outline: 3px solid var(--accent); outline-offset: 2px; }
+  /* approvals + queue actions */
+  .rowbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .sla { font-family: var(--font-mono); font-size: 12px; padding: 1px 7px; border: 1px solid var(--text); }
+  .sla.overdue { background: var(--text); color: var(--bg); }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+  /* drawer */
+  #scrim { position: fixed; inset: 0; background: rgba(10,10,10,0.35); z-index: 40; }
+  #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 94vw); background: var(--bg);
+    border-left: 2px solid var(--text); z-index: 50; padding: 20px; overflow-y: auto; }
+  #drawer .d-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  #drawer pre { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 10px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word; border: var(--hairline); }
+  #drawer dl { font-size: 13px; } #drawer dt { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+  #drawer dd { margin: 2px 0 0; }
+  /* toasts */
+  #toasts { position: fixed; left: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; }
+  #toasts div { font-family: var(--font-mono); font-size: 12px; background: var(--text); color: var(--bg);
+    padding: 8px 12px; max-width: 76vw; }
+  .disclaimer { margin-top: 56px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+  .note { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 8px; }
+  /* mobile: stacked table cards */
+  @media (max-width: 480px) {
+    table.stackable, table.stackable tbody, table.stackable tr, table.stackable td { display: block; }
+    table.stackable thead { display: none; }
+    table.stackable tr { border: var(--hairline); background: #fff; margin: 8px 0; }
+    table.stackable td { display: flex; justify-content: space-between; gap: 12px; text-align: right; border: none; }
+    table.stackable td::before { content: attr(data-l); font-family: var(--font-mono); font-size: 12px;
+      color: var(--text-secondary); text-align: left; }
+  }
 </style>
 </head>
 <body>
@@ -48,92 +106,541 @@
     <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
     <div class="rule"></div>
     <h1>ask legal</h1>
-    <p class="lede">Guidance-base Q&amp;A with teeth: every answer carries a confidence level and written
-      reasons, low confidence escalates instead of guessing, and every question lands in an
-      append-only audit log. Open reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">KB: Meridian Software Co. (fictional) · 5 approved guidance entries ·
-      freshness window 365d · thresholds high ≥ 9, medium ≥ 5.</p>
+    <p class="lede">Guidance Q&amp;A with teeth: every answer carries a confidence level and written reasons,
+      low confidence escalates instead of guessing, an optional LLM may only rephrase approved answers — never
+      generate legal content — and every question lands in an append-only audit log that survives reload.</p>
+    <p class="lede" style="font-size:12.5px">KB: Meridian Software Co. (fictional) · freshness window 365d ·
+      thresholds high ≥ 9, medium ≥ 5 · fixed demo clock <code>2026-11-07</code> · sample data, nothing is sent anywhere.</p>
+    <div class="tabs" role="tablist" aria-label="Desk">
+      <button role="tab" id="tabAsk" aria-selected="true" aria-controls="deskAsk">Colleague desk — ask</button>
+      <button role="tab" id="tabLegal" aria-selected="false" aria-controls="deskLegal">Legal desk — review &amp; approve</button>
+    </div>
   </header>
 
-  <section>
+  <section id="deskAsk" role="tabpanel" aria-labelledby="tabAsk">
     <h2>Ask a question</h2>
     <div class="ask">
-      <input type="text" id="q" placeholder="e.g. Which NDA template do I use for a new analytics vendor?" />
-      <button id="ask">Ask</button>
-      <button id="exportLog" class="ghost">Export audit log</button>
+      <div class="field" style="flex:1">
+        <label for="q">Your question</label>
+        <input type="text" id="q" placeholder="e.g. Which NDA template do I use for a new analytics vendor?" />
+      </div>
+      <div class="field">
+        <label for="asker">Asking as</label>
+        <select id="asker">
+          <option>j.moreau@example.test</option>
+          <option>s.okafor@example.test</option>
+          <option>t.nguyen@example.test</option>
+          <option>demo@example.test</option>
+        </select>
+      </div>
+      <button id="askBtn">Ask</button>
     </div>
     <div class="examples">
-      <button data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
-      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → provisional medium</button>
-      <button data-q="What is our data-retention approach?">weak match → escalate + draft</button>
-      <button data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
+      <button class="chip" data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
+      <button class="chip" data-q="How long do we retain website visitor data?">stale guidance → provisional</button>
+      <button class="chip" data-q="What is our data-retention approach?">weak match → escalate</button>
+      <button class="chip" data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
     </div>
-    <div id="answer"></div>
+    <div id="answer" role="region" aria-live="polite" aria-label="Answer"></div>
+  </section>
+
+  <section id="deskLegal" role="tabpanel" aria-labelledby="tabLegal" hidden>
+    <h2>Legal desk</h2>
+    <div class="counts" id="counts" aria-label="Queue counts"></div>
+
+    <h3 style="margin-top:24px">Escalation queue — routed asks, SLA state</h3>
+    <div class="note" id="slaNote"></div>
+    <div style="overflow-x:auto"><table class="stackable" id="queueTable">
+      <thead><tr><th scope="col">id</th><th scope="col">opened</th><th scope="col">asker</th><th scope="col">question</th><th scope="col">route</th><th scope="col">SLA</th><th scope="col">actions</th></tr></thead>
+      <tbody id="queueBody"></tbody>
+    </table></div>
+
+    <h3 style="margin-top:28px">Pending approvals — corrections are invisible to colleagues until approved</h3>
+    <div id="approvals"></div>
+    <div class="field" style="margin-top:10px; max-width:420px">
+      <label for="approver">Approving as</label>
+      <input type="text" id="approver" value="A. Fern, Deputy GC (fictional)" />
+    </div>
+
+    <h3 style="margin-top:28px">Guidance register — the served source text</h3>
+    <div id="register"></div>
+
+    <h3 style="margin-top:28px">Governance decisions</h3>
+    <ul class="reasons" id="actionsList"></ul>
+
+    <div id="corrCard" class="card" hidden>
+      <div class="q">Draft correction <span id="corrFor" style="font-weight:400"></span></div>
+      <div class="field" style="margin-top:6px"><label for="corrAnswer">Approved-answer wording</label>
+        <textarea id="corrAnswer" rows="3" placeholder="What Legal would answer to this question…"></textarea></div>
+      <div class="filters" style="margin-top:8px">
+        <div class="field"><label for="corrTags">Tags (comma-separated)</label><input type="text" id="corrTags" /></div>
+        <div class="field"><label for="corrJur">Jurisdiction</label>
+          <select id="corrJur"><option value="">—</option><option>US</option><option>EU</option></select></div>
+        <div class="field"><label for="corrUpdated">Updated (YYYY-MM-DD)</label><input type="text" id="corrUpdated" /></div>
+        <div class="field"><label for="corrBy">Submitted by</label><input type="text" id="corrBy" value="R. Castellan, Privacy Counsel (fictional)" /></div>
+      </div>
+      <div class="rowbtns">
+        <button id="corrSubmit">Draft → pending approval</button>
+        <button id="corrCancel" class="ghost">Cancel</button>
+      </div>
+    </div>
   </section>
 
   <section>
-    <h2>Audit log — every question, append-only</h2>
-    <div style="overflow-x:auto"><table id="logTable">
-      <thead><tr><th>id</th><th>ts</th><th>asked by</th><th>question</th><th>matched</th><th>conf.</th><th>escalated</th><th>route</th></tr></thead>
-      <tbody></tbody>
+    <h2>Audit log — every question, append-only, survives reload</h2>
+    <div class="filters">
+      <div class="field"><label for="fConf">Confidence</label>
+        <select id="fConf"><option value="">all</option><option>high</option><option>medium</option><option>low</option></select></div>
+      <div class="field" style="flex:1"><label for="fSearch">Search</label>
+        <input type="text" id="fSearch" placeholder="question, asker, route…" /></div>
+      <button id="exportJsonl" class="ghost">Export JSONL</button>
+      <button id="exportCsv" class="ghost">Export CSV</button>
+      <button id="exportMd" class="ghost">Export digest (MD)</button>
+      <button id="resetData" class="ghost">Reset demo data</button>
+    </div>
+    <div class="note" id="storeNote"></div>
+    <div style="overflow-x:auto"><table class="stackable" id="logTable">
+      <thead><tr><th scope="col">id</th><th scope="col">ts</th><th scope="col">asked by</th><th scope="col">question</th><th scope="col">matched</th><th scope="col">conf.</th><th scope="col">escalated</th><th scope="col">route</th></tr></thead>
+      <tbody id="auditBody"></tbody>
     </table></div>
   </section>
 
   <footer class="disclaimer">
     Deterministic retrieval + gating — an optional LLM may only rephrase approved answers (schema in spec.md),
     never generate new legal content. All data fictional. Not legal advice; guidance must be approved by your legal team.
-    <code>anthropic counterpart: Ask legal (closed)</code>
+    <code>persistence: localStorage, append-only via core saveAudit/loadAudit</code>
   </footer>
 </div>
 
+<div id="scrim" hidden></div>
+<aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+  <div class="d-head"><h3 id="drawerTitle">Escalation ticket</h3>
+    <button id="closeDrawer" class="ghost" aria-label="Close escalation ticket drawer">✕ close</button></div>
+  <div id="drawerBody"></div>
+  <div class="rowbtns" style="margin-top:12px"><button id="copyTicket">Copy ticket JSON</button></div>
+  <pre id="ticketJson" aria-label="Ticket JSON"></pre>
+</aside>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
 <script type="module">
-  import { answerQuestion, createAuditLog, exportAuditLog } from "../core/core.js";
+  import {
+    answerQuestion, createAuditLog, exportAuditLog, saveAudit, loadAudit,
+    gaugeConfidence, escalationTicket, applyCorrection, approveEntry,
+    overdueEscalations, parseDate,
+  } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
+  /* ---------- vendored from open-artifacts/_shared/persist.js (storage part; ----------
+     node-only appendLog/loadLog omitted). Dependency-free, localStorage w/ memory fallback. */
+  function memoryBackend(name) {
+    const map = new Map();
+    return {
+      backendName: name,
+      get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
+      set(k, v) { map.set(k, { kind: "value", value: JSON.parse(JSON.stringify(v ?? null)) }); },
+      remove(k) { map.delete(k); },
+      append(k, entry) {
+        if (!map.has(k) || map.get(k).kind !== "log") map.set(k, { kind: "log", items: [] });
+        map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null)));
+      },
+      entries(k) { const v = map.get(k); return v && v.kind === "log" ? v.items.slice() : []; },
+      exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join("\n") + (this.entries(k).length ? "\n" : ""); },
+    };
+  }
+  function probeLocalStorage() {
+    try {
+      const ls = globalThis.localStorage;
+      if (!ls) return null;
+      ls.setItem("__persist_probe__", "1");
+      const ok = ls.getItem("__persist_probe__") === "1";
+      ls.removeItem("__persist_probe__");
+      return ok ? ls : null;
+    } catch { return null; }
+  }
+  function localBackend(namespace) {
+    const ls = probeLocalStorage();
+    if (!ls) return memoryBackend("memory-fallback");
+    const key = (k) => `${namespace}:${k}`;
+    const read = (k) => { try { return ls.getItem(key(k)); } catch { return null; } };
+    let degraded = false;
+    const mem = memoryBackend("memory");
+    return {
+      backendName: "local",
+      get(k) {
+        if (degraded) return mem.get(k);
+        const raw = read(k);
+        if (raw == null) return null;
+        try { return JSON.parse(raw); } catch { return null; }
+      },
+      set(k, v) {
+        if (degraded) return mem.set(k, v);
+        try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); }
+      },
+      remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
+      append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
+      entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
+      exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join("\n") + (es.length ? "\n" : ""); },
+    };
+  }
+  function createStorage(namespace) {
+    return probeLocalStorage() ? localBackend(namespace) : memoryBackend("memory-fallback");
+  }
+  /* ---------- end vendored persist.js ---------- */
+
   const $ = (id) => document.getElementById(id);
-  const log = createAuditLog();
-  const opts = { asOf: EXAMPLE.asOf, askedBy: "demo@example.test", thresholds: EXAMPLE.thresholds, routing: EXAMPLE.routing };
+  const storage = createStorage("ask-legal");
+  const AS_OF = EXAMPLE.asOf;
+  const ROUTING = { // demo config: per-team SLAs in days (rules-as-data; core routeTo handles objects)
+    privacy: { team: "privacy-counsel", slaDays: 2 },
+    employment: { team: "people-legal", slaDays: 3 },
+    contracts: { team: "commercial-legal", slaDays: 2 },
+    expenses: { team: "finance-ops", slaDays: 5 },
+    default: { team: "legal-intake", slaDays: 5 },
+  };
+  const slaByTeam = Object.values(ROUTING).reduce((m, v) => ((m[v.team] = v.slaDays), m), {});
+  const DAYS = 86400000;
+  const ageDays = (ts) => { const d = parseDate(ts); return d ? Math.round((parseDate(AS_OF) - d) / DAYS) : null; };
 
+  /* ---------- state ---------- */
+  let log, kb, kbAdd, actions;
+  const opts = () => ({ asOf: AS_OF, askedBy: $("asker").value, thresholds: EXAMPLE.thresholds, routing: ROUTING });
+
+  function coreApplyCorrection(corr) {
+    const res = applyCorrection(kb, log, corr); // throws on unknown audit id
+    kbAdd.push(res.entry);
+    return res;
+  }
+
+  function seed() { // first run only: history executed through the core, then persisted — no fabricated rows
+    const asks = [
+      ["j.moreau@example.test", "Which NDA template do I use for a new analytics vendor?", "2026-11-02"],
+      ["s.okafor@example.test", "Can I expense client entertainment over $500 for the Halberd dinner?", "2026-10-20"],
+      ["j.moreau@example.test", "How long do we retain website visitor data under the privacy policy?", "2026-10-05"],
+      ["t.nguyen@example.test", "What is our data-retention approach?", "2026-10-30"],
+      ["t.nguyen@example.test", "Do we need a license to launch a satellite for the marketing team?", "2026-09-15"],
+    ];
+    for (const [who, q, asOf] of asks) answerQuestion(kb, q, { ...opts(), asOf, askedBy: who }, log);
+    const sat = log.find((e) => /satellite/i.test(e.question));
+    coreApplyCorrection({
+      auditId: sat.auditId,
+      answer: "No — Meridian does not launch hardware. Any space-adjacent promotional stunt needs Commercial Legal sign-off and a written aviation/FCC review before it is pitched to a client.",
+      tags: ["marketing", "licensing", "contracts"], jurisdiction: "US", updated: "2026-11-06",
+      approvedBy: "D. Whitcombe, Commercial Legal (fictional)",
+    });
+    actions.push({ ts: AS_OF, actor: "D. Whitcombe, Commercial Legal (fictional)", action: "drafted correction", entryId: `kb-corr-${sat.auditId.toLowerCase().replace(/^aud-/, "")}`, auditId: sat.auditId });
+  }
+
+  function restore() {
+    kbAdd = Array.isArray(storage.get("kbAdd")) ? storage.get("kbAdd") : [];
+    actions = Array.isArray(storage.get("actions")) ? storage.get("actions") : [];
+    kb = [...EXAMPLE.knowledgeBase, ...kbAdd];
+    log = loadAudit(storage.get("auditJsonl")); // refuses, never silently repairs
+    if (storage.get("seeded") !== true) {
+      seed();
+      storage.set("seeded", true);
+      persist();
+    }
+  }
+
+  function persist() {
+    try { storage.set("auditJsonl", saveAudit(log)); } catch (e) { toast("Persistence refused: " + e.message); }
+    storage.set("kbAdd", kbAdd);
+    storage.set("actions", actions);
+    storage.set("askedBy", $("asker").value);
+  }
+
+  /* ---------- shared UI helpers ---------- */
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function toast(msg) {
+    const d = document.createElement("div");
+    d.textContent = msg;
+    $("toasts").appendChild(d);
+    setTimeout(() => d.remove(), 4200);
+  }
+  function download(name, text, mime) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function cite(id) { // citation click-through: jump to the register entry and flash it
+    showDesk("legal");
+    const row = $("reg-" + id);
+    if (!row) { toast(`Entry ${id} is not in the register (pending or removed).`); return; }
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.add("flash");
+    setTimeout(() => row.classList.remove("flash"), 1800);
+  }
+  function showDesk(which) {
+    const legal = which === "legal";
+    $("deskLegal").hidden = !legal;
+    $("deskAsk").hidden = legal;
+    $("tabLegal").setAttribute("aria-selected", String(legal));
+    $("tabAsk").setAttribute("aria-selected", String(!legal));
+    window.scrollTo({ top: 0 });
+  }
 
+  /* ---------- escalation ticket drawer ---------- */
+  let lastFocus = null;
+  function ticketFor(auditId) { // rebuild a ticket from the audit row: reasons + top match re-derived deterministically
+    const e = log.find((x) => x.auditId === auditId);
+    if (!e) return null;
+    const g = gaugeConfidence(kb, e.question, EXAMPLE.thresholds, e.ts);
+    return escalationTicket(
+      { auditId, route: e.route, confidence: { reasons: g.reasons }, suggestedEntry: g.top ? { id: g.top.id, question: g.top.question } : null },
+      log
+    );
+  }
+  function openTicket(auditId) {
+    const t = ticketFor(auditId);
+    if (!t) return;
+    $("drawerBody").innerHTML =
+      `<dl><dt>Route</dt><dd>${esc(t.route ?? "—")}</dd>` +
+      `<dt>Question</dt><dd>${esc(t.question ?? "")}</dd>` +
+      `<dt>Asker</dt><dd>${esc(t.asker ?? "—")}</dd>` +
+      `<dt>Matched entries</dt><dd>${t.matchedIds.length ? t.matchedIds.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") : "none — guidance gap"}</dd>` +
+      `<dt>Suggested start</dt><dd>${t.suggestedEntry ? `<button class="kbcite" data-cite="${esc(t.suggestedEntry.id)}">${esc(t.suggestedEntry.id)}</button> ${esc(t.suggestedEntry.question)}` : "—"}</dd>` +
+      `<dt>Why escalated</dt><dd><ul class="reasons">${t.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></dd></dl>`;
+    $("ticketJson").textContent = JSON.stringify(t, null, 2);
+    lastFocus = document.activeElement;
+    $("scrim").hidden = false;
+    $("drawer").hidden = false;
+    $("closeDrawer").focus();
+  }
+  function closeTicket() {
+    $("scrim").hidden = true;
+    $("drawer").hidden = true;
+    if (lastFocus) lastFocus.focus();
+  }
+
+  /* ---------- colleague desk ---------- */
   function ask() {
     const question = $("q").value.trim();
-    if (!question) return;
-    const r = answerQuestion(EXAMPLE.knowledgeBase, question, opts, log);
+    if (!question) { toast("Type a question first — a sentence or two is enough."); $("q").focus(); return; }
+    let r;
+    try { r = answerQuestion(kb, question, opts(), log); }
+    catch (e) { toast("Refused: " + e.message); return; }
+    persist();
     $("answer").innerHTML =
       `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
       (r.answered
         ? `<div class="answer">${esc(r.answer)}` +
           (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
-          `<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
+          `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · audit <code>${r.auditId}</code></small></div>`
         : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>` +
-          (r.suggestedEntry
-            ? `<div class="answer">Ticket draft for the lawyer — closest entry <code>${r.suggestedEntry.id}</code>: “${esc(r.suggestedEntry.question)}”. A correction can re-enter the KB as pending-approval.</div>`
-            : `<div class="answer">Ticket draft: zero KB overlap — guidance gap for Legal.</div>`)) +
+          `<div class="rowbtns"><button data-ticket="${r.auditId}">Open escalation ticket</button></div>`) +
       `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
-    renderLog();
+    renderAll();
   }
 
-  function renderLog() {
-    const tb = $("logTable").querySelector("tbody");
-    tb.innerHTML = log.map((e) =>
-      `<tr><td>${e.auditId}</td><td>${e.ts}</td><td>${esc(e.askedBy)}</td><td>${esc(e.question)}</td>` +
-      `<td>${e.matched.join(", ") || "—"}</td><td>${e.confidenceLevel}</td>` +
-      `<td>${e.escalated ? "YES" : ""}</td><td>${e.route ?? "—"}</td></tr>`).join("");
+  /* ---------- legal desk ---------- */
+  function renderCounts() {
+    const pending = kb.filter((e) => e.status === "pending-approval").length;
+    const open = log.filter((e) => e.escalated).length;
+    const overdue = overdueEscalations(log, ROUTING, AS_OF);
+    $("counts").innerHTML =
+      `<span>published <b>${kb.length - pending}</b></span>` +
+      `<span class="${pending ? "warn" : ""}">pending approvals <b>${pending}</b></span>` +
+      `<span>open escalations <b>${open}</b></span>` +
+      `<span class="${overdue.length ? "bad" : ""}">past SLA <b>${overdue.length}</b></span>` +
+      `<span>audit rows <b>${log.length}</b></span>`;
+    $("slaNote").textContent =
+      `SLA from routing table (privacy-counsel 2d · people-legal 3d · commercial-legal 2d · finance-ops 5d · legal-intake 5d) · ages measured against fixed clock ${AS_OF}.`;
   }
 
-  $("ask").onclick = ask;
+  function renderQueue() {
+    const over = new Map(overdueEscalations(log, ROUTING, AS_OF).map((o) => [o.auditId, o]));
+    const rows = [...log].reverse().filter((e) => e.escalated);
+    $("queueBody").innerHTML = rows.map((e) => {
+      const o = over.get(e.auditId);
+      const sla = o
+        ? `<span class="sla overdue">overdue ${o.overdueByDays}d</span>`
+        : slaByTeam[e.route] != null && ageDays(e.ts) != null
+          ? `<span class="sla">day ${ageDays(e.ts)} of ${slaByTeam[e.route]}</span>`
+          : `<span class="sla">—</span>`;
+      const done = actions.some((a) => a.action === "approved" && a.auditId === e.auditId) || kbAdd.some((k) => k.sourceAuditId === e.auditId && k.status === "approved");
+      return `<tr><td data-l="id">${e.auditId}</td><td data-l="opened">${esc(e.ts ?? "—")}</td><td data-l="asker">${esc(e.askedBy)}</td>` +
+        `<td data-l="question">${esc(e.question)}</td><td data-l="route">${esc(e.route ?? "—")}</td><td data-l="SLA">${sla}</td>` +
+        `<td data-l="actions"><div class="rowbtns"><button class="chip" data-ticket="${e.auditId}">Ticket</button>` +
+        `<button class="chip" data-corr="${e.auditId}">${done ? "Correct again" : "Draft correction"}</button></div></td></tr>`;
+    }).join("") || `<tr><td colspan="7" data-l="">No escalations yet.</td></tr>`;
+  }
+
+  function renderApprovals() {
+    const pending = kb.filter((e) => e.status === "pending-approval");
+    $("approvals").innerHTML = pending.map((e) =>
+      `<div class="reg" id="reg-${esc(e.id)}"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
+      `<span class="st pending">pending approval — not served</span><code>${esc(e.sourceAuditId)}</code></div>` +
+      `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
+      `<p class="rmeta">submitted by ${esc(e.submittedBy ?? "—")} · updated ${esc(e.updated ?? "—")} · tags ${esc((e.tags ?? []).join(", ") || "—")}</p>` +
+      `<div class="rowbtns"><button data-approve="${esc(e.id)}">Approve &amp; publish</button>` +
+      `<button class="ghost" data-reject="${esc(e.id)}">Reject</button></div></div>`
+    ).join("") || `<p class="note">Nothing pending — corrections drafted from the escalation queue appear here.</p>`;
+  }
+
+  function renderRegister() {
+    $("register").innerHTML = kb.map((e) => {
+      const pending = e.status === "pending-approval";
+      const stale = !pending && parseDate(AS_OF) - parseDate(e.updated) > EXAMPLE.thresholds.freshnessDays * DAYS;
+      return `<div class="reg" id="reg-${esc(e.id)}" tabindex="-1"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
+        (pending ? `<span class="st pending">pending approval — not served</span>` : `<span class="st">approved</span>`) +
+        (stale ? `<span class="st pending">stale — served downgraded</span>` : "") + `</div>` +
+        `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
+        `<p class="rmeta">${esc((e.tags ?? []).join(" · ") || "no tags")} · ${esc(e.jurisdiction ?? "any")} · updated ${esc(e.updated ?? "—")} · approved by ${esc(e.approvedBy ?? "— (pending)")}</p></div>`;
+    }).join("");
+  }
+
+  function renderActions() {
+    $("actionsList").innerHTML = [...actions].reverse().slice(0, 12)
+      .map((a) => `<li>${esc(a.ts ?? "")} · ${esc(a.actor ?? "")} ${esc(a.action)} ${esc(a.entryId ?? "")}${a.auditId ? " (from " + esc(a.auditId) + ")" : ""}</li>`)
+      .join("") || `<li>No governance actions yet.</li>`;
+  }
+
+  /* ---------- audit view ---------- */
+  function auditRows() {
+    const conf = $("fConf").value, q = $("fSearch").value.trim().toLowerCase();
+    return log.filter((e) =>
+      (!conf || e.confidenceLevel === conf) &&
+      (!q || `${e.question} ${e.askedBy} ${e.route ?? ""} ${e.auditId}`.toLowerCase().includes(q)));
+  }
+  function renderAudit() {
+    const rows = auditRows();
+    $("auditBody").innerHTML = rows.map((e) =>
+      `<tr><td data-l="id">${e.auditId}</td><td data-l="ts">${esc(e.ts ?? "—")}</td><td data-l="asked by">${esc(e.askedBy)}</td>` +
+      `<td data-l="question">${esc(e.question)}</td><td data-l="matched">${e.matched.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") || "—"}</td>` +
+      `<td data-l="conf.">${esc(e.confidenceLevel)}</td><td data-l="escalated">${e.escalated ? "YES" : ""}</td><td data-l="route">${esc(e.route ?? "—")}</td></tr>`
+    ).join("") || `<tr><td colspan="8" data-l="">No rows match the filters.</td></tr>`;
+    $("storeNote").textContent =
+      `${rows.length} of ${log.length} rows shown · storage backend: ${storage.backendName}` +
+      (storage.backendName === "local" ? " — the log survives reload (append-only ids continue)." : " — localStorage unavailable; the log lives only for this page view.");
+  }
+
+  function renderAll() { renderCounts(); renderQueue(); renderApprovals(); renderRegister(); renderActions(); renderAudit(); }
+
+  /* ---------- correction form ---------- */
+  let corrAuditId = null;
+  function openCorr(auditId) {
+    const e = log.find((x) => x.auditId === auditId);
+    if (!e) return;
+    corrAuditId = auditId;
+    $("corrFor").textContent = `for ${auditId} — “${e.question}”`;
+    $("corrUpdated").value = AS_OF;
+    $("corrTags").value = "";
+    $("corrCard").hidden = false;
+    $("corrAnswer").focus();
+    $("corrCard").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  function submitCorr() {
+    const answer = $("corrAnswer").value.trim();
+    if (!answer) { toast("Write the approved answer first — pending entries with no answer would fail validation."); return; }
+    if (!parseDate($("corrUpdated").value)) { toast("Updated must be a real YYYY-MM-DD date — approving anything else would fail validateKb."); return; }
+    const id = `kb-corr-${corrAuditId.toLowerCase().replace(/^aud-/, "")}`;
+    if (kb.some((e) => e.id === id)) { toast(`A correction for ${corrAuditId} already exists (${id}); core ids are audit-derived — approve or reject it first.`); return; }
+    try {
+      const res = coreApplyCorrection({
+        auditId: corrAuditId, answer,
+        tags: $("corrTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+        jurisdiction: $("corrJur").value || null, updated: $("corrUpdated").value,
+        approvedBy: $("corrBy").value.trim() || null,
+      });
+      actions.push({ ts: AS_OF, actor: $("corrBy").value.trim() || "legal", action: "drafted correction", entryId: res.entry.id, auditId: corrAuditId });
+    } catch (e) { toast("Refused: " + e.message); return; }
+    persist(); toast(`Drafted ${id} — pending approval; colleagues cannot see it yet.`);
+    $("corrCard").hidden = true;
+    renderAll();
+  }
+
+  /* ---------- exports ---------- */
+  function exportJsonl() {
+    download(`ask-legal-audit-${AS_OF}.jsonl`, exportAuditLog(log), "application/x-ndjson");
+    toast(`Downloaded ask-legal-audit-${AS_OF}.jsonl — ${log.length} entries.`);
+  }
+  function csvCell(v) { return `"${String(v ?? "").replace(/"/g, '""')}"`; }
+  function exportCsv() {
+    const head = "auditId,ts,askedBy,question,matched,confidenceLevel,escalated,route";
+    const body = log.map((e) => [e.auditId, e.ts, e.askedBy, e.question, e.matched.join(" "), e.confidenceLevel, e.escalated ? "yes" : "no", e.route ?? ""].map(csvCell).join(","));
+    download(`ask-legal-audit-${AS_OF}.csv`, [head, ...body].join("\n"), "text/csv");
+    toast(`Downloaded ask-legal-audit-${AS_OF}.csv — ${log.length} rows.`);
+  }
+  function exportMd() {
+    const pending = kb.filter((e) => e.status === "pending-approval");
+    const over = overdueEscalations(log, ROUTING, AS_OF);
+    const md = [
+      `# ask-legal digest — ${AS_OF} (fictional data)`, "",
+      `Audit rows: ${log.length} · answered ${log.filter((e) => !e.escalated).length} · escalated ${log.filter((e) => e.escalated).length} · past SLA ${over.length}`,
+      `Guidance register: ${kb.length - pending.length} approved, ${pending.length} pending approval`, "",
+      "## Escalation queue",
+      ...(log.filter((e) => e.escalated).map((e) => `- ${e.auditId} (${e.ts}) → ${e.route} — ${e.question}`)),
+      "",
+      "## Guidance register",
+      ...(kb.map((e) => `- ${e.id} [${e.status ?? "approved"}] ${e.question} — updated ${e.updated}, approved by ${e.approvedBy ?? "— (pending)"}`)),
+      "",
+    ].join("\n");
+    download(`ask-legal-digest-${AS_OF}.md`, md, "text/markdown");
+    toast(`Downloaded ask-legal-digest-${AS_OF}.md.`);
+  }
+
+  /* ---------- events ---------- */
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    if (b.dataset.q) { $("q").value = b.dataset.q; ask(); return; }
+    if (b.dataset.cite) { cite(b.dataset.cite); return; }
+    if (b.dataset.ticket) { openTicket(b.dataset.ticket); return; }
+    if (b.dataset.corr) { showDesk("legal"); openCorr(b.dataset.corr); return; }
+    if (b.dataset.approve) {
+      const approver = $("approver").value.trim();
+      try {
+        const res = approveEntry(kb, b.dataset.approve, approver); // guards: pending-only, approver, answer, date
+        actions.push({ ts: AS_OF, actor: approver, action: "approved", entryId: res.entry.id, auditId: res.entry.sourceAuditId });
+        persist(); toast(`Approved ${res.entry.id} — now retrievable and served.`);
+      } catch (e) { toast("Refused: " + e.message); return; }
+      renderAll(); return;
+    }
+    if (b.dataset.reject) {
+      const id = b.dataset.reject;
+      kbAdd = kbAdd.filter((x) => x.id !== id);
+      kb = kb.filter((x) => x.id !== id); // demo-level removal: the core has no reject API (noted in report)
+      actions.push({ ts: AS_OF, actor: $("approver").value.trim() || "legal", action: "rejected", entryId: id });
+      persist(); toast(`Rejected ${id} — removed from the pending queue.`);
+      renderAll(); return;
+    }
+  });
+  $("askBtn").onclick = ask;
   $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
-  document.querySelectorAll(".examples button").forEach((b) => (b.onclick = () => { $("q").value = b.dataset.q; ask(); }));
-  $("exportLog").onclick = () => {
-    const blob = new Blob([exportAuditLog(log)], { type: "application/x-ndjson" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "ask-legal-audit.jsonl"; a.click();
+  $("asker").onchange = persist;
+  $("tabAsk").onclick = () => showDesk("ask");
+  $("tabLegal").onclick = () => showDesk("legal");
+  $("corrSubmit").onclick = submitCorr;
+  $("corrCancel").onclick = () => { $("corrCard").hidden = true; };
+  $("closeDrawer").onclick = closeTicket;
+  $("scrim").onclick = closeTicket;
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("drawer").hidden) closeTicket(); });
+  $("copyTicket").onclick = async () => {
+    const t = $("ticketJson").textContent;
+    try { await navigator.clipboard.writeText(t); }
+    catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    toast("Ticket JSON copied to clipboard.");
+  };
+  $("fConf").onchange = renderAudit;
+  $("fSearch").oninput = renderAudit;
+  $("exportJsonl").onclick = exportJsonl;
+  $("exportCsv").onclick = exportCsv;
+  $("exportMd").onclick = exportMd;
+  $("resetData").onclick = () => {
+    if (!confirm("Reset all demo data (audit log, corrections, decisions) to the seeded state?")) return;
+    for (const k of ["auditJsonl", "kbAdd", "actions", "seeded", "askedBy"]) storage.remove(k);
+    location.reload();
   };
 
-  // prefilled worked example
-  $("q").value = "Which NDA template do I use for a new analytics vendor?";
-  ask();
+  /* ---------- boot ---------- */
+  restore();
+  const savedAsker = storage.get("askedBy");
+  if (savedAsker && [...$("asker").options].some((o) => o.value === savedAsker)) $("asker").value = savedAsker;
+  renderAll();
+  $("q").value = "Which NDA template do I use for a new analytics vendor?"; // prefilled, not auto-asked
 </script>
 </body>
 </html>

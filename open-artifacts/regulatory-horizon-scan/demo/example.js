@@ -1,193 +1,38 @@
-export default {
-  "asOf": "2026-11-07",
-  "profile": {
-    "company": "Northwind Robotics, Inc. (fictional)",
-    "jurisdictions": ["US-FED", "US-CA", "US-NY", "UK"],
-    "coreTopics": ["privacy", "ai"],
-    "relatedTopics": ["employment", "security"]
-  },
-  "rubric": {
-    "version": "2026.11",
-    "maxScore": 100,
-    "factors": [
-      { "id": "jurisdiction", "label": "Operating jurisdiction", "points": { "exact": 30, "adjacent": 15, "other": 0 } },
-      { "id": "topic", "label": "Topic relevance", "points": { "core": 25, "related": 12, "other": 0 } },
-      { "id": "proximity", "label": "Time to effective date", "points": { "other": 0 },
-        "thresholds": [
-          { "withinDays": 90, "points": 25 },
-          { "withinDays": 180, "points": 15 },
-          { "withinDays": 365, "points": 8 }
-        ] },
-      { "id": "commentWindow", "label": "Open comment window", "points": { "other": 0 },
-        "thresholds": [
-          { "withinDays": 30, "points": 15 }
-        ] },
-      { "id": "status", "label": "Rulemaking status", "points": { "effective": 20, "final": 15, "proposed": 8, "rumored": 0, "other": 0 } }
-    ],
-    "topicTaxonomy": {
-      "privacy": ["privacy", "data protection", "ccpa", "gdpr", "data broker", "biometric"],
-      "ai": ["artificial intelligence", " ai act", "ai-generated", "automated decision", "generative ai", "foundation model"],
-      "employment": ["employment", "workplace", "wage", "pay transparency"],
-      "security": ["cybersecurity", "breach notification", "incident reporting"]
-    }
-  },
-  "previousFeed": [
-    {
-      "id": "ca-ccpa-amend",
-      "title": "CCPA Amendment: Children's Data Opt-In",
-      "jurisdiction": "California",
-      "status": "proposed",
-      "itemType": "rule",
-      "effectiveDate": "2027-06-30",
-      "commentDeadline": "2026-09-30",
-      "publishedDate": "2026-08-12",
-      "summary": "Requires opt-in consent before processing minors' personal information; drafted under the CCPA (California Consumer Privacy Act, fictional amendment).",
-      "source": "CA Privacy Agency tracker",
-      "provenance": "primary",
-      "link": "https://example.gov/ca-ccpa-amend"
-    },
-    {
-      "id": "us-fcc-ai-disclosure",
-      "title": "FCC AI Voice Disclosure in Outreach Calls",
-      "jurisdiction": "US-FED",
-      "status": "proposed",
-      "itemType": "rule",
-      "effectiveDate": null,
-      "commentDeadline": "2026-10-15",
-      "publishedDate": "2026-09-02",
-      "summary": "Proposed disclosure banner for AI-generated voice in commercial outreach calls.",
-      "source": "Federal-register-like feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/fcc-ai-voice"
-    },
-    {
-      "id": "ny-pay-transparency",
-      "title": "NY Wage Transparency for Remote Roles",
-      "jurisdiction": "New York",
-      "status": "final",
-      "itemType": "rule",
-      "effectiveDate": "2026-09-17",
-      "commentDeadline": null,
-      "publishedDate": "2026-03-03",
-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
-      "source": "NY DOL bulletin (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/ny-pay-transparency"
-    },
-    {
-      "id": "eu-umbrella-2026",
-      "title": "EU Umbrella Data Regulation 2026",
-      "jurisdiction": "EU",
-      "status": "rumored",
-      "itemType": "rule",
-      "effectiveDate": null,
-      "commentDeadline": null,
-      "publishedDate": null,
-      "summary": "Press-reported draft covering cross-border data flows; no official text published.",
-      "source": "Trade press",
-      "provenance": "secondary",
-      "link": null
-    }
-  ],
-  "currentFeed": [
-    {
-      "id": "ca-ccpa-amend",
-      "title": "CCPA Amendment: Children's Data Opt-In",
-      "jurisdiction": "California",
-      "status": "final",
-      "itemType": "rule",
-      "effectiveDate": "2027-01-01",
-      "commentDeadline": null,
-      "publishedDate": "2026-08-12",
-      "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
-      "source": "CA Privacy Agency tracker",
-      "provenance": "primary",
-      "link": "https://example.gov/ca-ccpa-amend"
-    },
-    {
-      "id": "ca-ccpa-amend-dup",
-      "title": "CCPA amendment: childrens data opt in",
-      "jurisdiction": "CA",
-      "status": "final",
-      "itemType": "rule",
-      "effectiveDate": "2027-01-01",
-      "commentDeadline": null,
-      "publishedDate": null,
-      "summary": "Same rule, surfaced by a second aggregator feed.",
-      "source": "Aggregator B",
-      "provenance": "secondary",
-      "link": "https://example.org/b/ca-ccpa"
-    },
-    {
-      "id": "us-fcc-ai-disclosure",
-      "title": "FCC AI Voice Disclosure in Outreach Calls",
-      "jurisdiction": "US-FED",
-      "status": "final",
-      "itemType": "rule",
-      "effectiveDate": "2027-02-15",
-      "commentDeadline": null,
-      "publishedDate": "2026-09-02",
-      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
-      "source": "Federal-register-like feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/fcc-ai-voice"
-    },
-    {
-      "id": "ny-pay-transparency",
-      "jurisdiction": "New York",
-      "title": "NY Wage Transparency for Remote Roles",
-      "status": "effective",
-      "itemType": "rule",
-      "effectiveDate": "2026-09-17",
-      "commentDeadline": null,
-      "publishedDate": "2026-03-03",
-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
-      "source": "NY DOL bulletin (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/ny-pay-transparency"
-    },
-    {
-      "id": "eu-umbrella-2026",
-      "title": "EU Umbrella Data Regulation 2026",
-      "jurisdiction": "EU",
-      "status": "proposed",
-      "itemType": "rule",
-      "effectiveDate": "2028-03-01",
-      "commentDeadline": null,
-      "publishedDate": "2026-10-28",
-      "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
-      "source": "EUR-Lex-like feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.eu/umbrella-2026"
-    },
-    {
-      "id": "tx-biometric-retention",
-      "title": "Texas Biometric Retention Schedule",
-      "jurisdiction": "Texas",
-      "status": "proposed",
-      "itemType": "NPRM",
-      "effectiveDate": "2027-04-01",
-      "commentDeadline": "2026-11-25",
-      "publishedDate": "2026-10-30",
-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
-      "source": "Texas register feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/tx-biometric"
-    },
-    {
-      "id": "us-sec-ai-anpr",
-      "title": "SEC ANPR: Artificial Intelligence Model Risk",
-      "jurisdiction": "US-FED",
-      "status": "proposed",
-      "itemType": "ANPR",
-      "effectiveDate": null,
-      "commentDeadline": "2026-12-01",
-      "publishedDate": "2026-10-20",
-      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
-      "source": "Federal-register-like feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/sec-ai-anpr"
-    }
-  ]
-}
-;
+// Worked example — fictional data only. 12 items incl. 1 known duplicate;
+// UK profile jurisdiction intentionally has zero items (coverage-gap demo).
+// Classic script (not ESM) so the single-file build inlines it raw — no
+// base64 inflation of the deployed page.
+const EXAMPLE = {
+"asOf":"2026-11-07",
+"profile":{"company":"Northwind Robotics (fictional)","jurisdictions":["US-FED","US-CA","US-NY","UK"],"coreTopics":["privacy","ai"],"relatedTopics":["employment","security"]},
+"rubric":{"version":"2026.11","maxScore":100,"factors":[
+{"id":"jurisdiction","label":"Operating jurisdiction","points":{"exact":30,"adjacent":15,"other":0}},
+{"id":"topic","label":"Topic relevance","points":{"core":25,"related":12,"other":0}},
+{"id":"proximity","label":"Time to effective date","points":{"other":0},"thresholds":[{"withinDays":90,"points":25},{"withinDays":180,"points":15},{"withinDays":365,"points":8}]},
+{"id":"commentWindow","label":"Open comment window","points":{"other":0},"thresholds":[{"withinDays":30,"points":15}]},
+{"id":"status","label":"Rulemaking status","points":{"effective":20,"final":15,"proposed":8,"rumored":0,"other":0}}],
+"topicTaxonomy":{
+"privacy":["privacy","data protection","ccpa","data broker","health data"],
+"ai":["artificial intelligence","ai-generated","generative ai","automated decision","foundation model"],
+"employment":["employment","workplace","pay transparency"],
+"security":["cybersecurity","breach notification","incident reporting"]}},
+"previousFeed":[
+{"id":"ca-ccpa-amend","title":"CCPA Amendment: Children's Data Opt-In","jurisdiction":"California","status":"proposed","itemType":"rule","effectiveDate":"2027-06-30","commentDeadline":"2026-09-30","publishedDate":"2026-08-12","summary":"Opt-in consent for minors' personal information under the CCPA privacy law (fictional).","source":"CA Privacy Agency","provenance":"primary","link":"https://example.gov/ca-ccpa-amend"},
+{"id":"us-fcc-ai-disclosure","title":"FCC AI Voice Disclosure in Outreach Calls","jurisdiction":"US-FED","status":"proposed","itemType":"rule","commentDeadline":"2026-10-15","publishedDate":"2026-09-02","summary":"Disclosure banner for AI-generated voice in outreach calls (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/fcc-ai-voice"},
+{"id":"us-sec-ai-anpr","title":"SEC ANPR: AI Model Risk","jurisdiction":"US-FED","status":"proposed","itemType":"ANPR","commentDeadline":"2026-12-01","publishedDate":"2026-10-20","summary":"Advance notice on artificial intelligence model risk for broker-dealers (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/sec-ai-anpr"},
+{"id":"eu-umbrella-2026","title":"EU Umbrella Data Regulation 2026","jurisdiction":"EU","status":"rumored","itemType":"rule","summary":"Press-reported draft on cross-border data protection; no official text (fictional).","source":"Trade press","provenance":"secondary"},
+{"id":"ny-dfs-part500-old","title":"NYDFS Part 500 (pre-amendment text)","jurisdiction":"New York","status":"effective","itemType":"rule","effectiveDate":"2025-11-01","summary":"Superseded baseline cybersecurity regulation text (fictional).","source":"NY DFS register","provenance":"primary","link":"https://example.gov/nydfs-500-old"}],
+"currentFeed":[
+{"id":"ca-ccpa-amend","title":"CCPA Amendment: Children's Data Opt-In","jurisdiction":"California","status":"final","itemType":"rule","effectiveDate":"2027-01-01","publishedDate":"2026-08-12","summary":"Opt-in consent for minors' personal information under the CCPA privacy law; finalized with an earlier effective date (fictional).","source":"CA Privacy Agency","provenance":"primary","link":"https://example.gov/ca-ccpa-amend"},
+{"id":"ca-ccpa-amend-dup","title":"CCPA amendment: childrens data opt in","jurisdiction":"CA","status":"final","itemType":"rule","effectiveDate":"2027-01-01","summary":"Same rule, surfaced by a second aggregator feed.","source":"Aggregator B","provenance":"secondary","link":"https://example.org/b/ca-ccpa"},
+{"id":"ca-cppa-risk-assess","title":"CPPA Cybersecurity Risk Assessment Regulations","jurisdiction":"California","status":"proposed","itemType":"rule","effectiveDate":"2027-07-01","commentDeadline":"2026-11-14","publishedDate":"2026-10-28","summary":"Annual cybersecurity risk assessments for high-risk processing (fictional).","source":"CA Privacy Agency","provenance":"primary","link":"https://example.gov/ca-cppa-risk"},
+{"id":"us-fcc-ai-disclosure","title":"FCC AI Voice Disclosure in Outreach Calls","jurisdiction":"US-FED","status":"final","itemType":"rule","effectiveDate":"2027-02-15","publishedDate":"2026-09-02","summary":"Disclosure banner for AI-generated voice in outreach calls; final text published (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/fcc-ai-voice"},
+{"id":"us-ftc-ai-endorsements","title":"FTC Guides: AI-Generated Endorsements","jurisdiction":"US-FED","status":"final","itemType":"guidance","effectiveDate":"2026-12-15","publishedDate":"2026-10-19","summary":"AI-generated endorsements must be disclosed and substantiated (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/ftc-ai-endorse"},
+{"id":"us-cisa-incident-72h","title":"CISA Cyber Incident Reporting Rule (72-hour)","jurisdiction":"US-FED","status":"proposed","itemType":"rule","effectiveDate":"2027-03-01","commentDeadline":"2026-11-20","publishedDate":"2026-10-14","summary":"Cybersecurity incident reporting within 72 hours; breach notification duties (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/cisa-72h"},
+{"id":"us-sec-ai-anpr","title":"SEC ANPR: AI Model Risk","jurisdiction":"US-FED","status":"proposed","itemType":"ANPR","commentDeadline":"2026-12-01","publishedDate":"2026-10-20","summary":"Advance notice on artificial intelligence model risk for broker-dealers (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/sec-ai-anpr"},
+{"id":"us-irs-ai-prep","title":"IRS RFI: AI Tax-Prep Software Oversight","jurisdiction":"US-FED","status":"proposed","itemType":"RFI","commentDeadline":"2027-01-15","publishedDate":"2026-11-03","summary":"Request for information on generative AI tax-preparation tools (fictional).","source":"Federal-register-like feed","provenance":"primary","link":"https://example.gov/irs-ai-rfi"},
+{"id":"us-dol-remote-pay","title":"DOL Rumored Rule: Remote-Worker Pay Records","jurisdiction":"US-FED","status":"rumored","itemType":"rule","summary":"Press-reported draft on employment pay-record retention for remote workplace staff; no official text (fictional).","source":"Trade press","provenance":"secondary"},
+{"id":"ny-shield-amend","title":"NY SHIELD Act Breach Notification Update","jurisdiction":"New York","status":"proposed","itemType":"rule","effectiveDate":"2027-09-15","commentDeadline":"2026-12-05","publishedDate":"2026-11-04","summary":"Shortens the breach notification window to 30 days (fictional).","source":"NY Legislature feed","provenance":"primary","link":"https://example.gov/ny-shield-2"},
+{"id":"tx-biometric-retention","title":"Texas Biometric Retention Schedule","jurisdiction":"Texas","status":"proposed","itemType":"NPRM","effectiveDate":"2027-04-01","commentDeadline":"2026-11-25","publishedDate":"2026-10-30","summary":"Retention cap for biometric identifiers used in workplace access systems (fictional).","source":"Texas register feed","provenance":"primary","link":"https://example.gov/tx-biometric"},
+{"id":"eu-umbrella-2026","title":"EU Umbrella Data Regulation 2026","jurisdiction":"EU","status":"proposed","itemType":"rule","effectiveDate":"2028-03-01","publishedDate":"2026-10-28","summary":"Cross-border data protection licensing proposal with a 15-month runway (fictional).","source":"EUR-Lex-like feed","provenance":"primary","link":"https://example.eu/umbrella-2026"}]
+};

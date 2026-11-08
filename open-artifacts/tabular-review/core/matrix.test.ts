@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildMatrix, toCSV, toMarkdown, csvEscape, diffMatrices, toSourcesCSV } from './matrix';
+import { buildMatrix, toCSV, toMarkdown, csvEscape, diffMatrices, toSourcesCSV, currencyAmount } from './matrix';
 import type { MatrixInput } from './matrix';
+import { makeLocator, bestWindowIn, tokenizeWithSpans } from './textutil';
 
 const A = 'This Agreement commences on the Effective Date and continues for three (3) years. Either party may terminate for convenience upon ninety (90) days written notice. Liability is capped at the fees paid in the preceding twelve months.';
 const B = 'Term: two (2) years from the Effective Date. Termination for convenience requires sixty (60) days notice. Neither party is liable for indirect damages. This Agreement is governed by Delaware law.';
@@ -417,11 +418,154 @@ test('core/core.js port stays in sync with the TypeScript core', async () => {
     ],
   };
   assert.deepEqual(js.buildMatrix(typed), buildMatrix(typed));
+  // pins the scaled-currency + orphan join-key paths in the core.js port too
+  const fixed: MatrixInput = {
+    documents: [
+      {
+        id: 'kf-1',
+        name: 'KOAN-FLUX "Vela" MoU (rev 3)',
+        text: 'The pilot commences 3 March 2025 and runs for six (6) months. Fees are capped at $1.5 million per quarter. Disputes go to Delaware courts.',
+      },
+    ],
+    questions: [
+      { id: 'T3', question: 'Quarterly fee cap', type: 'currency', bounds: { min: 1, max: 2000000 } },
+      { id: 'T4', question: 'Governing forum', type: 'classify', options: ['Delaware', 'New York'] },
+    ],
+    cells: [
+      { documentId: 'kf-1', questionId: 'T3', answer: '$1.5 million per quarter', quote: 'capped at $1.5 million per quarter' },
+      { documentId: 'ghost-doc', questionId: 'T3', answer: 'USD 2 million', quote: 'anything' },
+      { documentId: 'kf-1', questionId: 'T99', answer: 'Delaware', quote: 'Disputes go to Delaware courts.' },
+    ],
+  };
+  const fTs = buildMatrix(fixed);
+  assert.equal(fTs.cells.find((c) => c.questionId === 'T3' && c.documentId === 'kf-1')!.schema?.value, 1500000); // sanity: scale folded in
+  assert.equal(fTs.cells.find((c) => c.documentId === 'ghost-doc')!.unverifiedReason, 'no_such_document'); // sanity: orphan surfaced
+  assert.equal(fTs.cells.find((c) => c.questionId === 'T99')!.unverifiedReason, 'no_such_question'); // sanity: orphan surfaced
+  assert.deepEqual(js.buildMatrix(fixed), fTs);
   const tOut = buildMatrix(typed);
   assert.equal(tOut.cells.find((c) => c.questionId === 'T4')!.status, 'unverified'); // sanity: constraint_violation path reached
   assert.equal(js.toSourcesCSV(typed, tOut), toSourcesCSV(typed, tOut));
   const reRun = buildMatrix({ ...typed, cells: typed.cells.filter((c) => c.questionId !== 'T3') });
   assert.deepEqual(js.diffMatrices(tOut, reRun), diffMatrices(tOut, reRun));
+});
+
+test('currencyAmount folds scale words in exactly — never silently drops them', () => {
+  assert.equal(currencyAmount('$1.5 million'), 1500000); // was: 1.5 (scale silently dropped)
+  assert.equal(currencyAmount('USD 1.5 million'), 1500000);
+  assert.equal(currencyAmount('1.5 million USD'), 1500000);
+  assert.equal(currencyAmount('£2m'), 2000000);
+  assert.equal(currencyAmount('$750k'), 750000);
+  assert.equal(currencyAmount('$1.5bn'), 1500000000);
+  assert.equal(currencyAmount('$1,234.56 thousand'), 1234560); // decimal shift is exact, no float drift
+  assert.equal(currencyAmount('$1.5 million and $2.5 million'), 1500000); // first amount wins deterministically
+  assert.equal(currencyAmount('$50,000'), 50000); // unscaled form unchanged
+  assert.equal(currencyAmount('up to $ million total'), null); // scale with no amount is unparseable, never a guess
+  assert.equal(currencyAmount('fees as agreed'), null);
+});
+
+test('a scaled currency answer can never certify as its mantissa', () => {
+  const text = 'Aggregate liability shall not exceed $1.5 million.';
+  const out = buildMatrix({
+    documents: [{ id: 'cap-1', name: 'Liability cap (fictional)', text }],
+    questions: [{ id: 'QC', question: 'What is the liability cap?', type: 'currency', bounds: { min: 1, max: 10000000 } }],
+    cells: [{ documentId: 'cap-1', questionId: 'QC', answer: '$1.5 million', quote: 'Aggregate liability shall not exceed $1.5 million.' }],
+  });
+  const c = out.cells[0];
+  assert.equal(c.status, 'answered');
+  assert.equal(c.schema?.value, 1500000); // not 1.5
+  // and with a cap the mantissa would pass but the real amount violates:
+  const tight = buildMatrix({
+    documents: [{ id: 'cap-1', name: 'Liability cap (fictional)', text }],
+    questions: [{ id: 'QC', question: 'What is the liability cap?', type: 'currency', bounds: { min: 1, max: 100000 } }],
+    cells: [{ documentId: 'cap-1', questionId: 'QC', answer: '$1.5 million', quote: 'Aggregate liability shall not exceed $1.5 million.' }],
+  });
+  const t = tight.cells[0];
+  assert.equal(t.status, 'unverified');
+  assert.equal(t.unverifiedReason, 'constraint_violation');
+});
+
+test('a supplied cell referencing an unknown document surfaces as no_such_document, never vanishes', () => {
+  const out = buildMatrix({
+    ...INPUT,
+    cells: [...INPUT.cells, { documentId: 'ghost', questionId: 'Q1', answer: '3 years', quote: 'continues for three (3) years' }],
+  });
+  const ghost = out.cells.find((c) => c.documentId === 'ghost')!;
+  assert.ok(ghost, 'ghost cell must appear in output');
+  assert.equal(ghost.status, 'unverified');
+  assert.equal(ghost.unverifiedReason, 'no_such_document');
+  assert.equal(ghost.answer, null);
+  assert.equal(out.summary.cells, INPUT.documents.length * INPUT.questions.length + 1); // 6 grid + 1 ghost
+  const q1 = out.summary.columns.find((col) => col.questionId === 'Q1')!;
+  assert.equal(q1.reasons.no_such_document, 1);
+  assert.equal(out.summary.unverified, 2); // msa-2 Q3 not_answered + ghost
+});
+
+test('a supplied cell referencing an unknown question surfaces as no_such_question', () => {
+  const out = buildMatrix({
+    ...INPUT,
+    cells: [...INPUT.cells, { documentId: 'nda-1', questionId: 'Q99', answer: '3 years', quote: 'continues for three (3) years' }],
+  });
+  const ghost = out.cells.find((c) => c.questionId === 'Q99')!;
+  assert.ok(ghost, 'ghost question cell must appear in output');
+  assert.equal(ghost.status, 'unverified');
+  assert.equal(ghost.unverifiedReason, 'no_such_question');
+  assert.equal(ghost.answer, null);
+  assert.equal(out.summary.cells, 7); // 6 grid + 1 orphan
+});
+
+test('bestWindowIn (cached locator) is byte-identical to the naive per-window scan', () => {
+  // deterministic pseudo-random fixture (seeded LCG — no Math.random)
+  let seed = 42;
+  const rnd = (n: number): number => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
+  const WORDS = ['agreement', 'terminate', 'liability', 'Delaware', 'notice', 'thirty', 'days', 'confidential', 'party', 'fees'];
+  for (let trial = 0; trial < 30; trial++) {
+    const src = Array.from({ length: 40 + rnd(60) }, () => WORDS[rnd(WORDS.length)]).join(' ');
+    const quote = Array.from({ length: 3 + rnd(8) }, () => WORDS[rnd(WORDS.length)]).join(' ');
+    const loc = makeLocator(src);
+    const got = bestWindowIn(loc, quote);
+    // naive reference: rebuild the multiset for every window (pre-optimization semantics)
+    const S = tokenizeWithSpans(src);
+    const q = quote.toLowerCase().match(/[a-z0-9.]+/g) ?? [];
+    const qSet = new Map<string, number>();
+    for (const t of q) qSet.set(t, (qSet.get(t) ?? 0) + 1);
+    let want: { score: number; coverage: number; start: number; end: number; verbatim: string } | null = null;
+    for (let size = Math.max(1, q.length - 2); size <= q.length + 6; size++) {
+      for (let st = 0; st + size <= S.length; st++) {
+        const wSet = new Map<string, number>();
+        for (const t of S.slice(st, st + size)) wSet.set(t.norm, (wSet.get(t.norm) ?? 0) + 1);
+        let inter = 0;
+        for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
+        const union = q.length + size - inter;
+        const score = union === 0 ? 1 : inter / union;
+        const coverage = inter / q.length;
+        if (!want || score > want.score || (score === want.score && coverage > want.coverage)) {
+          want = { score, coverage, start: S[st].start, end: S[st + size - 1].end, verbatim: src.slice(S[st].start, S[st + size - 1].end) };
+        }
+      }
+    }
+    assert.deepEqual(got, want);
+  }
+});
+
+test('perf: one cached locator verifies a full row of quotes on a large document quickly', () => {
+  const para = 'The parties agree that the confidentiality obligations survive termination and governing law is Delaware with arbitration in Seattle. ';
+  const text = para.repeat(1500); // ~22k tokens
+  const docs = [{ id: 'big-1', name: 'Big agreement (fictional)', text }];
+  const questions = Array.from({ length: 40 }, (_, i) => ({ id: `QP${i}`, question: `q${i}` }));
+  const cells = questions.map((q, i) => ({
+    documentId: 'big-1',
+    questionId: q.id,
+    answer: `answer ${i}`,
+    quote: `governing law is Delaware with arbitration in Seattle and more words drift ${i}`,
+  }));
+  const t0 = Date.now();
+  const out = buildMatrix({ documents: docs, questions, cells });
+  const ms = Date.now() - t0;
+  assert.equal(out.summary.cells, 40);
+  // before the per-document locator cache this fixture took ~7s (every cell
+  // re-tokenized the document and rebuilt per-window multisets); budget 3s
+  // leaves >6x headroom over the cached path.
+  assert.ok(ms < 3000, `40 quote verifications on one ~22k-token document took ${ms}ms (budget 3000ms)`);
 });
 
 test('examples/diff.json is the deterministic re-run diff of the worked example', () => {

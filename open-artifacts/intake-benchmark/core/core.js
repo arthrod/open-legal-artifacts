@@ -222,14 +222,25 @@ export function scoreFlow(flow, requiredFields, config = {}) {
   }
 
   // ---- speed ------------------------------------------------------------
+  // Unmeasured latency is a blank, never a zero (the rubric's own honesty
+  // rule): a flow with no latency data gets speed = null (dimension
+  // excluded, warning), and a partially measured flow is scored on its
+  // measured steps only, with a loud coverage warning.
   let total_latency = null;
   let speed = null;
   if (steps.length) {
-    const missingLatency = steps.filter((st) => typeof st.latency_seconds !== 'number' || st.latency_seconds < 0);
-    if (missingLatency.length) warnings.push(`${missingLatency.length} step(s) lack latency_seconds; counted as 0.`);
-    total_latency = steps.reduce((s, st) => s + (typeof st.latency_seconds === 'number' ? st.latency_seconds : 0), 0);
-    const target = config.latencyTargetSeconds ?? DEFAULT_LATENCY_TARGET_SECONDS;
-    speed = clamp100((Math.min(1, target / Math.max(total_latency, 1)) * 100));
+    const measured = steps.filter((st) => typeof st.latency_seconds === 'number' && st.latency_seconds >= 0);
+    if (measured.length === 0) {
+      warnings.push('no step has latency_seconds; speed is blank (excluded), not 0 — an unmeasured flow never wins the speed axis.');
+    } else {
+      if (measured.length < steps.length) {
+        const coverage = Math.round((measured.length / steps.length) * 100);
+        warnings.push(`${steps.length - measured.length} of ${steps.length} step(s) lack latency_seconds; speed scored on the ${measured.length} measured step(s) only (${coverage}% coverage) — not a like-for-like speed comparison.`);
+      }
+      total_latency = measured.reduce((s, st) => s + st.latency_seconds, 0);
+      const target = config.latencyTargetSeconds ?? DEFAULT_LATENCY_TARGET_SECONDS;
+      speed = clamp100((Math.min(1, target / Math.max(total_latency, 1)) * 100));
+    }
   }
 
   // ---- retention --------------------------------------------------------

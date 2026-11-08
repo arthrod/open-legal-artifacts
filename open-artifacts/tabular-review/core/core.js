@@ -51,17 +51,40 @@ function multiset(xs) {
   for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
   return m;
 }
-function bestWindow(source, quote, pad = 6) {
-  const S = tokenizeWithSpans(source);
+function makeLocator(source) {
+  return { source, toks: tokenizeWithSpans(source) };
+}
+function bestWindowIn(loc, quote, pad = 6) {
+  const S = loc.toks;
   const q = tokens(quote);
   if (S.length === 0 || q.length === 0) return null;
   const qSet = multiset(q);
+  const wSet = new Map();
+  const bump = (tok, delta) => {
+    const qc = qSet.get(tok);
+    if (qc === void 0) {
+      const wc = (wSet.get(tok) ?? 0) + delta;
+      if (wc === 0) wSet.delete(tok);
+      else wSet.set(tok, wc);
+      return 0;
+    }
+    const before = Math.min(qc, wSet.get(tok) ?? 0);
+    const wc = (wSet.get(tok) ?? 0) + delta;
+    if (wc === 0) wSet.delete(tok);
+    else wSet.set(tok, wc);
+    return Math.min(qc, wc) - before;
+  };
   let best = null;
   for (let size = Math.max(1, q.length - 2); size <= q.length + pad; size++) {
+    wSet.clear();
+    for (let i = 0; i < size && i < S.length; i++) wSet.set(S[i].norm, (wSet.get(S[i].norm) ?? 0) + 1);
+    let inter = 0;
+    for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
     for (let st = 0; st + size <= S.length; st++) {
-      let inter = 0;
-      const wSet = multiset(S.slice(st, st + size).map((t) => t.norm));
-      for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
+      if (st > 0) {
+        inter += bump(S[st - 1].norm, -1);
+        inter += bump(S[st + size - 1].norm, +1);
+      }
       const union = q.length + size - inter;
       const score = union === 0 ? 1 : inter / union;
       const coverage = inter / q.length;
@@ -71,12 +94,15 @@ function bestWindow(source, quote, pad = 6) {
           coverage,
           start: S[st].start,
           end: S[st + size - 1].end,
-          verbatim: source.slice(S[st].start, S[st + size - 1].end)
+          verbatim: loc.source.slice(S[st].start, S[st + size - 1].end)
         };
       }
     }
   }
   return best;
+}
+function bestWindow(source, quote, pad = 6) {
+  return bestWindowIn(makeLocator(source), quote, pad);
 }
 function rawContains(source, quote) {
   const q = quote.trim();
@@ -89,6 +115,7 @@ var REASON_ORDER = [
   "missing_quote",
   "quote_not_verified",
   "no_such_document",
+  "no_such_question",
   "constraint_violation",
   "not_present",
   "unclear",
@@ -155,9 +182,45 @@ function convertMonths(v, unit) {
   const per = { days: 30, weeks: 30 / 7, months: 1, years: 1 / 12 };
   return { value: v * (per[u] ?? 1), unit: u };
 }
+var SCALE_WORDS = {
+  thousand: 3,
+  k: 3,
+  million: 6,
+  mm: 6,
+  mn: 6,
+  m: 6,
+  billion: 9,
+  bn: 9,
+  b: 9
+};
+var SCALE_RE = "thousand|million|billion|mm|mn|bn|k|m|b";
+var CURRENCY_CODE = "USD|GBP|EUR|dollars|pounds|euros";
+function shiftDecimal(digits, zeros) {
+  const parts = digits.replace(/,/g, "").split(".");
+  const int = parts[0];
+  const frac = parts[1] ?? "";
+  const shift = zeros - frac.length;
+  if (shift >= 0) return Number(int + frac + "0".repeat(shift));
+  const s = int + frac;
+  const cut = s.length + shift;
+  return Number(`${s.slice(0, cut)}.${s.slice(cut)}`);
+}
+function matchCurrencyAmount(s) {
+  let m = s.match(new RegExp(`[$£€]\\s*([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\b)?`, "i"));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  m = s.match(new RegExp(`([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\s+)?(?:${CURRENCY_CODE})\\b`, "i"));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  m = s.match(new RegExp(`(?:${CURRENCY_CODE})\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\b)?`, "i"));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  return null;
+}
 function currencyAmount(s) {
-  const m = s.match(/[$£€]\s*([\d,]+(?:\.\d+)?)/) ?? s.match(/([\d,]+(?:\.\d+)?)\s*(?:USD|GBP|EUR|dollars|pounds|euros)\b/i);
-  return m ? Number(m[1].replace(/,/g, "")) : null;
+  const m = matchCurrencyAmount(s);
+  if (!m) return null;
+  if (m.scale === null) return Number(m.digits.replace(/,/g, ""));
+  const zeros = SCALE_WORDS[m.scale.toLowerCase()];
+  if (zeros === void 0) return null;
+  return shiftDecimal(m.digits, zeros);
 }
 function firstNumber(s) {
   const m = s.match(/\d[\d,]*(?:\.\d+)?/);
@@ -167,7 +230,7 @@ function withinBounds(v, b) {
   const eps = 1e-9;
   return (b.min === void 0 || v >= b.min - eps) && (b.max === void 0 || v <= b.max + eps);
 }
-function checkSchema(q, answer, doc) {
+function checkSchema(q, answer, loc) {
   switch (q.type) {
     case void 0:
     case "free":
@@ -199,24 +262,24 @@ function checkSchema(q, answer, doc) {
       return { type: "number", value: n };
     }
     case "verbatim":
-      return rawContains(doc.text, answer) ? { type: "verbatim" } : false;
+      return rawContains(loc.source, answer) ? { type: "verbatim" } : false;
   }
 }
-function verifyQuote(doc, cell, fuzzyThreshold) {
+function verifyQuote(loc, cell, fuzzyThreshold) {
   if (!cell.quote) return null;
-  const win = bestWindow(doc.text, cell.quote);
-  const exact = rawContains(doc.text, cell.quote);
-  if (exact) {
-    const start = doc.text.indexOf(cell.quote.trim());
+  const q = cell.quote.trim();
+  if (q.length > 0 && loc.source.includes(q)) {
+    const start = loc.source.indexOf(q);
     return {
       classification: "exact",
       similarity: 1,
       charStart: start,
-      charEnd: start + cell.quote.trim().length,
-      verbatim: doc.text.slice(start, start + cell.quote.trim().length),
+      charEnd: start + q.length,
+      verbatim: loc.source.slice(start, start + q.length),
       pinpoint: cell.pinpoint ?? null
     };
   }
+  const win = bestWindowIn(loc, cell.quote);
   if (win && win.score >= 0.95 && win.coverage >= 0.95) {
     return { classification: "normalized", similarity: win.score, charStart: win.start, charEnd: win.end, verbatim: win.verbatim, pinpoint: cell.pinpoint ?? null };
   }
@@ -230,10 +293,18 @@ function buildMatrix(input) {
   const docs = new Map(input.documents.map((d) => [d.id, d]));
   const questions = new Map(input.questions.map((q) => [q.id, q]));
   const supplied = new Map(input.cells.map((c) => [`${c.documentId}::${c.questionId}`, c]));
+  const locCache = new Map();
+  const locatorOf = (doc) => {
+    let loc = locCache.get(doc.id);
+    if (!loc) {
+      loc = makeLocator(doc.text);
+      locCache.set(doc.id, loc);
+    }
+    return loc;
+  };
   const cells = [];
   for (const doc of input.documents) {
     for (const q of input.questions) {
-      if (!questions.has(q.id)) continue;
       const c = supplied.get(`${doc.id}::${q.id}`);
       if (c?.notFound) {
         cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: c.notFound, verification: null, flags: [], schema: null });
@@ -243,27 +314,40 @@ function buildMatrix(input) {
         cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "not_answered", verification: null, flags: [], schema: null });
         continue;
       }
-      const docObj = docs.get(c.documentId);
-      if (!docObj) {
-        cells.push({ documentId: c.documentId, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "no_such_document", verification: null, flags: [], schema: null });
-        continue;
-      }
       if (!c.quote || c.quote.trim() === "") {
         cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "missing_quote", verification: null, flags: [], schema: null });
         continue;
       }
-      const verification = verifyQuote(docObj, c, fuzzyThreshold);
+      const loc = locatorOf(doc);
+      const verification = verifyQuote(loc, c, fuzzyThreshold);
       if (!verification) {
         cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "quote_not_verified", verification: null, flags: [], schema: null });
         continue;
       }
-      const schema = checkSchema(q, c.answer, docObj);
+      const schema = checkSchema(q, c.answer, loc);
       if (schema === false) {
         cells.push({ documentId: doc.id, questionId: q.id, status: "unverified", answer: null, unverifiedReason: "constraint_violation", verification: null, flags: [], schema: null });
         continue;
       }
       cells.push({ documentId: doc.id, questionId: q.id, status: "answered", answer: c.answer, unverifiedReason: null, verification, flags: [], schema });
     }
+  }
+  const orphanSeen = new Set();
+  for (const c of input.cells) {
+    if (docs.has(c.documentId) && questions.has(c.questionId)) continue;
+    const key = `${c.documentId}::${c.questionId}`;
+    if (orphanSeen.has(key)) continue;
+    orphanSeen.add(key);
+    cells.push({
+      documentId: c.documentId,
+      questionId: c.questionId,
+      status: "unverified",
+      answer: null,
+      unverifiedReason: docs.has(c.documentId) ? "no_such_question" : "no_such_document",
+      verification: null,
+      flags: [],
+      schema: null
+    });
   }
   let outliers = 0;
   for (const q of input.questions) {
@@ -417,7 +501,9 @@ function diffMatrices(prev, next) {
 export {
   tokenizeWithSpans,
   tokens,
+  makeLocator,
   bestWindow,
+  bestWindowIn,
   rawContains,  buildMatrix,
   classifyMatch,
   csvEscape,

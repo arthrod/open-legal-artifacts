@@ -9,8 +9,8 @@
       "name": "liquidation_preference_multiple",
       "value": 1.5,
       "verdict": "outside_market",
-      "detail": "1.5 xis above the 1–1 xrange.",
-      "benchmark": "1–1 x",
+      "detail": "1.5 x is above the 1 x range.",
+      "benchmark": "1 x",
       "source": {
         "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
         "asOf": "2026-01"
@@ -57,7 +57,7 @@
       "name": "investor_board_seats",
       "value": 2,
       "verdict": "inside_market",
-      "detail": "2 seatswithin 1–2 seatsrange — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
+      "detail": "2 seats is within the 1–2 seats range — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
       "benchmark": "1–2 seats",
       "source": {
         "name": "EXAMPLE DEFAULT — not market data; replace with your own dated source",

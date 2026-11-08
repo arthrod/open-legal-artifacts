@@ -30,6 +30,18 @@ export function parseDate(d) {
  * @type {{ maxAgeDays: number, requireSourceUrl: boolean }} */
 export const DEFAULT_POLICY = { maxAgeDays: 180, requireSourceUrl: true };
 
+/** Link allowlist: only http(s) URLs are ever surfaced as links. Anything
+ * else — javascript:, data:, vbscript:, ftp:, … — returns null and renders as
+ * inert text with a warning, never as a clickable/exported link. Whitespace
+ * is trimmed first so it cannot smuggle a scheme.
+ * @param {any} u
+ * @returns {string|null} the trimmed URL when http(s), else null */
+export function safeUrl(u) {
+  if (typeof u !== "string") return null;
+  const t = u.trim();
+  return /^https?:\/\//i.test(t) ? t : null;
+}
+
 /** All distinct digit runs in a string ("30 days, $200" → ["30","200"]).
  * @param {string|null|undefined} s
  * @returns {string[]} */
@@ -66,7 +78,8 @@ export function classifyCell(cell, policy = {}, asOfIso) {
   const p = { ...DEFAULT_POLICY, ...policy };
   const hasAnswer = typeof cell?.answer === "string" && cell.answer.trim().length > 0;
   const hasCitation = typeof cell?.citation === "string" && cell.citation.trim().length > 0;
-  const hasSourceUrl = typeof cell?.sourceUrl === "string" && cell.sourceUrl.trim().length > 0;
+  const rawUrl = typeof cell?.sourceUrl === "string" ? cell.sourceUrl : "";
+  const hasSourceUrl = safeUrl(rawUrl) !== null; // unsafe schemes never count as a link to the law
   const verified = parseDate(cell?.verifiedDate);
 
   if (!hasAnswer && !hasCitation) return { status: "unverified", reason: "no answer provided", ageDays: null, warnings: [], cell };
@@ -74,11 +87,20 @@ export function classifyCell(cell, policy = {}, asOfIso) {
   if (!hasCitation)
     return { status: "unverified", reason: "answer present but no source citation — unverifiable claims are never surfaced", ageDays: null, warnings: [], cell };
   if (!hasSourceUrl && p.requireSourceUrl !== false)
-    return { status: "unverified", reason: "citation present but no sourceUrl — a link to the underlying law is required before the cell renders (policy.requireSourceUrl)", ageDays: null, warnings: [], cell };
+    return {
+      status: "unverified",
+      reason: rawUrl.trim()
+        ? `citation present but sourceUrl is not an http(s) link ("${rawUrl.trim()}") — unsafe schemes are never linked (policy.requireSourceUrl)`
+        : "citation present but no sourceUrl — a link to the underlying law is required before the cell renders (policy.requireSourceUrl)",
+      ageDays: null, warnings: [], cell,
+    };
   if (!verified)
     return { status: "unverified", reason: "answer and citation present but verification date missing or malformed", ageDays: null, warnings: [], cell };
 
   const warnings = figureWarnings(cell.answer, cell.quotedText);
+  // Even when policy allows missing URLs, an unsafe URL is never linked — say so.
+  if (rawUrl.trim() && !hasSourceUrl)
+    warnings.push(`sourceUrl "${rawUrl.trim()}" is not http(s) — shown as text, never linked`);
 
   const asOf = parseDate(asOfIso ?? null);
   if (asOf) {
@@ -122,7 +144,18 @@ export function buildMatrix(survey, asOfIso) {
   const knownJurisdictions = new Set(jurisdictions.map((j) => String(j).toLowerCase()));
   const knownQuestions = new Set(questions.map((q) => String(q.id).toLowerCase()));
   const cellIndex = new Map();
-  for (const c of survey.cells ?? []) {
+  // Input shape: cells must be an array of cell objects. A keyed object (or
+  // any non-array) is reported and ignored — never a TypeError that crashes
+  // the caller mid-render (A08 finding: keyed-object cells used to throw
+  // "object is not iterable" and the demo silently kept the stale matrix).
+  const cells = Array.isArray(survey.cells) ? survey.cells : [];
+  if (survey.cells != null && !Array.isArray(survey.cells))
+    warnings.push(`input warning: cells must be an array of cell objects — got ${typeof survey.cells}, ignored`);
+  for (const c of cells) {
+    if (c == null || typeof c !== "object") {
+      warnings.push(`orphan cell ignored: cell entry is not an object (${JSON.stringify(c) ?? String(c)})`);
+      continue;
+    }
     const jKey = String(c.jurisdiction ?? "").toLowerCase();
     const qKey = String(c.question ?? "").toLowerCase();
     const key = `${jKey}|${qKey}`;
@@ -146,7 +179,7 @@ export function buildMatrix(survey, asOfIso) {
       if (cls.status !== "unverified") {
         out.answer = raw.answer;
         out.citation = raw.citation;
-        out.sourceUrl = typeof raw.sourceUrl === "string" && raw.sourceUrl.trim() ? raw.sourceUrl : null;
+        out.sourceUrl = safeUrl(raw.sourceUrl); // null unless http(s) — unsafe schemes are never surfaced as links
         out.quotedText = typeof raw.quotedText === "string" && raw.quotedText.trim() ? raw.quotedText : null;
         out.verifiedDate = raw.verifiedDate;
         out.verifiedBy = raw.verifiedBy ?? null;
@@ -253,8 +286,16 @@ export function worklistToMarkdown(matrix) {
 /* ---------- exports ---------- */
 
 function csvEscape(v) {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  if (v == null) return "";
+  let s = String(v);
+  // Formula-injection neutralization (OWASP CSV injection): a cell that
+  // starts with = + - @ (or contains tab/CR/LF) gets an apostrophe prefix so
+  // spreadsheet apps cannot interpret it as a formula. Impl lifted from the
+  // patent-claim-comparison core (tested there since B02 wave).
+  let prefixed = false;
+  if (/^[=+\-@\t\r]/.test(s) || /[\t\r\n]/.test(s)) { s = "'" + s; prefixed = true; }
+  if (prefixed || /[",\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
 
 /**
@@ -300,7 +341,10 @@ export function toMarkdown(matrix) {
     lines.push(`## ${q.id}. ${q.text}`, "", "| Jurisdiction | Answer | Source | Verified | Status |", "|---|---|---|---|---|");
     matrix.jurisdictions.forEach((j, r) => {
       const c = matrix.grid[r][matrix.questions.indexOf(q)];
-      const source = c.sourceUrl ? `[${c.citation}](${c.sourceUrl})` : c.citation;
+      // Defense-in-depth: even a hand-built matrix never exports a non-http(s) link.
+      const url = safeUrl(c.sourceUrl);
+      const unsafeNote = c.sourceUrl && !url && c.status !== "unverified" ? " (sourceUrl not http(s) — shown as text)" : "";
+      const source = url ? `[${c.citation}](${url})` : `${c.citation ?? ""}${unsafeNote}`;
       const cells = c.status === "unverified"
         ? ["**UNVERIFIED**", "—", "—", "⚠ " + c.reason]
         : [c.answer, source, `${c.verifiedDate} (${c.verifiedBy ?? "?"})`,

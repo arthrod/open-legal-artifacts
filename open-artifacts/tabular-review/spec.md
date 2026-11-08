@@ -42,7 +42,10 @@ cell is source-anchored and **unverified cells are never guessed**.
 ```
 
 Missing cell entries are treated as `answer: null` — the matrix always covers
-the full documents × questions grid.
+the full documents × questions grid. A supplied cell whose `documentId` or
+`questionId` is not in the input sets (e.g. a typo'd join key) is emitted as
+an extra `unverified` cell with reason `no_such_document` /
+`no_such_question` — orphan cells surface as errors, never vanish.
 
 ### Typed questions (`Question.type`)
 
@@ -52,8 +55,11 @@ month-year strings such as `March 2025` are accepted leniently and resolve
 to the 1st of that month),
 `duration` (parsed to canonical months; `bounds` may set `unit`
 days|weeks|months|years, default months), `currency` (must carry a parseable
-amount like `$50,000` or `50,000 USD`), `number`, `verbatim` (answer must
-appear in the document text), `free`/omitted (no schema check). A
+amount like `$50,000`, `50,000 USD`, `$1.5 million`, `£2m` — scale words
+k/thousand, m/mm/mn/million, b/bn/billion are folded into the amount exactly
+via decimal shift; ambiguous or unparseable forms fail as
+`constraint_violation`, never a silently wrong number), `number`, `verbatim`
+(answer must appear in the document text), `free`/omitted (no schema check). A
 quote-verified answer that fails its schema becomes `unverified` with reason
 `constraint_violation`; the parsed result is recorded in `cell.schema`
 (`matched` option, `value` + `unit`).
@@ -80,7 +86,9 @@ One `Cell` per document × question:
 - `status: "unverified"` with `unverifiedReason`:
   `not_answered` (no answer supplied) · `missing_quote` (answer without a
   source) · `quote_not_verified` (quote does not locate in the document —
-  e.g. a hallucinated or stale quote) · `no_such_document` ·
+  e.g. a hallucinated or stale quote) · `no_such_document` /
+  `no_such_question` (supplied cell references an unknown document or
+  question — emitted in addition to the full grid) ·
   `constraint_violation` (typed schema failed) · `not_present` · `unclear` ·
   `needs_review`.
 

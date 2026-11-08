@@ -31,7 +31,7 @@ when a rule changes**.
 ## Run
 
 ```bash
-node --test core/core.test.js  # 26 tests (node:test)
+node --test core/core.test.js  # 30 tests (node:test)
 node examples/run.js          # regenerates examples/scan.json, scan.csv, digest.md, report.md
 ```
 
@@ -45,15 +45,16 @@ inlined by `deploy/build-site.mjs` at bundle time).
 1. **Auditable scoring.** Anthropic's impact ranking is opaque. Here the rubric
    is versioned data (`examples/input.json`), each score carries a full
    breakdown, and `diffRubrics` shows exactly what changed between versions.
-2. **Deterministic provenance & stage discipline.** The counterpart's
-   source-tier and ANPR/RFI policies are LLM prose; here they are tested code:
-   non-primary sources are band-capped with a trace-to-primary flag, ANPR/RFI
-   items never reach "high", and comment deadlines score and appear as
-   timeline milestones.
+2. **Deterministic provenance & stage discipline.** Source tiers and
+   ANPR/RFI caution are enforced by tested code, not prose: non-primary
+   sources are band-capped with a trace-to-primary flag, ANPR/RFI items never
+   reach "high", and comment deadlines score and appear as timeline milestones.
 3. **Coverage check.** Profile jurisdictions/topics absent from the feed are
    surfaced with severity before ranking (Step 0).
-4. **Diff view.** The closed artifact snapshots; this core diffs — added,
-   removed, and per-field changes between feed snapshots.
+4. **Field-level diff.** Feed snapshots are diffed item by item across the 10
+   tracked fields (added, removed, and per-field changes), and `diffRubrics`
+   diffs rubric versions too — so weight, threshold, or taxonomy changes
+   between scans are visible, not just status shifts.
 5. **No hidden clock.** All time math anchors to a caller-supplied `asOf`, so
    scans are reproducible byte-for-byte.
 6. **LLM never scores.** The deterministic core does dedupe/merge/classify/

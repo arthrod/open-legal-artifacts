@@ -4,91 +4,817 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Intake queue — open artifact</title>
+<link rel="icon" href="data:," />
 <link rel="stylesheet" href="tokens.css" />
 <style>
   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
+  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
   h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
   .lede { color: var(--text-secondary); max-width: 64ch; line-height: 1.6; margin: 0 0 8px; }
   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
-  textarea { width: 100%; box-sizing: border-box; min-height: 240px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; }
-  button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 12px; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 120px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; }
+  button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; }
   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); padding: 6px 12px; }
+  button.linklike { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+  button.linklike:hover { background: none; border: none; color: var(--text); text-decoration: none; background: linear-gradient(transparent 60%, var(--accent) 60%); }
+  button.chipbtn { font-size: 12px; padding: 2px 8px; background: #fff; color: var(--text); margin: 2px 4px 2px 0; text-align: left; }
+  button.chipbtn:hover { background: var(--accent); border-color: var(--text); }
+  /* needs-a-human strip */
+  .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 8px; }
+  .strip .cell { background: #fff; padding: 12px 14px; }
+  .strip .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .strip .v { font-size: 1.45rem; font-weight: 700; margin-top: 2px; }
+  .strip .v.alert { background: linear-gradient(transparent 60%, var(--accent) 60%); display: inline; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 24px; }
   .card { background: #fff; padding: 16px; }
-  .card .k { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .card .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   .card .v { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
   .card.alert .v { background: linear-gradient(transparent 60%, var(--accent) 60%); display: inline; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
-  .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
-  .chip.urgent, .chip.overdue, .chip.duplicate, .chip.declined, .chip.escalated { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+  .chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
+  .chip.urgent, .chip.overdue, .chip.duplicate, .chip.declined, .chip.escalated { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+  .chip.conflict-review { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
   .notes { color: var(--text-secondary); font-size: 12px; }
-  select, input[type="text"] { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 8px; }
+  select, input[type="text"], input[type="date"] { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: #fff; padding: 8px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
   .controls input[type="text"] { flex: 1; min-width: 180px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0; }
   pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: #fff; border: var(--hairline); padding: 12px; overflow: auto; white-space: pre-wrap; margin: 12px 0 0; }
-  .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
+  .err { border: 2px solid var(--bad); background: var(--flag-tint); font-family: var(--font-mono); font-size: 12px; padding: 12px; margin-top: 12px; display: none; color: var(--bad); }
+  .okbox { border: 2px solid var(--ok); font-family: var(--font-mono); font-size: 12px; padding: 12px; margin-top: 12px; display: none; color: var(--ok); }
+  details.adv { border: var(--hairline); background: #fff; padding: 10px 14px; margin-top: 16px; }
+  details.adv summary { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; color: var(--text-secondary); }
+  /* roster */
+  .rline { border: var(--hairline); background: #fff; padding: 10px 12px; margin-bottom: 6px; }
+  .rline.hl { outline: 3px solid var(--accent); outline-offset: -3px; }
+  .rline .rn { font-weight: 700; }
+  .rline .notes { display: block; margin-top: 2px; }
+  /* drawer + source pane */
+  aside.pane { position: fixed; top: 0; right: 0; height: 100vh; width: min(480px, 100vw); background: var(--bg); border-left: 2px solid var(--text); box-shadow: -8px 0 24px rgba(0,0,0,.08); padding: 20px; box-sizing: border-box; overflow-y: auto; z-index: 30; }
+  aside.pane[hidden] { display: none; }
+  .panehead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+  .panehead strong { font-family: var(--font-mono); font-size: 13px; }
+  mark { background: var(--accent); padding: 0 1px; }
+  #srcbody { font-size: 13px; line-height: 1.65; background: #fff; border: var(--hairline); padding: 14px; white-space: pre-wrap; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--text); color: var(--bg); font-family: var(--font-mono); font-size: 13px; padding: 10px 16px; transition: transform .2s; z-index: 60; max-width: 80vw; }
+  #toast.on { transform: translateX(-50%) translateY(0); }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  footer { margin-top: 56px; color: var(--text-secondary); font-size: 12px; border-top: var(--hairline); padding-top: 16px; }
+  @media (max-width: 480px) {
+    .hide-sm { display: none; }
+    td, th { padding: 8px 6px; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Intake queue</h1>
   <div class="rule"></div>
-  <p class="lede">New-matter intake queue with deterministic same-party dedupe, conflict-check party matching against a roster, deadline/age urgency triage, and guarded assign states. All matching is visible name math — no black box.</p>
+  <p class="lede">New-matter intake pipeline with deterministic same-party dedupe, conflict-check party matching against a roster, deadline/age urgency triage, guarded accept/decline/assign decisions, and engagement/declination letter drafts. All matching is visible name math — no black box. <span class="notes" id="storenote"></span></p>
 
-  <h2>Queue input (JSON)</h2>
-  <textarea id="input" spellcheck="false"></textarea>
-  <button id="run">Process queue</button>
-  <div class="err" id="err"></div>
+  <h2>Needs a human now</h2>
+  <div id="strip" aria-live="polite"></div>
+
+  <h2>New enquiry — paste &amp; verify</h2>
+  <p class="lede">Paste the enquiry text and the names you extracted from it. Every extracted name must appear verbatim in the source (word-delimited) before the submission may enter the queue — a guard against LLM extraction drift.</p>
+  <div class="field"><label for="ing-source">Enquiry source text (paste the email / form / letter)</label>
+  <textarea id="ing-source" spellcheck="false" style="min-height:90px"></textarea></div>
+  <div class="fgrid">
+    <div class="field"><label for="ing-client">Client name (as extracted)</label><input type="text" id="ing-client" /></div>
+    <div class="field"><label for="ing-opposing">Opposing party name (as extracted)</label><input type="text" id="ing-opposing" /></div>
+    <div class="field"><label for="ing-matter">Matter type</label><input type="text" id="ing-matter" placeholder="e.g. contract dispute" /></div>
+    <div class="field"><label for="ing-deadline">Deadline (optional)</label><input type="date" id="ing-deadline" /></div>
+  </div>
+  <div class="btnrow">
+    <button id="ing-go">Verify &amp; add to queue</button>
+    <button id="ing-mutate" class="ghost" aria-label="Demonstrate: mutate the client name by one letter, then verify">Mutate one letter (demo the guard)</button>
+  </div>
+  <div class="err" id="ing-out" role="alert"></div>
+
+  <details class="adv" id="adv">
+    <summary>Advanced — full queue JSON</summary>
+    <div class="field" style="margin-top:10px"><label for="input">Queue input JSON (roster + submissions + settings)</label>
+    <textarea id="input" spellcheck="false" style="min-height:200px"></textarea></div>
+    <button id="run">Reprocess queue</button>
+    <div class="err" id="err" role="alert"></div>
+  </details>
+
+  <h2>Queue — state priority</h2>
+  <div class="controls">
+    <label for="f-state" style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary)">Filter state</label>
+    <select id="f-state"></select>
+  </div>
+  <div id="board"></div>
+
+  <h2>Conflict roster</h2>
+  <p class="lede">Existing relationships checked against every submission party. Click a conflict trace in the queue to highlight the roster entry it matched.</p>
+  <div id="roster"></div>
 
   <h2>Summary</h2>
   <div id="summary"></div>
-  <h2>Queue</h2>
-  <div id="board"></div>
 
-  <h2>Decide / assign</h2>
-  <p class="lede">Guarded decision layer: accept / decline / escalate (reason required) or assign. Rejected actions leave the queue untouched and write no audit entry.</p>
-  <div class="controls">
-    <select id="d-id"></select>
-    <select id="d-action"><option value="accept">accept</option><option value="decline">decline</option><option value="escalate">escalate</option><option value="assign">assign</option></select>
-    <input type="text" id="d-by" placeholder="actor / assignee (required, fictional, e.g. gc-lee)" />
-    <input type="text" id="d-reason" placeholder="reason (required for decisions)" />
-    <button id="d-go">Record</button>
+  <h2>Audit log — append-only, survives reload</h2>
+  <div class="btnrow">
+    <button id="audit-dl" class="ghost">Export audit (NDJSON)</button>
+    <button id="reset" class="ghost" aria-label="Reset demo: clear stored queue, decisions and audit log">Reset demo (clears stored state)</button>
   </div>
-  <div class="err" id="d-err"></div>
+  <div id="audit" aria-live="polite"></div>
 
-  <h2>Letter draft</h2>
-  <p class="lede">Deterministic engagement / declination templates — every line traceable to queue fields; jurisdiction stays a [JURISDICTION] placeholder (not legal advice).</p>
-  <div class="controls">
-    <select id="l-id"></select>
-    <select id="l-kind"><option>declination</option><option>engagement</option></select>
-    <button id="l-go">Draft letter</button>
+  <h2>Exports</h2>
+  <div class="btnrow">
+    <button id="csv-go">Queue CSV</button>
+    <button id="xlsx-go">Queue XLSX</button>
+    <button id="md-go">Queue Markdown</button>
+    <button id="ics-go">Deadlines ICS</button>
   </div>
-  <pre id="letter" hidden></pre>
 
-  <h2>Calendar export (ICS)</h2>
-  <p class="lede">One VEVENT per submission with a valid deadline — deadlines leave the queue and reach a calendar.</p>
-  <button id="ics-go">Download intake-deadlines.ics</button>
-  <pre id="ics-out" hidden></pre>
-
-  <h2>Audit log</h2>
-  <div id="audit"></div>
-
-  <h2>Ingest verifier</h2>
-  <p class="lede">LLM extractions enter the queue only if every extracted name appears verbatim (word-delimited) in the source text; otherwise the submission is flagged <code>unverified-extraction</code>.</p>
-  <textarea id="ing-source" spellcheck="false" style="min-height: 90px"></textarea>
-  <textarea id="ing-extracted" spellcheck="false" style="min-height: 90px"></textarea>
-  <button id="ing-go">Verify extraction</button>
-  <div class="err" id="ing-out"></div>
+  <footer>Fictional demonstration data · deterministic offline computation · state and audit persist in this browser only · not legal advice.</footer>
 </div>
 
-<script type="module">
-import { processQueue, assign, decide, renderLetter, toICS, ingestSubmission } from '../core/core.js';
+<aside id="drawer" class="pane" role="region" aria-label="Submission review" hidden>
+  <div class="panehead"><strong id="dr-title">Review</strong><button id="dr-close" class="ghost" aria-label="Close review drawer">Close ✕</button></div>
+  <div id="dr-body"></div>
+</aside>
 
+<aside id="srcpane" class="pane" role="region" aria-label="Enquiry source text" hidden>
+  <div class="panehead"><strong id="src-title">Source</strong><button id="src-close" class="ghost" aria-label="Close source text panel">Close ✕</button></div>
+  <div id="srcbody"></div>
+</aside>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+// core/core.js inlined VERBATIM (export keywords stripped) — the deploy bundler data-URI-encodes module imports (+33% base64), which alone blew the 80KB single-file cap. Keep in sync with ../core/core.js.
+/**
+ * intake-queue core — deterministic new-matter intake queue:
+ *   - dedupe: same-party detection across submissions
+ *   - conflict check: party matching against an existing-relationship roster
+ *   - urgency triage: deadline proximity + age-of-matter rules
+ *   - assign states with guarded transitions, CSV export
+ *
+ * NO LLM: name normalization, similarity scoring, urgency levels, and
+ * states are pure functions of the input. All example entities fictional.
+ */
+
+// ---------------------------------------------------- name similarity
+
+const CORP_SUFFIXES = new Set(['inc', 'incorporated', 'llc', 'llp', 'ltd', 'limited', 'co', 'corp', 'corporation', 'company', 'plc', 'pc', 'pa', 'the']);
+
+/** Normalize a party name for matching (Unicode-aware, deterministic):
+ *  NFKC first (folds fullwidth forms and ligatures: Ｎｅｏｎ→neon, ㈱→株式),
+ *  lowercase, NFKD + drop combining marks (deaccent: Ångström→angstrom),
+ *  collapse dotted abbreviations (L.L.C. → llc), drop punctuation and
+ *  symbols keeping letters/digits of ANY script (\p{L}\p{N}), then drop
+ *  corporate suffixes. Tokenization is script-aware: only non-letter
+ *  runs split tokens, so space-less scripts (CJK) stay whole-word and
+ *  identical CJK/Cyrillic/Arabic names normalize identically.
+ *  Initials are kept (M. Iwata ≠ K. Iwata) — but see tokenPairScore. */
+function normalizeName(name) {
+  return String(name ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/([a-z])\./g, '$1')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(/\s+/)
+    .filter((t) => t && !CORP_SUFFIXES.has(t))
+    .join(' ');
+}
+
+/** Common given-name nicknames (compact data, not a dependency): short →
+ *  full forms it can stand for. Matching is symmetric (see isTableMatch). */
+const NICKNAMES = new Map(Object.entries({
+  bob: ['robert'], bobby: ['robert'], rob: ['robert'],
+  bill: ['william'], will: ['william'], billy: ['william'],
+  jim: ['james'], jimmy: ['james'], jack: ['john'],
+  joe: ['joseph'], joey: ['joseph'], tom: ['thomas'], tommy: ['thomas'],
+  ted: ['edward', 'theodore'], teddy: ['edward', 'theodore'],
+  ed: ['edward'], eddie: ['edward'], tony: ['anthony'],
+  mike: ['michael'], dan: ['daniel'], danny: ['daniel'],
+  dave: ['david'], davey: ['david'], ken: ['kenneth'], kenny: ['kenneth'],
+  chris: ['christopher', 'christine'], steve: ['stephen', 'steven'],
+  matt: ['matthew'], nick: ['nicholas'], alex: ['alexander'],
+  andy: ['andrew'], drew: ['andrew'], greg: ['gregory'], jeff: ['jeffrey'],
+  ron: ['ronald'], ronnie: ['ronald'],
+  rick: ['richard'], rich: ['richard'], dick: ['richard'],
+  ben: ['benjamin'], benny: ['benjamin'], sam: ['samuel'], sammy: ['samuel'],
+  pete: ['peter'], phil: ['philip', 'phillip'], larry: ['lawrence'],
+  jerry: ['gerald', 'jerome'], gerry: ['gerald'], hank: ['henry'],
+  harry: ['henry', 'harold'], frank: ['francis', 'franklin'], gene: ['eugene'],
+  walt: ['walter'],
+  betty: ['elizabeth'], liz: ['elizabeth'], lizzie: ['elizabeth'], beth: ['elizabeth'],
+  peggy: ['margaret'], meg: ['margaret'], kate: ['katherine', 'kathryn'],
+  kathy: ['katherine', 'kathryn'], katie: ['katherine', 'kathryn'],
+  sue: ['susan'], susie: ['susan'], dot: ['dorothy'], bev: ['beverly'],
+  pat: ['patricia', 'patrick'], pam: ['pamela'], cathy: ['catherine'],
+  mandy: ['amanda'], sandy: ['sandra'], terry: ['terrence', 'theresa'],
+  vicki: ['victoria'],
+}));
+
+/** Common organizational abbreviations (compact data): short → expanded. */
+const ABBREVIATIONS = new Map(Object.entries({
+  ins: ['insurance'], intl: ['international'], bros: ['brothers'],
+  grp: ['group'], hldgs: ['holdings'], mfg: ['manufacturing'],
+  svcs: ['services'], assn: ['association'], dept: ['department'],
+  univ: ['university'], natl: ['national'], mgmt: ['management'],
+  dev: ['development'], fin: ['financial'], cmty: ['community'],
+  edu: ['education'], hosp: ['hospital'],
+}));
+
+const TABLE_SCORE = 0.95; // nickname/abbreviation/initial pair score (near-exact)
+const FUZZY_FLOOR = 0.85; // Jaro–Winkler pair threshold (recall-biased)
+const CONTAINMENT_BONUS = 0.25;
+
+function isTableMatch(table, x, y) {
+  return table.get(x)?.includes(y) || table.get(y)?.includes(x);
+}
+
+/** Jaro–Winkler similarity of two strings (no deps, deterministic). */
+function jaroWinkler(a, b) {
+  if (a === b) return 1;
+  const la = a.length, lb = b.length;
+  if (!la || !lb) return 0;
+  const win = Math.max(0, Math.floor(Math.max(la, lb) / 2) - 1);
+  const am = new Array(la).fill(false);
+  const bm = new Array(lb).fill(false);
+  let m = 0;
+  for (let i = 0; i < la; i++) {
+    const lo = Math.max(0, i - win), hi = Math.min(lb - 1, i + win);
+    for (let j = lo; j <= hi; j++) {
+      if (!bm[j] && a[i] === b[j]) { am[i] = bm[j] = true; m++; break; }
+    }
+  }
+  if (!m) return 0;
+  let t = 0, k = 0;
+  for (let i = 0; i < la; i++) {
+    if (am[i]) {
+      while (!bm[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+  }
+  t /= 2;
+  const jaro = (m / la + m / lb + (m - t) / m) / 3;
+  let p = 0;
+  while (p < Math.min(4, la, lb) && a[p] === b[p]) p++;
+  return jaro + p * 0.1 * (1 - jaro);
+}
+
+/** Score one normalized-token pair in [0,1]: exact > nickname/abbreviation
+ *  table > initial rule (J. Iwata ≈ John Iwata, same letter only —
+ *  M. Iwata ≠ K. Iwata) > Jaro–Winkler typo tolerance (tokens ≥ 3 chars,
+ *  so 1–2 char tokens must match exactly or via the tables). */
+function tokenPairScore(x, y) {
+  if (x === y) return 1;
+  if (isTableMatch(NICKNAMES, x, y) || isTableMatch(ABBREVIATIONS, x, y)) return TABLE_SCORE;
+  if (x.length !== y.length && (x.length === 1 || y.length === 1)) {
+    const [ini, full] = x.length === 1 ? [x, y] : [y, x];
+    return full.startsWith(ini) ? TABLE_SCORE : 0;
+  }
+  if (x.length >= 3 && y.length >= 3) {
+    const jw = jaroWinkler(x, y);
+    if (jw >= FUZZY_FLOOR) return jw;
+  }
+  return 0;
+}
+
+/**
+ * Deterministic similarity in [0,1]: greedy best-first token alignment
+ * (each token pairs at most once; ties broken by position for determinism),
+ * scored as the sum of pair scores over the longer name's token count, plus
+ * a containment bonus when the shorter name is fully accounted for. Recall-
+ * biased on purpose: a conflict checker's failure mode is the missed hit.
+ */
+function nameSimilarity(a, b) {
+  const A = [...new Set(normalizeName(a).split(' ').filter(Boolean))];
+  const B = [...new Set(normalizeName(b).split(' ').filter(Boolean))];
+  if (!A.length || !B.length) return 0;
+  if (A.length === B.length && [...A].sort().join('\u0000') === [...B].sort().join('\u0000')) return 1;
+  const pairs = [];
+  for (let i = 0; i < A.length; i++) {
+    for (let j = 0; j < B.length; j++) {
+      const s = tokenPairScore(A[i], B[j]);
+      if (s > 0) pairs.push({ i, j, s });
+    }
+  }
+  pairs.sort((p, q) => q.s - p.s || p.i - q.i || p.j - q.j);
+  const usedA = new Set(), usedB = new Set();
+  let sum = 0;
+  for (const p of pairs) {
+    if (usedA.has(p.i) || usedB.has(p.j)) continue;
+    usedA.add(p.i); usedB.add(p.j); sum += p.s;
+  }
+  if (!usedA.size) return 0;
+  const base = sum / Math.max(A.length, B.length);
+  const contained = A.length !== B.length
+    && (A.length < B.length ? A.every((_, idx) => usedA.has(idx)) : B.every((_, idx) => usedB.has(idx)));
+  return Math.min(1, Math.round((base + (contained ? CONTAINMENT_BONUS : 0)) * 100) / 100);
+}
+
+// ---------------------------------------------------------- workflow
+
+const STATES = {
+  new: ['duplicate', 'conflict-review', 'urgent', 'assignable'],
+  duplicate: [],
+  'conflict-review': ['assignable', 'urgent'],
+  urgent: ['assigned', 'conflict-review'],
+  assignable: ['assigned'],
+  assigned: [],
+  // decision-layer terminal states (reached only via decide(), never transition())
+  accepted: [],
+  declined: [],
+  escalated: [],
+};
+
+// Decision layer: accept / decline / escalate from any open (undecided)
+// state. Every decision requires an actor and a reason — no unexplained
+// routing, unlike the counterpart's LLM-opaque triage.
+const DECISION_ACTIONS = { accept: 'accepted', decline: 'declined', escalate: 'escalated' };
+const DECIDABLE_STATES = ['new', 'conflict-review', 'urgent', 'assignable'];
+
+/** Guarded state transition for one queue item. */
+function transition(item, to) {
+  if (!(to in STATES)) return { ok: false, item, error: `unknown state "${to}"` };
+  const allowed = STATES[item.state] ?? [];
+  if (!allowed.includes(to)) {
+    return { ok: false, item, error: `${item.state} → ${to} not allowed (allowed: ${allowed.join(', ') || 'none'})` };
+  }
+  if (to === 'assigned' && !item.assignedTo) {
+    return { ok: false, item, error: 'cannot assign without assignedTo' };
+  }
+  return { ok: true, item: { ...item, state: to } };
+}
+
+// ----------------------------------------------------------- triage
+
+const VALID_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const days = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
+/**
+ * Urgency rules (deterministic, thresholds configurable):
+ *   - hard deadline (court date, SOL, response due) ≤ overdueDays past → "overdue"
+ *   - deadline within criticalDays (14) → "urgent"
+ *   - deadline within soonDays (30) → "deadline-soon"
+ *   - matter occurred > staleAgeDays (365) ago → "aged" bump (never lowers)
+ *   - otherwise "routine"
+ */
+function assessUrgency(sub, asOf, settings) {
+  const s = settings ?? {};
+  const criticalDays = s.criticalDays ?? 14;
+  const soonDays = s.soonDays ?? 30;
+  const staleAgeDays = s.staleAgeDays ?? 365;
+  const reasons = [];
+  let level = 'routine';
+
+  if (sub.deadline && VALID_ISO.test(sub.deadline)) {
+    const d = days(asOf, sub.deadline);
+    if (d < 0) { level = 'overdue'; reasons.push(`deadline ${sub.deadline} passed ${-d} days ago`); }
+    else if (d <= criticalDays) { level = 'urgent'; reasons.push(`deadline ${sub.deadline} in ${d} days (≤ ${criticalDays})`); }
+    else if (d <= soonDays) { level = 'deadline-soon'; reasons.push(`deadline ${sub.deadline} in ${d} days (≤ ${soonDays})`); }
+  } else if (sub.deadline) {
+    reasons.push(`deadline "${sub.deadline}" not valid ISO — urgency unverified`);
+  }
+
+  if (sub.occurredOn && VALID_ISO.test(sub.occurredOn) && days(sub.occurredOn, asOf) > staleAgeDays) {
+    reasons.push(`matter is ${days(sub.occurredOn, asOf)} days old (> ${staleAgeDays}) — check limitations`);
+    if (level === 'routine' || level === 'deadline-soon') level = 'urgent';
+  }
+  return { level, reasons };
+}
+
+/**
+ * Process the intake queue.
+ *
+ * @param {Object} input
+ *   { asOf: ISO, submissions: Submission[], roster: RosterEntry[],
+ *     settings?: { dedupeThreshold?, conflictThreshold?, ...urgency } }
+ * Submission: { id, submittedAt, client: {name}, opposing: {name},
+ *              matterType, description?, deadline?, occurredOn? }
+ * RosterEntry: { name, role: 'client'|'adverse'|'other', matter }
+ */
+function processQueue(input) {
+  const asOf = input.asOf;
+  if (!VALID_ISO.test(asOf)) throw new Error(`asOf must be ISO date, got "${asOf}"`);
+  const st = input.settings ?? {};
+  const dedupeThreshold = st.dedupeThreshold ?? 0.85;
+  const conflictThreshold = st.conflictThreshold ?? 0.8;
+  const roster = input.roster ?? [];
+
+  const seen = []; // { id, client, opposing } of earlier submissions
+  const items = input.submissions.map((sub) => {
+    const flags = [];
+
+    // dedupe against earlier submissions (same client AND same opposing)
+    let duplicateOf = null;
+    for (const prev of seen) {
+      const cSim = nameSimilarity(prev.client, sub.client.name);
+      const oSim = nameSimilarity(prev.opposing, sub.opposing.name);
+      if (cSim >= dedupeThreshold && oSim >= dedupeThreshold) {
+        duplicateOf = prev.id;
+        flags.push(`same parties as ${prev.id} (client ${cSim}, opposing ${oSim})`);
+        break;
+      }
+    }
+    seen.push({ id: sub.id, client: sub.client.name, opposing: sub.opposing.name });
+
+    // conflict check: either party matching any roster entry or one of its
+    // aliases[] — aliases are first-class candidates; on a score tie the
+    // primary roster name wins (an alias only supplements, never overrides)
+    const conflicts = [];
+    for (const r of roster) {
+      const candidates = [{ name: r.name, alias: null }, ...(r.aliases ?? []).map((a) => ({ name: a, alias: a }))];
+      for (const [side, party] of [['client', sub.client.name], ['opposing', sub.opposing.name]]) {
+        let best = null;
+        for (const cand of candidates) {
+          const sim = nameSimilarity(cand.name, party);
+          if (!best || sim > best.score) best = { score: sim, via: cand.alias };
+        }
+        if (best && best.score >= conflictThreshold) {
+          conflicts.push({
+            rosterName: r.name,
+            role: r.role,
+            matter: r.matter ?? null,
+            matchedSide: side,
+            score: best.score,
+            ...(best.via ? { aliasMatch: true, matchedVia: best.via } : {}),
+          });
+        }
+      }
+    }
+    for (const c of conflicts) {
+      flags.push(`possible conflict: ${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matches ${c.matchedSide} at ${c.score}${c.aliasMatch ? ` via alias "${c.matchedVia}"` : ''}`);
+    }
+
+    const urgency = assessUrgency(sub, asOf, st);
+
+    let state;
+    if (duplicateOf) state = 'duplicate';
+    else if (conflicts.some((c) => c.role === 'adverse' || c.role === 'client')) state = 'conflict-review';
+    else if (urgency.level === 'urgent' || urgency.level === 'overdue') state = 'urgent';
+    else state = 'assignable';
+
+    return {
+      id: sub.id,
+      submittedAt: sub.submittedAt,
+      client: sub.client.name,
+      opposing: sub.opposing.name,
+      matterType: sub.matterType,
+      description: sub.description ?? null,
+      deadline: sub.deadline ?? null,
+      duplicateOf,
+      conflicts,
+      urgency,
+      state,
+      assignedTo: null,
+      flags,
+    };
+  });
+
+  const summary = {
+    total: items.length,
+    byState: tally(items.map((i) => i.state)),
+    conflicts: items.filter((i) => i.conflicts.length > 0).length,
+    duplicates: items.filter((i) => i.duplicateOf).length,
+    urgent: items.filter((i) => ['urgent', 'overdue'].includes(i.urgency.level)).length,
+  };
+  const queue = { asOf, items, summary, settings: { dedupeThreshold, conflictThreshold }, audit: [] };
+  appendAudit(queue, 'process', 'system', `${items.length} submissions screened (dedupe ≥ ${dedupeThreshold}, conflicts ≥ ${conflictThreshold})`);
+  return queue;
+}
+
+function tally(values) {
+  const t = {};
+  for (const v of values) t[v] = (t[v] ?? 0) + 1;
+  return t;
+}
+
+/** Append one entry to the queue's audit trail (who did what, when). */
+function appendAudit(queue, action, actor, detail) {
+  queue.audit.push({ seq: queue.audit.length + 1, at: queue.asOf, actor, action, detail });
+}
+
+/** Assign an item to staff (new/conflict-review/urgent/assignable → assigned).
+ *  Validates the transition on a copy first: a rejected assign leaves the
+ *  item untouched and writes no audit entry. */
+function assign(queue, id, staffId) {
+  const item = queue.items.find((i) => i.id === id);
+  if (!item) return { ok: false, queue, error: `no item "${id}"` };
+  const r = transition({ ...item, assignedTo: staffId }, 'assigned');
+  if (!r.ok) return { ok: false, queue, error: r.error };
+  Object.assign(item, r.item);
+  appendAudit(queue, 'assign', staffId, `assigned ${id} to ${staffId}`);
+  return { ok: true, queue };
+}
+
+/** Record an accept / decline / escalate decision with actor + reason.
+ *  Terminal: once accepted/declined/escalated (or assigned/duplicate), no
+ *  further decision is possible. */
+function decide(queue, id, action, by, reason) {
+  const item = queue.items.find((i) => i.id === id);
+  if (!item) return { ok: false, queue, error: `no item "${id}"` };
+  if (!(action in DECISION_ACTIONS)) {
+    return { ok: false, queue, error: `unknown decision "${action}" (use: ${Object.keys(DECISION_ACTIONS).join(', ')})` };
+  }
+  if (!by || !String(by).trim()) {
+    return { ok: false, queue, error: `decision "${action}" on ${id} requires an actor (by)` };
+  }
+  if (!reason || !String(reason).trim()) {
+    return { ok: false, queue, error: `decision "${action}" on ${id} requires a reason` };
+  }
+  if (!DECIDABLE_STATES.includes(item.state)) {
+    return { ok: false, queue, error: `decision ${action} from ${item.state} not allowed (allowed from: ${DECIDABLE_STATES.join(', ')})` };
+  }
+  item.state = DECISION_ACTIONS[action];
+  item.decision = { action, by, reason: String(reason), at: queue.asOf };
+  appendAudit(queue, 'decide', by, `${action} ${id}: ${reason}`);
+  return { ok: true, queue };
+}
+
+/** CSV export, one row per submission. */
+function toCSV(queue) {
+  const esc = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const lines = ['id,submittedAt,client,opposing,matterType,deadline,state,duplicateOf,conflictCount,urgencyLevel,assignedTo,flags'];
+  for (const i of queue.items) {
+    lines.push([i.id, i.submittedAt, i.client, i.opposing, i.matterType, i.deadline, i.state,
+      i.duplicateOf ?? '', i.conflicts.length, i.urgency.level, i.assignedTo ?? '',
+      i.flags.join('; ')].map((v) => esc(v ?? '')).join(','));
+  }
+  return lines.join('\n') + '\n';
+}
+
+/** Deterministic Markdown queue. */
+function renderQueue(q) {
+  const L = [];
+  L.push(`# Intake queue — as of ${q.asOf}`, '');
+  L.push(`Total **${q.summary.total}** · duplicates **${q.summary.duplicates}** · conflicts **${q.summary.conflicts}** · urgent **${q.summary.urgent}** · states ${Object.entries(q.summary.byState).map(([k, v]) => `${k} ${v}`).join(', ')}`, '');
+  L.push('| # | Id | Submitted | Client ↔ Opposing | Matter | Deadline | Urgency | State | Notes |');
+  L.push('|---|---|---|---|---|---|---|---|---|');
+  const rank = { overdue: 0, urgent: 1, 'deadline-soon': 2, routine: 3 };
+  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
+  [...q.items]
+    .sort((a, b) => stateRank[a.state] - stateRank[b.state] || rank[a.urgency.level] - rank[b.urgency.level] || (a.id < b.id ? -1 : 1))
+    .forEach((i, n) => {
+      L.push(`| ${n + 1} | ${i.id} | ${i.submittedAt} | ${i.client} ↔ ${i.opposing} | ${i.matterType} | ${i.deadline ?? '—'} | ${i.urgency.level} | ${i.state}${i.assignedTo ? ` → ${i.assignedTo}` : ''}${i.decision ? ` (${i.decision.action} by ${i.decision.by})` : ''} | ${i.flags.join('; ') || '—'} |`);
+    });
+  L.push('');
+  L.push('## Audit log', '');
+  L.push('| # | At | Actor | Action | Detail |');
+  L.push('|---|---|---|---|---|');
+  for (const a of q.audit ?? []) {
+    L.push(`| ${a.seq} | ${a.at} | ${a.actor} | ${a.action} | ${a.detail} |`);
+  }
+  L.push('');
+  return L.join('\n');
+}
+
+// ------------------------------------------------------ letter drafts
+
+/** Cite one conflict the way a letter must: roster party, role, matter,
+ *  matched side, score — and the alias when the match came via one. */
+function citeConflict(c) {
+  const base = `${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matched the ${c.matchedSide} party`;
+  return c.aliasMatch
+    ? `${base} "${c.matchedVia}" (alias) with similarity score ${c.score}`
+    : `${base} with similarity score ${c.score}`;
+}
+
+/**
+ * Deterministic letter drafts: kind = 'engagement' | 'declination'.
+ * Every line is generated from queue fields — nothing invented, no
+ * hallucination possible. Jurisdiction stays a [JURISDICTION] placeholder
+ * (UPL-safe: these templates are not legal advice).
+ */
+function renderLetter(q, id, kind) {
+  const item = q.items.find((i) => i.id === id);
+  if (!item) throw new Error(`no item "${id}"`);
+  if (kind !== 'engagement' && kind !== 'declination') {
+    throw new Error(`unknown letter kind "${kind}" (use: engagement, declination)`);
+  }
+  const L = [];
+  L.push('[FIRM LETTERHEAD]', '');
+  L.push(`Date: ${q.asOf}`, '');
+  L.push(`${item.client}`);
+  L.push(`Re: ${kind === 'engagement' ? 'Proposed engagement' : 'Your inquiry'} — ${item.matterType} (intake ${item.id})`, '');
+  L.push(`Dear ${item.client}:`, '');
+  if (kind === 'engagement') {
+    L.push(`Thank you for contacting [FIRM NAME] about the matter above. We are pleased to confirm that [FIRM NAME] will consider representing you in this matter, subject to the terms below.`);
+    if (item.conflicts.length === 0) {
+      L.push('', `Conflict screening: our roster check found no roster match at or above the ${q.settings.conflictThreshold} conflict threshold for either party (intake ${item.id}, screened ${q.asOf}).`);
+    } else {
+      L.push('', `Conflict screening: our roster check found ${item.conflicts.length} possible match(es) that must be resolved before opening the matter:`);
+      for (const c of item.conflicts) L.push(`- ${citeConflict(c)}`);
+    }
+    L.push('', `Scope: ${item.matterType}.${item.deadline ? ` The intake records a possible deadline of ${item.deadline} [verify].` : ''} Scope of services, fees, and the governing law of [JURISDICTION] [verify] will be set out in a signed engagement agreement.`);
+    L.push('', 'This draft is a template generated from intake data; it is not legal advice and creates no attorney-client relationship until the engagement agreement is signed.');
+  } else {
+    const c = item.conflicts.find((x) => x.role === 'adverse' || x.role === 'client') ?? item.conflicts[0] ?? null;
+    L.push(`Thank you for contacting [FIRM NAME] about the matter above. After our conflict-screening review, we are unable to accept this engagement.`);
+    L.push('', c ? `Our records show that ${citeConflict(c)}. Because of that relationship, we cannot represent you in this matter.` : `Our screening review did not identify a matter we can accept; the decision record below states the reason.`);
+    if (item.decision) L.push('', `Decision record: ${item.decision.action} by ${item.decision.by} on ${item.decision.at} — "${item.decision.reason}".`);
+    L.push('', `Deadlines can pass quickly: the intake records ${item.deadline ? `a possible deadline of ${item.deadline} [verify]` : 'no deadline'}. Please consult another attorney promptly; the [JURISDICTION] bar association [verify] maintains a lawyer referral service.`);
+    L.push('', 'This letter is not legal advice and does not create an attorney-client relationship.');
+  }
+  L.push('', 'Sincerely,', '[FIRM NAME]');
+  return L.join('\n');
+}
+
+// ------------------------------------------------------------ ICS
+
+/**
+ * RFC 5545 calendar export: one VEVENT per submission with a valid ISO
+ * deadline. CRLF line endings, escaped text (\\, \\; \\n), folding at
+ * 75 octets per line (multibyte characters counted as their UTF-8 size).
+ */
+function toICS(q) {
+  const escIcs = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const cpOctets = (cp) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
+  const fold = (line) => {
+    const out = [];
+    let cur = '';
+    let curOct = 0;
+    for (const ch of line) {
+      const chOct = cpOctets(ch.codePointAt(0));
+      if (curOct + chOct > 75) { // RFC 5545 3.1: ≤75 octets per line
+        out.push(cur);
+        cur = ' ';
+        curOct = 1;
+      }
+      cur += ch;
+      curOct += chOct;
+    }
+    out.push(cur);
+    return out;
+  };
+  const stamp = `${q.asOf.replace(/-/g, '')}T000000Z`;
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//intake-queue//open-legal-artifacts//EN', 'CALSCALE:GREGORIAN'];
+  for (const i of q.items) {
+    if (!i.deadline || !VALID_ISO.test(i.deadline)) continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${i.id}@intake-queue`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${i.deadline.replace(/-/g, '')}`,
+      `SUMMARY:${escIcs(`Intake ${i.id}: ${i.client} v. ${i.opposing}`)}`,
+      `DESCRIPTION:${escIcs(`${i.matterType} — deadline. State: ${i.state}.`)}`,
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.flatMap(fold).join('\r\n') + '\r\n';
+}
+
+// --------------------------------------------------- ingest verifier
+
+/**
+ * Verify an LLM extraction against the raw source text before it enters
+ * the queue: every extracted party name must appear VERBATIM in the
+ * source (enforces the spec's "copy names verbatim" prompt rule).
+ * Non-verbatim names flag the submission `unverified-extraction` and a
+ * human must re-extract; null names are simply "nothing extracted".
+ */
+function ingestSubmission(extracted, sourceText) {
+  const source = String(sourceText ?? '');
+  const submission = {
+    id: extracted.id,
+    submittedAt: extracted.submittedAt,
+    client: { name: extracted.client?.name ?? null },
+    opposing: { name: extracted.opposing?.name ?? null },
+    matterType: extracted.matterType ?? null,
+    description: extracted.description ?? null,
+    deadline: extracted.deadline ?? null,
+    occurredOn: extracted.occurredOn ?? null,
+    flags: [],
+  };
+  const issues = [];
+  for (const side of ['client', 'opposing']) {
+    const name = submission[side].name;
+    // verbatim = appears in the source delimited by non-letter/non-digit
+    // characters on both sides (any script), so a truncated "Sable
+    // Insurance Co" inside "Sable Insurance Company" — or a name glued
+    // to another word ("XRidgeline…", "…CompanyX") — does NOT count as
+    // copied verbatim
+    const verbatim = name != null && new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(source);
+    if (name != null && !verbatim) {
+      issues.push(`${side} name "${name}" not found verbatim in source text — extraction unverified`);
+      if (!submission.flags.includes('unverified-extraction')) submission.flags.push('unverified-extraction');
+    }
+  }
+  return { ok: issues.length === 0, submission, issues };
+}
+
+
+/* ---------- vendored from open-artifacts/_shared/persist.js (browser half; Node fs helpers dropped) ---------- */
+function memoryBackend(name) {
+  const map = new Map();
+  return { backendName: name,
+    get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
+    set(k, v) { map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) }); },
+    remove(k) { map.delete(k); },
+    append(k, entry) { if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
+    entries(k) { const v = map.get(k); return v && v.kind === 'log' ? v.items.slice() : []; },
+    exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : ''); } };
+}
+function probeLocalStorage() {
+  try { const ls = globalThis.localStorage; if (!ls) return null;
+    const pk = '__persist_probe__'; ls.setItem(pk, '1'); const ok = ls.getItem(pk) === '1'; ls.removeItem(pk); return ok ? ls : null;
+  } catch { return null; }
+}
+function localBackend(namespace) {
+  const ls = probeLocalStorage(); if (!ls) return memoryBackend('memory-fallback');
+  const key = (k) => `${namespace}:${k}`;
+  let degraded = false; const mem = memoryBackend('memory');
+  const read = (k) => { try { const raw = ls.getItem(key(k)); return raw == null ? null : raw; } catch { return null; } };
+  return { backendName: 'local',
+    get(k) { if (degraded) return mem.get(k); const raw = read(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
+    set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
+    remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
+    append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
+    entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
+    exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : ''); } };
+}
+function createStorage(namespace) { return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory'); }
+
+/* ---------- vendored from open-artifacts/_shared/docio.js (write path only: writeDocx/writeXlsx + zip STORE writer) ---------- */
+const XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+const encodeXml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+function buildZip(files) {
+  const enc = new TextEncoder(); const parts = [], cd = []; let offset = 0;
+  for (const [name, content] of files) {
+    const data = typeof content === 'string' ? enc.encode(content) : content;
+    const nb = enc.encode(name), crc = crc32(data), lho = offset;
+    const lh = new Uint8Array(30), v = new DataView(lh.buffer);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(12, 0x21, true);
+    v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true); v.setUint16(26, nb.length, true);
+    parts.push(lh, nb, data); offset += 30 + nb.length + data.length;
+    const c = new Uint8Array(46), u = new DataView(c.buffer);
+    u.setUint32(0, 0x02014b50, true); u.setUint16(4, 20, true); u.setUint16(6, 20, true); u.setUint16(14, 0x21, true);
+    u.setUint32(16, crc, true); u.setUint32(20, data.length, true); u.setUint32(24, data.length, true);
+    u.setUint16(28, nb.length, true); u.setUint32(42, lho, true); cd.push(c, nb);
+  }
+  const cdSize = cd.reduce((n, p) => n + p.length, 0);
+  const eocd = new Uint8Array(22), e = new DataView(eocd.buffer);
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+  const all = [...parts, ...cd, eocd]; const out = new Uint8Array(offset + cdSize + 22); let o = 0;
+  for (const p of all) { out.set(p, o); o += p.length; } return out;
+}
+function writeDocx(paragraphs) {
+  const body = (paragraphs ?? []).map((p) => {
+    const text = typeof p === 'string' ? p : p && p.text != null ? String(p.text) : '';
+    return '<w:p><w:r><w:t xml:space="preserve">' + encodeXml(text) + '</w:t></w:r></w:p>';
+  }).join('');
+  const doc = XMLDECL + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body +
+    '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>';
+  return new Blob([buildZip([
+    ['[Content_Types].xml', XMLDECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
+    ['_rels/.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
+    ['word/document.xml', doc],
+  ])]);
+}
+function writeXlsx(rows, opts) {
+  const sheetName = (opts && typeof opts === 'object' && opts.name) || 'Sheet1';
+  const colName = (i) => { let s = ''; for (let n = i + 1; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+  const body = (rows ?? []).map((row, ri) => (row ?? []).map((v, ci) => {
+    const ref = ' r="' + colName(ci) + (ri + 1) + '"';
+    if (typeof v === 'number' && Number.isFinite(v)) return '<c' + ref + '><v>' + v + '</v></c>';
+    return '<c' + ref + ' t="inlineStr"><is><t xml:space="preserve">' + encodeXml(v == null ? '' : String(v)) + '</t></is></c>';
+  }).join('')).map((cells, ri) => '<row r="' + (ri + 1) + '">' + cells + '</row>').join('');
+  const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  return new Blob([buildZip([
+    ['[Content_Types].xml', XMLDECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
+    ['_rels/.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="' + REL + '/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ['xl/workbook.xml', XMLDECL + '<workbook xmlns="' + SS + '" xmlns:r="' + REL + '"><sheets><sheet name="' + encodeXml(sheetName) + '" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+    ['xl/_rels/workbook.xml.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="' + REL + '/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
+    ['xl/worksheets/sheet1.xml', XMLDECL + '<worksheet xmlns="' + SS + '"><sheetData>' + body + '</sheetData></worksheet>'],
+  ])]);
+}
+
+/* ---------- app ---------- */
+const store = createStorage('intake-queue');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2600); }
+
+const ACTORS = ['gc-lee', 'partner-ng', 'intake-rb'];
 const DEFAULT_INPUT = {
   asOf: '2026-11-07',
   roster: [
@@ -104,99 +830,286 @@ const DEFAULT_INPUT = {
     { id: 'INT-1045', submittedAt: '2026-11-07', client: { name: 'Tilly Andersen (fictional)' }, opposing: { name: 'Coastal View Apartments' }, matterType: 'security deposit return', occurredOn: '2024-05-30' },
   ],
 };
+const DEFAULT_SOURCES = {
+  'INT-1041': 'From: office@ridgelinedental.example (fictional). Ridgeline Dental Group PC writes: our insurance coverage dispute with Sable Insurance Company over denied billing reimbursements has a carrier-response deadline of November 13.',
+  'INT-1042': 'Email from M. Iwata (fictional): the Brightpath Solar panel installation on our warehouse roof caused property damage; the warranty claim deadline is December 20.',
+  'INT-1048': 'Letter from the Quiet Harbor Tenants Assoc: collective roofing defect claims against BPS Solarworks; repairs deadline December 15.',
+  'INT-1044': 'Harbor Bakehouse Co. — contract dispute with Delgado Trucking LLC over missed delivery schedules; no court date yet.',
+  'INT-1047': 'Second email, same matter: Harbor Bakehouse Company regarding the contract dispute with Delgado Trucking, L.L.C. — sent from the owner\u2019s personal account.',
+  'INT-1045': 'Voicemail transcription for Tilly Andersen (fictional): security deposit return dispute with Coastal View Apartments; moved out May 30, 2024.',
+};
+const DEFAULT_ING_SOURCE = 'From: dana.reyes@example.org (fictional). My company Ridgeline Dental Group PC has a billing dispute with Sable Insurance Company. Response due December 4.';
+const DEFAULT_ING = { client: 'Ridgeline Dental Group PC', opposing: 'Sable Insurance Company', matter: 'billing dispute' };
 
-const DEFAULT_SOURCE = 'From: Dana Reyes (fictional). My company Ridgeline Dental Group PC has a billing dispute with Sable Insurance Company.';
-const DEFAULT_EXTRACTED = { client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'billing dispute' };
-
-const $ = (id) => document.getElementById(id);
-$('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
-$('ing-source').value = DEFAULT_SOURCE;
-$('ing-extracted').value = JSON.stringify(DEFAULT_EXTRACTED, null, 2);
-function esc(s) { return String(s).replace(/</g, '&lt;'); }
-
+/* working = { input, sources: {id: text}, actions: [{kind:'decide'|'assign', id, action?, by, reason?}] } */
+let working = null;
 let q = null;
+let fState = 'all';
+const STATES_FILTER = ['all', 'conflict-review', 'urgent', 'assignable', 'duplicate', 'assigned', 'accepted', 'declined', 'escalated'];
 
-function renderAll() {
-  const s = q.summary;
-  $('summary').innerHTML = `
-    <div class="cards">
-      <div class="card"><div class="k">Submissions</div><div class="v">${s.total}</div></div>
-      <div class="card alert"><div class="k">Urgent</div><div class="v">${s.urgent}</div></div>
-      <div class="card"><div class="k">Conflicts</div><div class="v">${s.conflicts}</div></div>
-      <div class="card"><div class="k">Duplicates</div><div class="v">${s.duplicates}</div></div>
-      <div class="card"><div class="k">Audit entries</div><div class="v">${q.audit.length}</div></div>
-    </div>`;
-  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
-  const rows = [...q.items].sort((a, b) => stateRank[a.state] - stateRank[b.state] || a.id.localeCompare(b.id))
-    .map((i) => `
-    <tr>
-      <td><strong>${esc(i.id)}</strong><br /><span class="notes">${i.submittedAt}</span></td>
-      <td>${esc(i.client)}<br />↕<br />${esc(i.opposing)}</td>
-      <td>${esc(i.matterType)}<br /><span class="notes">deadline: ${i.deadline ?? '—'}</span></td>
-      <td><span class="chip ${i.urgency.level}">${i.urgency.level}</span></td>
-      <td><span class="chip ${i.state}">${i.state}</span>${i.duplicateOf ? `<br /><span class="notes">dup of ${esc(i.duplicateOf)}</span>` : ''}</td>
-      <td>${i.conflicts.length ? i.conflicts.map((c) => `<span class="notes"><strong>${esc(c.rosterName)}</strong> (${c.role} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}${c.aliasMatch ? ` <strong>via alias “${esc(c.matchedVia)}”</strong>` : ''}</span>`).join('<br>') : '—'}</td>
-      <td>${i.flags.length ? `<span class="notes">${i.flags.map(esc).join('<br>')}</span>` : '—'}${i.decision ? `<br /><span class="notes">${esc(i.decision.action)} by ${esc(i.decision.by)}: ${esc(i.decision.reason)}</span>` : ''}</td>
-    </tr>`).join('');
-  $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Parties</th><th>Matter</th><th>Urgency</th><th>State</th><th>Conflicts</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
-  $('audit').innerHTML = `<table><thead><tr><th>#</th><th>At</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead><tbody>${
-    q.audit.map((a) => `<tr><td>${a.seq}</td><td>${esc(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail)}</td></tr>`).join('')
-  }</tbody></table>`;
-  for (const sel of [$('d-id'), $('l-id')]) {
-    sel.innerHTML = q.items.map((i) => `<option value="${esc(i.id)}">${esc(i.id)} — ${esc(i.state)}</option>`).join('');
+function persist() { store.set('working', working); }
+function auditRow(action, detail, actor) {
+  store.append('audit', { ts: new Date().toISOString(), actor: actor || 'you', action, detail: detail ?? null });
+}
+function nextId() {
+  let max = 1048;
+  for (const s of working.input.submissions) { const m = /^INT-(\d+)$/.exec(s.id || ''); if (m) max = Math.max(max, +m[1]); }
+  return 'INT-' + String(max + 1).padStart(4, '0');
+}
+function rebuild() {
+  q = processQueue(JSON.parse(JSON.stringify(working.input)));
+  for (const a of working.actions) {
+    const r = a.kind === 'assign' ? assign(q, a.id, a.by) : decide(q, a.id, a.action, a.by, a.reason);
+    if (!r.ok) continue; // replayed action no longer applicable (edited queue) — skip
   }
 }
 
-$('run').addEventListener('click', () => {
-  const errEl = $('err'); errEl.style.display = 'none';
-  try { q = processQueue(JSON.parse($('input').value)); }
-  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
-  renderAll();
+/* ---------- render ---------- */
+const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
+function daysSince(d) { return Math.round((Date.parse(working.input.asOf + 'T00:00:00Z') - Date.parse(d + 'T00:00:00Z')) / 86400000); }
+
+function renderStrip() {
+  const open = q.items.filter((i) => ['new', 'conflict-review', 'urgent', 'assignable'].includes(i.state));
+  const oldest = open.reduce((m, i) => Math.max(m, daysSince(i.submittedAt)), 0);
+  const by = q.summary.byState;
+  const cells = [
+    ['Conflict review', by['conflict-review'] ?? 0, true],
+    ['Urgent', by['urgent'] ?? 0, true],
+    ['Assignable', by['assignable'] ?? 0, false],
+    ['Duplicates', by['duplicate'] ?? 0, false],
+    ['Oldest waiting', open.length ? oldest + ' d' : '—', false],
+    ['Decided', q.items.filter((i) => i.decision).length, false],
+  ];
+  $('strip').innerHTML = '<div class="strip">' + cells.map(([k, v, alert]) =>
+    `<div class="cell"><div class="k">${k}</div><div class="v${alert && +v > 0 ? ' alert' : ''}">${esc(v)}</div></div>`).join('') + '</div>';
+}
+
+function partyBtn(name, id, side) {
+  return `<button class="linklike" data-src="${escAttr(id)}" data-name="${escAttr(name)}" aria-label="Show ${escAttr(name)} highlighted in the enquiry source text">${esc(name)}</button>`;
+}
+function conflictBtns(i) {
+  if (!i.conflicts.length) return '—';
+  return i.conflicts.map((c) => `<button class="chipbtn" data-conf="${escAttr(c.rosterName)}" data-src="${escAttr(i.id)}" data-name="${escAttr(c.matchedSide === 'client' ? i.client : i.opposing)}" aria-label="Conflict trace: ${escAttr(c.rosterName)} matched the ${c.matchedSide} party at score ${c.score}${c.aliasMatch ? ' via alias ' + c.matchedVia : ''}. Highlight roster entry and source text."><strong>${esc(c.rosterName)}</strong> (${esc(c.role)} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}${c.aliasMatch ? ` via alias “${esc(c.matchedVia)}”` : ''}</button>`).join('<br>');
+}
+
+function renderBoard() {
+  $('f-state').innerHTML = STATES_FILTER.map((s) => `<option value="${s}"${s === fState ? ' selected' : ''}>${s === 'all' ? 'all states' : s}</option>`).join('');
+  let rows = [...q.items].sort((a, b) => stateRank[a.state] - stateRank[b.state] || a.id.localeCompare(b.id));
+  if (fState !== 'all') rows = rows.filter((i) => i.state === fState);
+  $('board').innerHTML = `<table aria-label="Intake queue, sorted by state priority"><thead><tr>
+    <th scope="col">Id</th><th scope="col">Parties</th><th scope="col" class="hide-sm">Matter</th><th scope="col" class="hide-sm">Urgency</th><th scope="col">State</th><th scope="col" class="hide-sm">Conflicts</th><th scope="col">Actions</th>
+    </tr></thead><tbody>${rows.map((i) => `
+    <tr${i.decision ? ` data-decided="${escAttr(i.decision.action)}"` : ''}>
+      <td><strong>${esc(i.id)}</strong><br /><span class="notes">${esc(i.submittedAt)}</span></td>
+      <td>${partyBtn(i.client, i.id, 'client')}<br />↕<br />${partyBtn(i.opposing, i.id, 'opposing')}</td>
+      <td class="hide-sm">${esc(i.matterType)}<br /><span class="notes">deadline: ${i.deadline ? esc(i.deadline) : '—'}</span></td>
+      <td class="hide-sm"><span class="chip ${esc(i.urgency.level)}">${esc(i.urgency.level)}</span></td>
+      <td><span class="chip ${esc(i.state)}">${esc(i.state)}</span>${i.duplicateOf ? `<br /><span class="notes">dup of ${esc(i.duplicateOf)}</span>` : ''}${i.assignedTo ? `<br /><span class="notes">→ ${esc(i.assignedTo)}</span>` : ''}${i.decision ? `<br /><span class="notes">${esc(i.decision.action)} by ${esc(i.decision.by)}</span>` : ''}</td>
+      <td class="hide-sm">${conflictBtns(i)}</td>
+      <td><button class="ghost" data-review="${escAttr(i.id)}" aria-label="Review ${escAttr(i.id)} — decisions and letters">Review</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderRoster(hl) {
+  $('roster').innerHTML = working.input.roster.map((r) => `
+    <div class="rline${hl && hl === r.name ? ' hl' : ''}" id="ros-${escAttr(r.name).replace(/\W/g, '_')}">
+      <span class="rn">${esc(r.name)}</span> <span class="chip">${esc(r.role)}</span>
+      <span class="notes">${esc(r.matter ?? 'roster')}${r.aliases?.length ? ` · aliases: ${r.aliases.map(esc).join(', ')}` : ''}</span>
+    </div>`).join('');
+}
+
+function renderSummary() {
+  const s = q.summary;
+  $('summary').innerHTML = `<div class="cards">
+    <div class="card"><div class="k">Submissions</div><div class="v">${s.total}</div></div>
+    <div class="card alert"><div class="k">Urgent</div><div class="v">${s.urgent}</div></div>
+    <div class="card"><div class="k">Conflicts</div><div class="v">${s.conflicts}</div></div>
+    <div class="card"><div class="k">Duplicates</div><div class="v">${s.duplicates}</div></div>
+    <div class="card"><div class="k">Audit entries</div><div class="v">${store.entries('audit').length}</div></div>
+  </div>`;
+}
+
+function renderAudit() {
+  const rows = store.entries('audit');
+  $('audit').innerHTML = `<table aria-label="Append-only audit log"><thead><tr><th scope="col">#</th><th scope="col">At</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Detail</th></tr></thead><tbody>${
+    rows.map((a, n) => `<tr><td>${n + 1}</td><td>${esc(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail ?? '')}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderAll() { renderStrip(); renderBoard(); renderRoster(); renderSummary(); renderAudit(); $('input').value = JSON.stringify(working.input, null, 2); }
+
+/* ---------- source pane: click-through with highlight ---------- */
+function showSource(id, name) {
+  const text = working.sources[id];
+  if (text == null) { toast('No source text stored for ' + id); return; }
+  let html = esc(text);
+  if (name) {
+    const rx = new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'gu');
+    html = html.replace(rx, (m) => `<mark>${m}</mark>`);
+  }
+  $('src-title').textContent = `Enquiry source — ${id}`;
+  $('srcbody').innerHTML = html;
+  $('srcpane').hidden = false;
+  $('srcpane').scrollTop = 0;
+  const mk = $('srcbody').querySelector('mark');
+  if (mk) mk.scrollIntoView({ block: 'center' });
+  $('src-close').focus();
+}
+
+/* ---------- review drawer ---------- */
+let openId = null;
+function openDrawer(id) {
+  const i = q.items.find((x) => x.id === id); if (!i) return;
+  openId = id;
+  const decidable = ['new', 'conflict-review', 'urgent', 'assignable'].includes(i.state);
+  const assignable = ['new', 'conflict-review', 'urgent', 'assignable'].includes(i.state);
+  $('dr-title').textContent = `Review ${id}`;
+  $('dr-body').innerHTML = `
+    <p>${partyBtn(i.client, i.id, 'client')}<br>↕<br>${partyBtn(i.opposing, i.id, 'opposing')}</p>
+    <p class="notes">${esc(i.matterType)} · submitted ${esc(i.submittedAt)} · deadline ${i.deadline ? esc(i.deadline) : '—'} · <span class="chip ${esc(i.urgency.level)}">${esc(i.urgency.level)}</span></p>
+    ${i.urgency.reasons.length ? `<p class="notes">${i.urgency.reasons.map(esc).join('<br>')}</p>` : ''}
+    ${i.flags.length ? `<p class="notes">Flags: ${i.flags.map(esc).join('; ')}</p>` : ''}
+    ${i.conflicts.length ? `<p><strong>Conflict traces</strong><br>${conflictBtns(i)}</p>` : ''}
+    ${i.decision ? `<p class="notes">Decision on record: ${esc(i.decision.action)} by ${esc(i.decision.by)} — “${esc(i.decision.reason)}”</p>` : ''}
+    <h2 style="margin-top:24px">Decide / assign</h2>
+    <div class="fgrid">
+      <div class="field"><label for="dr-actor">Actor</label><select id="dr-actor">${ACTORS.map((a) => `<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="field"><label for="dr-reason">Reason (required for decisions)</label><input type="text" id="dr-reason" placeholder="e.g. conflicts cleared by partner" /></div>
+    </div>
+    <div class="btnrow">
+      <button data-act="accept" ${decidable ? '' : 'disabled'}>Accept</button>
+      <button data-act="decline" ${decidable ? '' : 'disabled'}>Decline</button>
+      <button data-act="escalate" ${decidable ? '' : 'disabled'}>Escalate</button>
+      <button data-act="assign" ${assignable ? '' : 'disabled'} aria-label="Assign ${escAttr(id)} to the selected actor">Assign to actor</button>
+    </div>
+    <div class="err" id="dr-err" role="alert"></div>
+    <div class="okbox" id="dr-ok" role="status"></div>
+    <h2 style="margin-top:24px">Letters</h2>
+    <div class="btnrow">
+      <button data-letter="engagement">Engagement letter</button>
+      <button data-letter="declination">Declination letter</button>
+    </div>
+    <div class="btnrow" id="dr-copyrow" hidden>
+      <button class="ghost" id="dr-copy">Copy letter text</button>
+      <button class="ghost" id="dr-dl">Download .txt</button>
+      <button class="ghost" id="dr-docx">Download .docx</button>
+    </div>
+    <pre id="dr-letter" hidden></pre>`;
+  $('drawer').hidden = false;
+  $('dr-close').focus();
+}
+function closeDrawer() { $('drawer').hidden = true; openId = null; }
+
+/* ---------- global click delegation ---------- */
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.src) { showSource(t.dataset.src, t.dataset.name); if (t.dataset.conf) { renderRoster(t.dataset.conf); const el = document.getElementById('ros-' + t.dataset.conf.replace(/\W/g, '_')); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
+  if (t.dataset.review) { openDrawer(t.dataset.review); return; }
+  if (t.id === 'dr-close') { closeDrawer(); return; }
+  if (t.id === 'src-close') { $('srcpane').hidden = true; return; }
+  if (t.dataset.act) { doAction(t.dataset.act); return; }
+  if (t.dataset.letter) { showLetter(t.dataset.letter); return; }
 });
 
-$('d-go').addEventListener('click', () => {
-  const errEl = $('d-err'); errEl.style.display = 'none';
-  if (!q) { errEl.textContent = 'Run the queue first (input JSON is invalid or not yet run).'; errEl.style.display = 'block'; return; }
-  const id = $('d-id').value, action = $('d-action').value, by = $('d-by').value, reason = $('d-reason').value;
+function doAction(action) {
+  const errEl = $('dr-err'), okEl = $('dr-ok');
+  errEl.style.display = 'none'; okEl.style.display = 'none';
+  const by = $('dr-actor').value, reason = $('dr-reason').value, id = openId;
   const r = action === 'assign' ? assign(q, id, by) : decide(q, id, action, by, reason);
-  if (!r.ok) { errEl.textContent = 'Rejected: ' + r.error; errEl.style.display = 'block'; return; }
-  renderAll();
-});
+  if (!r.ok) { errEl.textContent = 'Rejected: ' + r.error; errEl.style.display = 'block'; auditRow('guard-reject', `rejected ${action} on ${id}: ${r.error}`); renderAudit(); return; }
+  working.actions.push(action === 'assign' ? { kind: 'assign', id, by } : { kind: 'decide', id, action, by, reason });
+  persist();
+  auditRow(action === 'assign' ? 'assign' : 'decide', action === 'assign' ? `assigned ${id} to ${by}` : `${action} ${id}: ${reason}`, by);
+  okEl.textContent = `Recorded: ${action} ${id}${action === 'assign' ? ' → ' + by : ' by ' + by}. Persisted — it will survive a reload.`;
+  okEl.style.display = 'block';
+  renderAll(); openDrawer(id);
+}
 
-$('l-go').addEventListener('click', () => {
-  const out = $('letter');
-  if (!q) { out.hidden = true; return; }
-  try { out.textContent = renderLetter(q, $('l-id').value, $('l-kind').value); out.hidden = false; }
-  catch (e) { out.hidden = true; }
+function showLetter(kind) {
+  const out = $('dr-letter');
+  try { out.textContent = renderLetter(q, openId, kind); out.hidden = false; $('dr-copyrow').hidden = false; }
+  catch (e) { out.hidden = true; $('dr-copyrow').hidden = true; }
+}
+$('drawer').addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.id === 'dr-copy') { navigator.clipboard?.writeText($('dr-letter').textContent).then(() => toast('Letter copied'), () => toast('Copy failed — select the text manually')); }
+  if (t.id === 'dr-dl') { download(`letter-${openId}-${new Date().toISOString().slice(0, 10)}.txt`, $('dr-letter').textContent); }
+  if (t.id === 'dr-docx') { const blob = writeDocx($('dr-letter').textContent.split('\n')); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `letter-${openId}-${new Date().toISOString().slice(0, 10)}.docx`; a.click(); URL.revokeObjectURL(a.href); toast('Letter .docx downloaded'); }
 });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawer(); $('srcpane').hidden = true; } });
 
-$('ics-go').addEventListener('click', () => {
-  if (!q) return;
-  const ics = toICS(q);
-  const out = $('ics-out');
-  out.textContent = ics;
-  out.hidden = false;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
-  a.download = 'intake-deadlines.ics';
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
+/* ---------- ingest ---------- */
+function fillIngestDefaults() {
+  $('ing-source').value = DEFAULT_ING_SOURCE;
+  $('ing-client').value = DEFAULT_ING.client;
+  $('ing-opposing').value = DEFAULT_ING.opposing;
+  $('ing-matter').value = DEFAULT_ING.matter;
+  $('ing-deadline').value = '2026-12-04';
+}
+$('ing-mutate').addEventListener('click', () => { $('ing-client').value = $('ing-client').value.replace('Dental', 'Dentla'); toast('Client name mutated by one letter — now verify'); });
 $('ing-go').addEventListener('click', () => {
-  const out = $('ing-out');
-  out.style.display = 'none';
-  let extracted;
-  try { extracted = JSON.parse($('ing-extracted').value); }
-  catch (e) { out.textContent = 'Extracted JSON error: ' + e.message; out.style.display = 'block'; return; }
+  const out = $('ing-out'); out.style.display = 'none'; out.classList.remove('okbox'); out.classList.add('err');
+  const client = $('ing-client').value.trim(), opposing = $('ing-opposing').value.trim();
+  if (!client || !opposing || !$('ing-matter').value.trim()) { out.textContent = 'Client name, opposing name and matter type are required.'; out.style.display = 'block'; return; }
+  const extracted = { client: { name: client }, opposing: { name: opposing }, matterType: $('ing-matter').value.trim(), deadline: $('ing-deadline').value || null, description: null, occurredOn: null };
   const r = ingestSubmission(extracted, $('ing-source').value);
-  out.textContent = r.ok
-    ? `OK — names verified verbatim; submission is queue-ready (flags: none).`
-    : `REJECTED — ${r.issues.join(' | ')} (submission flagged “unverified-extraction”: ${r.submission.flags.join(', ')})`;
+  if (!r.ok) {
+    out.textContent = `REJECTED — ${r.issues.join(' | ')} (submission flagged “unverified-extraction”: ${r.submission.flags.join(', ')}). Nothing was added to the queue.`;
+    out.style.display = 'block'; return;
+  }
+  const id = nextId();
+  working.input.submissions.push({ id, submittedAt: working.input.asOf, ...JSON.parse(JSON.stringify({ client: extracted.client, opposing: extracted.opposing })), matterType: extracted.matterType, deadline: extracted.deadline });
+  working.sources[id] = $('ing-source').value;
+  rebuild(); persist();
+  auditRow('ingest', `verified + added ${id} (${client} ↔ ${opposing}) — names verbatim in source`);
+  renderAll(); openDrawer(id);
+  out.classList.remove('err'); out.classList.add('okbox');
+  out.textContent = `OK — ${id} added: both names verified verbatim in the source text; queue re-screened.`;
   out.style.display = 'block';
 });
 
-$('run').click();
+/* ---------- advanced JSON reprocess ---------- */
+$('run').addEventListener('click', () => {
+  const errEl = $('err'); errEl.style.display = 'none';
+  try {
+    const parsed = JSON.parse($('input').value);
+    if (!parsed.asOf || !Array.isArray(parsed.submissions)) throw new Error('input needs asOf (ISO date) and submissions[]');
+    working.input = parsed; rebuild(); persist();
+    auditRow('process', `reprocessed ${q.items.length} submissions from edited JSON (decisions replayed: ${working.actions.length})`);
+    renderAll(); toast('Queue reprocessed; recorded decisions replayed');
+  } catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; }
+});
+
+/* ---------- filter / exports / reset ---------- */
+$('f-state').addEventListener('change', () => { fState = $('f-state').value; renderBoard(); });
+$('csv-go').addEventListener('click', () => { download(`intake-queue-${q.asOf}.csv`, toCSV(q), 'text/csv'); toast('CSV downloaded'); });
+$('xlsx-go').addEventListener('click', () => {
+  const rows = [['id', 'submittedAt', 'client', 'opposing', 'matterType', 'deadline', 'state', 'duplicateOf', 'conflictCount', 'urgencyLevel', 'assignedTo', 'flags']];
+  for (const i of q.items) rows.push([i.id, i.submittedAt, i.client, i.opposing, i.matterType, i.deadline ?? '', i.state, i.duplicateOf ?? '', i.conflicts.length, i.urgency.level, i.assignedTo ?? '', i.flags.join('; ')]);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(writeXlsx(rows, { name: 'intake-queue' })); a.download = `intake-queue-${q.asOf}.xlsx`; a.click(); URL.revokeObjectURL(a.href); toast('XLSX downloaded');
+});
+$('md-go').addEventListener('click', () => { download(`intake-queue-${q.asOf}.md`, renderQueue(q), 'text/markdown'); toast('Markdown downloaded'); });
+$('ics-go').addEventListener('click', () => { download(`intake-deadlines-${q.asOf}.ics`, toICS(q), 'text/calendar'); toast('ICS downloaded'); });
+$('audit-dl').addEventListener('click', () => { download(`intake-audit-${new Date().toISOString().slice(0, 10)}.ndjson`, store.exportJsonl('audit')); toast('Audit NDJSON downloaded'); });
+$('reset').addEventListener('click', () => { store.remove('working'); store.remove('audit'); location.reload(); });
+
+/* ---------- boot ---------- */
+$('storenote').textContent = store.backendName === 'local'
+  ? 'Working state + audit persist in this browser (localStorage).'
+  : 'localStorage unavailable — state lives in memory for this tab only.';
+const restored = store.get('working');
+if (restored && restored.input && Array.isArray(restored.input.submissions) && Array.isArray(restored.actions) && restored.sources) {
+  working = restored;
+  fillIngestDefaults();
+  rebuild();
+  renderAll();
+} else {
+  working = { input: JSON.parse(JSON.stringify(DEFAULT_INPUT)), sources: { ...DEFAULT_SOURCES }, actions: [] };
+  fillIngestDefaults();
+  rebuild();
+  auditRow('process', `screened ${q.items.length} submissions (fresh demo queue)`);
+  renderAll();
+}
 </script>
 </body>
 </html>

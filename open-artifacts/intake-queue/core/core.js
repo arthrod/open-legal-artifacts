@@ -13,35 +13,156 @@
 
 const CORP_SUFFIXES = new Set(['inc', 'incorporated', 'llc', 'llp', 'ltd', 'limited', 'co', 'corp', 'corporation', 'company', 'plc', 'pc', 'pa', 'the']);
 
-/** Normalize a party name: lowercase, collapse dotted abbreviations
- *  (L.L.C. → llc), strip punctuation/diacritics, drop corporate suffixes.
- *  Initials are kept (M. Iwata ≠ K. Iwata) — conflict checks need them. */
+/** Normalize a party name for matching (Unicode-aware, deterministic):
+ *  NFKC first (folds fullwidth forms and ligatures: Ｎｅｏｎ→neon, ㈱→株式),
+ *  lowercase, NFKD + drop combining marks (deaccent: Ångström→angstrom),
+ *  collapse dotted abbreviations (L.L.C. → llc), drop punctuation and
+ *  symbols keeping letters/digits of ANY script (\p{L}\p{N}), then drop
+ *  corporate suffixes. Tokenization is script-aware: only non-letter
+ *  runs split tokens, so space-less scripts (CJK) stay whole-word and
+ *  identical CJK/Cyrillic/Arabic names normalize identically.
+ *  Initials are kept (M. Iwata ≠ K. Iwata) — but see tokenPairScore. */
 export function normalizeName(name) {
   return String(name ?? '')
+    .normalize('NFKC')
     .toLowerCase()
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\p{M}/gu, '')
     .replace(/([a-z])\./g, '$1')
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .split(/\s+/)
     .filter((t) => t && !CORP_SUFFIXES.has(t))
     .join(' ');
 }
 
+/** Common given-name nicknames (compact data, not a dependency): short →
+ *  full forms it can stand for. Matching is symmetric (see isTableMatch). */
+const NICKNAMES = new Map(Object.entries({
+  bob: ['robert'], bobby: ['robert'], rob: ['robert'],
+  bill: ['william'], will: ['william'], billy: ['william'],
+  jim: ['james'], jimmy: ['james'], jack: ['john'],
+  joe: ['joseph'], joey: ['joseph'], tom: ['thomas'], tommy: ['thomas'],
+  ted: ['edward', 'theodore'], teddy: ['edward', 'theodore'],
+  ed: ['edward'], eddie: ['edward'], tony: ['anthony'],
+  mike: ['michael'], dan: ['daniel'], danny: ['daniel'],
+  dave: ['david'], davey: ['david'], ken: ['kenneth'], kenny: ['kenneth'],
+  chris: ['christopher', 'christine'], steve: ['stephen', 'steven'],
+  matt: ['matthew'], nick: ['nicholas'], alex: ['alexander'],
+  andy: ['andrew'], drew: ['andrew'], greg: ['gregory'], jeff: ['jeffrey'],
+  ron: ['ronald'], ronnie: ['ronald'],
+  rick: ['richard'], rich: ['richard'], dick: ['richard'],
+  ben: ['benjamin'], benny: ['benjamin'], sam: ['samuel'], sammy: ['samuel'],
+  pete: ['peter'], phil: ['philip', 'phillip'], larry: ['lawrence'],
+  jerry: ['gerald', 'jerome'], gerry: ['gerald'], hank: ['henry'],
+  harry: ['henry', 'harold'], frank: ['francis', 'franklin'], gene: ['eugene'],
+  walt: ['walter'],
+  betty: ['elizabeth'], liz: ['elizabeth'], lizzie: ['elizabeth'], beth: ['elizabeth'],
+  peggy: ['margaret'], meg: ['margaret'], kate: ['katherine', 'kathryn'],
+  kathy: ['katherine', 'kathryn'], katie: ['katherine', 'kathryn'],
+  sue: ['susan'], susie: ['susan'], dot: ['dorothy'], bev: ['beverly'],
+  pat: ['patricia', 'patrick'], pam: ['pamela'], cathy: ['catherine'],
+  mandy: ['amanda'], sandy: ['sandra'], terry: ['terrence', 'theresa'],
+  vicki: ['victoria'],
+}));
+
+/** Common organizational abbreviations (compact data): short → expanded. */
+const ABBREVIATIONS = new Map(Object.entries({
+  ins: ['insurance'], intl: ['international'], bros: ['brothers'],
+  grp: ['group'], hldgs: ['holdings'], mfg: ['manufacturing'],
+  svcs: ['services'], assn: ['association'], dept: ['department'],
+  univ: ['university'], natl: ['national'], mgmt: ['management'],
+  dev: ['development'], fin: ['financial'], cmty: ['community'],
+  edu: ['education'], hosp: ['hospital'],
+}));
+
+const TABLE_SCORE = 0.95; // nickname/abbreviation/initial pair score (near-exact)
+const FUZZY_FLOOR = 0.85; // Jaro–Winkler pair threshold (recall-biased)
+const CONTAINMENT_BONUS = 0.25;
+
+function isTableMatch(table, x, y) {
+  return table.get(x)?.includes(y) || table.get(y)?.includes(x);
+}
+
+/** Jaro–Winkler similarity of two strings (no deps, deterministic). */
+function jaroWinkler(a, b) {
+  if (a === b) return 1;
+  const la = a.length, lb = b.length;
+  if (!la || !lb) return 0;
+  const win = Math.max(0, Math.floor(Math.max(la, lb) / 2) - 1);
+  const am = new Array(la).fill(false);
+  const bm = new Array(lb).fill(false);
+  let m = 0;
+  for (let i = 0; i < la; i++) {
+    const lo = Math.max(0, i - win), hi = Math.min(lb - 1, i + win);
+    for (let j = lo; j <= hi; j++) {
+      if (!bm[j] && a[i] === b[j]) { am[i] = bm[j] = true; m++; break; }
+    }
+  }
+  if (!m) return 0;
+  let t = 0, k = 0;
+  for (let i = 0; i < la; i++) {
+    if (am[i]) {
+      while (!bm[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+  }
+  t /= 2;
+  const jaro = (m / la + m / lb + (m - t) / m) / 3;
+  let p = 0;
+  while (p < Math.min(4, la, lb) && a[p] === b[p]) p++;
+  return jaro + p * 0.1 * (1 - jaro);
+}
+
+/** Score one normalized-token pair in [0,1]: exact > nickname/abbreviation
+ *  table > initial rule (J. Iwata ≈ John Iwata, same letter only —
+ *  M. Iwata ≠ K. Iwata) > Jaro–Winkler typo tolerance (tokens ≥ 3 chars,
+ *  so 1–2 char tokens must match exactly or via the tables). */
+function tokenPairScore(x, y) {
+  if (x === y) return 1;
+  if (isTableMatch(NICKNAMES, x, y) || isTableMatch(ABBREVIATIONS, x, y)) return TABLE_SCORE;
+  if (x.length !== y.length && (x.length === 1 || y.length === 1)) {
+    const [ini, full] = x.length === 1 ? [x, y] : [y, x];
+    return full.startsWith(ini) ? TABLE_SCORE : 0;
+  }
+  if (x.length >= 3 && y.length >= 3) {
+    const jw = jaroWinkler(x, y);
+    if (jw >= FUZZY_FLOOR) return jw;
+  }
+  return 0;
+}
+
 /**
- * Deterministic similarity in [0,1]: token Jaccard with a bonus for
- * containment (one name's tokens fully inside the other).
+ * Deterministic similarity in [0,1]: greedy best-first token alignment
+ * (each token pairs at most once; ties broken by position for determinism),
+ * scored as the sum of pair scores over the longer name's token count, plus
+ * a containment bonus when the shorter name is fully accounted for. Recall-
+ * biased on purpose: a conflict checker's failure mode is the missed hit.
  */
 export function nameSimilarity(a, b) {
-  const A = new Set(normalizeName(a).split(' ').filter(Boolean));
-  const B = new Set(normalizeName(b).split(' ').filter(Boolean));
-  if (!A.size || !B.size) return 0;
-  if (A.size === B.size && [...A].every((t) => B.has(t))) return 1;
-  const inter = [...A].filter((t) => B.has(t)).length;
-  const union = new Set([...A, ...B]).size;
-  const jaccard = inter / union;
-  const contains = [...A].every((t) => B.has(t)) || [...B].every((t) => A.has(t));
-  return Math.min(1, Math.round((jaccard + (contains ? 0.25 : 0)) * 100) / 100);
+  const A = [...new Set(normalizeName(a).split(' ').filter(Boolean))];
+  const B = [...new Set(normalizeName(b).split(' ').filter(Boolean))];
+  if (!A.length || !B.length) return 0;
+  if (A.length === B.length && [...A].sort().join('\u0000') === [...B].sort().join('\u0000')) return 1;
+  const pairs = [];
+  for (let i = 0; i < A.length; i++) {
+    for (let j = 0; j < B.length; j++) {
+      const s = tokenPairScore(A[i], B[j]);
+      if (s > 0) pairs.push({ i, j, s });
+    }
+  }
+  pairs.sort((p, q) => q.s - p.s || p.i - q.i || p.j - q.j);
+  const usedA = new Set(), usedB = new Set();
+  let sum = 0;
+  for (const p of pairs) {
+    if (usedA.has(p.i) || usedB.has(p.j)) continue;
+    usedA.add(p.i); usedB.add(p.j); sum += p.s;
+  }
+  if (!usedA.size) return 0;
+  const base = sum / Math.max(A.length, B.length);
+  const contained = A.length !== B.length
+    && (A.length < B.length ? A.every((_, idx) => usedA.has(idx)) : B.every((_, idx) => usedB.has(idx)));
+  return Math.min(1, Math.round((base + (contained ? CONTAINMENT_BONUS : 0)) * 100) / 100);
 }
 
 // ---------------------------------------------------------- workflow

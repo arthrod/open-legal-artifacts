@@ -17,7 +17,7 @@
  * a per-cell sources audit CSV, and a re-run diff (`diffMatrices`).
  */
 
-import { bestWindow, rawContains } from './textutil';
+import { bestWindowIn, makeLocator, rawContains, type Locator } from './textutil';
 
 export interface ReviewDoc {
   id: string;
@@ -65,6 +65,7 @@ export type UnverifiedReason =
   | 'missing_quote'
   | 'quote_not_verified'
   | 'no_such_document'
+  | 'no_such_question'
   | 'constraint_violation'
   | NotFoundState;
 export interface CellVerification {
@@ -119,6 +120,7 @@ const REASON_ORDER: UnverifiedReason[] = [
   'missing_quote',
   'quote_not_verified',
   'no_such_document',
+  'no_such_question',
   'constraint_violation',
   'not_present',
   'unclear',
@@ -186,12 +188,55 @@ function convertMonths(v: number, unit: string | undefined): { value: number; un
   return { value: v * (per[u] ?? 1), unit: u };
 }
 
-/** Parse a currency amount ("$50,000", "50,000 USD"); null when none locates. */
+/** scale-word suffixes folded into the parsed amount, as 10^zeros */
+const SCALE_WORDS: Record<string, number> = {
+  thousand: 3, k: 3,
+  million: 6, mm: 6, mn: 6, m: 6,
+  billion: 9, bn: 9, b: 9,
+};
+const SCALE_RE = 'thousand|million|billion|mm|mn|bn|k|m|b';
+const CURRENCY_CODE = 'USD|GBP|EUR|dollars|pounds|euros';
+
+/**
+ * Multiply a digit string by 10^zeros by shifting the decimal point in the
+ * DIGIT STRING — exact, no float multiplication drift ("1.1" ×10^6 is
+ * "1100000", not 1.1*1e6).
+ */
+function shiftDecimal(digits: string, zeros: number): number {
+  const [int, frac = ''] = digits.replace(/,/g, '').split('.');
+  const shift = zeros - frac.length;
+  if (shift >= 0) return Number(int + frac + '0'.repeat(shift));
+  const s = int + frac;
+  const cut = s.length + shift;
+  return Number(`${s.slice(0, cut)}.${s.slice(cut)}`);
+}
+
+function matchCurrencyAmount(s: string): { digits: string; scale: string | null } | null {
+  // "$1.5 million", "£2m", "$50,000"
+  let m = s.match(new RegExp(`[$£€]\\s*([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\b)?`, 'i'));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  // "50,000 USD", "1.5 million USD"
+  m = s.match(new RegExp(`([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\s+)?(?:${CURRENCY_CODE})\\b`, 'i'));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  // "USD 1.5 million"
+  m = s.match(new RegExp(`(?:${CURRENCY_CODE})\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:(${SCALE_RE})\\b)?`, 'i'));
+  if (m) return { digits: m[1], scale: m[2] ?? null };
+  return null;
+}
+
+/**
+ * Parse a currency amount ("$50,000", "50,000 USD", "$1.5 million", "£2m").
+ * Scale words (k/thousand, m/mm/mn/million, b/bn/billion) are folded into
+ * the amount exactly via decimal shift. Ambiguous or unparseable forms
+ * return null (→ constraint_violation) — never a silently wrong number.
+ */
 export function currencyAmount(s: string): number | null {
-  const m =
-    s.match(/[$£€]\s*([\d,]+(?:\.\d+)?)/) ??
-    s.match(/([\d,]+(?:\.\d+)?)\s*(?:USD|GBP|EUR|dollars|pounds|euros)\b/i);
-  return m ? Number(m[1].replace(/,/g, '')) : null;
+  const m = matchCurrencyAmount(s);
+  if (!m) return null;
+  if (m.scale === null) return Number(m.digits.replace(/,/g, ''));
+  const zeros = SCALE_WORDS[m.scale.toLowerCase()];
+  if (zeros === undefined) return null; // unrecognized suffix — refuse, never guess
+  return shiftDecimal(m.digits, zeros);
 }
 
 function firstNumber(s: string): number | null {
@@ -209,7 +254,7 @@ function withinBounds(v: number, b: QuestionBounds): boolean {
  * Returns null when there is nothing to check (untyped/free),
  * false on violation, or the parsed SchemaInfo on success.
  */
-function checkSchema(q: Question, answer: string, doc: ReviewDoc): SchemaInfo | false | null {
+function checkSchema(q: Question, answer: string, loc: Locator): SchemaInfo | false | null {
   switch (q.type) {
     case undefined:
     case 'free':
@@ -241,25 +286,26 @@ function checkSchema(q: Question, answer: string, doc: ReviewDoc): SchemaInfo | 
       return { type: 'number', value: n };
     }
     case 'verbatim':
-      return rawContains(doc.text, answer) ? { type: 'verbatim' } : false;
+      return rawContains(loc.source, answer) ? { type: 'verbatim' } : false;
   }
 }
 
-function verifyQuote(doc: ReviewDoc, cell: CellInput, fuzzyThreshold: number): CellVerification | null {
+function verifyQuote(loc: Locator, cell: CellInput, fuzzyThreshold: number): CellVerification | null {
   if (!cell.quote) return null;
-  const win = bestWindow(doc.text, cell.quote);
-  const exact = rawContains(doc.text, cell.quote);
-  if (exact) {
-    const start = doc.text.indexOf(cell.quote.trim());
+  const q = cell.quote.trim();
+  // exact pass first — a verbatim quote needs no window scan at all
+  if (q.length > 0 && loc.source.includes(q)) {
+    const start = loc.source.indexOf(q);
     return {
       classification: 'exact',
       similarity: 1,
       charStart: start,
-      charEnd: start + cell.quote.trim().length,
-      verbatim: doc.text.slice(start, start + cell.quote.trim().length),
+      charEnd: start + q.length,
+      verbatim: loc.source.slice(start, start + q.length),
       pinpoint: cell.pinpoint ?? null,
     };
   }
+  const win = bestWindowIn(loc, cell.quote);
   if (win && win.score >= 0.95 && win.coverage >= 0.95) {
     return { classification: 'normalized', similarity: win.score, charStart: win.start, charEnd: win.end, verbatim: win.verbatim, pinpoint: cell.pinpoint ?? null };
   }
@@ -274,11 +320,21 @@ export function buildMatrix(input: MatrixInput): MatrixOutput {
   const docs = new Map(input.documents.map((d) => [d.id, d]));
   const questions = new Map(input.questions.map((q) => [q.id, q]));
   const supplied = new Map(input.cells.map((c) => [`${c.documentId}::${c.questionId}`, c]));
+  // one locator per document, built lazily and reused across every quote
+  // verification (tokenize once, not once per cell)
+  const locCache = new Map<string, Locator>();
+  const locatorOf = (doc: ReviewDoc): Locator => {
+    let loc = locCache.get(doc.id);
+    if (!loc) {
+      loc = makeLocator(doc.text);
+      locCache.set(doc.id, loc);
+    }
+    return loc;
+  };
 
   const cells: Cell[] = [];
   for (const doc of input.documents) {
     for (const q of input.questions) {
-      if (!questions.has(q.id)) continue;
       const c = supplied.get(`${doc.id}::${q.id}`);
       if (c?.notFound) {
         // explicit extractor assertion: the document does not answer (distinct states)
@@ -289,21 +345,17 @@ export function buildMatrix(input: MatrixInput): MatrixOutput {
         cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'not_answered', verification: null, flags: [], schema: null });
         continue;
       }
-      const docObj = docs.get(c.documentId);
-      if (!docObj) {
-        cells.push({ documentId: c.documentId, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'no_such_document', verification: null, flags: [], schema: null });
-        continue;
-      }
       if (!c.quote || c.quote.trim() === '') {
         cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'missing_quote', verification: null, flags: [], schema: null });
         continue;
       }
-      const verification = verifyQuote(docObj, c, fuzzyThreshold);
+      const loc = locatorOf(doc);
+      const verification = verifyQuote(loc, c, fuzzyThreshold);
       if (!verification) {
         cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'quote_not_verified', verification: null, flags: [], schema: null });
         continue;
       }
-      const schema = checkSchema(q, c.answer, docObj);
+      const schema = checkSchema(q, c.answer, loc);
       if (schema === false) {
         // typed question: the answer violates the schema (option set / parse / bounds)
         cells.push({ documentId: doc.id, questionId: q.id, status: 'unverified', answer: null, unverifiedReason: 'constraint_violation', verification: null, flags: [], schema: null });
@@ -311,6 +363,27 @@ export function buildMatrix(input: MatrixInput): MatrixOutput {
       }
       cells.push({ documentId: doc.id, questionId: q.id, status: 'answered', answer: c.answer, unverifiedReason: null, verification, flags: [], schema });
     }
+  }
+
+  // join-key validation: a supplied cell whose documentId/questionId is not
+  // in the input sets was never reached by the grid loop — surface it as an
+  // unverified cell so a typo'd key is visible, never silently dropped
+  const orphanSeen = new Set<string>();
+  for (const c of input.cells) {
+    if (docs.has(c.documentId) && questions.has(c.questionId)) continue; // covered by the grid
+    const key = `${c.documentId}::${c.questionId}`;
+    if (orphanSeen.has(key)) continue;
+    orphanSeen.add(key);
+    cells.push({
+      documentId: c.documentId,
+      questionId: c.questionId,
+      status: 'unverified',
+      answer: null,
+      unverifiedReason: docs.has(c.documentId) ? 'no_such_question' : 'no_such_document',
+      verification: null,
+      flags: [],
+      schema: null,
+    });
   }
 
   // consistency pass — minority classify values in a column are flagged (answer kept)

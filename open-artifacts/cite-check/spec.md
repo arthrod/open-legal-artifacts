@@ -63,7 +63,9 @@ One `QuoteResult` per input quote:
 - `notes`: human-readable findings: number-guard mismatches
   (`quote "120" vs source "90"`), omissions (`omits "on the document"` —
   `— explicit ellipsis, accepted` when the quote marks the cut with `…`/`...`),
-  and whether the *proposition* still needs LLM/human judgment.
+  inserted tokens (`inserts "never"`), negation flips (`negation "not" in the
+  quote has no counterpart in the located source text — meaning may be
+  flipped`), and whether the *proposition* still needs LLM/human judgment.
 - `summary`: `total`, per-class counts, `checked` (located = total − not_found),
   `couldNotCheck` (never reported as "confirmed"), `unparseablePinpoints`,
   `pinpointIssues`.
@@ -79,6 +81,21 @@ One `QuoteResult` per input quote:
    (`omits "on the document"`). A quote containing an explicit ellipsis
    (`…` or `...`) marks the omission as accepted. Sentence-bounded: a quote
    that legitimately ends at a sentence boundary is never flagged.
+3. **Insertion guard** — tokens present in the quote but absent from the
+   located span are noted (`inserts "never"`) and cap the classification at
+   fuzzy. A quote must not add words and still pass as near-verbatim.
+4. **Negation guard** — negation tokens (`not`, `no`, `never`, `none`,
+   `neither`, `nor`, `nobody`, `nothing`, `nowhere`, `cannot`) are
+   multiset-compared between quote and anchor. An inserted or dropped negator
+   flips meaning, so any divergence is noted
+   (`negation "never" in the quote has no counterpart in the located source
+   text — meaning may be flipped`) and caps the classification at fuzzy.
+
+Exact-branch anchors are re-verified byte-equal to the trimmed quote
+(`anchor.verbatim === quote.trim()`); when the window search ties on a
+non-verbatim look-alike (e.g. a case-drifted duplicate sentence), the anchor
+falls back to the literal `indexOf` position, so an `exact` verdict always
+carries a verbatim anchor.
 
 `renderReport(report)` produces a deterministic Markdown report (coverage
 roll-up line, per-quote table, anchored verbatim block quotes, token-diff

@@ -254,6 +254,80 @@ test('recurring obligation with the latest cycle satisfied and none missed is sa
   assert.equal(o.nextDue, '2026-11-30');
 });
 
+// --- I7: recurrence boundary + future-dated records (inspection B05 fixes) ---
+
+test('satisfaction on exactly a cycle due date discharges that cycle on time (not the next one)', () => {
+  // repro from the inspection report: a payment on 2026-06-30 — the 06-30 due
+  // date itself — was listed as a missed cycle while the later 09-30 cycle
+  // was silently credited (paid-on-due-date false breach flag)
+  const r = buildRegister({
+    asOf: '2026-11-08',
+    obligations: [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' } })],
+    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2026-06-30' }],
+  });
+  const o = r.obligations[0];
+  assert.equal(o.status, 'overdue'); // the 03-31 and 09-30 cycles are genuinely unmet
+  assert.equal(o.cyclesMissed, 2);
+  const breach = o.flags.find((f) => f.startsWith('breach risk'));
+  assert.ok(breach);
+  assert.match(breach, /due 2026-03-31, 2026-09-30 with no satisfaction record/); // 06-30 discharged, not missed
+  assert.ok(!o.flags.some((f) => /late/.test(f)), `unexpected lateness flag: ${o.flags}`); // paid on time
+});
+
+test('satisfaction on the first cycle due date discharges that cycle; later misses still count', () => {
+  const r = reg(
+    [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-05-15' } })],
+    [{ obligationId: 'OBL-1', satisfiedOn: '2026-05-15' }],
+  );
+  const o = r.obligations[0];
+  assert.equal(o.cyclesMissed, 1);
+  const breach = o.flags.find((f) => f.startsWith('breach risk'));
+  assert.ok(breach);
+  assert.match(breach, /due 2026-08-15 with no satisfaction record/);
+  assert.ok(!o.flags.some((f) => /late/.test(f)));
+});
+
+test('future-dated satisfaction record is excluded and flagged — never flips a dated obligation to satisfied', () => {
+  // repro from the inspection report: due 2026-10-30, record 2027-01-01 (a
+  // one-digit year typo) turned overdue into satisfied with no warning
+  const r = buildRegister({
+    asOf: '2026-11-08',
+    obligations: [ob({ dueDate: '2026-10-30' })],
+    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2027-01-01' }],
+  });
+  const o = r.obligations[0];
+  assert.equal(o.status, 'overdue');
+  assert.equal(o.breachRisk, true);
+  assert.equal(o.satisfaction, null);
+  assert.ok(o.flags.some((f) => f.includes('future_dated') && f.includes('2027-01-01')), `flags: ${o.flags}`);
+});
+
+test('future-dated satisfaction record is excluded for recurring obligations — lateness never computed across asOf', () => {
+  const r = buildRegister({
+    asOf: '2026-11-08',
+    obligations: [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' } })],
+    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2027-12-31' }],
+  });
+  const o = r.obligations[0];
+  assert.equal(o.cyclesMissed, 3);
+  assert.equal(o.status, 'overdue');
+  assert.equal(o.satisfaction, null);
+  assert.ok(!o.flags.some((f) => /late|457/.test(f)), `lateness computed across asOf: ${o.flags}`);
+  assert.ok(o.flags.some((f) => f.includes('future_dated') && f.includes('2027-12-31')));
+});
+
+test('a future-dated record does not mask an earlier valid satisfaction (latest eligible record wins)', () => {
+  const r = reg([ob({ dueDate: '2026-10-15' })], [
+    { obligationId: 'OBL-1', satisfiedOn: '2026-10-14' },
+    { obligationId: 'OBL-1', satisfiedOn: '2027-10-14' }, // year typo: still excluded
+  ]);
+  const o = r.obligations[0];
+  assert.equal(o.status, 'satisfied');
+  assert.equal(o.satisfaction.satisfiedOn, '2026-10-14');
+  assert.ok(o.flags.some((f) => f.includes('future_dated')));
+  assert.ok(!o.flags.some((f) => /late/.test(f)));
+});
+
 test('invalid recurrence cadence or anchor → unscheduled, never guessed', () => {
   const r = reg([ob({ dueDate: null, recurrence: { cadence: 'biweekly', anchor: '2026-01-15' } })]);
   assert.equal(r.obligations[0].status, 'unscheduled');

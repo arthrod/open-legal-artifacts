@@ -49,7 +49,11 @@ rules:
 
 YAML subset supported by the dependency-free parser: nested maps, `- ` lists
 (scalars or dash-line mappings), quoted/plain scalars, numbers, `true/false`,
-`null`, full-line comments. Anything else → parse error, never a guess.
+`null`, full-line comments, and inline `" #"` comments — a `#` outside quotes
+at value start or after whitespace starts a comment, per YAML (a `#` glued to
+a token like `PB#1` is part of the value). Comments are stripped before scalar
+parsing, so comment text never leaks into a value. Anything the subset cannot
+parse → parse error, never a guess.
 
 ## Input (`BoardInput`)
 
@@ -76,15 +80,19 @@ values, as data), `summary`, and one row per clause:
   preferred standard (`{ label, removals, additions }`, char-anchored in the
   clause / preferred text); rendered as a ` ```diff ` block in `board.md`.
 
-Decision order per clause: avoid rules first (contains, or similarity ≥ the
-avoid rule's threshold), then preferred (similarity ≥ threshold, numbers must
+Decision order per clause: avoid rules first — a verbatim (whitespace-
+and-case-insensitive) containment of the avoid text counts in **any** mode,
+else similarity mode scores whole-clause similarity ≥ the avoid rule's
+threshold — then preferred (similarity ≥ threshold, numbers must
 match, and at least as strong as the best fallback), then the best-scoring
 fallback tier whose numbers match, else beyond-playbook deviation. Numeric
 mismatches ("3 years" vs "18 months") are reported in `reason` — a skeleton
 match with different numbers is never compliant.
 
 Routing: deal-breakers and tier ≥ `minFallbackTier` deviations and
-beyond-playbook clauses → the rule's escalation approver; lower-tier
+beyond-playbook clauses → the rule's escalation approver; when a rule has no
+`escalation`, its deal-breakers and beyond-playbook clauses fall back to
+`defaultApprover` (with an explicit note in `reason`); lower-tier
 deviations → `defaultApprover`; compliant → nobody; unclassified →
 `defaultApprover`.
 

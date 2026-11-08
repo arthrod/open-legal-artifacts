@@ -6,15 +6,39 @@
  *   - lists ("- " items, scalars or mappings whose first key sits on the
  *     dash line, continuation keys aligned under it)
  *   - scalars: "double-quoted", 'single-quoted', numbers, true/false, null
- *   - blank lines and full-line # comments
- * Not supported (documented): inline comments, anchors, multi-line blocks,
+ *   - blank lines, full-line # comments, and inline " #" comments (a #
+ *     outside quotes at value start or after whitespace, per YAML; a # glued
+ *     to a token — "PB#1" — is part of the value)
+ * Not supported (documented): anchors, multi-line blocks,
  * flow collections, "- " items at irregular indentation.
+ *
+ * Inline comments are stripped BEFORE scalar parsing, so comment text can
+ * never silently end up inside a value; malformed structure remains a
+ * line-numbered parse error — never a guess.
  *
  * The "- key: value" trick: the dash is rewritten into indentation and the
  * item is parsed as an ordinary mapping at the child indent.
  */
 
 export type YNode = string | number | boolean | null | YNode[] | { [key: string]: YNode };
+
+/** Strip a trailing inline comment: a `#` outside quotes that starts the value
+ *  or is preceded by whitespace begins a comment (YAML spec); a `#` glued to
+ *  other characters is part of the value. Quote-aware, char-by-char. */
+function stripComment(val: string): string {
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < val.length; i++) {
+    const c = val[i];
+    if (quote) {
+      if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === '#' && (i === 0 || val[i - 1] === ' ' || val[i - 1] === '\t')) {
+      return val.slice(0, i);
+    }
+  }
+  return val;
+}
 
 function scalar(raw: string): YNode {
   const s = raw.trim();
@@ -54,7 +78,7 @@ export function parseYaml(src: string): YNode {
       const m = l.slice(li).match(KEY_RE);
       if (!m) throw new Error(`yaml: expected "key: value" at line ${i + 1}: "${l.trim()}"`);
       const key = m[1].trim();
-      const val = m[2];
+      const val = stripComment(m[2]);
       i++;
       if (val.trim() !== '') {
         obj[key] = scalar(val);
@@ -75,7 +99,7 @@ export function parseYaml(src: string): YNode {
       const l = lines[i];
       const li = indentOf(l);
       if (li !== ind || !l.trimStart().startsWith('- ')) break;
-      const rest = l.trimStart().slice(2);
+      const rest = stripComment(l.trimStart().slice(2));
       if (rest.trim() === '') {
         i++;
         if (i < lines.length && indentOf(lines[i]) > ind) out.push(parseBlock(indentOf(lines[i])));

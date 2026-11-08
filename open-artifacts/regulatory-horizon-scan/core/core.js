@@ -92,9 +92,11 @@ const US_STATE_NAMES = new Map([
 const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadline", "itemType", "provenance", "summary", "source", "link"];
 
 /**
- * Dedupe feed items. Two items are duplicates when they share an id, or when
- * their normalized titles are near-identical AND jurisdictions match.
- * First occurrence wins (feed order = trust order), but the kept item is
+ * Dedupe feed items. Two items are duplicates when they share a non-empty
+ * id, or when their normalized titles are near-identical AND jurisdictions
+ * match. Items with a missing/empty id (e.g. manual entry) are never treated
+ * as sharing one — they can only dedupe via the normalized title+jurisdiction
+ * key. First occurrence wins (feed order = trust order), but the kept item is
  * enriched: any MERGE_FIELD missing on the kept item is filled from the
  * duplicate (richest source wins), and `mergedFrom` records the dropped ids.
  * @param {Array<any>} items
@@ -103,13 +105,13 @@ const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadli
 export function dedupeItems(items) {
   const unique = [];
   const duplicates = [];
-  /** @type {Map<string, string>} normTitle|juris -> kept id */
-  const seen = new Map();
-  /** @type {Map<string, any>} kept id -> kept item (mutated on merge) */
+  /** @type {Map<string, any>} dedupe key (id, or title|juris when id-less) -> kept item */
   const kept = new Map();
-  const seenIds = new Set();
-  const mergeInto = (keptId, dup, reason) => {
-    const target = kept.get(keptId);
+  /** @type {Map<string, string>} non-empty feed id -> dedupe key of its kept item */
+  const seenIds = new Map();
+  /** @type {Map<string, string>} normalized title|jurisdiction -> dedupe key of its kept item */
+  const seenTitles = new Map();
+  const mergeInto = (target, dup, reason) => {
     const mergedFields = [];
     if (target) {
       for (const f of MERGE_FIELDS) {
@@ -121,24 +123,25 @@ export function dedupeItems(items) {
       if (!target.mergedFrom) target.mergedFrom = [];
       target.mergedFrom.push(String(dup.id ?? ""));
     }
-    duplicates.push({ keptId, droppedId: String(dup.id ?? ""), reason, mergedFields });
+    duplicates.push({ keptId: String(target?.id ?? ""), droppedId: String(dup.id ?? ""), reason, mergedFields });
   };
   for (const it of items ?? []) {
     const id = String(it.id ?? "");
     const juris = normalizeJurisdiction(it.jurisdiction);
-    const key = `${normalizeTitle(it.title)}|${juris}`;
-    if (seenIds.has(id)) {
-      mergeInto(id, it, "duplicate id");
+    const titleKey = `${normalizeTitle(it.title)}|${juris}`;
+    const ownerKey = id || titleKey; // id-less items own their title+jurisdiction key
+    if (id && seenIds.has(id)) {
+      mergeInto(kept.get(seenIds.get(id)), it, "duplicate id");
       continue;
     }
-    if (seen.has(key)) {
-      mergeInto(seen.get(key), it, "same normalized title + jurisdiction");
+    if (seenTitles.has(titleKey)) {
+      mergeInto(kept.get(seenTitles.get(titleKey)), it, "same normalized title + jurisdiction");
       continue;
     }
-    seenIds.add(id);
-    seen.set(key, id);
+    if (id) seenIds.set(id, ownerKey);
+    seenTitles.set(titleKey, ownerKey);
     const copy = { ...it, jurisdiction: juris };
-    kept.set(id, copy);
+    kept.set(ownerKey, copy);
     unique.push(copy);
   }
   return { unique, duplicates };
@@ -198,9 +201,9 @@ export function scoreItem(item, rubric, profile, asOfIso) {
   if (profile.jurisdictions.includes(juris)) {
     jPts = jf.points.exact;
     jRule = "exact profile jurisdiction match";
-  } else if (juris.startsWith("US-") && profile.jurisdictions.includes("US-FED")) {
-    jPts = jf.points.exact; // federal rules apply nationwide
-    jRule = "US state rule, but US-FED in profile (federal overlay applies nationwide)";
+  } else if (juris.startsWith("US-") && juris !== "US-FED" && profile.jurisdictions.includes("US-FED")) {
+    jPts = jf.points.adjacent ?? 0; // a state rule binds in its state, not nationwide
+    jRule = "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)";
   } else if (juris.startsWith("EU") && profile.jurisdictions.some((j) => j.startsWith("EU"))) {
     jPts = jf.points.adjacent ?? 0;
     jRule = "adjacent EU jurisdiction";

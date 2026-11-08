@@ -16,7 +16,7 @@ fields, and scores each flow on transparent dimensions:
 | completeness | distinct canon fields asked ÷ canon size |
 | non_redundancy | 1 − (duplicate field asks ÷ total field asks) |
 | fallback_quality | steps with a stated fallback ÷ total steps (null if no steps) |
-| speed | min(1, latency_target ÷ total latency) × 100 |
+| speed | min(1, latency_target ÷ total measured latency) × 100 — **null (blank) if no step is measured**; partially measured flows are scored on their measured steps only, with a coverage warning |
 | retention | (1 − abandonment_rate) × 100 (null if unmeasured) |
 | deadline_capture | deadline-class canon fields asked ÷ deadline-class fields (null if canon untagged) |
 | conflict_check | conflict-class canon fields asked ÷ conflict-class fields (null if canon untagged) |
@@ -62,7 +62,9 @@ compare(resultAfter, resultBefore);               // re-run drift diff
 
 Errors (thrown): zero flows; unknown weight keys; unknown canon id; unknown
 risk_class tag; abandonment_rate outside 0–1. Warnings (not errors): flow
-with no steps; steps without latency; canon overriding required_fields.
+with no steps; steps lacking latency_seconds (speed goes blank or is scored
+on measured steps only, never zero-filled); canon overriding
+required_fields.
 
 ## Rank stability
 
@@ -124,9 +126,10 @@ step latency), and `abandonment_rate` outside 0–1.
    flows.
 2. **Every score is a formula** — no proprietary black-box "intake quality";
    the table states exactly what completeness and redundancy mean.
-3. **Honest about missing data** — unmeasured abandonment is a blank, not a
-   zero, and composites renormalize instead of silently penalizing; fair
-   mode makes cross-flow comparison explicit rather than implicit.
+3. **Honest about missing data** — unmeasured abandonment or latency is a
+   blank, not a zero, and composites renormalize instead of silently
+   penalizing; fair mode makes cross-flow comparison explicit rather than
+   implicit. A flow that omits latency data never wins the speed axis.
 4. **Auditable capture step** — the LLM (if used) only transcribes observable
    behavior into JSON; scoring stays deterministic and reproducible, and
    `validateCapture()` checks the transcription against the schema.

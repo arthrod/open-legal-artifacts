@@ -1,10 +1,12 @@
 /** Tests for ask-legal core. Run: node --test (from artifact root) */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   tokenize, foldToken, retrieve, gaugeConfidence, routeTo, answerQuestion,
   createAuditLog, exportAuditLog, DEFAULT_THRESHOLDS, DEFAULT_SYNONYMS,
   validateKb, applyCorrection, approveEntry, escalationTicket, overdueEscalations,
+  loadAudit, saveAudit,
 } from "./core.js";
 
 const KB = [
@@ -321,4 +323,50 @@ test("synonym map (rules-as-data) expands query vocabulary", () => {
   const hit = r.find((x) => x.entry.id === "kb-nda");
   assert.ok(hit, "kb-nda retrieved via confidentiality→nda synonym");
   assert.ok(hit.matchedTags.includes("nda"));
+});
+
+/* ---------- H: durable audit log (persistence round-trip) ---------- */
+
+test("saveAudit/loadAudit round-trip: a reloaded log continues AUD numbering — reload no longer wipes history", () => {
+  const log = createAuditLog();
+  answerQuestion(KB, "Which NDA template should I use for a vendor?", { asOf: "2026-11-07", askedBy: "s.okafor@example.test" }, log);
+  answerQuestion(KB, "astronaut helmet certification", { asOf: "2026-11-07", askedBy: "s.okafor@example.test" }, log);
+  const persisted = saveAudit(log);
+  const reloaded = loadAudit(persisted);
+  assert.deepEqual(reloaded, log); // full-fidelity reload: nothing dropped or reordered
+  // the demo-persistence pin: answering after a reload appends, never restarts numbering
+  const next = answerQuestion(KB, "Can I expense client entertainment over $500?", { asOf: "2026-11-07" }, reloaded);
+  assert.equal(next.auditId, "AUD-00003");
+  assert.equal(reloaded.length, 3);
+  assert.deepEqual(loadAudit(saveAudit(reloaded)).map((e) => e.auditId), ["AUD-00001", "AUD-00002", "AUD-00003"]);
+});
+
+test("loadAudit refuses malformed input with line numbers — never silently repairs", () => {
+  assert.deepEqual(loadAudit(""), []);
+  assert.deepEqual(loadAudit(null), []);
+  assert.deepEqual(loadAudit(saveAudit([])), []);
+  assert.throws(() => loadAudit("{not json}\n{\"auditId\":\"AUD-00001\"}"), /line 1/);
+  assert.throws(() => loadAudit("{\"auditId\":\"AUD-00001\"}\n[1,2]"), /line 2/);
+  assert.throws(() => loadAudit("{\"question\":\"no id\"}"), /auditId/);
+  assert.throws(
+    () => loadAudit("{\"auditId\":\"AUD-00001\"}\n{\"auditId\":\"AUD-00001\"}"),
+    /duplicate auditId AUD-00001/
+  );
+});
+
+test("saveAudit refuses to persist a corrupted log and matches exportAuditLog byte-for-byte on real logs", () => {
+  assert.throws(() => saveAudit([{ question: "entry without an id" }]), /auditId/);
+  assert.throws(() => saveAudit(["not an object"]), /not an object/);
+  assert.throws(() => saveAudit([{ auditId: "AUD-00001" }, { auditId: "AUD-00001" }]), /duplicate auditId AUD-00001/);
+  const log = createAuditLog();
+  answerQuestion(KB, "astronaut helmet certification", { asOf: "2026-11-07" }, log);
+  assert.equal(saveAudit(log), exportAuditLog(log)); // validation never changes the on-disk format
+});
+
+test("loadAudit reads the shipped examples/audit-log.jsonl and saveAudit reproduces it byte-for-byte", () => {
+  const jsonl = readFileSync(new URL("../examples/audit-log.jsonl", import.meta.url), "utf8");
+  const log = loadAudit(jsonl);
+  assert.equal(log.length, 5);
+  assert.equal(log[log.length - 1].auditId, "AUD-00005");
+  assert.equal(saveAudit(log), jsonl); // durable form is the shipped artifact itself
 });

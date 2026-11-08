@@ -117,6 +117,36 @@ export interface NumericMismatch {
   sourceOnly: string[];
 }
 
+/** Negation tokens: inserting or dropping one flips a quote's meaning. */
+const NEGATORS = new Set(['not', 'no', 'never', 'none', 'neither', 'nor', 'nobody', 'nothing', 'nowhere', 'cannot']);
+
+export interface NegationDivergence {
+  /** negators present in the quote with no counterpart in the located source text */
+  quoteOnly: string[];
+  /** negators present in the located source text with no counterpart in the quote */
+  sourceOnly: string[];
+}
+
+/**
+ * Deterministic negation guard: multiset-diff the negation tokens of quote
+ * vs. the located source span (mirrors numericMismatches). Inserting "not"
+ * into a quote — or silently dropping it — flips meaning, so any divergence
+ * must never pass as near-verbatim.
+ */
+export function negationDivergence(quote: string[], source: string[]): NegationDivergence {
+  const qNeg = multiset(quote.filter((t) => NEGATORS.has(t)));
+  const sNeg = multiset(source.filter((t) => NEGATORS.has(t)));
+  const quoteOnly: string[] = [];
+  const sourceOnly: string[] = [];
+  for (const [t, c] of qNeg) {
+    for (let k = 0; k < c - (sNeg.get(t) ?? 0); k++) quoteOnly.push(t);
+  }
+  for (const [t, c] of sNeg) {
+    for (let k = 0; k < c - (qNeg.get(t) ?? 0); k++) sourceOnly.push(t);
+  }
+  return { quoteOnly, sourceOnly };
+}
+
 /**
  * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
  * the located source span. Any difference is potential material alteration

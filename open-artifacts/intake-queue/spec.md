@@ -8,8 +8,8 @@ deadline/age urgency triage, guarded assign states, and CSV export.
 
 | Capability | Owner |
 |---|---|
-| Name normalization (case, punctuation, dotted abbreviations, corporate suffixes; initials kept) | core (deterministic) |
-| Similarity: token Jaccard + containment bonus, in [0,1] | core (deterministic) |
+| Name normalization (case, punctuation, dotted abbreviations, corporate suffixes; initials kept; Unicode-aware — any-script letters/digits survive) | core (deterministic) |
+| Similarity: token alignment over exact / nickname-abbrev table / initials rule / Jaro–Winkler typo pairs + containment bonus, in [0,1] | core (deterministic) |
 | Dedupe: same client AND same opposing party ≥ threshold vs earlier submissions (first is primary) | core (deterministic) |
 | Conflict check: either party vs roster entries (incl. `aliases[]`, former names) ≥ threshold, with role + score + alias flag | core (deterministic) |
 | Urgency: overdue / urgent (≤14d) / deadline-soon (≤30d) / routine + aged-matter bump (>365d → limitations hint) | core (deterministic) |
@@ -89,9 +89,9 @@ source text delimited by non-word characters (so a truncated
 
 - Every match shows its math: normalized names, similarity score,
   threshold — auditable dedupe/conflict calls instead of vendor trust.
-- Initials are preserved (M. Iwata ≠ K. Iwata) so person matching stays
-  conservative where it matters; roster aliases (former/DBA names) match
-  first-class with an explicit `aliasMatch` flag.
+- Initials are preserved and only match same-letter first names (J. Iwata
+  ≈ John Iwata; M. Iwata ≠ K. Iwata); roster aliases (former/DBA names)
+  match first-class with an explicit `aliasMatch` flag.
 - Decisions are records, not vibes: accept/decline/escalate is guarded,
   requires actor + reason, and lands in an append-only audit trail
   (who checked what, when) — the counterpart's LLM routing is opaque.

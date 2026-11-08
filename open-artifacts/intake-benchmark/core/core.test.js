@@ -46,10 +46,20 @@ describe('scoreFlow dimensions', () => {
     const s = scoreFlow(flow(), REQUIRED, { latencyTargetSeconds: 100000 });
     assert.equal(s.dimensions.speed, 100);
   });
-  test('steps without latency warn and count as 0', () => {
-    const s = scoreFlow({ id: 'x', name: 'X', steps: [{ id: 's', fields: ['full_name'] }] }, REQUIRED);
-    assert.equal(s.metrics.total_latency_seconds, 0);
-    assert.ok(s.warnings.some((w) => /latency_seconds/.test(w)));
+  test('no measured latency anywhere → speed is blank (null), never 100', () => {
+    const s = scoreFlow({ id: 'x', name: 'X', steps: [{ id: 's', fields: ['full_name'] }, { id: 's2', fields: ['contact_email'] }] }, REQUIRED);
+    assert.equal(s.metrics.total_latency_seconds, null);
+    assert.equal(s.dimensions.speed, null, 'unmeasured latency must not score 100 (or anything)');
+    assert.ok(s.warnings.some((w) => /no step has latency_seconds.*speed is blank/.test(w)));
+  });
+  test('partial latency coverage → speed scored on measured steps only, with loud coverage warning', () => {
+    const s = scoreFlow({ id: 'x', name: 'X', steps: [
+      { id: 's1', fields: ['full_name'], latency_seconds: 180 },
+      { id: 's2', fields: ['contact_email'] }, // unmeasured
+    ] }, REQUIRED, { latencyTargetSeconds: 180 });
+    assert.equal(s.metrics.total_latency_seconds, 180); // measured steps only
+    assert.equal(s.dimensions.speed, 100);
+    assert.ok(s.warnings.some((w) => /1 of 2 step\(s\) lack latency_seconds/.test(w) && /50% coverage/.test(w)));
   });
   test('no steps → completeness 0, fallback/speed null, warning', () => {
     const s = scoreFlow({ id: 'x', name: 'X', steps: [] }, REQUIRED);
@@ -205,6 +215,31 @@ describe('fair mode', () => {
     assert.equal(fw.composite, fwOut.composite); // identical once retention is excluded for both
     assert.ok(fw.composite < withT.composite);
     assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /retention/.test(w)));
+  });
+  test('unmeasured flow cannot win the speed axis (report M1 repro)', () => {
+    const input = {
+      scenario: { required_fields: REQUIRED },
+      flows: [
+        flow({ id: 'measured', name: 'Measured', steps: [
+          { id: 's1', purpose: 'identity', fields: ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location', 'insurance_carrier'], latency_seconds: 1200, fallback: 'phone' },
+        ] }), // 1200s vs 900s target → speed 75
+        flow({ id: 'paper', name: 'Paper, unmeasured', steps: [
+          { id: 'p1', purpose: 'paper', fields: ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location', 'insurance_carrier'], fallback: 'n/a' },
+        ] }), // no latency data at all
+      ],
+    };
+    const plain = benchmark(input);
+    const measured = plain.flows.find((f) => f.id === 'measured');
+    const paper = plain.flows.find((f) => f.id === 'paper');
+    assert.equal(measured.dimensions.speed, 75);
+    assert.equal(paper.dimensions.speed, null, 'unmeasured flow must not score 100 on speed');
+    // fair mode: speed now missing from one flow → excluded for everyone, named in warning,
+    // and being unmeasured no longer beats the measured flow's 75
+    const fair = benchmark({ ...input, config: { fairMode: true } });
+    const fairMeasured = fair.flows.find((f) => f.id === 'measured');
+    const fairPaper = fair.flows.find((f) => f.id === 'paper');
+    assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /speed/.test(w)));
+    assert.ok(!(fairPaper.composite > fairMeasured.composite), 'unmeasured flow must not outscore the measured one via a dimension it lacks');
   });
   test('fair mode with all dimensions shared changes nothing and stays quiet', () => {
     const input = { scenario: { required_fields: REQUIRED }, flows: [flow({ abandonment_rate: 0.2 }), flow({ id: 'two', name: 'Flow Two', abandonment_rate: 0.4 })] };

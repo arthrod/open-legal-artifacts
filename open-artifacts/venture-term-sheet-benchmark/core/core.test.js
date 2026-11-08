@@ -14,6 +14,36 @@ describe('compareTerm', () => {
     const e = { kind: 'range', min: 1, max: 2, unit: 'seats', source: { name: 's', asOf: '2026-01' } };
     assert.equal(compareTerm('two', e).verdict, 'unknown_value_type');
   });
+  test('range: booleans are never counted as numbers against a range entry', () => {
+    const e = { kind: 'range', min: 1, max: 1, unit: 'x', source: { name: 's', asOf: '2026-01' } };
+    for (const b of [true, false]) {
+      const r = compareTerm(b, e);
+      assert.equal(r.verdict, 'unknown_value_type', String(b));
+      assert.match(r.detail, /boolean/i);
+      assert.doesNotMatch(r.detail, /within|above|below/); // never placed in the range
+    }
+  });
+  test('range detail is a clean human sentence — unit never glued into prose', () => {
+    const e = { kind: 'range', min: 1, max: 2, unit: 'x', source: { name: 's', asOf: '2026-01' } };
+    assert.equal(compareTerm(1.5, e).detail, '1.5 x is within the 1–2 x range.');
+    assert.equal(compareTerm(3, e).detail, '3 x is above the 1–2 x range.');
+    assert.equal(compareTerm(0.5, e).detail, '0.5 x is below the 1–2 x range.');
+    const noUnit = { kind: 'range', min: 0, max: 1, source: { name: 's', asOf: '2026-01' } };
+    assert.equal(compareTerm(0.5, noUnit).detail, '0.5 is within the 0–1 range.');
+    const nn = compareTerm('two', e);
+    assert.equal(nn.verdict, 'unknown_value_type');
+    assert.equal(nn.detail, 'Value "two" is not numeric; benchmark is a 1–2 x range.');
+  });
+  test('range: empty or degenerate bounds are refused, never guessed', () => {
+    const src = { name: 's', asOf: '2026-01' };
+    const inverted = { kind: 'range', min: 2, max: 1, unit: 'x', source: src };
+    const r = compareTerm(1.5, inverted);
+    assert.equal(r.verdict, 'unknown_value_type');
+    assert.match(r.detail, /degenerate|min .*max/i);
+    const boundless = { kind: 'range', unit: 'x', source: src };
+    assert.equal(compareTerm(1.5, boundless).verdict, 'unknown_value_type');
+    assert.match(compareTerm(1.5, boundless).detail, /finite bounds/i);
+  });
   test('enum: membership decides', () => {
     const e = { kind: 'enum', values: ['pari_passu'], source: { name: 's', asOf: '2026-01' } };
     assert.equal(compareTerm('pari_passu', e).verdict, 'inside_market');
@@ -120,6 +150,20 @@ describe('benchmarkTermSheet', () => {
     const low = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { investor_board_seats: 0 } } });
     assert.equal(low.terms[0].verdict, 'outside_market');
     assert.equal(low.terms[0].favor, 'company'); // below the range favors the company
+  });
+  test('boolean value against a range benchmark counts unknown, not off/inside market', () => {
+    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: true } } });
+    assert.equal(r.counts.unknown_value_type, 1);
+    assert.equal(r.counts.inside_market, 0);
+    assert.equal(r.counts.outside_market, 0);
+  });
+  test('point ranges render as a single value, never a degenerate “1–1 x” label', () => {
+    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: 1.5 } } });
+    assert.equal(r.terms[0].benchmark, '1 x');
+    assert.equal(r.terms[0].detail, '1.5 x is above the 1 x range.');
+    const ok = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: 1 } } });
+    assert.equal(ok.terms[0].benchmark, '1 x');
+    assert.equal(ok.terms[0].detail, '1 x is within the 1 x range.');
   });
   test('boolean term with a flag entry scores a real verdict (founder_vesting_restart)', () => {
     const r = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { founder_vesting_restart: true } } });

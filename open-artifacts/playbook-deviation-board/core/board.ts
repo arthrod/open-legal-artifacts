@@ -4,8 +4,9 @@
  * board.
  *
  * Classification (evaluated per clause, in order):
- *   deal_breaker — clause triggers an `avoid` rule (contains-match, or
- *                  similarity-match at the rule's threshold)
+ *   deal_breaker — clause triggers an `avoid` rule (verbatim containment of
+ *                  the avoid text in any mode, or similarity-match at the
+ *                  rule's threshold)
  *   compliant    — clause matches the preferred standard (best-window
  *                  similarity ≥ preferred threshold, and at least as strong as
  *                  the best fallback match)
@@ -138,12 +139,23 @@ function scoreStandard(clauseText: string, std: Standard, tier: 'preferred' | nu
 export function classifyClause(clause: Clause, rule: PlaybookRule, th: { preferred: number; fallback: number }): { row: Omit<BoardRow, 'heading'> } {
   const approverFor = (): string => rule.escalation?.approver ?? '__DEFAULT__';
 
-  // 1. avoid rules first — a deal-breaker is a deal-breaker regardless of other matches
+  // 1. avoid rules first — a deal-breaker is a deal-breaker regardless of other matches.
+  // Verbatim fast path: avoid text buried VERBATIM inside a much longer clause
+  // dilutes whole-clause similarity below any threshold, so containment is
+  // checked first for every mode — a verbatim hit is always a deal-breaker.
+  // Near-verbatim (non-exact) triggers buried in a long clause escape whole-text
+  // similarity the same way, so similarity mode also scores the best window of
+  // the clause against the avoid text and takes the max.
   for (const av of rule.avoid) {
-    const hit =
-      av.mode === 'contains'
-        ? normContains(clause.text, av.text)
-        : similarity(clause.text, av.text) >= (av.threshold ?? 0.8);
+    const verbatimHit = normContains(clause.text, av.text);
+    let hit: boolean;
+    if (av.mode === 'contains') {
+      hit = verbatimHit;
+    } else {
+      const whole = similarity(clause.text, av.text);
+      const win = bestWindow(clause.text, av.text)?.score ?? 0;
+      hit = verbatimHit || Math.max(whole, win) >= (av.threshold ?? 0.8);
+    }
     if (hit) {
       return {
         row: {
@@ -155,8 +167,12 @@ export function classifyClause(clause: Clause, rule: PlaybookRule, th: { preferr
           similarity: 1,
           clauseQuote: { text: clause.text, charStart: 0, charEnd: clause.text.length },
           clauseText: clause.text,
-          reason: `matches avoid rule${av.id ? ` "${av.id}"` : ''}: ${av.mode === 'contains' ? 'contains' : 'similar to'} "${av.text}"`,
-          routedTo: approverFor() === '__DEFAULT__' ? null : approverFor(),
+          reason:
+            `matches avoid rule${av.id ? ` "${av.id}"` : ''}: ${verbatimHit ? 'contains' : 'similar to'} "${av.text}"` +
+            (rule.escalation === undefined
+              ? '; no escalation approver set on this rule — routed to the playbook default approver'
+              : ''),
+          routedTo: approverFor(),
         },
       };
     }

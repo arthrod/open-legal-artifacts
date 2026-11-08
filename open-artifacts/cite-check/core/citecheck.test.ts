@@ -221,6 +221,88 @@ test('unverifiable pinpoint details distinguish missing source, unlocated quote,
   assert.ok(f.pinpoint!.detail.includes('source does not declare page segments'), f.pinpoint!.detail);
 });
 
+const MANIFEST = 'The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon.';
+
+function negInput(source: string, quote: string): CiteCheckInput {
+  return {
+    document: { name: 'Motion (fictional)' },
+    sources: [{ id: 'src', name: 'Source (fictional)', text: source }],
+    quotes: [{ id: 'X1', text: quote, sourceId: 'src' }],
+  };
+}
+
+test('inserted negator ("never") does not pass as normalized — capped at fuzzy with a note', () => {
+  const input = negInput(MANIFEST, MANIFEST.replace('and reported to the dispatch office', 'and never reported to the dispatch office'));
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'fuzzy', JSON.stringify(r));
+  assert.ok(r.notes.some((n) => n.includes('negation') && n.includes('never')), JSON.stringify(r.notes));
+  assert.ok(r.notes.some((n) => n.includes('human review')), JSON.stringify(r.notes));
+  assert.ok(r.diff!.some((o) => o.op === 'insert' && o.quote.includes('never')), JSON.stringify(r.diff));
+});
+
+test('dropped negator ("not") does not pass as normalized — capped at fuzzy with a note', () => {
+  const src = 'The maintenance supervisor testified that the seal was not intact when the trailer departed the yard, and the discrepancy appeared in the departure log the same evening.';
+  const input = negInput(src, src.replace('was not intact', 'was intact'));
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'fuzzy', JSON.stringify(r));
+  assert.ok(r.notes.some((n) => n.includes('negation') && n.includes('not')), JSON.stringify(r.notes));
+  assert.ok(r.notes.some((n) => n.includes('human review')), JSON.stringify(r.notes));
+});
+
+test('inserted non-negation token is noted and caps the classification at fuzzy', () => {
+  const input = negInput(MANIFEST, MANIFEST.replace('and reported to the dispatch office', 'and reported promptly to the dispatch office'));
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'fuzzy', JSON.stringify(r));
+  assert.ok(r.notes.some((n) => n.includes('inserts "promptly"')), JSON.stringify(r.notes));
+  assert.ok(r.notes.some((n) => n.includes('human review')), JSON.stringify(r.notes));
+});
+
+test('exact anchor points at the verbatim occurrence, not a case-drifted duplicate', () => {
+  const sentence = 'Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document.';
+  const input: CiteCheckInput = {
+    document: { name: 'Motion (fictional)' },
+    sources: [
+      {
+        id: 'depo',
+        name: 'Deposition (fictional)',
+        pages: [
+          { number: 5, text: sentence.toLowerCase() },
+          { number: 9, text: sentence },
+        ],
+      },
+    ],
+    quotes: [{ id: 'D1', text: sentence, sourceId: 'depo', pinpoint: 'p. 9' }],
+  };
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'exact');
+  assert.equal(r.anchor?.verbatim, sentence, `anchor verbatim: ${JSON.stringify(r.anchor?.verbatim)}`);
+  assert.equal(r.anchor?.segmentLabel, '9');
+  assert.equal(r.pinpoint?.status, 'ok', JSON.stringify(r.pinpoint));
+  assert.equal(r.diff?.some((o) => o.op !== 'equal'), false, JSON.stringify(r.diff));
+});
+
+test('page:line pinpoint on an unsegmented page is unverifiable — line 1 included', () => {
+  const input: CiteCheckInput = {
+    document: { name: 'Transcript test (fictional)' },
+    sources: [
+      {
+        id: 'tr',
+        name: 'Trial Transcript (fictional)',
+        pages: [{ number: 12, text: 'Q. You saw the seal? A. The seal was intact when I checked it at the gate.' }],
+      },
+    ],
+    quotes: [
+      { id: 'L1', text: 'The seal was intact when I checked it at the gate.', sourceId: 'tr', pinpoint: 'Tr. 12:1' },
+      { id: 'L2', text: 'The seal was intact when I checked it at the gate.', sourceId: 'tr', pinpoint: 'Tr. 12:4' },
+    ],
+  };
+  const res = runCiteCheck(input).results;
+  for (const r of res) {
+    assert.equal(r.pinpoint?.status, 'unverifiable', JSON.stringify(r.pinpoint));
+    assert.ok(r.pinpoint!.detail.includes('not line-segmented'), r.pinpoint!.detail);
+  }
+});
+
 test('runCiteCheck derives quotes from document.text when quotes are not supplied', () => {
   const input = {
     document: {

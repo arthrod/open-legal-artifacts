@@ -64,6 +64,19 @@ test('yaml parser rejects malformed lines', () => {
   assert.throws(() => parseYaml('a: 1\n  broken line here\n'));
 });
 
+test('yaml: inline " #" comments are stripped per YAML, values never mangled', () => {
+  const y = parseYaml(
+    'a: "hello world" # a note\nb: 3-year fixed term # plain note\nc: "hash # inside" # after quoted\nd: PB#1\nflag: true # yes\ne: # whole-value comment\nitems:\n  - one # list comment\n',
+  ) as Record<string, unknown>;
+  assert.equal(y.a, 'hello world'); // quoted value, trailing comment gone
+  assert.equal(y.b, '3-year fixed term'); // plain scalar, comment gone
+  assert.equal(y.c, 'hash # inside'); // # inside quotes is part of the value
+  assert.equal(y.d, 'PB#1'); // # glued to a token is NOT a comment (YAML spec)
+  assert.equal(y.flag, true); // scalar typing still applies after comment strip
+  assert.equal(y.e, null); // value was only a comment
+  assert.deepEqual(y.items, ['one']);
+});
+
 function board(clauses: BoardInput['contract']['clauses']) {
   const playbook = parseYaml(PLAYBOOK_YAML) as unknown as Playbook;
   return buildBoard({ playbook, contract: { name: 'Test NDA', clauses } });
@@ -121,6 +134,112 @@ test('explicit ruleId overrides heading matching, unknown ruleId is unclassified
   assert.equal(rows[0].classification, 'compliant');
   assert.ok(rows[1].reason.includes('not found in playbook'));
   assert.equal(rows[1].classification, 'unclassified');
+});
+
+test('avoid similarity mode: verbatim deal-breaker text buried in a long clause is still a deal-breaker', () => {
+  const yaml = `
+playbookId: PB-TEST-3
+defaultApprover: Legal Operations
+rules:
+  - id: cap
+    topic: Liability
+    preferred:
+      text: "Liability is capped at the fees paid."
+    fallbacks: []
+    avoid:
+      - id: uncapped
+        mode: similarity
+        text: "Provider shall be liable for all consequential damages and lost profits of the customer without cap"
+        threshold: 0.6
+`;
+  const playbook = parseYaml(yaml) as unknown as Playbook;
+  const boilerplate =
+    'Provider shall perform the services in a professional and workmanlike manner consistent with generally accepted ' +
+    'industry standards, and shall comply with all applicable laws, regulations, and customer policies reasonably ' +
+    'communicated in writing, including those governing data protection, information security, and confidentiality, ' +
+    'throughout the term of this Agreement and any renewal thereof.';
+  const out = buildBoard({
+    playbook,
+    contract: {
+      name: 'T',
+      clauses: [
+        {
+          id: 'L1',
+          heading: 'Liability',
+          text: `9.2 Provider shall be liable for all consequential damages and lost profits of the customer without cap. ${boilerplate}`,
+        },
+      ],
+    },
+  });
+  assert.equal(out.rows[0].classification, 'deal_breaker');
+  assert.ok(out.rows[0].reason.includes('uncapped'));
+});
+
+test('avoid similarity mode: near-verbatim (non-exact) deal-breaker buried in a long clause is still a deal-breaker', () => {
+  const yaml = `
+playbookId: PB-TEST-5
+defaultApprover: Legal Operations
+rules:
+  - id: cap
+    topic: Liability
+    preferred:
+      text: "Liability is capped at the fees paid."
+    fallbacks: []
+    avoid:
+      - id: uncapped-variant
+        mode: similarity
+        text: "Provider shall be liable for all consequential damages and lost profits of the customer without cap"
+        threshold: 0.8
+`;
+  const playbook = parseYaml(yaml) as unknown as Playbook;
+  const boilerplate =
+    'Provider shall perform the services in a professional and workmanlike manner consistent with generally accepted ' +
+    'industry standards, and shall comply with all applicable laws, regulations, and customer policies reasonably ' +
+    'communicated in writing, including those governing data protection, information security, and confidentiality, ' +
+    'throughout the term of this Agreement and any renewal thereof.';
+  // "will" vs "shall" makes the hit near-verbatim rather than contained; the long
+  // clause dilutes whole-text similarity below the threshold, so only a
+  // best-window score can catch it.
+  const out = buildBoard({
+    playbook,
+    contract: {
+      name: 'T',
+      clauses: [
+        {
+          id: 'L2',
+          heading: 'Liability',
+          text: `9.3 Provider will be liable for all consequential damages and lost profits of the customer without cap. ${boilerplate}`,
+        },
+      ],
+    },
+  });
+  assert.equal(out.rows[0].classification, 'deal_breaker');
+  assert.ok(out.rows[0].reason.includes('uncapped-variant'));
+});
+
+test('deal-breaker on a rule without escalation routes to the default approver with an explicit reason', () => {
+  const playbook: Playbook = {
+    playbookId: 'PB-TEST-4',
+    defaultApprover: 'Legal Operations',
+    rules: [
+      {
+        id: 'term',
+        topic: 'Term',
+        preferred: { text: 'This Agreement continues for three (3) years.' },
+        fallbacks: [],
+        avoid: [{ mode: 'contains', text: 'in perpetuity' }],
+      },
+    ],
+  };
+  const out = buildBoard({
+    playbook,
+    contract: { name: 'T', clauses: [{ id: 'C1', heading: 'Term', text: 'This Agreement continues in perpetuity.' }] },
+  });
+  assert.equal(out.rows[0].classification, 'deal_breaker');
+  assert.equal(out.rows[0].routedTo, 'Legal Operations');
+  assert.match(out.rows[0].reason, /default approver/);
+  const md = renderBoard(out);
+  assert.ok(md.includes('Routed to: **Legal Operations**'));
 });
 
 test('avoid similarity mode triggers on a close variant at its threshold', () => {

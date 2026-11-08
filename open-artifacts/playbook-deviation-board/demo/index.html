@@ -6,51 +6,98 @@
 <title>Playbook deviation board — open artifact</title>
 <link rel="stylesheet" href="tokens.css" />
 <style>
-  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
-  @media (min-width: 768px) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
-  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
-  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
-  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
-  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
-  section { margin-top: 48px; }
-  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
-  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
-  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
-  .counts div:last-child { border-right: none; }
-  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
-  .board { display: flex; gap: 1px; background: var(--border); border: var(--hairline); overflow-x: auto; }
-  .col { min-width: 230px; flex: 1; background: var(--bg); }
-  .col > h3 { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-    padding: 10px 12px; background: #fff; border-bottom: 2px solid var(--text); }
-  .col > h3 span { color: var(--text-secondary); }
-  .card { background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  .card:hover { background: var(--hover); }
-  .card .nm { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
-  .card .meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
-  .card.deal_breaker { background: var(--flag-tint); border-bottom: 1.5px solid var(--text); }
-  .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--text); white-space: nowrap; }
-  .pill.compliant { background: transparent; color: var(--ok); border: var(--hairline); }
-  .pill.deviates { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
-  .pill.deal_breaker { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .pill.unclassified { background: transparent; color: var(--text-secondary); border-style: dashed; }
-  .ev { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
-  .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
-  .trace { margin-top: 8px; border: var(--hairline); background: var(--hover); padding: 8px 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--text-secondary); }
-  .trace summary { cursor: pointer; color: var(--text); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; }
-  .trace code { background: #fff; }
-  .red { color: var(--warn); } .add { color: var(--ok); }
-  .redline { margin-top: 8px; padding: 8px 12px; border: var(--hairline); background: #fff; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
-  .redline .lang { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
-  .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
-    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: var(--accent); color: var(--text); }
-  button.ghost { background: transparent; color: var(--text); }
-  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+.wrap { max-width: var(--max-width); margin: 0 auto; padding: 32px var(--pad-x-mobile) 96px; }
+@media (min-width: 768px) { .wrap { padding: 56px var(--pad-x-desktop) 120px; } }
+.kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
+.rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 16px; }
+p.lede { max-width: 68ch; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+section { margin-top: 40px; }
+h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
+h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+details.inputs { border: var(--hairline); background: #fff; }
+details.inputs > summary { cursor: pointer; font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; padding: 12px 16px; list-style: none; }
+details.inputs > summary::before { content: "▸ "; color: var(--text-secondary); }
+details.inputs[open] > summary::before { content: "▾ "; }
+.inp-grid { display: grid; gap: 16px; padding: 0 16px 16px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .inp-grid { grid-template-columns: 1fr 1fr; } }
+.field label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 6px; }
+textarea, input[type=text] { width: 100%; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: 8px; border: var(--hairline); background: var(--bg); color: var(--text); }
+textarea { min-height: 150px; }
+.hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.mode { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; font-size: 12.5px; }
+.mode label { display: inline; font-family: var(--font-body); text-transform: none; letter-spacing: 0; color: var(--text); }
+.runbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 0 16px 16px; }
+#runStatus { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+#runStatus.err { color: var(--bad); }
+.counts { display: flex; gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 10px; flex-wrap: wrap; }
+.counts button { flex: 1; min-width: 100px; padding: 10px 16px; border: none; border-radius: 0; background: #fff; cursor: pointer; font-family: var(--font-body); text-align: left; }
+.counts button[aria-pressed="true"] { background: var(--flag-tint); }
+.counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
+.counts span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); }
+.toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.toolbar .field label { margin-bottom: 4px; }
+.toolbar select { font-family: var(--font-mono); font-size: 12.5px; padding: 6px 8px; border: var(--hairline); background: #fff; color: var(--text); }
+#filterStatus { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 0 0 12px; }
+.board { display: flex; gap: 1px; background: var(--border); border: var(--hairline); overflow-x: auto; }
+.col { min-width: 225px; flex: 1; background: var(--bg); }
+.col > h3 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+padding: 10px 12px; background: #fff; border-bottom: 2px solid var(--text); }
+.col > h3 span { color: var(--text-secondary); }
+button.card { display: block; width: 100%; text-align: left; background: #fff; padding: 10px 12px; border: none; border-bottom: 1px solid var(--border); border-radius: 0; font-family: var(--font-body); font-size: 13px; cursor: pointer; }
+button.card:hover { background: var(--hover); }
+.card .nm { font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.card .meta { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.card.deal_breaker { background: var(--flag-tint); border-bottom: 1.5px solid var(--text); }
+.card.deal_breaker:hover { background: #ece0bd; }
+.pill { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--text); white-space: nowrap; }
+.pill.compliant { background: transparent; color: var(--ok); border: var(--hairline); }
+.pill.deviates { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
+.pill.deal_breaker { background: var(--text); color: var(--bg); border-color: var(--text); }
+.pill.unclassified { background: transparent; color: var(--text-secondary); border-style: dashed; }
+.dchip { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; margin-top: 6px; border: var(--hairline); color: var(--text); background: var(--hover); }
+.dchip.reject { color: var(--bad); border-color: var(--bad); }
+.dchip.accept { color: var(--ok); border-color: var(--ok); }
+.empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); padding: 10px 12px; }
+.src { border: var(--hairline); background: #fff; padding: 12px 16px; margin-bottom: 10px; }
+.src .srcid { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+.src p { font-size: 13.5px; line-height: 1.65; margin: 0; }
+.src.target { border-left: 3px solid var(--accent); }
+mark.hl { background: var(--accent); color: var(--text); padding: 0 1px; }
+table.log { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
+table.log th[scope=col] { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; text-align: left; padding: 8px 10px; background: var(--hover); border-bottom: 2px solid var(--text); }
+table.log td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.log td.mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+button.act { font-family: var(--font-mono); font-size: 13px; padding: 9px 16px; border: 1px solid var(--text);
+background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
+button.act:hover { background: var(--accent); color: var(--text); }
+button.act.ghost { background: transparent; color: var(--text); }
+button.act.small { font-size: 12px; padding: 6px 10px; }
+#storeNote { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.backdrop { position: fixed; inset: 0; background: rgba(10,10,10,.35); z-index: 40; }
+aside.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(540px, 100vw); background: var(--bg);
+border-left: 2px solid var(--text); box-shadow: -12px 0 32px rgba(10,10,10,.18); z-index: 50; overflow-y: auto; padding: 20px 22px 40px; }
+aside.drawer h3 { font-size: 17px; margin: 4px 0 10px; }
+.drawer .x { position: absolute; top: 12px; right: 14px; }
+.kv { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8; color: var(--text-secondary); margin: 10px 0; }
+.kv b { color: var(--text); font-weight: 500; }
+.drawer blockquote { margin: 10px 0 0; padding: 8px 12px; border-left: 2px solid var(--border); background: #fff; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+.trace { margin-top: 10px; border: var(--hairline); background: #fff; padding: 8px 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+.trace summary { cursor: pointer; color: var(--text); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+.red { color: var(--warn); } .add { color: var(--ok); }
+.redline { margin-top: 10px; padding: 8px 12px; border: var(--hairline); background: #fff; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
+.redline .lang { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
+.decide { margin-top: 18px; border-top: var(--hairline); padding-top: 14px; }
+.decide label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+.decide input[type=text] { margin-bottom: 10px; }
+.hist { margin-top: 14px; }
+.hist h4 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; margin: 0 0 8px; }
+.hist div { border: var(--hairline); background: #fff; padding: 8px 10px; margin-bottom: 8px; font-size: 12.5px; line-height: 1.55; }
+.hist .mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.disclaimer { margin-top: 56px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
 </head>
 <body>
@@ -59,101 +106,487 @@
     <div class="kicker">open-legal-artifacts · deterministic core · rules-as-data</div>
     <h1>Playbook deviation board</h1>
     <div class="rule"></div>
-    <p class="lede">A clause board classified by <b>pure code against playbook-as-data</b>: same playbook +
-      contract always yields the same board. Every classified row quotes the clause span that drove the decision,
-      numbers in standards must match verbatim, and fallback tiers route to approvers (tier ≥ escalation threshold
-      goes to the escalation owner). Every deviation carries a deterministic redline back to the preferred standard
-      and a decision-trace panel (rule chain, score vs thresholds, char span, routing). The playbook below is parsed
-      in your browser by the core's own dependency-free YAML parser. Open reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics mutual-NDA playbook v3 ×
-      a Northwind draft — 8 clauses, including a perpetual-term deal-breaker and an uncapped-confidentiality carve-out.</p>
+    <p class="lede">Clauses classified by <b>pure code against playbook-as-data</b> — same playbook + contract, same board, every run.
+      Paste your own playbook YAML and contract, review each deviation in the drawer (quote, redline, routing), decide, and the
+      decision log survives reload. No LLM in the classification path.</p>
   </header>
+
+  <section>
+    <h2>Inputs</h2>
+    <details class="inputs" open id="inputsPanel">
+      <summary>Playbook &amp; contract — paste and run</summary>
+      <div class="inp-grid">
+        <div class="field">
+          <label for="pbInput">Playbook (YAML, rules-as-data)</label>
+          <textarea id="pbInput" spellcheck="false"></textarea>
+          <p class="hint">Parsed in your browser by the core's dependency-free YAML parser — line-numbered errors, never a guess.</p>
+        </div>
+        <div class="field">
+          <label for="ctName">Contract name</label>
+          <input type="text" id="ctName" />
+          <div class="mode">
+            <input type="radio" id="modeText" name="ctMode" value="text" checked />
+            <label for="modeText">Paste contract text (blank line between clauses)</label>
+          </div>
+          <div class="mode">
+            <input type="radio" id="modeJson" name="ctMode" value="json" />
+            <label for="modeJson">Advanced: contract JSON</label>
+          </div>
+          <textarea id="ctTextInput" spellcheck="false" aria-label="Contract text, one clause per block, clauses separated by blank lines"></textarea>
+          <textarea id="ctJsonInput" spellcheck="false" hidden aria-label="Contract JSON"></textarea>
+          <p class="hint">A leading “N.n Heading.” prefix is read as the clause heading; blocks are numbered C1, C2, ….</p>
+        </div>
+      </div>
+      <div class="runbar">
+        <button class="act" id="runBtn">Run board</button>
+        <button class="act ghost" id="exampleBtn">Load worked example</button>
+        <p id="runStatus" role="status" aria-live="polite"></p>
+      </div>
+    </details>
+  </section>
 
   <section>
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
     <div class="row-btns">
-      <button id="mdBtn">Export board.md</button>
-      <button id="jsonBtn" class="ghost">Export output.json</button>
+      <label for="actorInput" style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)">Reviewer</label>
+      <input type="text" id="actorInput" style="width:180px" />
+      <button class="act small" id="mdBtn">Export board.md</button>
+      <button class="act small ghost" id="jsonBtn">Export output.json</button>
+      <button class="act small ghost" id="csvBtn">Export decisions.csv</button>
+      <button class="act small ghost" id="logBtn">Export log.ndjson</button>
+      <button class="act small ghost" id="resetBtn">Reset saved state</button>
+      <span id="storeNote" role="status" aria-live="polite"></span>
     </div>
   </section>
 
   <section>
     <h2>Board</h2>
+    <div class="toolbar">
+      <div class="field"><label for="fVerdict">Verdict</label>
+        <select id="fVerdict"><option value="all">All verdicts</option></select></div>
+      <div class="field"><label for="fRule">Rule</label>
+        <select id="fRule"><option value="all">All rules</option></select></div>
+      <div class="field"><label for="fApprover">Approver</label>
+        <select id="fApprover"><option value="all">All approvers</option></select></div>
+    </div>
+    <p id="filterStatus" role="status" aria-live="polite"></p>
     <div class="board" id="board"></div>
+    <p class="hint" style="margin-top:8px">Select a card to open the detail drawer: quoted span, suggested redline, routing, decision log.</p>
   </section>
 
   <section>
-    <h2>Non-compliant clauses — quoted evidence</h2>
-    <div id="evidence"></div>
+    <h2>Contract text — click-through source</h2>
+    <div id="source"></div>
+  </section>
+
+  <section>
+    <h2>Decision log — append-only, survives reload</h2>
+    <table class="log" id="logTable"><thead><tr>
+      <th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Clause</th><th scope="col">Detail</th>
+    </tr></thead><tbody></tbody></table>
   </section>
 
   <footer class="disclaimer">
-    Deterministic classification — playbook rules, thresholds, and escalation policy are rules-as-data
-    (YAML the firm owns); no LLM in the classification path. All example data fictional. Not legal advice.
+    Deterministic classification — playbook rules, thresholds, and escalation policy are rules-as-data (YAML the firm owns);
+    no LLM in the classification path. Working state and the decision log are saved in this browser's localStorage only —
+    no data leaves the page. All example data fictional. Not legal advice.
     <code>anthropic counterpart: Playbook deviation board (closed)</code>
   </footer>
 </div>
 
 <script type="module">
-  import { parseYaml, buildBoard, renderBoard } from "../core/core.js";
-  import { playbookYaml, contract } from "./example.js";
+import { parseYaml, buildBoard, renderBoard } from "../core/core.js";
 
-  const playbook = parseYaml(playbookYaml);
-  const board = buildBoard({ playbook, contract });
-  const s = board.summary;
-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* ---------- vendored from open-artifacts/_shared/persist.js (browser subset; Node fs fns trimmed) ---------- */
+function memoryBackend(name) {
+const map = new Map();
+return {
+backendName: name,
+get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
+set(k, v) { map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) }); },
+remove(k) { map.delete(k); },
+append(k, entry) { if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
+entries(k) { const v = map.get(k); return v && v.kind === 'log' ? v.items.slice() : []; },
+exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : ''); },
+};
+}
+function probeLocalStorage() {
+try {
+const ls = globalThis.localStorage;
+if (!ls) return null;
+ls.setItem('__persist_probe__', '1');
+const ok = ls.getItem('__persist_probe__') === '1';
+ls.removeItem('__persist_probe__');
+return ok ? ls : null;
+} catch { return null; }
+}
+function localBackend(namespace) {
+const ls = probeLocalStorage();
+if (!ls) return memoryBackend('memory-fallback');
+const key = (k) => `${namespace}:${k}`;
+let degraded = false;
+const mem = memoryBackend('memory');
+return {
+backendName: 'local',
+get(k) {
+if (degraded) return mem.get(k);
+try { const raw = ls.getItem(key(k)); return raw == null ? null : JSON.parse(raw); }
+catch { return null; }
+},
+set(k, v) {
+if (degraded) return mem.set(k, v);
+try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); }
+},
+remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
+append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
+entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
+exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : ''); },
+};
+}
+const createStorage = (ns) => (probeLocalStorage() ? localBackend(ns) : memoryBackend('memory-fallback'));
 
-  document.getElementById("counts").innerHTML =
-    `<div><b>${board.rows.length}</b><span>clauses</span></div>` +
-    `<div><b>${s.compliant}</b><span>compliant</span></div>` +
-    `<div><b>${s.deviates}</b><span>deviate</span></div>` +
-    `<div><b>${s.dealBreaker}</b><span>deal-breaker</span></div>` +
-    `<div><b>${s.unclassified}</b><span>unclassified</span></div>` +
-    `<div><b>${esc(playbook.playbookId)}</b><span>playbook</span></div>`;
+/* ---------- example data (fictional) ---------- */
+const EXAMPLE_YAML = `# Verdant Robotics mutual NDA playbook (fictional company) — v3
+playbookId: PB-NDA-2026-v3
+name: Mutual NDA playbook
+defaultApprover: Legal Operations
 
-  const COLUMNS = ["compliant", "deviates", "deal_breaker", "unclassified"];
-  const TIER = (t) => (t === "preferred" ? "preferred" : t === null ? "—" : `tier ${t}`);
-  document.getElementById("board").innerHTML = COLUMNS.map((cls) => {
-    const rows = board.rows.filter((r) => r.classification === cls);
-    return `<div class="col"><h3>${cls} <span>(${rows.length})</span></h3>` +
-      rows.map((r) =>
-        `<div class="card ${cls}"><div class="nm"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</div>` +
-        `<div class="meta">rule ${esc(r.ruleId ?? "—")} · ${TIER(r.matchedTier)} · sim ${r.similarity.toFixed(2)}</div>` +
-        (r.routedTo ? `<div class="meta">→ ${esc(r.routedTo)}</div>` : "") + `</div>`
-      ).join("") + `</div>`;
-  }).join("");
+rules:
+  - id: term
+    topic: Term
+    preferred:
+      label: "3-year fixed term"
+      text: "This Agreement commences on the Effective Date and continues for three (3) years."
+    fallbacks:
+      - tier: 1
+        label: "Evergreen, 90-day exit"
+        text: "This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice."
+      - tier: 2
+        label: "Evergreen, 30-day exit"
+        text: "This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice."
+    avoid:
+      - id: perpetual-term
+        mode: contains
+        text: "in perpetuity"
+    escalation:
+      approver: General Counsel
+      minFallbackTier: 2
 
-  document.getElementById("evidence").innerHTML = board.rows
-    .filter((r) => r.classification !== "compliant")
-    .map((r) =>
-      `<div class="ev"><b><code>${esc(r.clauseId)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
-      `${r.matchedTier !== null ? ` (${TIER(r.matchedTier)})` : ""}${r.routedTo ? ` → <b>${esc(r.routedTo)}</b>` : ""}` +
-      `<blockquote>${esc((r.clauseQuote ? r.clauseQuote.text : r.clauseText).replace(/\n/g, " "))}</blockquote>` +
-      `<div style="margin-top:6px">${esc(r.reason)}.</div>` +
-      (r.redline && (r.redline.removals.length || r.redline.additions.length)
-        ? `<div class="redline"><span class="lang">suggested redline → preferred${r.redline.label ? ` (${esc(r.redline.label)})` : ""}</span>` +
-          r.redline.removals.map((x) => `<span class="red">- ${esc(x)}</span>`).join("<br>") +
-          (r.redline.removals.length && r.redline.additions.length ? "<br>" : "") +
-          r.redline.additions.map((x) => `<span class="add">+ ${esc(x)}</span>`).join("<br>") + `</div>`
-        : "") +
-      `<details class="trace"><summary>Decision trace</summary>` +
-      `<div>rule chain: heading <code>${esc(r.heading ?? "—")}</code> → rule <code>${esc(r.ruleId ?? "none")}</code>` +
-      `${r.ruleId ? ` → ${esc(r.classification)} at ${TIER(r.matchedTier)}` : ` → unclassified`}</div>` +
-      `<div>score: similarity <code>${r.similarity.toFixed(2)}</code> vs thresholds preferred ≥ <code>${board.thresholds.preferred.toFixed(2)}</code>, fallback ≥ <code>${board.thresholds.fallback.toFixed(2)}</code>, topic ≥ <code>${board.thresholds.topic.toFixed(2)}</code></div>` +
-      `<div>span: <code>${r.clauseQuote ? `chars ${r.clauseQuote.charStart}–${r.clauseQuote.charEnd} of ${r.clauseText.length}` : "none (beyond playbook)"}</code></div>` +
-      `<div>routing: <code>${esc(r.routedTo ?? "nobody (compliant)")}</code></div>` +
-      `</details></div>`
-    )
-    .join("");
+  - id: liability
+    topic: Limitation of Liability
+    preferred:
+      label: "Mutual cap at 12 months of fees"
+      text: "Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim."
+    fallbacks:
+      - tier: 1
+        label: "Mutual cap at total contract value"
+        text: "Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement."
+    avoid:
+      - id: uncapped-liability
+        mode: contains
+        text: "unlimited liability"
+      - id: consequential-damages carve-out
+        mode: similarity
+        text: "Provider shall be liable for all consequential damages and lost profits of the customer without cap"
+        threshold: 0.6
+    escalation:
+      approver: General Counsel
+      minFallbackTier: 2
+`;
+const EXAMPLE_CONTRACT = { name: "Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional)", clauses: [
+{ id: "C1", heading: "Term", text: "3.1 Term. This Agreement commences on the Effective Date and continues for three (3) years. Neither party may assign this Agreement without the other's prior written consent." },
+{ id: "C2", heading: "Term", text: "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice of non-renewal." },
+{ id: "C3", heading: "Term", text: "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice of non-renewal." },
+{ id: "C4", heading: "Term", text: "3.1 Term. This Agreement commences on the Effective Date and continues in perpetuity unless terminated by mutual written agreement." },
+{ id: "C5", heading: "Limitation of Liability", text: "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim, excluding breaches of Section 4 (Confidentiality), for which the receiving party accepts unlimited liability." },
+{ id: "C6", heading: "Limitation of Liability", text: "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement." },
+{ id: "C7", heading: "Term", text: "3.1 Term. This Agreement commences on the Effective Date and continues for eighteen (18) months." },
+{ id: "C8", heading: "Governing Law", text: "11.1 Governing Law. This Agreement is governed by the laws of the State of Delaware, without regard to conflict-of-laws principles." },
+] };
 
-  function download(name, content, type) {
-    const blob = new Blob([content], { type });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  }
-  document.getElementById("mdBtn").onclick = () => download("board.md", renderBoard(board), "text/markdown");
-  document.getElementById("jsonBtn").onclick = () => download("board-output.json", JSON.stringify(board, null, 2) + "\n", "application/json");
+/* ---------- state & persistence ---------- */
+const store = createStorage("pb-dev-board-v1");
+let state = store.get("state");
+if (!state || typeof state !== "object" || !state.playbookSrc || !state.contract) {
+state = { playbookSrc: EXAMPLE_YAML, contract: EXAMPLE_CONTRACT, decisions: {}, actor: "D. Okafor (reviewing counsel)" };
+}
+state.decisions = state.decisions ?? {}; state.actor = state.actor ?? "Reviewer";
+let board = null;
+let filters = { verdict: "all", rule: "all", approver: "all" };
+let drawerClause = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const HL = { compliant: "Compliant", deviates: "Deviates", deal_breaker: "Deal-breaker", unclassified: "Unclassified" };
+const DEC = { accept: "Accepted", negotiate: "Negotiate", reject: "Rejected", reopen: "Re-opened" };
+const TIER = (t) => (t === "preferred" ? "Preferred" : t === null ? "—" : `Fallback tier ${t}`);
+const dateStr = () => new Date().toISOString().slice(0, 10);
+
+function save() {
+store.set("state", state);
+$("storeNote").textContent = store.backendName === "local" ? "saved · localStorage" : "saved · session only (storage unavailable)";
+}
+function appendLog(entry) {
+store.append("log", { ts: new Date().toISOString(), actor: state.actor, ...entry });
+renderLog();
+}
+const logEntries = () => store.entries("log");
+
+/* ---------- contract input modes ---------- */
+const textOf = (c) => (c.text ?? "").replace(/\s*\n\s*/g, " ").trim();
+function fillInputs() {
+$("pbInput").value = state.playbookSrc;
+$("ctName").value = state.contract.name ?? "";
+$("ctTextInput").value = state.contract.clauses.map((c) => textOf(c)).join("\n\n");
+$("ctJsonInput").value = JSON.stringify(state.contract, null, 2);
+$("actorInput").value = state.actor;
+}
+function readContract() {
+if ($("modeJson").checked) {
+let obj;
+try { obj = JSON.parse($("ctJsonInput").value); }
+catch (e) { throw new Error("Contract JSON error: " + e.message); }
+if (!obj || !Array.isArray(obj.clauses)) throw new Error('Contract JSON error: expected an object with a "clauses" array');
+return { name: $("ctName").value.trim() || "Pasted contract", clauses: obj.clauses };
+}
+const raw = $("ctTextInput").value.trim();
+if (raw.startsWith("{")) { // forgiving: JSON pasted into the text box
+$("modeJson").checked = true; $("ctJsonInput").value = raw; syncModes();
+return readContract();
+}
+const blocks = raw.split(/\n\s*\n+/).map((b) => b.replace(/\s+/g, " ").trim()).filter(Boolean);
+if (blocks.length === 0) throw new Error("Paste the contract first — separate clauses with a blank line (or use the JSON tab).");
+return { name: $("ctName").value.trim() || "Pasted contract", clauses: blocks.map((b, i) => {
+const m = b.match(/^\d+(?:\.\d+)*\s+([A-Z][A-Za-z &'/-]{1,50}?)\.\s+(.*)$/);
+      return m ? { id: `C${i + 1}`, heading: m[1], text: b } : { id: `C${i + 1}`, text: b };
+}) };
+}
+function syncModes() {
+$("ctTextInput").hidden = $("modeJson").checked;
+$("ctJsonInput").hidden = !$("modeJson").checked;
+}
+
+/* ---------- run ---------- */
+function runBoard(fromBoot) {
+let playbook, contract;
+try { playbook = parseYaml($("pbInput").value); }
+catch (e) { return fail("Playbook YAML error: " + e.message); }
+if (!Array.isArray(playbook.rules) || playbook.rules.length === 0) return fail("Playbook error: no `rules:` list found");
+try { contract = readContract(); }
+catch (e) { return fail(e.message); }
+state.playbookSrc = $("pbInput").value;
+state.contract = contract;
+board = buildBoard({ playbook, contract });
+save();
+const s = board.summary;
+$("runStatus").className = "";
+$("runStatus").textContent = `Board built: ${board.rows.length} clauses · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`;
+renderAll();
+if (!fromBoot) appendLog({ action: "run", clauseId: null, detail: `board run — ${board.rows.length} clauses: ${s.compliant} compliant, ${s.deviates} deviate, ${s.dealBreaker} deal-breaker, ${s.unclassified} unclassified` });
+function fail(msg) { $("runStatus").className = "err"; $("runStatus").textContent = msg; }
+}
+
+/* ---------- rendering ---------- */
+function renderAll() { renderCounts(); renderFilters(); renderBoardCols(); renderSource(); renderLog(); }
+
+function renderCounts() {
+const s = board.summary;
+const cell = (n, label, key) => `<button type="button" data-verdict="${key}" aria-pressed="${filters.verdict === key}"><b>${n}</b><span>${label}</span></button>`;
+$("counts").innerHTML =
+`<div style="flex:1;min-width:120px;padding:10px 16px"><b style="font-family:var(--font-mono);font-size:20px;font-weight:500">${board.rows.length}</b><span style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)">clauses · ${esc(board.playbookId)}</span></div>` +
+cell(s.compliant, "compliant", "compliant") + cell(s.deviates, "deviates", "deviates") +
+cell(s.dealBreaker, "deal-breaker", "deal_breaker") + cell(s.unclassified, "unclassified", "unclassified");
+$("counts").querySelectorAll("button[data-verdict]").forEach((b) =>
+b.addEventListener("click", () => { filters.verdict = filters.verdict === b.dataset.verdict ? "all" : b.dataset.verdict; $("fVerdict").value = filters.verdict; renderCounts(); renderBoardCols(); }));
+}
+
+function renderFilters() {
+const rules = [...new Set(board.rows.map((r) => r.ruleId ?? "—"))];
+const approvers = [...new Set(board.rows.map((r) => r.routedTo ?? "(nobody — compliant)"))];
+const setSel = (id, pairs, allLabel, cur) => {
+$(id).innerHTML = `<option value="all">${allLabel}</option>` + pairs.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("");
+const has = pairs.some(([v]) => v === cur);
+$(id).value = has ? cur : "all";
+if (!has) filters[id === "fRule" ? "rule" : id === "fApprover" ? "approver" : "verdict"] = "all";
+};
+setSel("fVerdict", ["compliant", "deviates", "deal_breaker", "unclassified"].filter((c) => board.rows.some((r) => r.classification === c)).map((c) => [c, HL[c]]), "All verdicts", filters.verdict);
+setSel("fRule", rules.map((v) => [v, v === "—" ? "— (no rule assigned)" : v]), "All rules", filters.rule);
+setSel("fApprover", approvers.map((v) => [v, v]), "All approvers", filters.approver);
+}
+
+function filteredRows() {
+return board.rows.filter((r) =>
+(filters.verdict === "all" || r.classification === filters.verdict) &&
+(filters.rule === "all" || (r.ruleId ?? "—") === filters.rule) &&
+(filters.approver === "all" || (r.routedTo ?? "(nobody — compliant)") === filters.approver));
+}
+
+function renderBoardCols() {
+const rows = filteredRows();
+const COLS = ["compliant", "deviates", "deal_breaker", "unclassified"];
+$("board").innerHTML = COLS.map((cls) => {
+const cr = rows.filter((r) => r.classification === cls);
+return `<div class="col"><h3>${HL[cls]} <span>(${cr.length})</span></h3>` +
+(cr.length ? cr.map(cardHtml).join("") : `<div class="empty">no rows</div>`) + `</div>`;
+}).join("");
+$("filterStatus").textContent = board ? `Showing ${rows.length} of ${board.rows.length} clauses` : "";
+$("board").querySelectorAll("button.card").forEach((b) => b.addEventListener("click", () => openDrawer(b.dataset.clause)));
+}
+
+function cardHtml(r) {
+const d = state.decisions[r.clauseId];
+return `<button type="button" class="card ${r.classification}" data-clause="${esc(r.clauseId)}" aria-label="${esc(r.clauseId)} ${esc(r.heading ?? "")}: ${HL[r.classification]}. ${r.ruleId ? "Rule " + esc(r.ruleId) + "," : ""} routed to ${esc(r.routedTo ?? "nobody")}. Open detail drawer">` +
+`<span class="nm" style="display:block"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</span>` +
+`<span class="meta" style="display:block">${r.ruleId ? `rule ${esc(r.ruleId)} · ` : ""}${TIER(r.matchedTier)} · sim ${r.similarity.toFixed(2)}</span>` +
+(r.routedTo ? `<span class="meta" style="display:block">→ ${esc(r.routedTo)}</span>` : "") +
+(d ? `<span class="dchip ${esc(d.decision)}">${DEC[d.decision]}</span>` : "") + `</button>`;
+}
+
+function renderSource() {
+$("source").innerHTML = state.contract.clauses.map((c, i) => {
+const row = board.rows[i];
+const v = row ? `<span class="pill ${row.classification}" style="margin-left:8px">${HL[row.classification]}</span>` : "";
+return `<div class="src" id="src-${esc(c.id)}" data-clause="${esc(c.id)}"><span class="srcid">${esc(c.id)}${c.heading ? " · " + esc(c.heading) : ""}${v}</span><p class="srctext">${esc(textOf(c))}</p></div>`;
+}).join("");
+}
+
+function renderLog() {
+const es = logEntries().slice().reverse();
+$("logTable").querySelector("tbody").innerHTML = es.length ? es.map((e) =>
+`<tr><td class="mono">${esc((e.ts ?? "").replace("T", " ").slice(0, 19))}</td><td>${esc(e.actor ?? "—")}</td><td>${esc(e.action === "decision" ? "decision: " + (DEC[e.decision] ?? e.decision) : e.action)}</td><td class="mono">${esc(e.clauseId ?? "—")}</td><td>${esc(e.note ?? e.detail ?? "")}</td></tr>`).join("")
+: `<tr><td colspan="5" class="empty">No entries yet — decide on a clause or re-run the board.</td></tr>`;
+}
+
+/* ---------- drawer ---------- */
+function openDrawer(clauseId) {
+const r = board.rows.find((x) => x.clauseId === clauseId);
+if (!r) return;
+drawerClause = clauseId;
+const quote = r.clauseQuote ? r.clauseQuote.text : r.clauseText;
+const q = r.clauseQuote;
+const rl = r.redline && (r.redline.removals.length || r.redline.additions.length) ? r.redline : null;
+const hist = logEntries().filter((e) => e.action === "decision" && e.clauseId === clauseId).reverse();
+let backdrop = document.querySelector(".backdrop");
+if (!backdrop) { backdrop = document.createElement("div"); backdrop.className = "backdrop"; document.body.appendChild(backdrop); }
+backdrop.onclick = closeDrawer;
+let drawer = document.querySelector("aside.drawer");
+if (!drawer) { drawer = document.createElement("aside"); drawer.className = "drawer"; drawer.setAttribute("role", "dialog"); drawer.setAttribute("aria-modal", "true"); drawer.setAttribute("aria-labelledby", "dwTitle"); document.body.appendChild(drawer); }
+drawer.innerHTML =
+`<button class="act ghost small x" id="dwClose" aria-label="Close detail drawer">✕ Close</button>` +
+`<span class="pill ${r.classification}">${HL[r.classification]}</span>` +
+`<h3 id="dwTitle"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</h3>` +
+`<div class="kv"><b>Rule</b> ${esc(r.ruleId ?? "— (no rule assigned)")} · ${TIER(r.matchedTier)} · similarity ${r.similarity.toFixed(2)}<br>` +
+`<b>Routed to</b> ${esc(r.routedTo ?? "nobody (compliant)")}${r.matchedLabel ? `<br><b>Matched</b> ${esc(r.matchedLabel)}` : ""}</div>` +
+`<p style="font-size:13.5px;line-height:1.6">${esc(r.reason)}.</p>` +
+`<blockquote id="dwQuote">${esc(quote.replace(/\n/g, " "))}</blockquote>` +
+`<div class="row-btns">` +
+`<button class="act small" id="dwLocate" aria-label="Locate this quoted span in the contract text panel">Locate in contract ⇣</button>` +
+`<button class="act small ghost" id="dwCopy" aria-label="Copy the quoted clause span to clipboard">Copy quote</button></div>` +
+(rl ? `<div class="redline"><span class="lang">suggested redline → preferred${rl.label ? ` (${esc(rl.label)})` : ""}</span>` +
+rl.removals.map((x) => `<span class="red">- ${esc(x)}</span>`).join("<br>") +
+(rl.removals.length && rl.additions.length ? "<br>" : "") +
+rl.additions.map((x) => `<span class="add">+ ${esc(x)}</span>`).join("<br>") + `</div>` : "") +
+`<details class="trace"><summary>Decision trace</summary>` +
+`<div>rule chain: heading <code>${esc(r.heading ?? "—")}</code> → rule <code>${esc(r.ruleId ?? "none")}</code> → ${HL[r.classification]} at ${TIER(r.matchedTier)}</div>` +
+`<div>score: similarity <code>${r.similarity.toFixed(2)}</code> vs thresholds preferred ≥ <code>${board.thresholds.preferred.toFixed(2)}</code>, fallback ≥ <code>${board.thresholds.fallback.toFixed(2)}</code>, topic ≥ <code>${board.thresholds.topic.toFixed(2)}</code></div>` +
+`<div>span: <code>${q ? `chars ${q.charStart}–${q.charEnd} of ${r.clauseText.length}` : "none (beyond playbook)"}</code></div></details>` +
+`<div class="decide"><label for="dwNote">Decision note (optional)</label>` +
+`<input type="text" id="dwNote" placeholder="e.g. GC approved the carve-out" />` +
+`<div class="row-btns">` +
+`<button class="act small accept" data-dec="accept" aria-label="Record decision: accept this clause as-is">Accept</button>` +
+`<button class="act small ghost" data-dec="negotiate" aria-label="Record decision: negotiate this clause">Negotiate</button>` +
+`<button class="act small ghost" data-dec="reject" aria-label="Record decision: reject this clause">Reject</button>` +
+`<button class="act small ghost" data-dec="reopen" aria-label="Re-open this clause: clear its current decision">Re-open</button></div></div>` +
+`<div class="hist"><h4>Decision history — ${esc(clauseId)}</h4>` +
+(hist.length ? hist.map((e) => `<div><span class="mono">${esc((e.ts ?? "").replace("T", " ").slice(0, 19))} · ${esc(e.actor)}</span><br>${DEC[e.decision] ?? esc(e.decision)}${e.note ? " — " + esc(e.note) : ""}</div>`).join("") : `<div class="mono">No decision recorded yet.</div>`) + `</div>`;
+drawer.hidden = false; backdrop.hidden = false;
+document.body.style.overflow = "hidden";
+drawer.querySelector("#dwClose").onclick = closeDrawer;
+drawer.querySelector("#dwClose").focus();
+drawer.querySelector("#dwLocate").onclick = () => locateSpan(r);
+drawer.querySelector("#dwCopy").onclick = () => navigator.clipboard?.writeText(quote.replace(/\n/g, " "));
+drawer.querySelectorAll("button[data-dec]").forEach((b) => b.onclick = () => decide(r, b.dataset.dec, drawer.querySelector("#dwNote").value));
+document.addEventListener("keydown", escClose);
+}
+function escClose(e) { if (e.key === "Escape") closeDrawer(); }
+function closeDrawer() {
+const d = document.querySelector("aside.drawer"), b = document.querySelector(".backdrop");
+if (d) d.hidden = true; if (b) b.hidden = true;
+document.body.style.overflow = "";
+document.removeEventListener("keydown", escClose);
+drawerClause = null;
+}
+
+function decide(r, kind, note) {
+if (kind === "reopen") delete state.decisions[r.clauseId];
+else state.decisions[r.clauseId] = { decision: kind, ts: new Date().toISOString(), actor: state.actor, note: note || null };
+save();
+appendLog({ action: "decision", clauseId: r.clauseId, decision: kind, note: note || null });
+renderBoardCols();
+openDrawer(r.clauseId); // refresh history + chip
+}
+
+/* ---------- click-through ---------- */
+function locateSpan(r) {
+closeDrawer();
+document.querySelectorAll("mark.hl").forEach((m) => { const p = m.parentNode; p.insertBefore(document.createTextNode(m.textContent), m); m.remove(); p.normalize(); });
+document.querySelectorAll(".src.target").forEach((el) => el.classList.remove("target"));
+const clause = state.contract.clauses.find((c) => c.id === r.clauseId);
+const el = $("src-" + r.clauseId);
+if (!clause || !el) return;
+const p = el.querySelector(".srctext");
+const txt = textOf(clause);
+const s = r.clauseQuote ? Math.max(0, Math.min(r.clauseQuote.charStart, txt.length)) : 0;
+const e = r.clauseQuote ? Math.max(s, Math.min(r.clauseQuote.charEnd, txt.length)) : txt.length;
+p.innerHTML = esc(txt.slice(0, s)) + `<mark class="hl">${esc(txt.slice(s, e))}</mark>` + esc(txt.slice(e));
+el.classList.add("target");
+el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+/* ---------- exports ---------- */
+function download(name, content, type) {
+const a = document.createElement("a");
+a.href = URL.createObjectURL(new Blob([content], { type }));
+a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+const csvCell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+
+/* ---------- wire up ---------- */
+$("runBtn").addEventListener("click", () => runBoard(false));
+$("exampleBtn").addEventListener("click", () => {
+$("pbInput").value = EXAMPLE_YAML; $("ctName").value = EXAMPLE_CONTRACT.name;
+$("ctTextInput").value = EXAMPLE_CONTRACT.clauses.map((c) => textOf(c)).join("\n\n");
+$("ctJsonInput").value = JSON.stringify(EXAMPLE_CONTRACT, null, 2);
+$("modeText").checked = true; syncModes();
+runBoard(false);
+});
+$("modeText").addEventListener("change", syncModes);
+$("modeJson").addEventListener("change", syncModes);
+$("actorInput").addEventListener("change", () => { state.actor = $("actorInput").value.trim() || "Reviewer"; save(); });
+$("fVerdict").addEventListener("change", () => { filters.verdict = $("fVerdict").value; renderCounts(); renderBoardCols(); });
+$("fRule").addEventListener("change", () => { filters.rule = $("fRule").value; renderBoardCols(); });
+$("fApprover").addEventListener("change", () => { filters.approver = $("fApprover").value; renderBoardCols(); });
+$("mdBtn").addEventListener("click", () => board && download(`pb-board-${dateStr()}.md`, renderBoard(board), "text/markdown"));
+$("jsonBtn").addEventListener("click", () => board && download(`pb-board-${dateStr()}.json`, JSON.stringify({ board, decisions: state.decisions }, null, 2) + "\n", "application/json"));
+$("csvBtn").addEventListener("click", () => {
+const rows = logEntries().filter((e) => e.action === "decision");
+download(`pb-decisions-${dateStr()}.csv`,
+"ts,actor,clause,decision,note\n" + rows.map((e) => [e.ts, e.actor, e.clauseId, DEC[e.decision] ?? e.decision, e.note].map(csvCell).join(",")).join("\n") + "\n",
+"text/csv");
+});
+$("logBtn").addEventListener("click", () => download(`pb-log-${dateStr()}.ndjson`, store.exportJsonl("log"), "application/x-ndjson"));
+$("resetBtn").addEventListener("click", () => {
+if (confirm("Reset saved state and decision log for this demo? This clears localStorage entries for this page.")) {
+store.remove("state"); store.remove("log"); location.reload();
+}
+});
+
+/* ---------- boot ---------- */
+fillInputs();
+syncModes();
+runBoard(true);
+if (logEntries().length) appendLog({ action: "session", clauseId: null, detail: "session restored — state and decision log reloaded from localStorage" });
 </script>
 </body>
 </html>

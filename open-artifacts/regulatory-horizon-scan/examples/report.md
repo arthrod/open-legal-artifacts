@@ -7,9 +7,9 @@ Company profile: **Northwind Robotics, Inc. (fictional)** · jurisdictions US-FE
 | # | Rule | Juris | Topic | Type | Status | Effective | Comments close | Score | Band |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | CCPA Amendment: Children's Data Opt-In | US-CA | privacy | rule | final | 2027-01-01 | — | **95** | high |
-| 2 | Texas Biometric Retention Schedule | US-TX | privacy | NPRM | proposed | 2027-04-01 | 2026-11-25 | **93** | high |
-| 3 | FCC AI Voice Disclosure in Outreach Calls | US-FED | ai | rule | final | 2027-02-15 | — | **85** | high |
-| 4 | SEC ANPR: Artificial Intelligence Model Risk | US-FED | ai | ANPR | proposed | — | 2026-12-01 | **78** | medium (capped) |
+| 2 | FCC AI Voice Disclosure in Outreach Calls | US-FED | ai | rule | final | 2027-02-15 | — | **85** | high |
+| 3 | SEC ANPR: Artificial Intelligence Model Risk | US-FED | ai | ANPR | proposed | — | 2026-12-01 | **78** | medium (capped) |
+| 4 | Texas Biometric Retention Schedule | US-TX | privacy | NPRM | proposed | 2027-04-01 | 2026-11-25 | **78** | high |
 | 5 | NY Wage Transparency for Remote Roles | US-NY | employment | rule | effective | 2026-09-17 | — | **62** | medium |
 | 6 | EU Umbrella Data Regulation 2026 | EU | other | rule | proposed | 2028-03-01 | — | **8** | low |
 
@@ -30,11 +30,11 @@ Deduped 1 duplicate entry: `ca-ccpa-amend-dup` → merged into `ca-ccpa-amend` (
 
 ## Timeline (upcoming milestones, then past and undated)
 
-- 2026-11-25 · comment-deadline · score 93 · Texas Biometric Retention Schedule (US-TX)
+- 2026-11-25 · comment-deadline · score 78 · Texas Biometric Retention Schedule (US-TX)
 - 2026-12-01 · comment-deadline · score 78 · SEC ANPR: Artificial Intelligence Model Risk (US-FED)
 - 2027-01-01 · effective · score 95 · CCPA Amendment: Children's Data Opt-In (US-CA)
 - 2027-02-15 · effective · score 85 · FCC AI Voice Disclosure in Outreach Calls (US-FED)
-- 2027-04-01 · effective · score 93 · Texas Biometric Retention Schedule (US-TX)
+- 2027-04-01 · effective · score 78 · Texas Biometric Retention Schedule (US-TX)
 - 2028-03-01 · effective · score 8 · EU Umbrella Data Regulation 2026 (EU)
 
 _Past:_

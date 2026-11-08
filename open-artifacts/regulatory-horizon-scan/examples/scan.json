@@ -62,61 +62,6 @@
       }
     },
     {
-      "id": "tx-biometric-retention",
-      "title": "Texas Biometric Retention Schedule",
-      "jurisdiction": "US-TX",
-      "status": "proposed",
-      "itemType": "NPRM",
-      "effectiveDate": "2027-04-01",
-      "commentDeadline": "2026-11-25",
-      "publishedDate": "2026-10-30",
-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
-      "source": "Texas register feed (fictional)",
-      "provenance": "primary",
-      "link": "https://example.gov/tx-biometric",
-      "topic": "privacy",
-      "actionBy": "2026-11-25",
-      "scoring": {
-        "score": 93,
-        "band": "high",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "US state rule, but US-FED in profile (federal overlay applies nationwide)",
-            "points": 30,
-            "note": "US-TX"
-          },
-          {
-            "factor": "topic",
-            "rule": "core topic",
-            "points": 25,
-            "note": "topic=privacy via \"biometric\""
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 145d (<= 180d threshold)",
-            "points": 15,
-            "note": "2027-04-01 (+145d)"
-          },
-          {
-            "factor": "commentWindow",
-            "rule": "comment window open, closes in 18d (<= 30d threshold)",
-            "points": 15,
-            "note": "2026-11-25 (+18d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"proposed\"",
-            "points": 8,
-            "note": "proposed"
-          }
-        ],
-        "flags": [],
-        "provenance": "primary",
-        "itemType": "nprm"
-      }
-    },
-    {
       "id": "us-fcc-ai-disclosure",
       "title": "FCC AI Voice Disclosure in Outreach Calls",
       "jurisdiction": "US-FED",
@@ -226,6 +171,61 @@
         ],
         "provenance": "primary",
         "itemType": "anpr"
+      }
+    },
+    {
+      "id": "tx-biometric-retention",
+      "title": "Texas Biometric Retention Schedule",
+      "jurisdiction": "US-TX",
+      "status": "proposed",
+      "itemType": "NPRM",
+      "effectiveDate": "2027-04-01",
+      "commentDeadline": "2026-11-25",
+      "publishedDate": "2026-10-30",
+      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+      "source": "Texas register feed (fictional)",
+      "provenance": "primary",
+      "link": "https://example.gov/tx-biometric",
+      "topic": "privacy",
+      "actionBy": "2026-11-25",
+      "scoring": {
+        "score": 78,
+        "band": "high",
+        "breakdown": [
+          {
+            "factor": "jurisdiction",
+            "rule": "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)",
+            "points": 15,
+            "note": "US-TX"
+          },
+          {
+            "factor": "topic",
+            "rule": "core topic",
+            "points": 25,
+            "note": "topic=privacy via \"biometric\""
+          },
+          {
+            "factor": "proximity",
+            "rule": "effective in 145d (<= 180d threshold)",
+            "points": 15,
+            "note": "2027-04-01 (+145d)"
+          },
+          {
+            "factor": "commentWindow",
+            "rule": "comment window open, closes in 18d (<= 30d threshold)",
+            "points": 15,
+            "note": "2026-11-25 (+18d)"
+          },
+          {
+            "factor": "status",
+            "rule": "status=\"proposed\"",
+            "points": 8,
+            "note": "proposed"
+          }
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "nprm"
       }
     },
     {
@@ -355,7 +355,7 @@
         "itemId": "tx-biometric-retention",
         "title": "Texas Biometric Retention Schedule",
         "jurisdiction": "US-TX",
-        "score": 93,
+        "score": 78,
         "band": "high"
       },
       {
@@ -391,7 +391,7 @@
         "itemId": "tx-biometric-retention",
         "title": "Texas Biometric Retention Schedule",
         "jurisdiction": "US-TX",
-        "score": 93,
+        "score": 78,
         "band": "high"
       },
       {

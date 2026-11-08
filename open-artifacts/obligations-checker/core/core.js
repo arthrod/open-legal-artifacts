@@ -56,18 +56,27 @@ export function buildRegister(input) {
   if (!VALID_ISO.test(asOf)) throw new Error(`asOf must be ISO date, got "${asOf}"`);
   const dueSoonDays = input.settings?.dueSoonDays ?? 14;
 
-  // latest satisfaction record wins (by satisfiedOn then array order)
+  // latest satisfaction record wins (by satisfiedOn then array order);
+  // records dated after asOf are not facts known as of asOf — they are
+  // excluded from the status machine and flagged future_dated instead
+  // (a year typo must never turn overdue into satisfied).
   const satisfied = new Map();
+  const futureDated = new Map();
   for (const s of input.satisfaction ?? []) {
-    const prev = satisfied.get(s.obligationId);
+    const target = VALID_ISO.test(s.satisfiedOn) && s.satisfiedOn > asOf ? futureDated : satisfied;
+    const prev = target.get(s.obligationId);
     if (!prev || !VALID_ISO.test(prev.satisfiedOn) || (VALID_ISO.test(s.satisfiedOn) && s.satisfiedOn >= prev.satisfiedOn)) {
-      satisfied.set(s.obligationId, s);
+      target.set(s.obligationId, s);
     }
   }
 
   const rows = input.obligations.map((o) => {
     const flags = [];
     const record = satisfied.get(o.id) ?? null;
+    const future = futureDated.get(o.id);
+    if (future) {
+      flags.push(`future_dated: satisfaction ${future.satisfiedOn} is after asOf ${asOf} — excluded from the register; verify the recorded date`);
+    }
     let status;
     let nextDue = null;
     let cyclesMissed = null;
@@ -76,17 +85,24 @@ export function buildRegister(input) {
       status = 'unscheduled';
       flags.push(`invalid recurrence (${JSON.stringify(o.recurrence)}) — compliance unverified, never guessed`);
     } else if (o.recurrence) {
-      // Each cycle is its own duty: the latest satisfaction record covers at
-      // most the most recent past cycle (when it falls in that cycle's window);
-      // every earlier unmet cycle is a miss.
+      // Each cycle is its own duty: the latest satisfaction record covers
+      // the cycle whose window contains satisfiedOn — the window of a cycle
+      // due D is (previous due date, D], so paying on D itself discharges
+      // that cycle on time; every other unmet cycle is a miss.
       const { past, next } = cycleDates(o.recurrence, asOf);
       nextDue = next;
       const missed = [...past];
-      const lastPast = past[past.length - 1];
-      if (record && lastPast && (!VALID_ISO.test(record.satisfiedOn) || record.satisfiedOn >= (past[past.length - 2] ?? ''))) {
-        missed.pop(); // the record covers the most recent past cycle
-        if (VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > lastPast) {
-          flags.push(`satisfied ${days(lastPast, record.satisfiedOn)} days late for cycle due ${lastPast}`);
+      if (record && past.length) {
+        let covers;
+        if (VALID_ISO.test(record.satisfiedOn)) {
+          covers = past.findIndex((d) => record.satisfiedOn <= d); // first due date at/after the record
+          if (covers === -1) covers = past.length - 1; // after the last past due date: covers that cycle, late
+        } else {
+          covers = past.length - 1;
+        }
+        missed.splice(covers, 1);
+        if (VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > past[covers]) {
+          flags.push(`satisfied ${days(past[covers], record.satisfiedOn)} days late for cycle due ${past[covers]}`);
         } else if (!VALID_ISO.test(record.satisfiedOn)) {
           flags.push(`satisfaction date "${record.satisfiedOn}" not valid ISO — lateness unverified`);
         }

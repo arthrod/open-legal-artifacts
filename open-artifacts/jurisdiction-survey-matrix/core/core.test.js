@@ -1,7 +1,7 @@
 /** Tests for jurisdiction-survey-matrix core. Run: node --test (from artifact root) */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown } from "./core.js";
+import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown, safeUrl } from "./core.js";
 
 const AS_OF = "2026-11-07";
 
@@ -176,4 +176,119 @@ test("coverage breakdown: byJurisdiction and byQuestion", () => {
   assert.deepEqual(m.coverage.byJurisdiction["US-TX"], { total: 2, verified: 0, stale: 0, unverified: 2 });
   assert.equal(m.coverage.byJurisdiction["US-CA"].verified, 2);
   assert.deepEqual(m.coverage.byQuestion["threshold"], { total: 4, verified: 2, stale: 0, unverified: 2 });
+});
+
+/* ---------- B08 fixes: URL scheme allowlist, CSV injection, input-shape crash ---------- */
+
+const VERIFIED_CELL = {
+  jurisdiction: "A", question: "q1", answer: "Yes (fictional).", citation: "Fictional Stat. § 1",
+  sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan",
+};
+
+test("safeUrl: only http/https schemes are linkable", () => {
+  assert.equal(safeUrl("https://fictional.example/x"), "https://fictional.example/x");
+  assert.equal(safeUrl("http://fictional.example/x"), "http://fictional.example/x");
+  assert.equal(safeUrl("HTTPS://Example.com/X"), "HTTPS://Example.com/X");
+  assert.equal(safeUrl("  https://fictional.example/x  "), "https://fictional.example/x");
+  assert.equal(safeUrl("javascript:alert(document.domain)"), null);
+  assert.equal(safeUrl(" javascript:alert(1)"), null); // leading whitespace must not smuggle a scheme
+  assert.equal(safeUrl("JAVASCRIPT:alert(1)"), null);
+  assert.equal(safeUrl("data:text/html,<script>alert(1)</script>"), null);
+  assert.equal(safeUrl("vbscript:msgbox(1)"), null);
+  assert.equal(safeUrl("ftp://fictional.example/x"), null);
+  assert.equal(safeUrl(""), null);
+  assert.equal(safeUrl(null), null);
+  assert.equal(safeUrl(42), null);
+});
+
+test("unsafe sourceUrl fails requireSourceUrl — a javascript: cell is never verified", () => {
+  const c = classifyCell({ ...VERIFIED_CELL, sourceUrl: "javascript:alert(document.domain)" }, {}, AS_OF);
+  assert.equal(c.status, "unverified");
+  assert.match(c.reason, /sourceUrl.*http/);
+  const https = classifyCell(VERIFIED_CELL, {}, AS_OF);
+  assert.equal(https.status, "verified");
+});
+
+test("unsafe sourceUrl is never surfaced as a link — inert text + warning, even with requireSourceUrl off", () => {
+  const m = buildMatrix(
+    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
+      policy: { requireSourceUrl: false },
+      cells: [{ ...VERIFIED_CELL, sourceUrl: "javascript:alert(1)" }] },
+    AS_OF,
+  );
+  const cell = m.grid[0][0];
+  assert.equal(cell.status, "verified"); // policy relaxed, but the URL itself is still never linked
+  assert.equal(cell.sourceUrl, null);
+  assert.ok((cell.warnings ?? []).some((w) => /sourceUrl.*not.*http/i.test(w) && /javascript:alert\(1\)/.test(w)));
+  const md = toMarkdown(m);
+  assert.ok(!md.includes("](javascript:"));
+  assert.match(md, /Fictional Stat\. § 1/); // citation still visible as inert text
+  assert.match(md, /javascript:alert\(1\)/); // ...and the rejected URL is shown as text with its warning
+});
+
+test("toMarkdown never emits a non-http(s) link, even for hand-built matrices", () => {
+  const m = buildMatrix(SURVEY, AS_OF);
+  m.grid[0][0].sourceUrl = "javascript:alert(document.domain)"; // hostile/buggy caller
+  const md = toMarkdown(m);
+  assert.ok(!/\]\(javascript:/i.test(md));
+  assert.match(md, /Fictional Civ\. Code § 1798\.82-like statute/);
+});
+
+test("toCsv neutralizes spreadsheet formula injection (= + - @ tab CR)", () => {
+  const hostile = {
+    topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
+    cells: [{
+      jurisdiction: "A", question: "q1",
+      answer: '=HYPERLINK("http://evil.example","click") — injected',
+      citation: "@SUM(1+1)*cmd|' /C calc'!A0",
+      sourceUrl: "https://fictional.example/x",
+      quotedText: "\tTAB-led quote\nsecond line",
+      verifiedDate: "2026-08-01", verifiedBy: "+CMD-injector\r",
+    }],
+  };
+  const csv = toCsv(buildMatrix(hostile, AS_OF));
+  for (const line of csv.trim().split("\n").slice(1)) {
+    // every exported cell that could start a formula (or already carries ' ) is apostrophe-prefixed and quoted
+    const fields = [];
+    let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (ch === "," && !inQ) { fields.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    fields.push(cur);
+    for (const f of fields) {
+      assert.ok(!/^[=+\-@\t\r]/.test(f), `cell not hardened: ${JSON.stringify(f)}`);
+    }
+  }
+  assert.match(csv, /"'=HYPERLINK/); // the guard is visible in the bytes
+  assert.match(csv, /"'@SUM/);
+});
+
+test("toCsv leaves ordinary cells untouched (no spurious quoting/prefixing)", () => {
+  const csv = toCsv(buildMatrix(SURVEY, AS_OF));
+  const ca = csv.trim().split("\n").find((l) => l.startsWith("US-CA,deadline"));
+  assert.ok(ca && !ca.includes("'"), ca);
+});
+
+test("buildMatrix never throws on wrong cell shapes — keyed-object cells warn, not crash", () => {
+  const m = buildMatrix(
+    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
+      cells: { "a|q1": { answer: "yes", citation: "c", sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01" } } },
+    AS_OF,
+  ); // A08 repro: keyed object instead of array used to throw TypeError (object is not iterable)
+  assert.equal(m.grid[0][0].status, "unverified");
+  assert.ok(m.warnings.some((w) => /cells must be an array/i.test(w)));
+  assert.equal(m.coverage.unverified, 1);
+});
+
+test("buildMatrix tolerates non-object cell entries (null, string) with orphan warnings", () => {
+  const m = buildMatrix(
+    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
+      cells: [null, "not a cell", { jurisdiction: "A", question: "q1", answer: "ok", citation: "c", sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01" }] },
+    AS_OF,
+  );
+  assert.equal(m.grid[0][0].status, "verified");
+  assert.equal(m.warnings.filter((w) => /cell entry is not an object/i.test(w)).length, 2);
 });

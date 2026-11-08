@@ -27,7 +27,7 @@ sourced, editable** market grid:
 ## Run
 
 ```bash
-node --test "core/*.test.js"     # 20 tests
+node --test "core/*.test.js"     # 25 tests
 node examples/run.js             # regenerates output.json + benchmark.md
 ```
 

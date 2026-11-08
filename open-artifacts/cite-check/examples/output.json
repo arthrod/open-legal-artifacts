@@ -24,8 +24,8 @@
         "segmentKind": "page",
         "segmentLabel": "12",
         "charStart": 198,
-        "charEnd": 295,
-        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+        "charEnd": 296,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document."
       },
       "bestCandidate": null,
       "pinpoint": {
@@ -248,8 +248,8 @@
         "segmentKind": "page",
         "segmentLabel": "12",
         "charStart": 198,
-        "charEnd": 295,
-        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
+        "charEnd": 296,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document."
       },
       "bestCandidate": null,
       "pinpoint": {
@@ -302,8 +302,8 @@
         "segmentKind": "section",
         "segmentLabel": "5.2",
         "charStart": 0,
-        "charEnd": 96,
-        "verbatim": "Customer may terminate this Agreement for convenience upon ninety (90) days prior written notice"
+        "charEnd": 97,
+        "verbatim": "Customer may terminate this Agreement for convenience upon ninety (90) days prior written notice."
       },
       "bestCandidate": null,
       "pinpoint": {
@@ -352,8 +352,8 @@
         "segmentKind": "section",
         "segmentLabel": "9.1",
         "charStart": 98,
-        "charEnd": 189,
-        "verbatim": "Neither party shall be liable for indirect or consequential damages, including lost profits"
+        "charEnd": 190,
+        "verbatim": "Neither party shall be liable for indirect or consequential damages, including lost profits."
       },
       "bestCandidate": null,
       "pinpoint": {
@@ -402,8 +402,8 @@
         "segmentKind": "paragraph",
         "segmentLabel": "8",
         "charStart": 107,
-        "charEnd": 202,
-        "verbatim": "The photographs show water staining on four of the eleven pallets delivered under this shipment"
+        "charEnd": 203,
+        "verbatim": "The photographs show water staining on four of the eleven pallets delivered under this shipment."
       },
       "bestCandidate": null,
       "pinpoint": {

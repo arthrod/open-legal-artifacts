@@ -4,7 +4,7 @@ Benchmark grid as of **2026-01**. 3 inside market · 7 outside market · 0 witho
 
 | Term | Value | Verdict | Benchmark | Source |
 |---|---|---|---|---|
-| liquidation_preference_multiple | 1.5 | **outside_market** (favors investor) | 1–1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
+| liquidation_preference_multiple | 1.5 | **outside_market** (favors investor) | 1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
 | participation | participating | **outside_market** (favors investor) | non_participating | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
 | anti_dilution | full_ratchet | **outside_market** (favors investor) | broad_based_weighted_average | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
 | seniority | senior_to_all_prior | **outside_market** (favors investor) | pari_passu | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |

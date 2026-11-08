@@ -106,15 +106,17 @@ its output is data the rubric can be re-run against.
 - **Transparent, versioned scoring rubric** — Anthropic's impact ranking is
   opaque; here every point of every score carries a factor name, a rule, and a
   reason string (`scoreItem().breakdown`), and rubric versions are diffable.
-- **Deterministic provenance + stage discipline** — the counterpart states
-  source tiers and ANPR/RFI caution as LLM prose; here they are code:
-  non-primary sources are band-capped with a trace-to-primary flag, and
-  ANPR/RFI items are capped below "high". Comment deadlines score, appear as
-  timeline milestones, and land in the digest's bottom line.
+- **Deterministic provenance + stage discipline** — source tiers and
+  ANPR/RFI caution are enforced by tested code, not prose: non-primary
+  sources are band-capped with a trace-to-primary flag, and ANPR/RFI items
+  are capped below "high". Comment deadlines score, appear as timeline
+  milestones, and land in the digest's bottom line.
 - **Coverage check (Step 0)** — profile jurisdictions/topics with zero feed
   items are surfaced with severity before any ranking happens.
-- **Diff view when a rule changes** — the closed artifact shows a snapshot;
-  this core diffs two snapshots (and two rubrics) field-by-field.
+- **Field-level diff when a rule changes** — this core diffs two feed
+  snapshots item by item across the 10 tracked fields, and diffs rubric
+  versions (weights, thresholds, taxonomy) too, so rescoring changes are
+  visible alongside rule changes.
 - **No hidden clock** — scans are reproducible against a supplied `asOf`.
 - **Dependency-free core** — runs in browser and Node, exports CSV + a
   Markdown digest, no platform lock-in.

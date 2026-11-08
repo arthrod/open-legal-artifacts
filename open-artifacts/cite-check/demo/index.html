@@ -4,142 +4,1278 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cite check — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'/%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'/%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
-  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
-  @media (min-width: 768px) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
-  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
-  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
-  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
-  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
-  section { margin-top: 48px; }
-  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
-  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
-  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
-  .counts div:last-child { border-right: none; }
-  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
-  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
-  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
-  tr.flag td { background: var(--flag-tint); border-bottom: 1.5px solid var(--text); }
-  .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
-  .pill.exact, .pill.normalized { background: transparent; color: var(--ok); border: var(--hairline); }
-  .pill.fuzzy { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
-  .pill.mismatch, .pill.not_found { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .ev { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
-  .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
-  .ev .q { font-family: var(--font-mono); font-size: 12px; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
-    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: var(--accent); color: var(--text); }
-  button.ghost { background: transparent; color: var(--text); }
-  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
-  .scroll { overflow-x: auto; }
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);margin:0}
+.wrap{max-width:var(--max-width);margin:0 auto;padding:48px var(--pad-x-mobile) 96px}
+@media(min-width:768px){.wrap{padding:72px var(--pad-x-desktop) 120px}}
+.kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
+h1{font-size:clamp(26px,4vw,38px);font-weight:700;line-height:1.05;letter-spacing:-.02em;margin:12px 0 0}
+.rule{width:var(--rule-yellow-w);height:var(--rule-yellow-h);background:var(--accent);margin:20px 0 24px}
+p.lede{max-width:64ch;color:var(--text-secondary);font-size:15px;line-height:1.65}
+section{margin-top:48px}
+h2{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px}
+h2::before{content:"";display:block;width:24px;height:1px;background:var(--border);margin-bottom:12px}
+.counts{display:flex;border:var(--hairline);background:#fff;margin-bottom:8px;flex-wrap:wrap}
+.counts div{padding:12px 20px;border-right:var(--hairline);flex:1;min-width:100px}
+.counts div:last-child{border-right:none}
+.counts b{font-family:var(--font-mono);font-size:20px;font-weight:500;display:block}
+.counts span{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:640px;border-collapse:collapse;background:#fff;border:var(--hairline);font-size:12.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:var(--hairline);vertical-align:top}
+th{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary)}
+.mono,td.mono{font-family:var(--font-mono);font-size:12px;white-space:nowrap}
+tr.flag td{background:var(--flag-tint)}
+tr.sel td{border-bottom:1.5px solid var(--text);background:var(--hover)}
+tr.attention td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.pill{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;padding:1px 6px;border:1px solid var(--text);white-space:nowrap}
+.pill.exact,.pill.normalized{color:var(--ok);border:var(--hairline)}
+.pill.fuzzy{color:var(--warn);border:1.5px solid var(--warn)}
+.pill.mismatch,.pill.not_found{background:var(--text);color:var(--bg);border-color:var(--text)}
+.pill.st-verified{color:var(--ok);border:var(--hairline)}
+.pill.st-flagged{color:var(--bad);border:1.5px solid var(--bad)}
+.pill.st-corrected{color:var(--warn);border:var(--hairline)}
+.legend{font-size:12px;color:var(--text-secondary);margin-top:8px;max-width:78ch}
+code{font-family:var(--font-mono);font-size:12px;background:var(--hover);padding:1px 4px}
+.bench-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.chips{border:none;padding:0;margin:0;display:flex;gap:6px;flex-wrap:wrap}
+.chips legend{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary);float:left;margin-right:8px;line-height:26px}
+.chips label{font-family:var(--font-mono);font-size:12px;border:var(--hairline);background:#fff;padding:4px 10px;cursor:pointer}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+.chips input:checked+span{background:var(--text);color:var(--bg);padding:4px 10px;margin:-4px -10px}
+.chips input:focus-visible+span{outline:2px solid var(--text)}
+.progress{font-family:var(--font-mono);font-size:12.5px}
+.bench{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:900px){.bench{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.pane{border:var(--hairline);background:#fff;padding:16px;min-width:0}
+.pane h3{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 4px}
+.pane .sub{font-size:12px;color:var(--text-secondary);margin:0 0 12px}
+.q{border:var(--hairline);padding:12px 14px;margin-bottom:12px}
+.q.sel{box-shadow:inset 3px 0 0 var(--accent);background:var(--hover)}
+.q header{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.q blockquote{margin:8px 0 0;padding:6px 12px;border-left:2px solid var(--border);font-size:12.5px;color:var(--text-secondary)}
+.q .prop{font-size:12px;color:var(--text-secondary);margin-top:6px}
+.anchor-btn{font-family:var(--font-mono);font-size:12px;background:none;border:none;border-bottom:1px dashed var(--text);padding:0 0 1px;cursor:pointer;color:var(--text)}
+.q .meta{font-size:12px;margin-top:6px;line-height:1.7}
+.decide{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.decide button{font-family:var(--font-mono);font-size:12px;padding:5px 10px;border:1px solid var(--text);background:transparent;color:var(--text);cursor:pointer;border-radius:0}
+.decide button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
+.decide button:hover{background:var(--accent);color:var(--text)}
+.note{display:flex;gap:6px;margin-top:8px;align-items:center}
+.note label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);white-space:nowrap}
+.note input{flex:1;min-width:80px;font-family:var(--font-body);font-size:12.5px;padding:4px 6px;border:var(--hairline);background:var(--bg);color:var(--text)}
+.src-tools{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.src-tools label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}
+select{font-family:var(--font-mono);font-size:12px;padding:4px;border:var(--hairline);background:var(--bg);color:var(--text);max-width:100%}
+.srcview{max-height:68vh;overflow:auto;border-top:var(--hairline);padding-top:8px}
+.seg{margin-bottom:14px}
+.seg h4{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary);font-weight:400;margin:0 0 4px}
+.seg p{font-size:13px;line-height:1.65;margin:0;white-space:pre-wrap}
+.seg mark{background:var(--accent);padding:0 1px}
+mark#hl{outline:2px solid var(--text)}
+button{font-family:var(--font-mono);font-size:13px;padding:10px 18px;border:1px solid var(--text);background:var(--text);color:var(--bg);cursor:pointer;border-radius:var(--radius)}
+button:hover{background:var(--accent);color:var(--text)}
+button.ghost{background:transparent;color:var(--text)}
+button.icon{font-size:12px;border:var(--hairline);background:#fff;color:var(--text);padding:4px 8px}
+button.icon:hover{background:var(--hover)}
+.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+textarea{width:100%;font-family:var(--font-mono);font-size:12px;line-height:1.6;padding:10px;border:var(--hairline);background:#fff;color:var(--text);min-height:120px}
+.hint{font-size:12px;color:var(--text-secondary);margin:6px 0 10px;max-width:80ch}
+.audit-list{font-family:var(--font-mono);font-size:12px;line-height:1.7;max-height:300px;overflow:auto;border:var(--hairline);background:#fff;padding:10px 12px}
+.audit-list div{border-bottom:1px solid var(--border);padding:2px 0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.toast{position:fixed;left:16px;bottom:16px;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:12.5px;padding:10px 14px;max-width:70ch;z-index:9}
+.disclaimer{margin-top:64px;padding-top:16px;border-top:var(--hairline);font-size:12px;color:var(--text-secondary)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="kicker">open-legal-artifacts · deterministic core</div>
-    <h1>Cite check</h1>
-    <div class="rule"></div>
-    <p class="lede">Every quotation in a legal document verified against its cited source — <b>no LLM in the
-      loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets,
-      and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open
-      reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 10 quotes —
-      including one paraphrase that drifts, one silently altered digit caught by the number guard, one
-      omission without an ellipsis, one correct quote cited to the wrong page, and one source not in the record.</p>
-  </header>
+<header>
+  <div class="kicker">open-legal-artifacts · deterministic core</div>
+  <h1>Cite check</h1>
+  <div class="rule"></div>
+  <p class="lede">Every quotation in a legal document verified against its cited source — <b>no LLM in the loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets, and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open reimplementation of Anthropic's closed artifact.</p>
+  <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 10 quotes — including one paraphrase that drifts, one silently altered digit caught by the number guard, one omission without an ellipsis, one correct quote cited to the wrong page, and one source not in the record.</p>
+</header>
 
-  <section>
-    <h2>Summary</h2>
-    <div class="counts" id="counts"></div>
-    <p class="lede" id="coverage" style="font-size:12px;margin:8px 0 0"></p>
-    <div class="scroll"><table id="results"></table></div>
-    <div class="row">
-      <button id="mdBtn">Export report.md</button>
-      <button id="jsonBtn" class="ghost">Export output.json</button>
+<section>
+  <h2>Summary</h2>
+  <div class="counts" id="counts"></div>
+  <p class="lede" id="coverage" style="font-size:12px;margin:8px 0 0"></p>
+  <div class="scroll"><table id="results"></table></div>
+  <p class="legend">Legend — <code>exact</code>: byte-identical in the cited source · <code>normalized</code>: matches modulo case/punctuation/whitespace · <code>fuzzy</code>: substantial token overlap, not verbatim · <code>not_found</code>: no located anchor · diff marks: <code>del</code> in source but dropped by the brief, <code>ins</code> added by the brief, <code>sub:"brief"→"source"</code>. Click any row to open it in the workbench below.</p>
+  <div class="row" role="group" aria-label="Export this report">
+    <button id="mdBtn">Export report.md</button>
+    <button id="csvBtn" class="ghost">Export findings.csv</button>
+    <button id="jsonBtn" class="ghost">Export output.json</button>
+  </div>
+</section>
+
+<section id="bench" aria-label="Review workbench">
+  <h2>Review workbench — brief vs. source</h2>
+  <div class="bench-tools">
+    <fieldset class="chips" id="filters">
+      <legend>Filter</legend>
+      <label><input type="radio" name="filter" value="all" checked><span>All</span></label>
+      <label><input type="radio" name="filter" value="attention"><span>Needs attention</span></label>
+      <label><input type="radio" name="filter" value="undecided"><span>Undecided</span></label>
+      <label><input type="radio" name="filter" value="flagged"><span>Flagged</span></label>
+    </fieldset>
+    <span class="progress" id="progress" aria-live="polite"></span>
+  </div>
+  <div class="bench">
+    <div class="pane" id="briefPane" aria-label="Brief quotations">
+      <h3>Brief — quotations under review</h3>
+      <p class="sub" id="briefSub"></p>
+      <div id="queue"></div>
     </div>
-  </section>
+    <div class="pane" id="sourcePane" aria-label="Cited source text">
+      <h3>Source — full text with anchors</h3>
+      <div class="src-tools">
+        <label for="srcSel">Source document</label>
+        <select id="srcSel"></select>
+        <button class="icon" id="copyQuote" aria-label="Copy the located quote verbatim">⧉ copy quote</button>
+      </div>
+      <div class="srcview" id="srcview" tabindex="0" aria-label="Source text; located quotes are highlighted"></div>
+    </div>
+  </div>
+</section>
 
-  <section>
-    <h2>Evidence — located quotes &amp; flags</h2>
-    <div id="evidence"></div>
-  </section>
+<section aria-label="Run your own document">
+  <h2>Run your own document</h2>
+  <p class="hint">Paste a document below. Mark each quotation as <code>“quoted text”[1]</code> and give its footnote as <code>[1] Source name, pinpoint</code> — the source is matched by name against the loaded sources (footnotes matching no source are reported, never guessed).</p>
+  <label class="kicker" for="docPaste" style="display:block;margin-bottom:6px">Document text (paste here)</label>
+  <textarea id="docPaste" placeholder="The record shows “Mr. Beltran signed the delivery receipt at 4:20 p.m.”[1]&#10;&#10;[1] Deposition of Sandra Okafor (Jan. 14, 2026), p. 12"></textarea>
+  <div class="row">
+    <button id="runGuided">Extract quotes &amp; check</button>
+    <button id="loadExample" class="ghost">Reload worked example</button>
+  </div>
+  <details style="margin-top:16px">
+    <summary style="font-family:var(--font-mono);font-size:12px;cursor:pointer">Advanced — full input JSON</summary>
+    <label class="kicker" for="jsonIn" style="display:block;margin:10px 0 6px">Input JSON (document, sources, quotes)</label>
+    <textarea id="jsonIn" style="min-height:180px" spellcheck="false"></textarea>
+    <div class="row"><button id="runJson">Run JSON check</button></div>
+  </details>
+</section>
 
-  <footer class="disclaimer">
-    Deterministic core — an optional LLM only judges proposition support for located quotes (schema in spec.md);
-    classification and anchoring are pure code. All example data fictional. Not legal advice.
-    <code>anthropic counterpart: Cite check (closed)</code>
-  </footer>
+<section aria-label="Audit log">
+  <h2>Audit log</h2>
+  <p class="hint">Append-only and persisted in this browser — decisions, sign-off, and every check you run survive a reload.</p>
+  <div id="auditOut"></div>
+  <div class="row">
+    <button id="auditBtn" class="ghost">Export audit.jsonl</button>
+    <button id="resetBtn" class="ghost">Reset demo state</button>
+  </div>
+</section>
+
+<footer class="disclaimer">
+  Deterministic core — an optional LLM only judges proposition support for located quotes (schema in spec.md); classification and anchoring are pure code. All example data fictional. Not legal advice.
+  <code>anthropic counterpart: Cite check (closed)</code>
+</footer>
 </div>
+<p class="sr-only" id="live" role="status" aria-live="polite"></p>
 
 <script type="module">
-  import { runCiteCheck, renderReport, formatDiffOps } from "../core/core.js";
-  import EXAMPLE from "./example.js";
+// core/core.js inlined VERBATIM (export keywords stripped) — the deploy bundler data-URI-encodes module imports (+33% base64), which alone blew the 80KB single-file cap. Keep in sync with ../core/core.js.
+/**
+ * cite-check core — deterministic quote verification against source documents.
+ * NO LLM: every classification is reproducible from the inputs alone.
+ *
+ * Plain-JavaScript port of core/citecheck.ts + pinpoint.ts + textutil.ts +
+ * diff.ts + extract.ts (the TypeScript sources stay authoritative for tests).
+ * Exports the same engine functions; browser + Node compatible, dependency-free.
+ * core/propositions.ts is TS-only (a harness around the engine, not part of it).
+ *
+ * Classification ladder (first match wins):
+ *   exact       — quote appears verbatim (whitespace-trimmed) in the source
+ *   normalized  — near-verbatim: same tokens modulo case/punctuation (score ≥ 0.95)
+ *   fuzzy       — best window similarity ≥ fuzzyThreshold (default 0.7) and coverage ≥ 0.6
+ *   not_found   — everything below the fuzzy threshold
+ *
+ * Guards (deterministic, never silent):
+ *   number guard   — an altered numeric token caps the class at fuzzy and is noted
+ *   insert guard   — tokens present in the quote but absent from the located span
+ *                    are noted and cap the class at fuzzy (a quote must not add words)
+ *   negation guard — an inserted or dropped negator ("not", "never", …) flips
+ *                    meaning: divergence is noted and caps the class at fuzzy
+ *   omission check — tokens dropped from the located span are noted; an explicit
+ *                    ellipsis in the quote marks the omission as accepted
+ *
+ * Every located quote carries a verbatim anchor (source id, segment, char
+ * offsets), a machine-checkable token diff (LCS ops), and pinpoint validation.
+ * @module core
+ */
 
-  const report = runCiteCheck(EXAMPLE);
-  const s = report.summary;
-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* ============================================================
+ * textutil (port of core/textutil.ts)
+ * ============================================================ */
 
-  document.getElementById("counts").innerHTML =
-    `<div><b>${s.total}</b><span>quotes checked</span></div>` +
-    `<div><b>${s.checked} of ${s.total}</b><span>located</span></div>` +
-    `<div><b>${s.exact}</b><span>exact</span></div>` +
-    `<div><b>${s.normalized}</b><span>normalized</span></div>` +
-    `<div><b>${s.fuzzy}</b><span>fuzzy</span></div>` +
-    `<div><b>${s.not_found}</b><span>not found</span></div>` +
-    `<div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+/** Token with char span in the ORIGINAL string.
+ * @typedef {{ norm: string, start: number, end: number }} Tok */
 
-  document.getElementById("coverage").textContent =
-    `Checked ${s.checked} of ${s.total} quotes — ${s.couldNotCheck} could not be checked and are never reported as "confirmed"; ${s.unparseablePinpoints} unparseable pinpoint(s).`;
-
-  let firstFlagDone = false;
-  document.getElementById("results").innerHTML =
-    `<tr><th>Quote</th><th>Verdict</th><th>Similarity</th><th>Anchor</th><th>Pinpoint</th></tr>` +
-    report.results
-      .map((r) => {
-        const anchor = r.anchor
-          ? `${esc(r.anchor.sourceName)}${r.anchor.segmentLabel !== null ? `, ${esc(r.anchor.segmentKind)} ${esc(r.anchor.segmentLabel)}` : ""} <code>${r.anchor.charStart}–${r.anchor.charEnd}</code>`
-          : r.bestCandidate
-            ? `closest: ${esc(r.bestCandidate.sourceName)} <code>${r.bestCandidate.charStart}–${r.bestCandidate.charEnd}</code>`
-            : "—";
-        const pin = r.pinpoint ? `<span class="pill ${r.pinpoint.status === "mismatch" ? "mismatch" : r.pinpoint.status === "ok" ? "exact" : ""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}` : "—";
-        const adverse = r.classification === "not_found" || r.pinpoint?.status === "mismatch";
-        const cls = adverse && !firstFlagDone ? (firstFlagDone = true, "flag") : "";
-        return `<tr class="${cls}"><td class="mono"><code>${esc(r.id)}</code></td>` +
-          `<td><span class="pill ${r.classification}">${r.classification}</span></td>` +
-          `<td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td></tr>`;
-      })
-      .join("");
-
-  document.getElementById("evidence").innerHTML = report.results
-    .map((r) => {
-      const a = r.anchor ?? r.bestCandidate;
-      return `<div class="ev"><b><code>${esc(r.id)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
-        ` ${a ? `— anchored at <b>${esc(a.sourceName)}</b>${a.segmentLabel !== null ? ` (${esc(a.segmentKind)} ${esc(a.segmentLabel)})` : ""} chars ${a.charStart}–${a.charEnd}` : "— no locating anchor in the provided sources"}` +
-        (a ? `<blockquote>${esc(a.verbatim.replace(/\n/g, " "))}</blockquote>` : "") +
-        (r.pinpoint ? `<div style="margin-top:6px">Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}</div>` : "") +
-        (r.diff && formatDiffOps(r.diff) ? `<div style="margin-top:4px">Token diff: <code>${esc(formatDiffOps(r.diff))}</code></div>` : "") +
-        r.notes.map((n) => `<div style="margin-top:4px;color:var(--text-secondary)">· ${esc(n)}</div>`).join("") +
-        `</div>`;
-    })
-    .join("");
-
-  function download(name, content, type) {
-    const blob = new Blob([content], { type });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+/**
+ * Split on runs of non [A-Za-z0-9.] characters; trim leading/trailing dots
+ * from each token so "p." -> "p" while "5.2" stays "5.2".
+ * @param {string} text @returns {Tok[]} */
+function tokenizeWithSpans(text) {
+  const toks = [];
+  const re = /[^A-Za-z0-9.]+/g;
+  let last = 0;
+  let m;
+  const push = (start, end) => {
+    let ls = start;
+    let le = end;
+    while (ls < le && text[ls] === ".") ls++;
+    while (le > ls && text[le - 1] === ".") le--;
+    if (le > ls) toks.push({ norm: text.slice(ls, le).toLowerCase(), start: ls, end: le });
+  };
+  while ((m = re.exec(text)) !== null) {
+    push(last, m.index);
+    last = m.index + m[0].length;
   }
-  document.getElementById("mdBtn").onclick = () => download("cite-check-report.md", renderReport(report), "text/markdown");
-  document.getElementById("jsonBtn").onclick = () => download("cite-check-output.json", JSON.stringify(report, null, 2) + "\n", "application/json");
+  push(last, text.length);
+  return toks;
+}
+
+/** @param {string} text @returns {string[]} */
+function tokens(text) {
+  return tokenizeWithSpans(text).map((t) => t.norm);
+}
+
+function multiset(xs) {
+  const m = new Map();
+  for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+  return m;
+}
+
+/**
+ * Slide windows of ~quote length (± padding) over the source and return the
+ * best-scoring window. Purely deterministic; O(sourceTokens * windowSizes).
+ * @param {string} source @param {string} quote @param {number} [pad]
+ * @returns {{ score: number, coverage: number, start: number, end: number, verbatim: string } | null}
+ */
+function bestWindow(source, quote, pad = 6) {
+  const S = tokenizeWithSpans(source);
+  const q = tokens(quote);
+  if (S.length === 0 || q.length === 0) return null;
+  const qSet = multiset(q);
+  let best = null;
+  for (let size = Math.max(1, q.length - 2); size <= q.length + pad; size++) {
+    for (let st = 0; st + size <= S.length; st++) {
+      let inter = 0;
+      const wSet = multiset(S.slice(st, st + size).map((t) => t.norm));
+      for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
+      const union = q.length + size - inter;
+      const score = union === 0 ? 1 : inter / union;
+      const coverage = inter / q.length;
+      if (best === null || score > best.score || (score === best.score && coverage > best.coverage)) {
+        best = {
+          score,
+          coverage,
+          start: S[st].start,
+          end: S[st + size - 1].end,
+          verbatim: source.slice(S[st].start, S[st + size - 1].end),
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/** Whitespace-tolerant verbatim containment check on the raw strings.
+ * @param {string} source @param {string} quote @returns {boolean} */
+function rawContains(source, quote) {
+  const q = quote.trim();
+  return q.length > 0 && source.includes(q);
+}
+
+/** Jaccard similarity between token multisets of two texts.
+ * @param {string} a @param {string} b @returns {number} */
+function similarity(a, b) {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (ta.length === 0 && tb.length === 0) return 1;
+  if (ta.length === 0 || tb.length === 0) return 0;
+  const ma = multiset(ta);
+  const mb = multiset(tb);
+  let inter = 0;
+  for (const [t, c] of ma) inter += Math.min(c, mb.get(t) ?? 0);
+  return inter / (ta.length + tb.length - inter);
+}
+
+/** Numeric token: digits with an optional interior decimal point ("90", "5.2").
+ * @param {string} t @returns {boolean} */
+function isNumericToken(t) {
+  return /^\d+(?:\.\d+)?$/.test(t);
+}
+
+/**
+ * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
+ * the located source span. Any difference is potential material alteration
+ * ("90" -> "120") and must never pass as near-verbatim.
+ * @param {string[]} quote @param {string[]} source
+ * @returns {{ paired: Array<{ quote: string, source: string }>, quoteOnly: string[], sourceOnly: string[] }} */
+function numericMismatches(quote, source) {
+  const qNums = quote.filter(isNumericToken);
+  const sNums = source.filter(isNumericToken);
+  const qCounts = multiset(qNums);
+  const sCounts = multiset(sNums);
+  const qDiff = [];
+  const sDiff = [];
+  for (const [t, c] of qCounts) {
+    const extra = c - (sCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) qDiff.push(t);
+  }
+  for (const [t, c] of sCounts) {
+    const extra = c - (qCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) sDiff.push(t);
+  }
+  const pairedCount = Math.min(qDiff.length, sDiff.length);
+  const paired = [];
+  for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
+  return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
+}
+
+/** Negation tokens: inserting or dropping one flips a quote's meaning.
+ * @type {Set<string>} */
+const NEGATORS = new Set(["not", "no", "never", "none", "neither", "nor", "nobody", "nothing", "nowhere", "cannot"]);
+
+/**
+ * Deterministic negation guard: multiset-diff the negation tokens of quote
+ * vs. the located source span (mirrors numericMismatches). Inserting "not"
+ * into a quote — or silently dropping it — flips meaning, so any divergence
+ * must never pass as near-verbatim.
+ * @param {string[]} quote @param {string[]} source
+ * @returns {{ quoteOnly: string[], sourceOnly: string[] }} */
+function negationDivergence(quote, source) {
+  const qNeg = multiset(quote.filter((t) => NEGATORS.has(t)));
+  const sNeg = multiset(source.filter((t) => NEGATORS.has(t)));
+  const quoteOnly = [];
+  const sourceOnly = [];
+  for (const [t, c] of qNeg) {
+    for (let k = 0; k < c - (sNeg.get(t) ?? 0); k++) quoteOnly.push(t);
+  }
+  for (const [t, c] of sNeg) {
+    for (let k = 0; k < c - (qNeg.get(t) ?? 0); k++) sourceOnly.push(t);
+  }
+  return { quoteOnly, sourceOnly };
+}
+
+/* ============================================================
+ * diff (port of core/diff.ts)
+ * ============================================================ */
+
+/**
+ * Token-level LCS walk (deterministic tie-break: skip quote first).
+ * @param {Tok[]} quote @param {Tok[]} source
+ * @returns {Array<{ type: "equal", q: number, s: number } | { type: "del", s: number } | { type: "ins", q: number }>} */
+function lcsWalk(quote, source) {
+  const n = quote.length;
+  const m = source.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = quote[i].norm === source[j].norm ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const steps = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (quote[i].norm === source[j].norm) {
+      steps.push({ type: "equal", q: i, s: j });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      // skipping quote[i] preserves the LCS (quote-only token → insert)
+      steps.push({ type: "ins", q: i });
+      i++;
+    } else {
+      // skipping source[j] preserves the LCS (source-only token → delete)
+      steps.push({ type: "del", s: j });
+      j++;
+    }
+  }
+  while (j < m) steps.push({ type: "del", s: j++ });
+  while (i < n) steps.push({ type: "ins", q: i++ });
+  return steps;
+}
+
+/** LCS alignment pairs (quote index ↔ source index), in order.
+ * @param {Tok[]} quote @param {Tok[]} source
+ * @returns {Array<{ q: number, s: number }>} */
+function alignTokens(quote, source) {
+  return lcsWalk(quote, source)
+    .filter((st) => st.type === "equal")
+    .map((st) => ({ q: st.q, s: st.s }));
+}
+
+/** Grouped diff ops; consecutive del+ins runs merge into a single replace.
+ * @param {Tok[]} quote @param {Tok[]} source */
+function diffTokens(quote, source) {
+  const steps = lcsWalk(quote, source);
+  const ops = [];
+  let equalRun = [];
+  let delRun = [];
+  let insRun = [];
+
+  const flushEqual = () => {
+    if (equalRun.length > 0) {
+      ops.push({ op: "equal", source: equalRun });
+      equalRun = [];
+    }
+  };
+  const flushChange = () => {
+    if (delRun.length === 0 && insRun.length === 0) return;
+    flushEqual();
+    if (delRun.length > 0 && insRun.length > 0) {
+      ops.push({
+        op: "replace",
+        quote: insRun.map((t) => t.norm),
+        source: delRun.map((t) => t.norm),
+        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
+      });
+    } else if (delRun.length > 0) {
+      ops.push({
+        op: "delete",
+        source: delRun.map((t) => t.norm),
+        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
+      });
+    } else {
+      ops.push({ op: "insert", quote: insRun.map((t) => t.norm) });
+    }
+    delRun = [];
+    insRun = [];
+  };
+
+  for (const st of steps) {
+    if (st.type === "equal") {
+      flushChange();
+      equalRun.push(source[st.s].norm);
+    } else if (st.type === "del") {
+      delRun.push(source[st.s]);
+    } else {
+      insRun.push(quote[st.q]);
+    }
+  }
+  flushChange();
+  flushEqual();
+  return ops;
+}
+
+/** Inline marks for non-equal ops, e.g. `del:"on the document" sub:"120"->"90"`.
+ * @param {any[]} ops @returns {string} */
+function formatDiffOps(ops) {
+  return ops
+    .filter((o) => o.op !== "equal")
+    .map((o) => {
+      switch (o.op) {
+        case "delete":
+          return `del:"${o.source.join(" ")}"`;
+        case "insert":
+          return `ins:"${o.quote.join(" ")}"`;
+        case "replace":
+          return `sub:"${o.quote.join(" ")}"->"${o.source.join(" ")}"`;
+      }
+    })
+    .join(" ");
+}
+
+/* ============================================================
+ * pinpoint (port of core/pinpoint.ts)
+ * ============================================================ */
+
+const NUM = "[0-9]+(?:\\.[0-9]+)*";
+const SEC_RANGE = new RegExp(`^(?:§§|secs\\.|sections?)\\s*(${NUM})\\s*[-–—]\\s*(${NUM})$`, "i");
+const SEC_SINGLE = new RegExp(`^(?:§+|secs?\\.|sections?)\\s*(${NUM})$`, "i");
+const ART = new RegExp(`^art(?:icle)?\\.?\\s*(${NUM})$`, "i");
+const CL = new RegExp(`^cl(?:ause)?\\.?\\s*(${NUM})$`, "i");
+
+/**
+ * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123",
+ * plus v2 forms: transcript page:line ("Tr. 12:4", "12:4-12:8"), ranges
+ * ("§§ 5-6", "¶¶ 7-8"), "id. at 123", "n. 12", "art. 3", "cl. 8".
+ * Deterministic, dependency-free. Unparseable strings return null (never guessed).
+ * @param {string} raw
+ * @returns {any} Pinpoint | null
+ */
+function parsePinpoint(raw) {
+  const s = raw.trim();
+  let m;
+  if ((m = s.match(/^id\.\s+at\s+(\d+)$/i))) return { kind: "page", from: Number(m[1]) };
+  if ((m = s.match(/^id\.\s+at\s+(\d+):(\d+)$/i))) return { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
+  if ((m = s.match(/^(?:tr\.|transcript)?\s*(\d+):(\d+)(?:\s*[-–—]\s*(?:(\d+):)?(\d+))?$/i))) {
+    const pl = { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
+    if (m[4] !== undefined) {
+      pl.lineTo = Number(m[4]);
+      if (m[3] !== undefined) pl.pageTo = Number(m[3]);
+    }
+    return pl;
+  }
+  if ((m = s.match(/^pp?\.\s*(\d+)(?:\s*[-–—to]+\s*(\d+))?$/i))) {
+    const page = { kind: "page", from: Number(m[1]) };
+    if (m[2] !== undefined) page.to = Number(m[2]);
+    return page;
+  }
+  if ((m = s.match(/^at\s+(\d+)$/i))) {
+    return { kind: "page", from: Number(m[1]) };
+  }
+  if ((m = s.match(SEC_RANGE))) {
+    return { kind: "section", label: m[1], to: m[2] };
+  }
+  if ((m = s.match(SEC_SINGLE))) {
+    return { kind: "section", label: m[1] };
+  }
+  if ((m = s.match(/^(?:¶¶|paras\.|paragraphs?)\s*(\d+)\s*[-–—]\s*(\d+)$/i))) {
+    return { kind: "paragraph", number: Number(m[1]), to: Number(m[2]) };
+  }
+  if ((m = s.match(/^(?:¶+|paras?\.|paragraphs?)\s*(\d+)$/i))) {
+    return { kind: "paragraph", number: Number(m[1]) };
+  }
+  if ((m = s.match(/^(?:n\.|note)\s*(\d+)$/i))) return { kind: "footnote", number: Number(m[1]) };
+  if ((m = s.match(ART))) return { kind: "article", label: m[1] };
+  if ((m = s.match(CL))) return { kind: "clause", label: m[1] };
+  return null;
+}
+
+/** @param {any} p @returns {string} */
+function formatPinpoint(p) {
+  switch (p.kind) {
+    case "page":
+      return p.to !== undefined ? `pp. ${p.from}-${p.to}` : `p. ${p.from}`;
+    case "page-line":
+      if (p.pageTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.pageTo}:${p.lineTo}`;
+      if (p.lineTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.lineTo}`;
+      return `Tr. ${p.page}:${p.lineFrom}`;
+    case "section":
+      return p.to !== undefined ? `§§ ${p.label}-${p.to}` : `§ ${p.label}`;
+    case "paragraph":
+      return p.to !== undefined ? `¶¶ ${p.number}-${p.to}` : `¶ ${p.number}`;
+    case "footnote":
+      return `n. ${p.number}`;
+    case "article":
+      return `art. ${p.label}`;
+    case "clause":
+      return `cl. ${p.label}`;
+  }
+}
+
+/* ============================================================
+ * extract (port of core/extract.ts)
+ * ============================================================ */
+
+const FOOTNOTE_RE = /^\[(\d+)\]\s+(.+)$/;
+
+/**
+ * Deterministic extractor: pull quoted passages + footnote pinpoints from the
+ * reviewed document's text and resolve each footnote to a source by name/alias.
+ * Unresolvable footnotes and unmarked quotations become warnings, never
+ * fabricated entries.
+ * @param {string} documentText @param {any[]} sources
+ * @returns {{ quotes: any[], warnings: string[] }} */
+function extractQuotes(documentText, sources) {
+  const warnings = [];
+  const footnotes = new Map();
+  const bodyLines = [];
+  for (const line of documentText.split("\n")) {
+    const m = line.match(FOOTNOTE_RE);
+    if (m) footnotes.set(Number(m[1]), m[2].trim());
+    else bodyLines.push(line);
+  }
+  const bodyText = bodyLines.join("\n");
+
+  const resolved = new Map();
+  for (const [n, noteText] of footnotes) {
+    const lower = noteText.toLowerCase();
+    let best = null;
+    for (const src of sources) {
+      for (const name of [src.name, ...(src.aliases ?? [])]) {
+        const idx = lower.indexOf(name.toLowerCase());
+        if (idx >= 0 && (best === null || name.length > best.len)) {
+          best = { id: src.id, len: name.length, end: idx + name.length };
+        }
+      }
+    }
+    if (!best) {
+      warnings.push(`footnote ${n}: no matching source for "${noteText}"`);
+      continue;
+    }
+    let rest = noteText.slice(best.end).trim();
+    if (rest.startsWith(",")) rest = rest.slice(1).trim();
+    if (rest.endsWith(".")) rest = rest.slice(0, -1);
+    if (rest.length > 0) resolved.set(n, { sourceId: best.id, pinpoint: rest });
+    else resolved.set(n, { sourceId: best.id });
+  }
+
+  const quotes = [];
+  const QUOTE_RE = /["“]([^"”“\n]+)["”]\s*\[(\d+)\]/g;
+  let qm;
+  while ((qm = QUOTE_RE.exec(bodyText)) !== null) {
+    const text = qm[1].trim();
+    const n = Number(qm[2]);
+    const r = resolved.get(n);
+    if (!r) {
+      warnings.push(`footnote ${n}: quoted passage has no resolvable footnote`);
+      continue;
+    }
+    const entry = { id: `Q${n}`, text, sourceId: r.sourceId };
+    if (r.pinpoint !== undefined) entry.pinpoint = r.pinpoint;
+    quotes.push(entry);
+  }
+
+  const UNMARKED_RE = /["“]([^"”“\n]{15,})["”](?!\s*\[\d+\])/g;
+  let um;
+  while ((um = UNMARKED_RE.exec(bodyText)) !== null) {
+    const t = um[1].trim();
+    warnings.push(`unmarked quotation: "${t.length > 40 ? t.slice(0, 40) + "…" : t}"`);
+  }
+
+  return { quotes, warnings };
+}
+
+/* ============================================================
+ * citecheck (port of core/citecheck.ts)
+ * ============================================================ */
+
+function buildDoc(doc) {
+  const segments = [];
+  let full = "";
+  const append = (text) => {
+    if (full.length > 0) full += "\n";
+    const start = full.length;
+    full += text;
+    return start;
+  };
+  if (doc.text !== undefined) append(doc.text);
+  const pageList = (doc.pages ?? []).map((p) => ({ kind: "page", label: String(p.number), text: p.text }));
+  const secList = (doc.sections ?? []).map((p) => ({ kind: "section", label: p.label, text: p.text }));
+  const paraList = (doc.paragraphs ?? []).map((p) => ({ kind: "paragraph", label: String(p.number), text: p.text }));
+  for (const seg of [...pageList, ...secList, ...paraList]) {
+    const start = append(seg.text);
+    segments.push({ kind: seg.kind, label: seg.label, start, end: full.length });
+  }
+  return { doc, fullText: full, toks: tokenizeWithSpans(full), segments };
+}
+
+function segmentAt(built, char) {
+  for (const seg of built.segments) {
+    if (char >= seg.start && char < seg.end) return seg;
+  }
+  return null;
+}
+
+function anchorFromWindow(built, useWin) {
+  if (!useWin) return null;
+  const seg = segmentAt(built, useWin.start);
+  return {
+    sourceId: built.doc.id,
+    sourceName: built.doc.name,
+    segmentKind: seg?.kind ?? null,
+    segmentLabel: seg?.label ?? null,
+    charStart: useWin.start,
+    charEnd: useWin.end,
+    verbatim: useWin.verbatim,
+  };
+}
+
+/**
+ * Near-verbatim anchor: LCS-align the quote against the segment containing the
+ * best window, then extend the span to the end of that sentence, so dropped
+ * tail tokens stay inside the anchor and surface in the diff.
+ */
+function alignedAnchor(built, quoteToks, win) {
+  if (!win) return { anchor: null, diff: null };
+  const seg = segmentAt(built, win.start);
+  const regionEnd = seg ? seg.end : built.fullText.length;
+  // region starts at the best window (never before it) so early duplicate
+  // tokens from a preceding sentence cannot capture the alignment
+  const wsIdx = built.toks.findIndex((t) => t.start >= win.start);
+  const regionToks = wsIdx < 0 ? [] : built.toks.filter((t, idx) => idx >= wsIdx && t.end <= regionEnd);
+  const pairs = alignTokens(quoteToks, regionToks);
+  if (pairs.length === 0) {
+    const fallback = anchorFromWindow(built, win);
+    return { anchor: fallback, diff: fallback ? diffTokens(quoteToks, tokenizeWithSpans(fallback.verbatim)) : null };
+  }
+  const first = regionToks[pairs[0].s];
+  const lastIdx = pairs[pairs.length - 1].s;
+  let endIdx = lastIdx;
+  for (let j = lastIdx + 1; j < regionToks.length && j <= lastIdx + 30; j++) {
+    const gap = built.fullText.slice(regionToks[j - 1].end, regionToks[j].start);
+    if (/[.!?\n]/.test(gap)) break; // sentence (or line) already ended
+    endIdx = j;
+  }
+  const endTok = regionToks[endIdx];
+  const anchorSeg = segmentAt(built, first.start);
+  const anchor = {
+    sourceId: built.doc.id,
+    sourceName: built.doc.name,
+    segmentKind: anchorSeg?.kind ?? null,
+    segmentLabel: anchorSeg?.label ?? null,
+    charStart: first.start,
+    charEnd: endTok.end,
+    verbatim: built.fullText.slice(first.start, endTok.end),
+  };
+  return { anchor, diff: diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim)) };
+}
+
+function segmentKindOf(p) {
+  if (p.kind === "page" || p.kind === "page-line") return "page";
+  if (p.kind === "section") return "section";
+  if (p.kind === "paragraph") return "paragraph";
+  return null; // footnote / article / clause — not modeled
+}
+
+function checkPinpoint(quote, anchor, built) {
+  if (quote.pinpoint === undefined) return null;
+  const parsed = parsePinpoint(quote.pinpoint);
+  if (parsed === null) {
+    return { raw: quote.pinpoint, parsed: null, status: "unparseable", detail: "pinpoint syntax not recognized" };
+  }
+  const kindWord = segmentKindOf(parsed);
+  if (kindWord === null) {
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `core does not model ${parsed.kind} segments, so the pinpoint cannot be validated`,
+    };
+  }
+  if (anchor === null || anchor.segmentKind === null) {
+    if (built === null) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "source not provided, so the pinpoint cannot be validated" };
+    }
+    if (!built.segments.some((s) => s.kind === kindWord)) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: `source does not declare ${kindWord} segments, so the pinpoint cannot be validated`,
+      };
+    }
+    if (anchor === null) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
+    }
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `the quote is not located in a segmented part of the source, so the ${kindWord} pinpoint cannot be validated`,
+    };
+  }
+  if (parsed.kind !== anchor.segmentKind && parsed.kind !== "page-line") {
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `the quote is located in a ${anchor.segmentKind} segment, so the ${kindWord} pinpoint cannot be validated`,
+    };
+  }
+  if (parsed.kind === "page-line") {
+    if (anchor.segmentKind !== "page" || built === null) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: "the quote is not located in a page segment, so the page:line pinpoint cannot be validated",
+      };
+    }
+    const anchorPage = Number(anchor.segmentLabel);
+    const pageFrom = parsed.page;
+    const pageTo = parsed.pageTo ?? parsed.page;
+    if (anchorPage < pageFrom || anchorPage > pageTo) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "mismatch",
+        detail: `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage}`,
+      };
+    }
+    const seg = segmentAt(built, anchor.charStart);
+    if (!seg) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
+    }
+    const pageText = built.fullText.slice(seg.start, seg.end);
+    const lineTo = parsed.lineTo ?? parsed.lineFrom;
+    if (!pageText.includes("\n")) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: `page ${anchorPage} is not line-segmented, so line ${parsed.lineFrom} cannot be validated`,
+      };
+    }
+    const line = pageText.slice(0, anchor.charStart - seg.start).split("\n").length;
+    const ok = line >= parsed.lineFrom && line <= lineTo;
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located on page ${anchorPage} line ${line}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage} line ${line}`,
+    };
+  }
+  if (parsed.kind === "page" && anchor.segmentKind === "page") {
+    const citedFrom = parsed.from;
+    const citedTo = parsed.to ?? parsed.from;
+    const anchorPage = Number(anchor.segmentLabel);
+    const ok = anchorPage >= citedFrom && anchorPage <= citedTo;
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located on ${anchor.segmentLabel}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on ${anchor.segmentLabel}`,
+    };
+  }
+  if (parsed.kind === "section" && anchor.segmentKind === "section") {
+    let ok;
+    if (parsed.to === undefined) {
+      ok = anchor.segmentLabel === parsed.label;
+    } else {
+      const fromNum = Number(parsed.label);
+      const toNum = Number(parsed.to);
+      const aNum = Number(anchor.segmentLabel);
+      ok = !Number.isNaN(fromNum) && !Number.isNaN(toNum) && !Number.isNaN(aNum) && aNum >= fromNum && aNum <= toNum;
+    }
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located in § ${anchor.segmentLabel}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in § ${anchor.segmentLabel}`,
+    };
+  }
+  // paragraph
+  const anchorNum = Number(anchor.segmentLabel);
+  const ok = parsed.to !== undefined ? anchorNum >= parsed.number && anchorNum <= parsed.to : anchorNum === parsed.number;
+  return {
+    raw: quote.pinpoint,
+    parsed,
+    status: ok ? "ok" : "mismatch",
+    detail: ok
+      ? `quote is located in ¶ ${anchor.segmentLabel}`
+      : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in ¶ ${anchor.segmentLabel}`,
+  };
+}
+
+/**
+ * Run the deterministic cite check over the input's quotes (or over quotes
+ * extracted from document.text when none are supplied).
+ * @param {{ document: { name: string, text?: string }, sources: any[], quotes?: any[], fuzzyThreshold?: number }} input
+ * @returns {any} CiteCheckReport
+ */
+function runCiteCheck(input) {
+  const fuzzyThreshold = input.fuzzyThreshold ?? 0.7;
+  const byId = new Map();
+  for (const doc of input.sources) byId.set(doc.id, buildDoc(doc));
+
+  let quoteList;
+  let extractionWarnings;
+  if (input.quotes !== undefined) {
+    quoteList = input.quotes;
+  } else if (input.document.text !== undefined) {
+    const extracted = extractQuotes(input.document.text, input.sources);
+    quoteList = extracted.quotes;
+    extractionWarnings = extracted.warnings;
+  } else {
+    quoteList = [];
+  }
+
+  const results = quoteList.map((quote) => {
+    const notes = [];
+    const built = byId.get(quote.sourceId);
+    const base = {
+      id: quote.id,
+      ...(quote.proposition !== undefined ? { proposition: quote.proposition } : {}),
+    };
+    if (!built) {
+      return {
+        ...base,
+        classification: "not_found",
+        similarity: 0,
+        coverage: 0,
+        anchor: null,
+        pinpoint: checkPinpoint(quote, null, null),
+        bestCandidate: null,
+        diff: null,
+        notes: [`source "${quote.sourceId}" not provided`],
+      };
+    }
+
+    const quoteToks = tokenizeWithSpans(quote.text);
+    const win = bestWindow(built.fullText, quote.text);
+    const similarity = win?.score ?? 0;
+    const coverage = win?.coverage ?? 0;
+
+    let classification;
+    let anchor = null;
+    let diff = null;
+
+    if (rawContains(built.fullText, quote.text)) {
+      classification = "exact";
+      // the window search can tie on a case/punctuation-drifted look-alike;
+      // re-verify byte equality and fall back to the literal indexOf position
+      const exactWin = win !== null && win.verbatim === quote.text.trim() ? win : locateRaw(built.fullText, quote.text);
+      anchor = anchorFromWindow(built, exactWin);
+      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+    } else if (similarity >= 0.95 && coverage >= 0.95) {
+      classification = "normalized";
+      notes.push("matches modulo case/punctuation/whitespace");
+      const aligned = alignedAnchor(built, quoteToks, win);
+      anchor = aligned.anchor;
+      diff = aligned.diff;
+      // omission detection: pure deletions from the located span
+      const hasEllipsis = /\.\.\.|…/.test(quote.text);
+      if (anchor && diff) {
+        for (const op of diff) {
+          if (op.op !== "delete") continue;
+          // diff spans are relative to anchor.verbatim (the diffed string)
+          const omitted = anchor.verbatim.slice(op.sourceSpan.start, op.sourceSpan.end);
+          notes.push(hasEllipsis ? `omits "${omitted}" — explicit ellipsis, accepted` : `omits "${omitted}" without an ellipsis`);
+        }
+        // number guard: altered digits never pass as near-verbatim
+        const mism = numericMismatches(
+          quoteToks.map((t) => t.norm),
+          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
+        );
+        for (const p of mism.paired) notes.push(`quote "${p.quote}" vs source "${p.source}"`);
+        for (const q of mism.quoteOnly) notes.push(`quote "${q}" not found in the located source text`);
+        for (const s of mism.sourceOnly) notes.push(`source "${s}" appears in the located text but not in the quote`);
+        if (mism.paired.length + mism.quoteOnly.length > 0) {
+          classification = "fuzzy";
+          notes.push("number alteration caps the classification at fuzzy — requires human review");
+        }
+        // insert guard: tokens present in the quote but absent from the located span
+        let insertCapped = false;
+        for (const op of diff) {
+          if (op.op !== "insert") continue;
+          notes.push(`inserts "${op.quote.join(" ")}" — absent from the located source text`);
+          insertCapped = true;
+        }
+        if (insertCapped) {
+          classification = "fuzzy";
+          notes.push("inserted tokens cap the classification at fuzzy — requires human review");
+        }
+        // negation guard: an inserted or dropped negator flips meaning
+        const neg = negationDivergence(
+          quoteToks.map((t) => t.norm),
+          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
+        );
+        for (const q of neg.quoteOnly) notes.push(`negation "${q}" in the quote has no counterpart in the located source text — meaning may be flipped`);
+        for (const s of neg.sourceOnly) notes.push(`negation "${s}" in the located source text has no counterpart in the quote — meaning may be flipped`);
+        if (neg.quoteOnly.length + neg.sourceOnly.length > 0) {
+          classification = "fuzzy";
+          notes.push("negation divergence caps the classification at fuzzy — requires human review");
+        }
+      }
+    } else if (similarity >= fuzzyThreshold && coverage >= 0.6) {
+      classification = "fuzzy";
+      notes.push("substantial overlap but not verbatim — requires human review");
+      anchor = anchorFromWindow(built, win);
+      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+    } else {
+      classification = "not_found";
+      anchor = anchorFromWindow(built, win); // kept as bestCandidate evidence below
+      if (win) notes.push(`best candidate similarity ${similarity.toFixed(2)} below threshold ${fuzzyThreshold}`);
+    }
+
+    const bestCandidate = classification === "not_found" ? anchor : null;
+    if (classification === "not_found") anchor = null;
+
+    const pinpoint = checkPinpoint(quote, anchor, built);
+    if (pinpoint?.status === "mismatch") notes.push(`PINPOINT ISSUE: ${pinpoint.detail}`);
+    if (quote.proposition !== undefined && classification !== "not_found") {
+      notes.push("proposition support is an LLM/human judgment — not evaluated by this core");
+    }
+
+    return { ...base, classification, similarity, coverage, anchor, bestCandidate, pinpoint, diff, notes };
+  });
+
+  const count = (c) => results.filter((r) => r.classification === c).length;
+  const summary = {
+    total: results.length,
+    exact: count("exact"),
+    normalized: count("normalized"),
+    fuzzy: count("fuzzy"),
+    not_found: count("not_found"),
+    checked: results.length - count("not_found"),
+    couldNotCheck: count("not_found"),
+    unparseablePinpoints: results.filter((r) => r.pinpoint?.status === "unparseable").length,
+    pinpointIssues: results.filter((r) => r.pinpoint?.status === "mismatch").length,
+  };
+  const report = { documentName: input.document.name, summary, results };
+  if (extractionWarnings !== undefined) report.extractionWarnings = extractionWarnings;
+  return report;
+}
+
+/** Anchor for an exactly-contained quote (window search also finds these; kept precise). */
+function locateRaw(source, quote) {
+  const idx = source.indexOf(quote.trim());
+  if (idx < 0) return null;
+  return { score: 1, coverage: 1, start: idx, end: idx + quote.trim().length, verbatim: source.slice(idx, idx + quote.trim().length) };
+}
+
+/** Markdown report — deterministic rendering of a CiteCheckReport.
+ * @param {any} report @returns {string} */
+function renderReport(report) {
+  const s = report.summary;
+  const lines = [];
+  lines.push(`# Cite check — ${report.documentName}`);
+  lines.push("");
+  lines.push(
+    `**Checked ${s.checked} of ${s.total} quotes:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ` +
+      `${s.couldNotCheck} not checked (never reported as "confirmed") · ${s.unparseablePinpoints} unparseable pinpoint(s) · ` +
+      `${s.pinpointIssues} pinpoint issue(s)`,
+  );
+  if (report.extractionWarnings !== undefined && report.extractionWarnings.length > 0) {
+    lines.push("");
+    for (const w of report.extractionWarnings) lines.push(`- extraction: ${w}`);
+  }
+  lines.push("");
+  lines.push("| Quote | Verdict | Similarity | Anchor | Pinpoint |");
+  lines.push("|---|---|---|---|---|");
+  for (const r of report.results) {
+    const anchor = r.anchor
+      ? `${r.anchor.sourceName}${r.anchor.segmentLabel !== null ? `, ${r.anchor.segmentKind} ${r.anchor.segmentLabel}` : ""} (chars ${r.anchor.charStart}–${r.anchor.charEnd})`
+      : "—";
+    const pin = r.pinpoint ? `${r.pinpoint.raw}: ${r.pinpoint.status}` : "—";
+    lines.push(`| ${r.id} | ${r.classification} | ${r.similarity.toFixed(2)} | ${anchor} | ${pin} |`);
+  }
+  lines.push("");
+  for (const r of report.results) {
+    lines.push(`## ${r.id} — ${r.classification}`);
+    lines.push("");
+    if (r.anchor) {
+      lines.push(`> ${r.anchor.verbatim.replace(/\n/g, " ")}`);
+      lines.push("");
+      lines.push(`Anchored at ${r.anchor.sourceName} chars ${r.anchor.charStart}–${r.anchor.charEnd}.`);
+    } else {
+      lines.push("No locating anchor in the provided sources.");
+    }
+    const marks = r.diff ? formatDiffOps(r.diff) : "";
+    if (marks) lines.push(`Token diff: ${marks}`);
+    if (r.pinpoint) lines.push(`Pinpoint: ${r.pinpoint.raw} — ${r.pinpoint.status} (${r.pinpoint.detail}).`);
+    for (const n of r.notes) lines.push(`- ${n}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+import EXAMPLE from "./example.js";
+
+/* Vendored browser subset of open-artifacts/_shared/persist.js (createStorage):
+   localStorage wrapper with graceful fallback; append() keeps an append-only log. */
+function probeLocalStorage(){try{const ls=globalThis.localStorage;if(!ls)return null;ls.setItem('__p__','1');const ok=ls.getItem('__p__')==='1';ls.removeItem('__p__');return ok?ls:null}catch{return null}}
+function memoryBackend(){const m=new Map();return{get(k){const v=m.get(k);return v===undefined?null:v.value},set(k,v){m.set(k,{value:JSON.parse(JSON.stringify(v??null))})},remove(k){m.delete(k)},append(k,e){const a=this.entries(k);a.push(e);this.set(k,a)},entries(k){const v=m.get(k);return Array.isArray(v)?v.slice():[]},exportJsonl(k){const a=this.entries(k);return a.map(e=>JSON.stringify(e)).join('\n')+(a.length?'\n':'')}}}
+function localBackend(ns){
+const ls=probeLocalStorage();if(!ls)return memoryBackend();
+const key=(k)=>ns+':'+k;let degraded=false;const mem=memoryBackend();
+return{backendName:'local',
+get(k){if(degraded)return mem.get(k);try{const r=ls.getItem(key(k));return r==null?null:JSON.parse(r)}catch{return null}},
+set(k,v){if(degraded)return mem.set(k,v);try{ls.setItem(key(k),JSON.stringify(v??null))}catch{degraded=true;mem.set(k,v)}},
+remove(k){try{ls.removeItem(key(k))}catch{degraded=true}},
+append(k,e){const a=this.entries(k);a.push(e);this.set(k,a)},
+entries(k){const v=this.get(k);return Array.isArray(v)?v:[]},
+exportJsonl(k){const a=this.entries(k);return a.map(e=>JSON.stringify(e)).join('\n')+(a.length?'\n':'')}}}
+const createStorage=(ns)=>localBackend(ns);
+
+/* ===== demo state ===== */
+const store=createStorage('cc');
+const $=(id)=>document.getElementById(id);
+const esc=(v)=>String(v).replace(/[&<>"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DECISIONS=[["verified","Verify"],["flagged","Flag for attorney"],["corrected","Corrected"]];
+const KIND={page:"Page",section:"§",paragraph:"¶"};
+
+let input=store.get('input')??EXAMPLE;
+let decisions=store.get('decisions')??{};
+let signoff=store.get('signoff')??null;
+let selected=null,filter="all",srcModels=null;
+let bootNotice=null;
+let report;
+try{report=runCiteCheck(input)}
+catch(err){
+/* corrupt persisted state — clear it and boot fresh rather than dying */
+for(const k of ['input','decisions','signoff'])store.remove(k);
+input=EXAMPLE;decisions={};signoff=null;
+report=runCiteCheck(input);
+bootNotice=`Stored demo state was corrupt and has been reset — starting fresh. (${err.message})`;
+}
+
+const live=(m)=>{$('live').textContent=m};
+let toastTimer=null;
+function toast(msg){let t=document.querySelector('.toast');if(!t){t=document.createElement('p');t.className='toast';t.setAttribute('role','status');document.body.appendChild(t)}t.textContent=msg;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.remove(),4000)}
+
+function audit(action,detail,quoteId){store.append('audit',{ts:new Date().toISOString(),actor:"reviewer (demo)",action,...(quoteId?{quoteId}:{}),detail});renderAudit()}
+
+function runCheck(newInput,label){
+let r;try{r=runCiteCheck(newInput)}catch(err){toast("Check failed: "+err.message);live("Check failed: "+err.message);return false}
+report=r;input=newInput;srcModels=null;selected=null;renderAll();
+const m=`Checked ${report.summary.checked} of ${report.summary.total} quotes`+(label?` — ${label}`:"");live(m);return true}
+
+/* source model mirrors core buildDoc: doc.text, then pages, sections, paragraphs, joined by "\n" */
+function models(){if(srcModels)return srcModels;srcModels=new Map();
+for(const doc of input.sources??[]){const segs=[];let full="";
+const ap=(text,kind,label)=>{if(full.length>0)full+="\n";const s=full.length;full+=text;segs.push({kind,label,text,start:s,end:full.length})};
+if(doc.text!==undefined)ap(doc.text,null,null);
+for(const p of doc.pages??[])ap(p.text,"page",String(p.number));
+for(const p of doc.sections??[])ap(p.text,"section",p.label);
+for(const p of doc.paragraphs??[])ap(p.text,"paragraph",String(p.number));
+srcModels.set(doc.id,{id:doc.id,name:doc.name,segments:segs})}
+return srcModels}
+const attention=(r)=>r.classification==="fuzzy"||r.classification==="not_found"||r.pinpoint?.status==="mismatch";
+
+/* ===== render ===== */
+function renderCounts(){const s=report.summary;
+$('counts').innerHTML=`<div><b>${s.total}</b><span>quotes checked</span></div><div><b>${s.checked} of ${s.total}</b><span>located</span></div><div><b>${s.exact}</b><span>exact</span></div><div><b>${s.normalized}</b><span>normalized</span></div><div><b>${s.fuzzy}</b><span>fuzzy</span></div><div><b>${s.not_found}</b><span>not found</span></div><div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+let c=`Checked ${s.checked} of ${s.total} quotes — ${s.couldNotCheck} could not be checked and are never reported as "confirmed"; ${s.unparseablePinpoints} unparseable pinpoint(s).`;
+if(report.extractionWarnings?.length)c+=" "+report.extractionWarnings.join("; ")+".";
+$('coverage').textContent=c}
+
+function renderTable(){
+$('results').innerHTML=`<tr><th scope="col">Quote</th><th scope="col">Verdict</th><th scope="col">Similarity</th><th scope="col">Anchor</th><th scope="col">Pinpoint</th><th scope="col">Review</th></tr>`+
+report.results.map((r)=>{const a=r.anchor??r.bestCandidate;
+const anchor=a?`<button class="anchor-btn">${esc(a.sourceName)}${a.segmentLabel!==null?`, ${KIND[a.segmentKind]??esc(a.segmentKind)} ${esc(a.segmentLabel)}`:""} <code>${a.charStart}–${a.charEnd}</code> ↗</button>`:"—";
+const pin=r.pinpoint?`<span class="pill ${r.pinpoint.status==="mismatch"?"mismatch":r.pinpoint.status==="ok"?"exact":""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}`:"—";
+const d=decisions[r.id];
+return `<tr class="${selected===r.id?"sel":""} ${attention(r)?"attention":""} ${d?"flag":""}" data-q="${esc(r.id)}"><td class="mono"><code>${esc(r.id)}</code></td><td><span class="pill ${r.classification}">${r.classification}</span></td><td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td><td>${d?`<span class="pill st-${d.d}">${d.d}</span>`:'<span class="pill">pending</span>'}</td></tr>`}).join("");
+for(const tr of $('results').querySelectorAll('tr[data-q]'))tr.addEventListener("click",()=>selectQuote(tr.dataset.q,true))}
+
+function renderQueue(){
+const rs=report.results.filter((r)=>{const d=decisions[r.id];
+if(filter==="attention")return attention(r);
+if(filter==="undecided")return !d;
+if(filter==="flagged")return d?.d==="flagged";
+return true});
+$('briefSub').textContent=`${rs.length} of ${report.results.length} quotations shown — filter: ${filter}`;
+$('queue').innerHTML=rs.map((r)=>{const a=r.anchor??r.bestCandidate;const d=decisions[r.id];
+return `<article class="q ${selected===r.id?"sel":""}" data-q="${esc(r.id)}"><header><code class="mono">${esc(r.id)}</code> <span class="pill ${r.classification}">${r.classification}</span> ${d?`<span class="pill st-${d.d}">${d.d}</span>`:'<span class="pill">pending</span>'}</header><blockquote>${esc(r.text)}</blockquote>`+
+(r.proposition?`<p class="prop">Proposition: ${esc(r.proposition)}</p>`:"")+
+`<div class="meta">Anchor: ${a?`<button class="anchor-btn" data-anchor="${esc(r.id)}">${esc(a.sourceName)}${a.segmentLabel!==null?`, ${KIND[a.segmentKind]??esc(a.segmentKind)} ${esc(a.segmentLabel)}`:""} <code>${a.charStart}–${a.charEnd}</code> ↗</button>`:"no locating anchor in the provided sources"}`+
+(r.pinpoint?`<br>Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}`:"")+
+(r.diff&&formatDiffOps(r.diff)?`<br>Token diff: <code>${esc(formatDiffOps(r.diff))}</code>`:"")+
+r.notes.map((n)=>`<br>· ${esc(n)}`).join("")+`</div>`+
+`<div class="decide" role="group" aria-label="Decision for ${esc(r.id)}">${DECISIONS.map(([v,l])=>`<button data-d="${v}" data-q="${esc(r.id)}" aria-pressed="${d?.d===v?"true":"false"}">${l}</button>`).join("")}</div>`+
+`<div class="note"><label for="note-${esc(r.id)}">Note</label><input id="note-${esc(r.id)}" data-note="${esc(r.id)}" value="${esc(d?.note??"")}" placeholder="optional"></div></article>`}).join("")||`<p class="hint">No quotations match this filter.</p>`;
+for(const b of $('queue').querySelectorAll('button[data-d]'))b.addEventListener("click",(e)=>{e.stopPropagation();setDecision(b.dataset.q,b.dataset.d)});
+for(const b of $('queue').querySelectorAll('button[data-anchor]'))b.addEventListener("click",(e)=>{e.stopPropagation();selectQuote(b.dataset.anchor,false)});
+for(const i of $('queue').querySelectorAll('input[data-note]'))i.addEventListener("change",()=>setNote(i.dataset.note,i.value));
+for(const art of $('queue').querySelectorAll('article.q'))art.addEventListener("click",()=>selectQuote(art.dataset.q,false))}
+
+function renderSourcePane(){
+const ms=models(),sel=$('srcSel'),ids=[...ms.keys()];
+const cur=sel.dataset.src&&ms.has(sel.dataset.src)?sel.dataset.src:(ids[0]??null);
+sel.dataset.src=cur;
+sel.innerHTML=ids.map((id)=>`<option value="${esc(id)}" ${id===cur?"selected":""}>${esc(ms.get(id).name)}</option>`).join("");
+let html="";
+if(!cur)html=`<p class="hint">No sources loaded.</p>`;
+else{const m=ms.get(cur);
+const r=report.results.find((x)=>x.id===selected);
+const a=r&&(r.anchor?.sourceId===cur||r.bestCandidate?.sourceId===cur)?(r.anchor??r.bestCandidate):null;
+for(const seg of m.segments){let text=esc(seg.text);
+if(a&&a.charEnd>seg.start&&a.charStart<seg.end){
+const s=Math.max(a.charStart,seg.start)-seg.start,e=Math.min(a.charEnd,seg.end)-seg.start;
+const idAt=(a.charStart>=seg.start&&a.charEnd<=seg.end)?' id="hl"':"";
+text=esc(seg.text.slice(0,s))+`<mark${idAt}>${esc(seg.text.slice(s,e))}</mark>`+esc(seg.text.slice(e))}
+html+=`<div class="seg"><h4>${seg.kind?`${KIND[seg.kind]??esc(seg.kind)} ${esc(seg.label)}`:"Full text"}</h4><p>${text}</p></div>`}}
+$('srcview').innerHTML=html;
+const mark=$('hl');if(mark)mark.scrollIntoView({block:"center"})}
+
+function renderProgress(){
+const total=report.results.length,done=report.results.filter((r)=>decisions[r.id]).length,flagged=report.results.filter((r)=>decisions[r.id]?.d==="flagged").length;
+let h=`${done} of ${total} decided · ${flagged} flagged`;
+if(signoff)h+=` · <b>signed off</b> ${esc(signoff.at.slice(0,16).replace("T"," "))} UTC`;
+else if(done===total&&total>0)h+=` · <button class="icon" id="signBtn">Sign off review</button>`;
+$('progress').innerHTML=h;
+const b=$('signBtn');
+if(b)b.addEventListener("click",()=>{signoff={at:new Date().toISOString(),actor:"reviewer (demo)",decided:report.results.length};
+store.set('signoff',signoff);audit("sign-off",`review signed off over ${report.results.length} quotes`);
+toast("Review signed off — recorded in the audit log.");live("Review signed off.");renderProgress()})}
+
+function renderAudit(){const es=store.entries('audit');
+$('auditOut').innerHTML=es.length?`<div class="audit-list">${es.map((e)=>`<div>${esc(e.ts)} · ${esc(e.actor)} · ${esc(e.action)}${e.quoteId?` · ${esc(e.quoteId)}`:""} — ${esc(e.detail)}</div>`).join("")}</div>`:`<p class="hint">No entries yet — make a decision or run a check.</p>`}
+
+function renderAll(){renderCounts();renderTable();renderQueue();renderSourcePane();renderProgress()}
+
+/* ===== interactions ===== */
+function selectQuote(id,scrollBench){
+selected=id;
+const r=report.results.find((x)=>x.id===id);const a=r?.anchor??r?.bestCandidate;
+if(a)$('srcSel').dataset.src=a.sourceId;
+renderTable();renderQueue();renderSourcePane();
+const card=$('queue').querySelector(`article[data-q="${CSS.escape(id)}"]`);if(card)card.scrollIntoView({block:"nearest"});
+if(scrollBench)$('bench').scrollIntoView({behavior:"smooth",block:"start"});
+if(r)live(`Quote ${id} selected — ${r.classification}${a?`, anchor at chars ${a.charStart} to ${a.charEnd} in ${a.sourceName}`:", no anchor"}.`)}
+
+function setDecision(id,d){
+const from=decisions[id]?.d??"pending";
+decisions[id]={d,note:decisions[id]?.note??"",at:new Date().toISOString()};
+store.set('decisions',decisions);audit("decision",`${from} → ${d}`,id);
+if(from!==d){toast(`${id}: ${d}`);live(`Quote ${id} marked ${d}.`)}
+renderTable();renderQueue();renderProgress();
+const card=$('queue').querySelector(`article[data-q="${CSS.escape(id)}"]`);if(card)card.scrollIntoView({block:"nearest"})}
+
+function setNote(id,note){
+if(!decisions[id])decisions[id]={d:"flagged",note:"",at:new Date().toISOString()};
+decisions[id].note=note;store.set('decisions',decisions);
+audit("note",note?`note set: "${note.slice(0,80)}"`:"note cleared",id);
+live(note?`Note saved for ${id}.`:`Note cleared for ${id}.`)}
+
+$('srcSel').addEventListener("change",(e)=>{e.target.dataset.src=e.target.value;selected=null;renderSourcePane()});
+$('filters').addEventListener("change",(e)=>{filter=e.target.value;renderQueue()});
+$('copyQuote').addEventListener("click",async()=>{
+const r=report.results.find((x)=>x.id===selected);const a=r?.anchor??r?.bestCandidate;
+if(!a){toast("No located quote to copy — select a located quotation first.");return}
+try{await navigator.clipboard.writeText(a.verbatim);toast("Verbatim quote copied.");live("Quote copied to clipboard.")}catch{toast("Clipboard unavailable in this context.")}});
+
+/* guided input */
+$('runGuided').addEventListener("click",()=>{
+const text=$('docPaste').value;
+if(!text.trim()){toast("Paste a document first — the box is empty.");live("No document pasted.");return}
+if(runCheck({document:{name:"Pasted document (demo)",text},sources:input.sources??EXAMPLE.sources},"quotes extracted from pasted document")){
+audit("check",`ran cite check on pasted document (${report.results.length} quotes extracted)`);
+store.set('input',input);toast(`Extracted ${report.results.length} quotes — see the workbench.`)}});
+$('loadExample').addEventListener("click",()=>{runCheck(EXAMPLE,"worked example reloaded");store.remove('input');audit("check","reloaded the worked example");toast("Worked example reloaded.")});
+$('runJson').addEventListener("click",()=>{
+const txt=$('jsonIn').value;let obj;
+try{obj=JSON.parse(txt)}catch(err){
+const m=/position (\d+)/.exec(err.message);let line=0;
+if(m)line=txt.slice(0,+m[1]).split("\n").length;else{const l=/line (\d+)/.exec(err.message);if(l)line=+l[1]}
+const short=err.message.length>90?err.message.slice(0,90)+"…":err.message;
+const msg=line?`JSON error at line ${line}: ${short}`:`JSON error: ${short}`;toast(msg);live(msg);return}
+if(!Array.isArray(obj.sources)||(!Array.isArray(obj.quotes)&&obj.document?.text===undefined)){
+const msg='Input needs "sources" (array) plus either "quotes" (array) or "document.text".';toast(msg);live(msg);return}
+if(runCheck(obj,"custom JSON input")){audit("check",`ran cite check on custom JSON (${report.results.length} quotes)`);store.set('input',input);toast(`Custom check ran — ${report.results.length} quotes.`)}});
+
+/* exports */
+function download(name,content,type){const blob=content instanceof Blob?content:new Blob([content],{type});
+const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();
+setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+const stamp=()=>new Date().toISOString().slice(0,10);
+const dOf=(r)=>decisions[r.id]?.d??"pending";
+$('mdBtn').onclick=()=>{download(`cite-check-report-${stamp()}.md`,renderReport(report),"text/markdown");toast("report.md exported.");live("Markdown report exported.")};
+$('jsonBtn').onclick=()=>{download(`cite-check-output-${stamp()}.json`,JSON.stringify({...report,decisions,signoff},null,2)+"\n","application/json");toast("output.json exported.");live("JSON output exported.")};
+$('csvBtn').onclick=()=>{
+const rows=[["Quote","Classification","Similarity","Source","Segment","Chars","Pinpoint","Pinpoint status","Decision","Note"],
+...report.results.map((r)=>{const a=r.anchor??r.bestCandidate;
+return [r.id,r.classification,r.similarity.toFixed(2),a?.sourceName??"",a?`${a.segmentKind??"text"} ${a.segmentLabel??""}`:"",a?`${a.charStart}-${a.charEnd}`:"",r.pinpoint?.raw??"",r.pinpoint?.status??"",dOf(r),decisions[r.id]?.note??""]})];
+const csv=rows.map((row)=>row.map((v)=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\r\n")+"\r\n";
+download(`cite-check-findings-${stamp()}.csv`,csv,"text/csv");toast("findings.csv exported.");live("CSV findings exported.")};
+$('auditBtn').onclick=()=>{download(`cite-check-audit-${stamp()}.jsonl`,store.exportJsonl('audit'),"application/x-ndjson");toast("audit.jsonl exported.");live("Audit log exported.")};
+$('resetBtn').onclick=()=>{
+if(!confirm("Reset all decisions, sign-off, and the audit log stored in this browser?"))return;
+for(const k of ['decisions','audit','signoff','input'])store.remove(k);
+decisions={};signoff=null;runCheck(EXAMPLE,"state reset");renderAudit();toast("Demo state reset.");live("Demo state reset.")};;
+
+/* ===== boot: restore persisted working state ===== */
+$('jsonIn').value=JSON.stringify(input,null,2);
+renderAll();renderAudit();
+if(bootNotice){toast(bootNotice);live(bootNotice)}
+else if(Object.keys(decisions).length||store.entries('audit').length)toast("Restored your working state — decisions and audit log reloaded.");
 </script>
 </body>
 </html>

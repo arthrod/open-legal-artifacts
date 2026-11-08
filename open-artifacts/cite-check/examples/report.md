@@ -4,22 +4,22 @@
 
 | Quote | Verdict | Similarity | Anchor | Pinpoint |
 |---|---|---|---|---|
-| Q1 (brief p. 6) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
+| Q1 (brief p. 6) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–296) | p. 12: ok |
 | Q2 (brief p. 7) | normalized | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
 | Q3 (brief p. 9) | fuzzy | 0.70 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 12: ok |
 | Q4 (brief p. 11) | not_found | 0.26 | — | p. 12: unverifiable |
-| Q5 (brief p. 13) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–295) | p. 15: mismatch |
-| Q6 (brief p. 14) | exact | 1.00 | Master Services Agreement (Halcyon–Meridian, 2024), section 5.2 (chars 0–96) | § 5.2: ok |
-| Q7 (brief p. 15) | exact | 1.00 | Master Services Agreement (Halcyon–Meridian, 2024), section 9.1 (chars 98–189) | § 5.2: mismatch |
-| Q8 (brief p. 16) | exact | 1.00 | Declaration of Priya Nair (Feb. 2, 2026), paragraph 8 (chars 107–202) | ¶ 8: ok |
+| Q5 (brief p. 13) | exact | 1.00 | Deposition of Sandra Okafor (Jan. 14, 2026), page 12 (chars 198–296) | p. 15: mismatch |
+| Q6 (brief p. 14) | exact | 1.00 | Master Services Agreement (Halcyon–Meridian, 2024), section 5.2 (chars 0–97) | § 5.2: ok |
+| Q7 (brief p. 15) | exact | 1.00 | Master Services Agreement (Halcyon–Meridian, 2024), section 9.1 (chars 98–190) | § 5.2: mismatch |
+| Q8 (brief p. 16) | exact | 1.00 | Declaration of Priya Nair (Feb. 2, 2026), paragraph 8 (chars 107–203) | ¶ 8: ok |
 | Q9 (brief p. 17) | not_found | 0.00 | — | p. 3: unverifiable |
 | Q10 (brief p. 18) | fuzzy | 0.96 | Deposition of Sandra Okafor (Jan. 14, 2026), page 15 (chars 432–695) | p. 15: ok |
 
 ## Q1 (brief p. 6) — exact
 
-> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document
+> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document.
 
-Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–295.
+Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–296.
 Pinpoint: p. 12 — ok (quote is located on 12).
 - proposition support is an LLM/human judgment — not evaluated by this core
 
@@ -52,35 +52,35 @@ Pinpoint: p. 12 — unverifiable (quote not located in the source, so the pinpoi
 
 ## Q5 (brief p. 13) — exact
 
-> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document
+> Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document.
 
-Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–295.
+Anchored at Deposition of Sandra Okafor (Jan. 14, 2026) chars 198–296.
 Pinpoint: p. 15 — mismatch (pinpoint says p. 15 but the quote is located on 12).
 - PINPOINT ISSUE: pinpoint says p. 15 but the quote is located on 12
 - proposition support is an LLM/human judgment — not evaluated by this core
 
 ## Q6 (brief p. 14) — exact
 
-> Customer may terminate this Agreement for convenience upon ninety (90) days prior written notice
+> Customer may terminate this Agreement for convenience upon ninety (90) days prior written notice.
 
-Anchored at Master Services Agreement (Halcyon–Meridian, 2024) chars 0–96.
+Anchored at Master Services Agreement (Halcyon–Meridian, 2024) chars 0–97.
 Pinpoint: § 5.2 — ok (quote is located in § 5.2).
 - proposition support is an LLM/human judgment — not evaluated by this core
 
 ## Q7 (brief p. 15) — exact
 
-> Neither party shall be liable for indirect or consequential damages, including lost profits
+> Neither party shall be liable for indirect or consequential damages, including lost profits.
 
-Anchored at Master Services Agreement (Halcyon–Meridian, 2024) chars 98–189.
+Anchored at Master Services Agreement (Halcyon–Meridian, 2024) chars 98–190.
 Pinpoint: § 5.2 — mismatch (pinpoint says § 5.2 but the quote is located in § 9.1).
 - PINPOINT ISSUE: pinpoint says § 5.2 but the quote is located in § 9.1
 - proposition support is an LLM/human judgment — not evaluated by this core
 
 ## Q8 (brief p. 16) — exact
 
-> The photographs show water staining on four of the eleven pallets delivered under this shipment
+> The photographs show water staining on four of the eleven pallets delivered under this shipment.
 
-Anchored at Declaration of Priya Nair (Feb. 2, 2026) chars 107–202.
+Anchored at Declaration of Priya Nair (Feb. 2, 2026) chars 107–203.
 Pinpoint: ¶ 8 — ok (quote is located in ¶ 8).
 - proposition support is an LLM/human judgment — not evaluated by this core
 

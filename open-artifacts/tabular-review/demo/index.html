@@ -5,40 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tabular review — open artifact</title>
 <link rel="stylesheet" href="tokens.css" />
-<style>
-  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
-  @media (min-width: 768px) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
-  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
-  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
-  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
-  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
-  section { margin-top: 48px; }
-  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
-  .pick { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
-  select { font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: var(--hairline); border-radius: var(--radius); background: #fff; color: var(--text); }
-  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
-  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
-  .counts div:last-child { border-right: none; }
-  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
-  .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
-  td.unv { background: #fffbe6; font-family: var(--font-mono); font-size: 11px; }
-  td.ans b.pin { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--text-secondary); }
-  .fuzzy { background: var(--flag-tint); font-family: var(--font-mono); font-size: 11px; padding: 0 4px; text-transform: uppercase; color: var(--warn); border-color: var(--warn);}
-  .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
-  .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
-    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: var(--accent); color: var(--text); }
-  button.ghost { background: transparent; color: var(--text); }
-  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
-</style>
+<style>  body{background:var(--bg);color:var(--text);font-family:var(--font-body);margin:0}.wrap{max-width:var(--max-width);margin:0 auto;padding:48px var(--pad-x-mobile) 96px}@media (min-width:768px){.wrap{padding:72px var(--pad-x-desktop) 120px}}.kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}h1{font-size:clamp(26px,4vw,38px);font-weight:700;line-height:1.05;letter-spacing:-0.02em;margin:12px 0 0}.rule{width:var(--rule-yellow-w);height:var(--rule-yellow-h);background:var(--accent);margin:20px 0 24px}p.lede{max-width:64ch;color:var(--text-secondary);font-size:15px;line-height:1.65}section{margin-top:44px}h2{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px}h2::before{content:"";display:block;width:24px;height:1px;background:var(--border);margin-bottom:12px}.pick{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);flex-wrap:wrap}label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}select,input[type="text"],textarea{font-family:var(--font-mono);font-size:12px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:var(--surface);color:var(--text);max-width:100%}textarea{width:100%;min-height:110px}.counts{display:flex;gap:0;border:var(--hairline);background:var(--surface);margin-bottom:8px;flex-wrap:wrap}.counts div{padding:12px 16px;border-right:var(--hairline);flex:1;min-width:96px}.counts div:last-child{border-right:none}.counts b{font-family:var(--font-mono);font-size:20px;font-weight:500;display:block}.counts span{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)}.scroll{overflow-x:auto;max-height:70vh;overflow-y:auto}table{width:100%;border-collapse:collapse;background:var(--surface);border:var(--hairline);font-size:12.5px}th,td{text-align:left;padding:8px 10px;border-bottom:var(--hairline);vertical-align:top}th[scope="col"]{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);position:sticky;top:0;background:var(--surface)}th[scope="row"]{position:sticky;left:0;background:var(--surface);max-width:200px;font-family:var(--font-mono);font-size:12px;z-index:1}td.unv{background:var(--flag-tint);font-family:var(--font-mono);font-size:12px}td.dim{opacity:.35}td.ans b.pin,.qtype{font-family:var(--font-mono);font-size:12px;font-weight:400;color:var(--text-secondary)}.fuzzy{background:var(--flag-tint);font-family:var(--font-mono);font-size:12px;padding:0 4px;text-transform:uppercase;color:var(--warn);border-color:var(--warn)}.cellbtn{font:inherit;background:none;border:none;padding:0;color:inherit;text-align:left;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}.cite{font-family:var(--font-mono);font-size:12px;background:none;border:1px solid var(--border);border-radius:var(--radius);padding:1px 6px;cursor:pointer;color:var(--text-secondary);margin-top:4px}.cite:hover{border-color:var(--text);color:var(--text)}.mark{font-family:var(--font-mono);font-size:12px}.gate{border:var(--hairline);background:var(--surface);padding:16px 18px;font-size:13px;line-height:1.6;margin-top:20px}.row-btns{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;align-items:center}button.btn{font-family:var(--font-mono);font-size:13px;padding:10px 18px;border:1px solid var(--text);background:var(--text);color:var(--bg);cursor:pointer;border-radius:var(--radius)}button.btn:hover{background:var(--accent);color:var(--text)}button.btn.ghost{background:transparent;color:var(--text)}.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.chip{font-family:var(--font-mono);font-size:12px;padding:6px 10px;border:var(--hairline);background:var(--surface);color:var(--text);cursor:pointer;border-radius:var(--radius)}.chip[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}.panel{border:var(--hairline);background:var(--surface);padding:18px;margin-top:16px}.panel:focus{outline:none}blockquote.quote{margin:10px 0;padding:10px 12px;border-left:3px solid var(--accent);background:var(--hover);font-size:13px}mark{background:var(--accent);color:var(--text);padding:0 2px}#srcText{white-space:pre-wrap;font-size:13px;line-height:1.7;max-height:46vh;overflow-y:auto;border:var(--hairline);padding:14px;margin-top:10px}.field{display:flex;flex-direction:column;gap:4px;margin-top:12px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}@media (max-width:640px){.form-grid{grid-template-columns:1fr}}.drawer-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.x{background:none;border:var(--hairline);cursor:pointer;font-family:var(--font-mono);font-size:12px;padding:4px 10px;border-radius:var(--radius)}#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:12px;padding:10px 16px;border-radius:var(--radius);max-width:90vw;z-index:9}.audit-t{max-height:40vh;overflow-y:auto}.audit-t td,.audit-t th{font-size:12px;font-family:var(--font-mono)}.ok{color:var(--ok)}.bad{color:var(--bad)}details.adv summary{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);cursor:pointer}code{font-family:var(--font-mono);font-size:12px;background:var(--hover);padding:1px 4px}.disclaimer{margin-top:64px;padding-top:16px;border-top:var(--hairline);font-size:12px;color:var(--text-secondary)}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style>
 </head>
 <body>
 <div class="wrap">
@@ -48,130 +15,533 @@
     <div class="rule"></div>
     <p class="lede">A documents × questions matrix where <b>the core verifies, never answers</b>: a cell counts as
       answered ONLY when its answer carries a quote that actually locates in the document (exact or normalized;
-      fuzzy anchors but is flagged for review) — and, on typed questions, ONLY when the answer satisfies the
-      question's machine-checked schema. Everything else is <b>UNVERIFIED</b> with a machine reason —
-      not_answered, missing_quote, quote_not_verified, constraint_violation, not_present / unclear / needs_review —
-      and anchors survive CSV/Markdown export. Open reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): 3 agreements × 5 questions — 15 cells,
-      including one deliberately unanswered and one quote that does not locate (the California governing-law cell).</p>
+      fuzzy anchors but is flagged) and, on typed questions, satisfies the machine-checked schema.
+      Everything else is <b>UNVERIFIED</b> with a reason — never guessed. Click a cell to inspect it, correct an
+      extraction, and mark decisions; every citation opens the source at the exact passage.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): 13 agreements × 5 questions — 66 cells, including
+      one deliberately unanswered, one quote that does not locate, one typo'd (fuzzy) quote, a liability clause that is
+      genuinely absent, one unclear notice clause, and one extraction that references an unknown document.</p>
   </header>
+
+  <section>
+    <h2>Controls</h2>
+    <div class="pick">
+      <label for="tpl">Question set</label>
+      <select id="tpl">
+        <option value="free">free-text (as extracted)</option>
+        <option value="typed">M&amp;A diligence (typed schema)</option>
+      </select>
+    </div>
+    <div class="chips" role="group" aria-label="Filter cells by state" id="chips"></div>
+    <div class="pick">
+      <label for="qsearch">Search documents</label>
+      <input type="text" id="qsearch" autocomplete="off" />
+    </div>
+    <div class="row-btns">
+      <button class="btn ghost" id="themeBtn">Theme: auto</button>
+      <button class="btn ghost" id="resetBtn">Reset working state</button>
+    </div>
+  </section>
 
   <section>
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
+    <p id="status" class="sr" role="status" aria-live="polite"></p>
     <div class="row-btns">
-      <div class="pick">
-        <label for="tpl">Question set</label>
-        <select id="tpl">
-          <option value="free">free-text (as extracted)</option>
-          <option value="typed">M&amp;A diligence (typed schema)</option>
-        </select>
-      </div>
-      <button id="csvBtn">Export matrix.csv</button>
-      <button id="mdBtn" class="ghost">Export matrix.md</button>
-      <button id="jsonBtn" class="ghost">Export output.json</button>
-      <button id="diffBtn" class="ghost">Export diff.json</button>
+      <button class="btn" id="csvBtn">Export matrix.csv</button>
+      <button class="btn ghost" id="mdBtn">Export matrix.md</button>
+      <button class="btn ghost" id="jsonBtn">Export output.json</button>
+      <button class="btn ghost" id="srcCsvBtn">Export sources.csv (anchors audit)</button>
+      <button class="btn ghost" id="diffDlBtn">Export diff.json</button>
     </div>
   </section>
 
   <section>
     <h2>Matrix</h2>
-    <div class="scroll"><table id="matrix"></table></div>
+    <div class="scroll"><table id="matrix" aria-describedby="mhint"></table></div>
+    <p id="mhint" class="sr">Review matrix. Activate a cell answer to open its detail panel; activate a citation button to open the source document at the passage.</p>
     <div class="gate" id="reasons"></div>
+  </section>
+
+  <section id="cellPanel" class="panel" tabindex="-1" role="region" aria-label="Cell detail" hidden></section>
+
+  <section id="sourcePanel" class="panel" tabindex="-1" role="region" aria-label="Source document" hidden>
+    <div class="drawer-head">
+      <div class="pick"><label for="srcDoc">Source document</label>
+        <select id="srcDoc"></select></div>
+      <div class="row-btns" style="margin-top:0">
+        <button class="btn ghost" id="srcCopy">Copy quote</button>
+        <button class="x" id="srcClose" aria-label="Close source panel">✕ close</button>
+      </div>
+    </div>
+    <div id="srcText"></div>
+  </section>
+
+  <section>
+    <h2>Re-run &amp; diff</h2>
+    <div class="panel">
+      <p style="font-size:13px">Re-runs the deterministic core on the current working input and diffs it against the
+        saved snapshot (<code>diffMatrices</code> — added / removed / changed cells). Extraction edits and corrected
+        re-extractions show up here.</p>
+      <div class="row-btns">
+        <button class="btn" id="diffBtn">Re-run &amp; diff vs snapshot</button>
+        <button class="btn ghost" id="fixBtn">Example: apply corrected re-extraction</button>
+      </div>
+      <div id="diffOut" role="status" aria-live="polite" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bring your own document</h2>
+    <div class="panel">
+      <p style="font-size:13px">Paste a contract and add it to the review set. Its cells start UNVERIFIED
+        (not_answered) — the core never answers; open a cell and supply an answer + quote to watch it verify.</p>
+      <div class="form-grid">
+        <div class="field"><label for="docName">Document name</label><input type="text" id="docName" placeholder="NDA — Example Co (fictional)" /></div>
+        <div class="field"><label for="docText">Document text (paste)</label></div>
+      </div>
+      <div class="field"><textarea id="docText" placeholder="1. Term. … 2. Termination. …"></textarea></div>
+      <div class="row-btns"><button class="btn" id="addDocBtn">Add document to review</button></div>
+      <details class="adv" style="margin-top:16px">
+        <summary>Advanced — raw JSON input (documents / questions / cells)</summary>
+        <div class="field"><label for="jsonIn">Input JSON</label><textarea id="jsonIn"></textarea></div>
+        <div class="row-btns"><button class="btn" id="jsonBtn2">Load JSON</button></div>
+      </details>
+    </div>
+  </section>
+
+  <section>
+    <h2>Audit log (persists across reloads)</h2>
+    <div class="row-btns"><button class="btn ghost" id="auditBtn">Export audit.ndjson</button></div>
+    <div class="scroll audit-t" style="margin-top:12px"><table id="auditT" aria-live="polite"></table></div>
   </section>
 
   <footer class="disclaimer">
     Deterministic verification — an optional LLM may extract answer+quote pairs from documents (schema in spec.md);
-    the core never answers a question and never guesses. All example data fictional. Not legal advice.
+    the core never answers a question and never guesses. Working state and audit log are saved in this browser
+    (localStorage). All example data fictional. Not legal advice.
     <code>anthropic counterpart: Tabular review (closed)</code>
   </footer>
 </div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
 
+<script src="example.js"></script>
 <script type="module">
-  import { buildMatrix, toCSV, toMarkdown, diffMatrices } from "../core/core.js";
-  import EXAMPLE from "./example.js";
+  import { buildMatrix, toCSV, toMarkdown, toSourcesCSV, diffMatrices } from "../core/core.js";
   import TEMPLATE from "./templates.js";
 
+  // ---- vendored from open-artifacts/_shared/persist.js (browser half; Node fs half omitted) ----
+  function memoryBackend(name) {
+    const map = new Map();
+    return { backendName: name,
+      get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
+      set(k, v) { map.set(k, { kind: "value", value: JSON.parse(JSON.stringify(v ?? null)) }); },
+      remove(k) { map.delete(k); },
+      append(k, entry) { if (!map.has(k) || map.get(k).kind !== "log") map.set(k, { kind: "log", items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
+      entries(k) { const v = map.get(k); return v && v.kind === "log" ? v.items.slice() : []; },
+      exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join("\n") + (this.entries(k).length ? "\n" : ""); } };
+  }
+  function probeLocalStorage() {
+    try { const ls = globalThis.localStorage; if (!ls) return null;
+      const pk = "__persist_probe__"; ls.setItem(pk, "1"); const ok = ls.getItem(pk) === "1"; ls.removeItem(pk); return ok ? ls : null;
+    } catch { return null; }
+  }
+  function localBackend(ns) {
+    const ls = probeLocalStorage(); if (!ls) return memoryBackend("memory-fallback");
+    const key = (k) => `${ns}:${k}`;
+    const read = (k) => { try { const r = ls.getItem(key(k)); return r == null ? null : r; } catch { return null; } };
+    let degraded = false; const mem = memoryBackend("memory");
+    return { backendName: "local",
+      get(k) { if (degraded) return mem.get(k); const raw = read(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
+      set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
+      remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
+      append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
+      entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
+      exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join("\n") + (es.length ? "\n" : ""); } };
+  }
+  function createStorage(ns) { return probeLocalStorage() ? localBackend(ns) : memoryBackend("memory"); }
+  const storage = createStorage("tabular-review-demo");
+
+  // ---- seeded corpus: the 3 worked-example docs + 10 fictional agreements (deterministic) ----
+  const termS = (n, u) => `2. Term. This Agreement commences on the Effective Date and continues for ${n} ${u}.`;
+  const noticeS = (d) => `3. Termination. Either party may terminate this Agreement for convenience upon ${d} days prior written notice.`;
+  const capS = (c) => c === "fees" ? `8. Liability. Each party's aggregate liability shall not exceed the fees paid in the twelve (12) months preceding the claim.` : `8. Liability. Each party's aggregate liability shall not exceed ${c}.`;
+  const ASG_S = { consent: "11. Assignment. Neither party may assign this Agreement without the other's prior written consent.", yes: "11. Assignment. Assignment is permitted to a successor in a merger.", no: "11. Assignment. Neither party may assign this Agreement." };
+  const ASG_A = { consent: "No — consent required", yes: "Yes, to a merger successor", no: "No (assignment prohibited)" };
+  const lawS = (l) => `14. Governing Law. This Agreement is governed by the laws of ${l}.`;
+  // [id, name, term, noticeDays, cap, assign, law, special]
+  const F = [
+    ["novara-pharma","Clinical supply agreement — Novara Pharmaceutique SA (fictional)","3 years",90,"€2 million","consent","Delaware",""],
+    ["keldon-logistics","Master services agreement — Keldon Logistics (fictional)","2 years",60,"$250,000","consent","Delaware",""],
+    ["brightmere-bank","Custody terms — Brightmere Bank (fictional)","5 years",120,"$1.5 million","consent","New York",""],
+    ["tallys-studio","Design retainer — Tallys Studio (fictional)","1 year",30,"fees","consent","New York",""],
+    ["larkspur-telecom","Backhaul agreement — Larkspur Telecom (fictional)","3 years",90,"$750,000","yes","Delaware",""],
+    ["perrin-displays","Panel supply — Perrin Displays (fictional)","3 years",60,"$150,000","consent","Delaware","fuzzy"],
+    ["meridian-advisory","Consulting agreement — Meridian Advisory (fictional)","2 years",30,"$90,000","consent","Delaware","notfound"],
+    ["harrowden-leasing","Equipment lease — Harrowden Leasing (fictional)","36 months",90,"$120,000","consent","England and Wales",""],
+    ["garnock-marine","Shipbuilding terms — Garnock Marine (fictional)","4 years",150,"$3 million","consent","England and Wales",""],
+    ["pellworth-media","Content license — Pellworth Media (fictional)","1 year",30,"$60,000","consent","California","unclear"]
+  ];
+  function seedInput() {
+    const documents = EXAMPLE.documents.map((d) => ({ ...d }));
+    const cells = EXAMPLE.cells.map((c) => ({ ...c }));
+    for (const [id, name, term, d, cap, asg, law, sp] of F) {
+      const parts = [termS(...term.split(" "))];
+      if (sp === "unclear") parts.push("3. Termination. Either party may terminate this Agreement as set out in the applicable Statement of Work.");
+      else parts.push(noticeS(d));
+      if (sp !== "notfound") parts.push(capS(cap));
+      parts.push(ASG_S[asg], lawS(law));
+      documents.push({ id, name, text: parts.join(" ") });
+      const [tn, tu] = term.split(" ");
+      cells.push({ documentId: id, questionId: "Q1", answer: `${tn} ${tu} from the Effective Date`, quote: termS(tn, tu), pinpoint: "§ 2" });
+      if (sp === "unclear") cells.push({ documentId: id, questionId: "Q2", notFound: "unclear" });
+      else cells.push({ documentId: id, questionId: "Q2", answer: `${d} days prior written notice`, quote: noticeS(d), pinpoint: "§ 3" });
+      if (sp === "notfound") cells.push({ documentId: id, questionId: "Q3", notFound: "not_present" });
+      else cells.push({ documentId: id, questionId: "Q3", answer: cap === "fees" ? "Fees paid in the preceding 12 months" : cap, quote: capS(cap), pinpoint: "§ 8" });
+      cells.push({ documentId: id, questionId: "Q4", answer: ASG_A[asg], quote: ASG_S[asg], pinpoint: "§ 11" });
+      cells.push({ documentId: id, questionId: "Q5", answer: law, quote: sp === "fuzzy" ? "This Agreement is governed by the laws of Delware." : lawS(law), pinpoint: "§ 14" });
+    }
+    cells.push({ documentId: "meridian-annex-c", questionId: "Q3", answer: "$100,000", quote: "liability under this annex is capped at $100,000" });
+    return { documents, questions: EXAMPLE.questions.map((q) => ({ ...q })), cells };
+  }
+
+  // ---- state ----
   const NL = String.fromCharCode(10);
-  const esc = (v) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  const inputFor = (mode) => ({ ...EXAMPLE, questions: mode === "typed" ? TEMPLATE : EXAMPLE.questions });
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const $ = (id) => document.getElementById(id);
+  const key = (d, q) => `${d}::${q}`;
+  let st = { v: 1, mode: "free", filter: "all", query: "", theme: "auto", input: null, decisions: {}, snapOut: null };
+  const restored = storage.get("state");
+  if (restored && Array.isArray(restored.input?.documents) && Array.isArray(restored.input?.questions) && Array.isArray(restored.input?.cells)) st = { ...st, ...restored };
+  if (!st.input) { st.input = seedInput(); }
+  let out = null;
 
-  let currentInput, currentOut;
+  const audit = (action, detail) => { storage.append("audit", { t: new Date().toISOString(), action, detail: detail ?? "" }); renderAudit(); };
+  const save = () => storage.set("state", st);
+  let toastTimer;
+  const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3800); };
+  const questions = () => (st.mode === "typed" ? TEMPLATE : st.input.questions);
+  const cellByKey = new Map();
+  const computeOut = () => { out = buildMatrix({ documents: st.input.documents, questions: questions(), cells: st.input.cells }); return out; };
+  computeOut();
+  if (!st.snapOut || !Array.isArray(st.snapOut.cells)) st.snapOut = out;
+  const qText = (qid) => questions().find((q) => q.id === qid)?.question ?? qid;
+  const docName = (did) => st.input.documents.find((d) => d.id === did)?.name ?? did;
 
+  // ---- theme ----
+  const applyTheme = () => { document.documentElement.dataset.theme = st.theme === "auto" ? "" : st.theme; $("themeBtn").textContent = "Theme: " + st.theme; };
+  $("themeBtn").onclick = () => { st.theme = st.theme === "auto" ? "light" : st.theme === "light" ? "dark" : "auto"; applyTheme(); save(); };
+
+  // ---- rendering ----
   function schemaBadge(cell) {
     if (!cell.schema) return "";
     const s = cell.schema;
-    const detail = s.type === "classify" ? ": " + s.matched : s.value !== undefined ? ": " + s.value + (s.unit ? " " + s.unit : "") : "";
-    return ` <b class="pin">[${esc(s.type)}${esc(detail)}]</b>`;
+    const d = s.type === "classify" ? ": " + s.matched : s.value !== undefined ? ": " + s.value + (s.unit ? " " + s.unit : "") : "";
+    return ` <span class="qtype">[${esc(s.type)}${esc(d)}]</span>`;
   }
+  const markOf = (k) => st.decisions[k];
 
-  function render(mode) {
-    currentInput = inputFor(mode);
-    currentOut = buildMatrix(currentInput);
-    const out = currentOut;
+  function renderCounts() {
     const s = out.summary;
-    const cellOf = (d, q) => out.cells.find((c) => c.documentId === d.id && c.questionId === q.id);
-
-    document.getElementById("counts").innerHTML =
+    const checked = Object.values(st.decisions).filter((d) => d.mark === "checked").length;
+    const flagged = Object.values(st.decisions).filter((d) => d.mark === "flagged").length;
+    $("counts").innerHTML =
       `<div><b>${s.cells}</b><span>cells</span></div>` +
       `<div><b>${s.answered}</b><span>answered (anchored)</span></div>` +
       `<div><b>${s.unverified}</b><span>unverified</span></div>` +
       `<div><b>${s.flaggedForReview}</b><span>fuzzy — review</span></div>` +
-      `<div><b>${s.outliers}</b><span>outlier values</span></div>`;
-
-    document.getElementById("matrix").innerHTML =
-      `<tr><th>Document</th>${currentInput.questions.map((q) => `<th>${esc(q.question)}${q.type ? `<br><b class="pin">[${esc(q.type)}]</b>` : ""}</th>`).join("")}</tr>` +
-      EXAMPLE.documents
-        .map(
-          (doc) =>
-            `<tr><td><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></td>` +
-            currentInput.questions
-              .map((q) => {
-                const cell = cellOf(doc, q);
-                if (!cell || cell.status === "unverified") {
-                  return `<td class="unv">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</td>`;
-                }
-                const pin = cell.verification?.pinpoint ? ` <b class="pin">[${esc(cell.verification.pinpoint)}]</b>` : "";
-                const flag = cell.verification?.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
-                const outlier = cell.flags.includes("outlier_value") ? ` <span class="fuzzy">outlier_value</span>` : "";
-                return `<td class="ans">${esc(cell.answer)}${pin}${flag}${outlier}${schemaBadge(cell)}<br><b class="pin">chars ${cell.verification.charStart}–${cell.verification.charEnd} · ${esc(cell.verification.classification)}</b></td>`;
-              })
-              .join("") +
-            `</tr>`
-        )
-        .join("");
-
-    const unv = out.cells.filter((c) => c.status === "unverified");
-    document.getElementById("reasons").innerHTML =
-      `<b>Why unverified (machine reasons, never guesses):</b><br>` +
-      (unv.length
-        ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>")
-        : "every supplied cell verified");
+      `<div><b>${s.outliers}</b><span>outlier values</span></div>` +
+      `<div><b>${checked}</b><span>✓ checked</span></div>` +
+      `<div><b>${flagged}</b><span>⚑ flagged</span></div>`;
+    $("status").textContent = `Matrix updated: ${s.answered} answered, ${s.unverified} unverified, ${s.flaggedForReview} fuzzy, ${s.outliers} outliers.`;
   }
 
-  document.getElementById("tpl").onchange = (e) => render(e.target.value);
-  render("free");
+  const chipDefs = () => ([
+    ["all", "All", out.summary.cells],
+    ["verified", "Verified", out.summary.answered],
+    ["unverified", "Unverified", out.summary.unverified],
+    ["fuzzy", "Fuzzy", out.summary.flaggedForReview],
+    ["outlier", "Outliers", out.summary.outliers],
+    ["checked", "✓ Checked", Object.values(st.decisions).filter((d) => d.mark === "checked").length],
+    ["flagged", "⚑ Flagged", Object.values(st.decisions).filter((d) => d.mark === "flagged").length],
+  ]);
+  function renderChips() {
+    $("chips").innerHTML = chipDefs().map(([id, label, n]) =>
+      `<button class="chip" data-f="${id}" aria-pressed="${st.filter === id}">${label} ${n}</button>`).join("");
+    $("chips").querySelectorAll(".chip").forEach((b) => b.onclick = () => { st.filter = b.dataset.f; save(); renderChips(); renderMatrix(); });
+  }
+  const pass = (c, k) => {
+    const m = markOf(k);
+    switch (st.filter) {
+      case "verified": return c.status === "answered";
+      case "unverified": return c.status === "unverified";
+      case "fuzzy": return c.verification?.classification === "fuzzy";
+      case "outlier": return c.flags.includes("outlier_value");
+      case "checked": return m?.mark === "checked";
+      case "flagged": return m?.mark === "flagged";
+      default: return true;
+    }
+  };
 
+  function cellHtml(doc, q) {
+    const k = key(doc.id, q.id);
+    const cell = out.cells.find((c) => c.documentId === doc.id && c.questionId === q.id);
+    const ok = pass(cell, k);
+    const dim = st.filter !== "all" && !ok ? " dim" : "";
+    const m = markOf(k);
+    const mk = m ? ` <span class="mark" aria-label="${m.mark}">${m.mark === "checked" ? "✓" : "⚑"}</span>` : "";
+    if (!cell || cell.status === "unverified") {
+      const r = cell?.unverifiedReason ?? "not_answered";
+      const nf = r === "not_present" || r === "unclear" || r === "needs_review";
+      return `<td class="unv${dim}"><button class="cellbtn" data-k="${esc(k)}">${nf ? "NOT FOUND" : "UNVERIFIED"} (${esc(r)})</button>${mk}</td>`;
+    }
+    const v = cell.verification;
+    const pin = v.pinpoint ? ` <span class="qtype">[${esc(v.pinpoint)}]</span>` : "";
+    const fz = v.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
+    const ol = cell.flags.includes("outlier_value") ? ` <span class="fuzzy">outlier_value</span>` : "";
+    const cite = `<br><button class="cite" data-doc="${esc(doc.id)}" data-s="${v.charStart}" data-e="${v.charEnd}" data-k="${esc(k)}" aria-label="Open source passage in ${esc(doc.name)}">¶ ${esc(v.pinpoint ?? "source")} · chars ${v.charStart}–${v.charEnd}</button>`;
+    return `<td class="ans${dim}"><button class="cellbtn" data-k="${esc(k)}">${esc(cell.answer)}${pin}${fz}${ol}${schemaBadge(cell)}</button>${mk}${cite}</td>`;
+  }
+
+  function renderMatrix() {
+    const qs = questions();
+    const q = st.query.trim().toLowerCase();
+    const docIds = new Set(st.input.documents.map((d) => d.id));
+    const orphanRows = new Map();
+    for (const c of out.cells) if (!docIds.has(c.documentId)) {
+      if (!orphanRows.has(c.documentId)) orphanRows.set(c.documentId, []);
+      orphanRows.get(c.documentId).push(c);
+    }
+    let html = `<tr><th scope="col">Document</th>${qs.map((qq) => `<th scope="col">${esc(qq.question)}${qq.type ? `<br><span class="qtype">[${esc(qq.type)}]</span>` : ""}</th>`).join("")}</tr>`;
+    for (const doc of st.input.documents) {
+      const cellsHtml = qs.map((qq) => cellHtml(doc, qq)).join("");
+      if (q && !doc.name.toLowerCase().includes(q) && !doc.id.toLowerCase().includes(q)) continue;
+      if (st.filter !== "all" && !qs.some((qq) => pass(out.cells.find((c) => c.documentId === doc.id && c.questionId === qq.id), key(doc.id, qq.id)))) continue;
+      html += `<tr><th scope="row"><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></th>${cellsHtml}</tr>`;
+    }
+    for (const [did, cs] of orphanRows) {
+      if (st.filter !== "all" && !cs.some((c) => pass(c, key(c.documentId, c.questionId)))) continue;
+      html += `<tr><th scope="row"><b>${esc(did)}</b><br><code>unknown document</code></th>${qs.map((qq) => {
+        const c = cs.find((x) => x.questionId === qq.id);
+        if (!c) return `<td class="dim"></td>`;
+        return `<td class="unv${st.filter !== "all" && !pass(c, key(did, qq.id)) ? " dim" : ""}"><button class="cellbtn" data-k="${esc(key(did, qq.id))}">UNVERIFIED (${esc(c.unverifiedReason)})</button></td>`;
+      }).join("")}</tr>`;
+    }
+    $("matrix").innerHTML = html;
+    $("matrix").querySelectorAll(".cellbtn").forEach((b) => b.onclick = () => openCell(b.dataset.k));
+    $("matrix").querySelectorAll(".cite").forEach((b) => b.onclick = () => openSource(b.dataset.doc, +b.dataset.s, +b.dataset.e, b.dataset.k));
+    const unv = out.cells.filter((c) => c.status === "unverified");
+    $("reasons").innerHTML = `<b>Why unverified (machine reasons, never guesses):</b><br>` +
+      (unv.length ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>") : "every supplied cell verified");
+  }
+
+  function renderAll() { computeOut(); renderCounts(); renderChips(); renderMatrix(); }
+
+  // ---- source panel ----
+  let srcSel = null;
+  function openSource(docId, start, end, k) {
+    const doc = st.input.documents.find((d) => d.id === docId);
+    if (!doc) { toast("Source unavailable: " + docId + " is not in the document set"); return; }
+    const panel = $("sourcePanel");
+    $("srcDoc").innerHTML = st.input.documents.map((d) => `<option value="${esc(d.id)}"${d.id === docId ? " selected" : ""}>${esc(d.name)}</option>`).join("");
+    const cell = k ? out.cells.find((c) => key(c.documentId, c.questionId) === k) : null;
+    const quote = cell?.verification?.verbatim ?? doc.text.slice(start, end);
+    srcSel = { docId, quote };
+    $("srcText").innerHTML = start >= 0 && end > start
+      ? `${esc(doc.text.slice(0, start))}<mark id="srcMark">${esc(doc.text.slice(start, end))}</mark>${esc(doc.text.slice(end))}`
+      : esc(doc.text);
+    panel.hidden = false;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    const mk = document.getElementById("srcMark");
+    if (mk) { mk.scrollIntoView({ block: "center" }); }
+    panel.focus({ preventScroll: true });
+  }
+  $("srcDoc").onchange = (e) => { const d = st.input.documents.find((x) => x.id === e.target.value); if (d) { srcSel = { docId: d.id, quote: "" }; $("srcText").innerHTML = esc(d.text); } };
+  $("srcClose").onclick = () => ($("sourcePanel").hidden = true);
+  $("srcCopy").onclick = async () => { await copyText(srcSel?.quote || ""); };
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); toast("Copied quote"); }
+    catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("Copied quote"); } catch { toast("Copy failed — select the highlighted text manually"); }
+      ta.remove(); }
+  }
+
+  // ---- cell panel (inspection, extraction, decisions) ----
+  function openCell(k) {
+    const [did, qid] = k.split("::");
+    const q = questions().find((x) => x.id === qid);
+    const cell = out.cells.find((c) => c.documentId === did && c.questionId === qid);
+    const sup = st.input.cells.find((c) => c.documentId === did && c.questionId === qid);
+    const m = st.decisions[k];
+    const v = cell?.verification;
+    const status = cell?.status === "answered"
+      ? `<span class="ok">answered</span> · anchor ${esc(v.classification)} (similarity ${v.similarity.toFixed(3)}) · chars ${v.charStart}–${v.charEnd}${v.pinpoint ? " · " + esc(v.pinpoint) : ""}`
+      : `<span class="bad">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</span>`;
+    $("cellPanel").innerHTML = `
+      <div class="drawer-head"><div>
+        <div class="kicker">${esc(docName(did))} × ${esc(qid)}</div>
+        <p style="font-size:14px;margin:6px 0 2px"><b>${esc(q?.question ?? qid)}</b>${q?.type ? ` <span class="qtype">[${esc(q.type)}${q.options ? ": " + esc(q.options.join(" / ")) : ""}${q.bounds ? " " + esc(JSON.stringify(q.bounds)) : ""}]</span>` : ""}</p>
+        <p style="font-size:13px">${status}${cell?.schema ? schemaBadge(cell) : ""}</p>
+      </div><button class="x" id="cpClose" aria-label="Close cell panel">✕ close</button></div>
+      ${cell?.status === "answered" ? `<blockquote class="quote">${esc(v.verbatim)}</blockquote>
+        <div class="row-btns" style="margin-top:8px">
+          <button class="btn" id="cpSrc">View source passage ¶</button>
+          <button class="btn ghost" id="cpCopy">Copy quote</button>
+        </div>` : `<p style="font-size:13px;margin-top:8px">No verified anchor${sup?.notFound ? " — extractor reported: " + esc(sup.notFound) : ""}.</p>`}
+      <div class="field"><label for="cpA">Answer (extraction)</label><input type="text" id="cpA" value="${esc(sup?.answer ?? "")}" /></div>
+      <div class="field"><label for="cpQ">Quote (must locate in the document, else the cell stays UNVERIFIED)</label><textarea id="cpQ">${esc(sup?.quote ?? "")}</textarea></div>
+      <div class="field"><label for="cpP">Pinpoint (optional, e.g. § 8)</label><input type="text" id="cpP" value="${esc(sup?.pinpoint ?? "")}" /></div>
+      <div class="row-btns">
+        <button class="btn" id="cpVerify">Verify with core</button>
+        ${sup?.notFound ? `<button class="btn ghost" id="cpReopen">Re-open question (clear not-found)</button>` : ""}
+      </div>
+      <div class="row-btns">
+        <button class="btn ghost" id="cpCheck">${m?.mark === "checked" ? "✓ Checked — undo" : "✓ Mark checked"}</button>
+        <button class="btn ghost" id="cpFlag">${m?.mark === "flagged" ? "⚑ Flagged — undo" : "⚑ Flag for review"}</button>
+      </div>`;
+    const panel = $("cellPanel");
+    panel.hidden = false;
+    $("cpClose").onclick = () => (panel.hidden = true);
+    if (cell?.status === "answered") {
+      $("cpSrc").onclick = () => openSource(did, v.charStart, v.charEnd, k);
+      $("cpCopy").onclick = () => copyText(v.verbatim);
+    }
+    $("cpVerify").onclick = () => {
+      const answer = $("cpA").value, quote = $("cpQ").value.trim(), pinpoint = $("cpP").value.trim();
+      const i = st.input.cells.findIndex((c) => c.documentId === did && c.questionId === qid);
+      const next = { documentId: did, questionId: qid, answer, quote, ...(pinpoint ? { pinpoint } : {}) };
+      if (i >= 0) st.input.cells[i] = next; else st.input.cells.push(next);
+      computeOut();
+      const res = out.cells.find((c) => c.documentId === did && c.questionId === qid);
+      const verdict = res.status === "answered" ? `answered (${res.verification.classification})` : `UNVERIFIED (${res.unverifiedReason})`;
+      audit("extraction-supplied", `${k} → ${verdict}`);
+      toast(`${k}: ${verdict}`);
+      save(); renderAll(); openCell(k);
+    };
+    if (sup?.notFound) $("cpReopen").onclick = () => {
+      const i = st.input.cells.findIndex((c) => c.documentId === did && c.questionId === qid);
+      if (i >= 0) { const { notFound: _nf, ...rest } = st.input.cells[i]; st.input.cells[i] = rest; }
+      audit("question-reopened", k); save(); renderAll(); openCell(k);
+    };
+    const mark = (name) => () => {
+      if (st.decisions[k]?.mark === name) delete st.decisions[k];
+      else st.decisions[k] = { mark: name, at: new Date().toISOString() };
+      audit("cell-marked", `${k} → ${st.decisions[k]?.mark ?? "cleared"}`);
+      save(); renderAll(); openCell(k);
+    };
+    $("cpCheck").onclick = mark("checked");
+    $("cpFlag").onclick = mark("flagged");
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    panel.focus({ preventScroll: true });
+  }
+
+  // ---- diff ----
+  function runDiff(nextInput) {
+    const next = buildMatrix({ documents: nextInput.documents, questions: questions(), cells: nextInput.cells });
+    const d = diffMatrices(st.snapOut, next);
+    st.snapOut = next;
+    const s = d.summary;
+    const rows = d.cells.filter((c) => c.added || c.removed || c.changed);
+    st.lastDiff = { s, rows: rows.map((c) => {
+      const side = (x) => x ? (x.status === "answered" ? "answered: " + x.answer : "unverified (" + x.unverifiedReason + ")") : "—";
+      return [c.documentId, c.questionId, side(c.prev), side(c.next)];
+    }) };
+    save();
+    renderDiff();
+    return s;
+  }
+  function renderDiff() {
+    const ld = st.lastDiff;
+    if (!ld) return;
+    const s = ld.s;
+    $("diffOut").innerHTML = `<p style="font-size:13px"><b>${s.changed} changed · ${s.added} added · ${s.removed} removed · ${s.unchanged} unchanged</b></p>` +
+      (ld.rows.length ? `<div class="scroll"><table><tr><th scope="col">Document × Question</th><th scope="col">Prev</th><th scope="col">Next</th></tr>` +
+        ld.rows.map(([did, qid, p, n]) => `<tr><td><code>${esc(did)} × ${esc(qid)}</code></td><td>${esc(p)}</td><td>${esc(n)}</td></tr>`).join("") + "</table></div>"
+        : "<p style='font-size:13px'>No differences — deterministic core, unchanged input.</p>");
+  }
+  $("diffBtn").onclick = () => { const s = runDiff(st.input); audit("rerun-diff", `${s.changed} changed, ${s.added} added, ${s.removed} removed`); toast(`Diff: ${s.changed} changed · ${s.added} added · ${s.removed} removed`); };
+  $("diffDlBtn").onclick = () => download("diff.json", JSON.stringify(diffMatrices(st.snapOut, out), null, 2) + NL, "application/json");
+  $("fixBtn").onclick = () => {
+    const c = st.input.cells.find((x) => x.documentId === "harbor-saas" && x.questionId === "Q5");
+    if (!c || c.quote === "Governing law: California.") { toast("Corrected re-extraction already applied"); return; }
+    c.quote = "Governing law: California."; c.answer = c.answer || "California";
+    computeOut(); save(); renderAll();
+    const s = runDiff(st.input);
+    audit("extraction-corrected", `harbor-saas::Q5 quote corrected → ${s.changed} changed`);
+    toast(`Corrected re-extraction applied — diff: ${s.changed} changed`);
+  };
+
+  // ---- guided input ----
+  $("addDocBtn").onclick = () => {
+    const name = $("docName").value.trim(), text = $("docText").value.trim();
+    if (!name || !text) { toast("Give the document both a name and pasted text"); return; }
+    let id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "doc";
+    while (st.input.documents.some((d) => d.id === id)) id += "-2";
+    st.input.documents.push({ id, name: name + " (pasted)", text });
+    audit("document-added", `${id} — cells start not_answered (core never answers)`);
+    toast(`Added ${id} — cells start UNVERIFIED; open one to supply an extraction`);
+    $("docName").value = ""; $("docText").value = "";
+    save(); renderAll();
+  };
+  $("jsonBtn2").onclick = () => {
+    const raw = $("jsonIn").value;
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) {
+      const pos = /position (\d+)/.exec(e.message);
+      const line = pos ? `line ${raw.slice(0, +pos[1]).split(NL).length}: ` : "";
+      audit("json-rejected", e.message.slice(0, 80)); toast(`JSON error ${line}${e.message.slice(0, 120)}`); return;
+    }
+    if (!Array.isArray(parsed.documents) || !Array.isArray(parsed.questions) || !Array.isArray(parsed.cells)) {
+      audit("json-rejected", "shape"); toast("Input JSON needs documents[], questions[] and cells[] arrays"); return;
+    }
+    st.input = parsed; st.snapOut = null;
+    computeOut(); st.snapOut = out; save(); renderAll();
+    audit("json-loaded", `${parsed.documents.length} docs × ${parsed.questions.length} questions`);
+    toast(`Loaded JSON: ${parsed.documents.length} documents × ${parsed.questions.length} questions`);
+  };
+
+  // ---- audit panel ----
+  function renderAudit() {
+    const es = storage.entries("audit");
+    $("auditT").innerHTML = es.length
+      ? `<tr><th scope="col">Time</th><th scope="col">Action</th><th scope="col">Detail</th></tr>` +
+        es.slice(-60).reverse().map((e) => `<tr><td>${esc((e.t ?? "").replace("T", " ").slice(0, 19))}</td><td>${esc(e.action)}</td><td>${esc(e.detail ?? "")}</td></tr>`).join("") +
+        (es.length > 60 ? `<tr><td colspan="3">+ ${es.length - 60} older entries (all included in the NDJSON export)</td></tr>` : "")
+      : `<tr><td>No actions yet — decisions, extraction edits and re-runs are appended here and survive reload.</td></tr>`;
+  }
+  $("auditBtn").onclick = () => download("audit.ndjson", storage.exportJsonl("audit"), "application/x-ndjson");
+
+  // ---- exports & controls ----
   function download(name, content, type) {
     const blob = new Blob([content], { type });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
-  document.getElementById("csvBtn").onclick = () => download("matrix.csv", toCSV(currentInput, currentOut), "text/csv");
-  document.getElementById("mdBtn").onclick = () => download("matrix.md", toMarkdown(currentInput, currentOut), "text/markdown");
-  document.getElementById("jsonBtn").onclick = () => download("matrix-output.json", JSON.stringify(currentOut, null, 2) + NL, "application/json");
-  // Re-run diff (mirrors examples/run.ts): this run vs the same extraction with
-  // the one rejected quote (harbor-saas × Q5) corrected to real document text.
-  document.getElementById("diffBtn").onclick = () => {
-    const prev = buildMatrix(inputFor("free"));
-    const next = buildMatrix({
-      ...inputFor("free"),
-      cells: EXAMPLE.cells.map((c) =>
-        c.documentId === "harbor-saas" && c.questionId === "Q5" ? { ...c, answer: "California", quote: "Governing law: California." } : c,
-      ),
-    });
-    download("diff.json", JSON.stringify(diffMatrices(prev, next), null, 2) + NL, "application/json");
+  const curIn = () => ({ documents: st.input.documents, questions: questions(), cells: st.input.cells });
+  $("csvBtn").onclick = () => { download("matrix.csv", toCSV(curIn(), out), "text/csv"); audit("export", "matrix.csv"); };
+  $("mdBtn").onclick = () => { download("matrix.md", toMarkdown(curIn(), out), "text/markdown"); audit("export", "matrix.md"); };
+  $("jsonBtn").onclick = () => { download("matrix-output.json", JSON.stringify(out, null, 2) + NL, "application/json"); audit("export", "matrix-output.json"); };
+  $("srcCsvBtn").onclick = () => { download("sources.csv", toSourcesCSV(curIn(), out), "text/csv"); audit("export", "sources.csv"); };
+  $("tpl").value = st.mode;
+  $("tpl").onchange = (e) => { st.mode = e.target.value; computeOut(); save(); renderAll(); audit("question-set", st.mode); };
+  $("qsearch").value = st.query;
+  $("qsearch").oninput = (e) => { st.query = e.target.value; save(); renderMatrix(); };
+  $("resetBtn").onclick = () => {
+    st.input = seedInput(); st.decisions = {}; st.filter = "all"; st.query = ""; st.mode = "free";
+    computeOut(); st.snapOut = out; save(); renderAll();
+    audit("state-reset", "working state reseeded (audit log kept)");
+    toast("Working state reset — audit log kept");
   };
+
+  // ---- boot ----
+  applyTheme();
+  renderAll();
+  renderAudit();
+  renderDiff();
+  if (!restored) audit("session-start", "seeded 13 documents × 5 questions (66 cells)");
+  else audit("session-restore", `state restored: ${st.input.documents.length} documents, ${storage.entries("audit").length} log entries`);
 </script>
 </body>
 </html>

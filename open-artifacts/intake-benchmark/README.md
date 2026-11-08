@@ -30,7 +30,7 @@ Beyond the base rubric:
 ## Run
 
 ```bash
-node --test "core/*.test.js"     # 32 tests
+node --test "core/*.test.js"     # 34 tests
 node examples/run.js             # regenerates output.json, comparison.csv/.md, drift.json/.md
 ```
 

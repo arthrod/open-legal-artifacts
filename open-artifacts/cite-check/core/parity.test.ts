@@ -41,5 +41,24 @@ test('core.js hand-port mirrors the engine on guard/omission/diff paths', async 
       { id: 'P2', text: 'The manifest listed 34,800 kilograms of freight … reported to the dispatch office that same afternoon.', sourceId: 's' },
     ],
   };
+  const negationFixture: CiteCheckInput = {
+    document: { name: 'Parity fixture (fictional)' },
+    sources: [
+      {
+        id: 'n',
+        name: 'Negation source (fictional)',
+        pages: [
+          { number: 2, text: 'The intake team documented the shortfall and reported it to the dispatch office that same afternoon before the shift ended.' },
+          { number: 4, text: 'the dispatcher confirmed the reweigh at the millbrook terminal.' },
+          { number: 7, text: 'The dispatcher confirmed the reweigh at the Millbrook terminal.' },
+        ],
+      },
+    ],
+    quotes: [
+      { id: 'P3', text: 'The intake team documented the shortfall and never reported it to the dispatch office that same afternoon before the shift ended.', sourceId: 'n', pinpoint: 'p. 2' },
+      { id: 'P4', text: 'The dispatcher confirmed the reweigh at the Millbrook terminal.', sourceId: 'n', pinpoint: 'p. 7' },
+    ],
+  };
   assert.deepEqual(js.runCiteCheck(input), runCiteCheck(input));
+  assert.deepEqual(js.runCiteCheck(negationFixture), runCiteCheck(negationFixture));
 });

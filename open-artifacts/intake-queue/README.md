@@ -12,7 +12,7 @@ matching is deterministic name math with visible scores.
 - Demo: open `demo/index.html` (standalone, prefilled with the fictional
   worked example — decide/assign, letters, ICS export, audit log, ingest
   verifier all live).
-- Tests: `node --test core/core.test.js` — 29 tests.
+- Tests: `node --test core/core.test.js` — 36 tests.
 - Example: `node examples/run.js` → regenerates `examples/output.json`,
   `queue.md`, `queue.csv`, `letters.md`, `intake.ics` from
   `examples/input.json`.
@@ -20,8 +20,12 @@ matching is deterministic name math with visible scores.
 ## How it works
 
 1. Names are normalized (case, punctuation, dotted abbreviations like
-   L.L.C., corporate suffixes; initials kept). Similarity = token
-   Jaccard + containment bonus.
+   L.L.C., corporate suffixes; initials kept; Unicode-aware — any-script
+   letters/digits survive, so exact CJK/Cyrillic/Arabic names match).
+   Similarity = best-first token alignment scored on exact matches, a
+   compact nickname/abbreviation table, an initials rule (J. Iwata ≈
+   John Iwata), and Jaro–Winkler typo tolerance, plus a containment
+   bonus — recall-biased so conflicts land in front of a human.
 2. Dedupe: a submission whose client AND opposing party both match an
    earlier submission ≥ 0.85 becomes a duplicate of the first.
 3. Conflicts: either party matching any roster entry — including its

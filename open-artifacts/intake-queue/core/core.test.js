@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { processQueue, transition, assign, decide, renderLetter, toICS, ingestSubmission, normalizeName, nameSimilarity, assessUrgency, toCSV, renderQueue } from './core.js';
 
 const AS_OF = '2026-11-07';
@@ -34,6 +35,43 @@ test('nameSimilarity: exact-normalized = 1, containment scores high, distinct = 
   assert.equal(nameSimilarity('Northwind Logistics, Inc.', 'northwind logistics'), 1);
   assert.ok(nameSimilarity('Northwind Logistics', 'Northwind Logistics Group') > 0.6);
   assert.equal(nameSimilarity('Harbor Bakehouse', 'Delgado Trucking'), 0);
+});
+
+test('normalizeName keeps non-Latin scripts (B04 must-fix 1): CJK/Cyrillic/Arabic letters survive', () => {
+  assert.equal(normalizeName('西山物流株式会社'), '西山物流株式会社'); // one whole-word CJK token
+  assert.equal(normalizeName('Иван Петров'), 'иван петров');
+  assert.equal(normalizeName('شركة النور'), 'شركة النور');
+  assert.equal(normalizeName('Ｎｅｏｎ Ｗｏｒｋｓ 合同会社'), 'neon works 合同会社'); // NFKC folds fullwidth
+});
+
+test('exact non-Latin adverse roster match routes to conflict-review (B04 repro, was silently missed)', () => {
+  const q = processQueue({
+    asOf: AS_OF,
+    roster: [{ name: '西山物流株式会社', role: 'adverse', matter: 'LIT-2026-099' }],
+    submissions: [sub({ client: { name: '西山物流株式会社' }, opposing: { name: 'Anyone Local Co' }, deadline: '2026-12-01' })],
+  });
+  const it = q.items[0];
+  assert.equal(it.conflicts.length, 1);
+  assert.equal(it.conflicts[0].score, 1);
+  assert.equal(it.conflicts[0].matchedSide, 'client');
+  assert.equal(it.state, 'conflict-review'); // identical CJK name must never sail through
+});
+
+test('nameSimilarity recall on the B04 probe pairs (typos, nicknames, initials, abbreviations)', () => {
+  const probes = [
+    ['Acme Holdings LLC', 'Acme Holtings LLC'],   // typo — theirs 0.97, ours was 0.33
+    ['Robert Meyer', 'Bob Meyer'],                 // nickname — theirs 0.95, ours was 0.33
+    ['John Iwata', 'J. Iwata'],                    // initial — theirs 0.96, ours was 0.33
+    ['Sable Insurance Company', 'Sable Ins Co'],   // abbreviation — theirs 0.92, ours was 0.33
+    ['John Smith', 'Jon Smyth'],                   // double typo — theirs 0.91, ours was 0
+  ];
+  for (const [a, b] of probes) {
+    assert.ok(nameSimilarity(a, b) >= 0.8, `${a} vs ${b} scored ${nameSimilarity(a, b)} — below the 0.8 conflict threshold`);
+  }
+  // recall without precision collapse: distinct names and wrong initials still stay low
+  assert.equal(nameSimilarity('Harbor Bakehouse', 'Delgado Trucking'), 0);
+  assert.ok(nameSimilarity('M. Iwata', 'K. Iwata') < 0.8);
+  assert.ok(nameSimilarity('Meyer Holdings', 'Robert Meyer') < 0.8); // shared surname alone must not conflict
 });
 
 // ------------------------------------------------- dedupe
@@ -441,4 +479,20 @@ test('ingestSubmission: verbatim names verify; altered name flagged unverified-e
   // null name = nothing extracted, not a verification failure
   const nullName = ingestSubmission({ client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: null } }, source);
   assert.equal(nullName.ok, true);
+});
+
+// ------------------------------------------------- checked-in examples
+
+test('examples/intake.ics is byte-identical to a fresh run: CRLF endings, post-decision states (B04 must-fix 3)', () => {
+  const raw = readFileSync(new URL('../examples/intake.ics', import.meta.url), 'utf8');
+  assert.ok(raw.includes('\r\n'), 'checked-in ICS must use CRLF (RFC 5545 §3.4)');
+  assert.ok(!/(^|[^\r])\n/.test(raw), 'checked-in ICS must not contain bare-LF line endings');
+  // rebuild exactly what examples/run.js produces (same guarded decisions)
+  const input = JSON.parse(readFileSync(new URL('../examples/input.json', import.meta.url), 'utf8'));
+  const q = processQueue(input);
+  assign(q, 'INT-1041', 'staff-kim (fictional)');
+  decide(q, 'INT-1042', 'decline', 'gc-lee (fictional)', 'conflict: Brightpath Solar LLC adverse on LIT-2025-003');
+  decide(q, 'INT-1043', 'accept', 'gc-lee (fictional)', 'capacity confirmed at screening');
+  decide(q, 'INT-1046', 'escalate', 'partner-oh (fictional)', 'existing firm client — relationship check needed');
+  assert.equal(raw, toICS(q), 'checked-in intake.ics is stale — rerun `node examples/run.js`');
 });

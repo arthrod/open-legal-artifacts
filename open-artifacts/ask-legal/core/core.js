@@ -300,6 +300,70 @@ export function exportAuditLog(auditLog) {
   return (auditLog ?? []).map((e) => JSON.stringify(e)).join("\n") + ((auditLog ?? []).length ? "\n" : "");
 }
 
+/**
+ * Serialize the audit log into its durable JSONL form (the save side of the
+ * persistence pair; `loadAudit` is the inverse). Same bytes as exportAuditLog,
+ * but refuses to persist a corrupted log: every entry must be an object
+ * carrying a unique non-empty string `auditId` — duplicate ids would break the
+ * AUD numbering that answerQuestion relies on.
+ * @param {Array<any>} auditLog
+ * @returns {string} JSON lines (trailing newline when non-empty)
+ * @throws {Error} naming the offending entry index
+ */
+export function saveAudit(auditLog) {
+  const seen = new Set();
+  (auditLog ?? []).forEach((e, i) => {
+    if (!e || typeof e !== "object" || Array.isArray(e)) {
+      throw new Error(`saveAudit: entry ${i} is not an object`);
+    }
+    if (typeof e.auditId !== "string" || !e.auditId) {
+      throw new Error(`saveAudit: entry ${i} has no auditId — refusing to persist a corrupted log`);
+    }
+    if (seen.has(e.auditId)) {
+      throw new Error(`saveAudit: duplicate auditId ${e.auditId} — the log is append-only; ids never repeat`);
+    }
+    seen.add(e.auditId);
+  });
+  return exportAuditLog(auditLog);
+}
+
+/**
+ * Load a durable audit log back from its JSONL form (the load side of the
+ * persistence pair) so a reloaded page or new process continues the same
+ * append-only log — numbering included — instead of restarting it. Refuses,
+ * never silently repairs: every non-empty line must parse as a JSON object
+ * with a unique non-empty string `auditId`. Null/empty input yields a fresh
+ * empty log (createAuditLog equivalent).
+ * @param {string|null|undefined} jsonl
+ * @returns {Array<any>} a fresh audit log array, safe to hand to answerQuestion
+ * @throws {Error} naming the 1-based line number of the malformed input
+ */
+export function loadAudit(jsonl) {
+  const log = createAuditLog();
+  if (jsonl == null) return log;
+  String(jsonl).split("\n").forEach((line, i) => {
+    const text = line.trim();
+    if (!text) return; // tolerate blank lines / trailing newline
+    let entry;
+    try {
+      entry = JSON.parse(text);
+    } catch {
+      throw new Error(`loadAudit: line ${i + 1} is not valid JSON`);
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`loadAudit: line ${i + 1} is not a JSON object`);
+    }
+    if (typeof entry.auditId !== "string" || !entry.auditId) {
+      throw new Error(`loadAudit: line ${i + 1} has no auditId`);
+    }
+    if (log.some((e) => e.auditId === entry.auditId)) {
+      throw new Error(`loadAudit: duplicate auditId ${entry.auditId} at line ${i + 1} — the log is append-only; ids never repeat`);
+    }
+    log.push(entry);
+  });
+  return log;
+}
+
 /* ---------- escalation ticket (drafts the ask) ---------- */
 
 /**

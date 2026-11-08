@@ -5,7 +5,8 @@ Documents × questions review matrix with cell-level source anchors: a cell is
 normalized / fuzzy-with-flag, with char span + pinpoint) **and** — on typed
 questions — satisfies the question's machine-checked schema. Everything else
 ships as `UNVERIFIED` with a machine reason (`not_answered`, `missing_quote`,
-`quote_not_verified`, `no_such_document`, `constraint_violation`, and the
+`quote_not_verified`, `no_such_document`, `no_such_question`,
+`constraint_violation`, and the
 three not-found states `not_present` / `unclear` / `needs_review`) — never
 guessed. A deterministic consistency pass flags minority `classify` values in
 a column as `outlier_value` (answer kept), `summary.columns[]` reports the
@@ -40,7 +41,7 @@ one changed cell.
 ## Run
 
 ```bash
-npx tsx --test core/*.test.ts   # 29 tests
+npx tsx --test core/*.test.ts   # 35 tests
 npx tsx examples/run.ts         # regenerates examples/output.json, matrix.csv, matrix.md, diff.json
 ```
 

@@ -99,6 +99,23 @@ test("scoreItem: unknown status and missing date score low but never guess", () 
   assert.match(b.rule, /no parseable effective date/);
 });
 
+test("scoreItem: US state law outside profile scores adjacent (never exact) when only US-FED is in profile", () => {
+  const tx = { ...ITEM, id: "tx-rule", title: "Texas Biometric Retention Schedule", jurisdiction: "Texas" };
+  const fedOnly = scoreItem(tx, RUBRIC, { jurisdictions: ["US-FED"], coreTopics: ["privacy"] }, AS_OF)
+    .breakdown.find((b) => b.factor === "jurisdiction");
+  assert.equal(fedOnly.points, 15); // adjacent tier — a TX-only rule is not a US-FED match
+  assert.ok(!/nationwide/.test(fedOnly.rule), `rule text must not claim a state rule applies nationwide: "${fedOnly.rule}"`);
+  // state listed in profile -> still exact
+  const inProfile = scoreItem({ ...tx, jurisdiction: "California" }, RUBRIC, { jurisdictions: ["US-CA"], coreTopics: ["privacy"] }, AS_OF)
+    .breakdown.find((b) => b.factor === "jurisdiction");
+  assert.equal(inProfile.points, 30);
+  assert.match(inProfile.rule, /exact/);
+  // no US jurisdiction in profile at all -> other
+  const none = scoreItem(tx, RUBRIC, { jurisdictions: ["EU"], coreTopics: ["privacy"] }, AS_OF)
+    .breakdown.find((b) => b.factor === "jurisdiction");
+  assert.equal(none.points, 0);
+});
+
 test("scoreItem: already-effective rules get no proximity points", () => {
   const s = scoreItem({ ...ITEM, effectiveDate: "2026-10-01" }, RUBRIC, PROFILE, AS_OF);
   assert.equal(s.scoring ?? s ? s.breakdown.find((x) => x.factor === "proximity").points : 0, 0);
@@ -177,6 +194,29 @@ test("dedupeItems merge fills missing dates but never overwrites existing values
   // existing values win: kept title/link/status are never replaced
   assert.equal(unique[0].title, ITEM.title);
   assert.equal(unique[0].status, ITEM.status);
+});
+
+/* ---------- B07 fix: id-less (manual-entry) items are never collapsed as "duplicate id" ---------- */
+
+test("dedupeItems keeps distinct id-less items separate (manual-entry feeds)", () => {
+  const { unique, duplicates } = dedupeItems([
+    { title: "Colorado Chatbot Safety Act", jurisdiction: "US-CO" },
+    { title: "EU AI Act transparency rules", jurisdiction: "EU" },
+    { title: "New York wage rules", jurisdiction: "New York" },
+  ]);
+  assert.equal(unique.length, 3);
+  assert.deepEqual(duplicates, []);
+});
+
+test("dedupeItems still merges id-less items sharing normalized title + jurisdiction", () => {
+  const { unique, duplicates } = dedupeItems([
+    { title: "Colorado Chatbot Safety Act", jurisdiction: "US-CO" },
+    { title: "colorado chatbot safety act!", jurisdiction: "Colorado", link: "https://example.gov/co-chatbot" },
+  ]);
+  assert.equal(unique.length, 1);
+  assert.equal(unique[0].link, "https://example.gov/co-chatbot"); // merge still enriches the kept item
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].reason, "same normalized title + jurisdiction");
 });
 
 /* ---------- improvement 4: coverage gaps (Step 0) ---------- */
@@ -268,16 +308,7 @@ const EXPECTED_DIGEST = `# Regulatory horizon scan digest
 - commentWindow +0 (no comment deadline)
 - status +15 (status="final")
 
-### 2. Texas Biometric Retention Schedule — score 93
-
-\`tx-biometric-retention\` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
-- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
-- topic +25 (core topic)
-- proximity +15 (effective in 145d (<= 180d threshold))
-- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
-- status +8 (status="proposed")
-
-### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
+### 2. FCC AI Voice Disclosure in Outreach Calls — score 85
 
 \`us-fcc-ai-disclosure\` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
 - jurisdiction +30 (exact profile jurisdiction match)
@@ -285,6 +316,15 @@ const EXPECTED_DIGEST = `# Regulatory horizon scan digest
 - proximity +15 (effective in 100d (<= 180d threshold))
 - commentWindow +0 (no comment deadline)
 - status +15 (status="final")
+
+### 3. Texas Biometric Retention Schedule — score 78
+
+\`tx-biometric-retention\` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
+- jurisdiction +15 (US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state))
+- topic +25 (core topic)
+- proximity +15 (effective in 145d (<= 180d threshold))
+- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
+- status +8 (status="proposed")
 
 ## Medium band (2 items)
 
@@ -392,6 +432,21 @@ test("demo escapes every feed-derived interpolation reaching innerHTML", () => {
       `unescaped interpolation \`${e}\` reaches innerHTML — wrap feed-derived strings in esc()`
     );
   }
+});
+
+/* ---------- B07 fix: "better than counterpart" claims stay defensible ---------- */
+
+const README_MD = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const SPEC_MD = readFileSync(new URL("../spec.md", import.meta.url), "utf8");
+
+test("README/spec contain no falsified counterpart claims (snapshot-only, LLM-prose wording)", () => {
+  for (const [name, doc] of [["README.md", README_MD], ["spec.md", SPEC_MD]]) {
+    assert.ok(!doc.includes("LLM prose"), `${name}: "counterpart policies are LLM prose" was falsified — keep the defensible tested-code claim`);
+    assert.ok(!/closed artifact snapshots|shows a snapshot/.test(doc), `${name}: "counterpart has no diff" was falsified — claim field-level + rubric-version diff instead`);
+  }
+  // the defensible replacements must actually be present
+  assert.match(README_MD, /field-level/i);
+  assert.match(SPEC_MD, /rubric/);
 });
 
 test("demo score cell renders the actual cap flag text, not a literal per flag", () => {

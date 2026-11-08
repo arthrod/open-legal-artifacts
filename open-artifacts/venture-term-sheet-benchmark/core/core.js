@@ -174,6 +174,15 @@ function bandLabel(v, e) {
   return 'above p75';
 }
 
+/** Value with its unit for prose, e.g. `1.5 x` / `0.5` when unitless. */
+function valueLabel(v, e) { return e.unit ? `${v} ${e.unit}` : `${v}`; }
+
+/** Human range label: point ranges collapse to one value — `1 x`, never `1–1 x`. */
+function rangeLabel(e) {
+  const unit = e.unit ? ` ${e.unit}` : '';
+  return e.min === e.max ? `${e.min}${unit}` : `${e.min}–${e.max}${unit}`;
+}
+
 /**
  * Compare one term value against one benchmark entry.
  * Vocabulary (optional, whole-grid + NVCA structural set) enables the typo
@@ -190,14 +199,16 @@ function bandLabel(v, e) {
  */
 export function compareTerm(value, entry, vocabulary = null) {
   if (entry.kind === 'range') {
+    if (!Number.isFinite(entry.min) || !Number.isFinite(entry.max)) return { verdict: 'unknown_value_type', detail: 'Benchmark range entry has no finite bounds — fix the grid entry; nothing was guessed.' };
+    if (entry.min > entry.max) return { verdict: 'unknown_value_type', detail: `Benchmark range entry is degenerate (min ${entry.min} > max ${entry.max}) — fix the grid entry; nothing was guessed.` };
     const v = Number(value);
-    if (!Number.isFinite(v)) return { verdict: 'unknown_value_type', detail: `Value ${JSON.stringify(value)} is not numeric; benchmark is a ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
+    if (typeof value === 'boolean' || !Number.isFinite(v)) return { verdict: 'unknown_value_type', detail: `Value ${JSON.stringify(value)} is ${typeof value === 'boolean' ? 'a boolean' : 'not numeric'}; benchmark is a ${rangeLabel(entry)} range.` };
     if (v >= entry.min && v <= entry.max) {
       const band = Number.isFinite(entry.p25) && Number.isFinite(entry.p50) && Number.isFinite(entry.p75)
         ? ` — ${bandLabel(v, entry)} band (EXAMPLE percentiles — replace with your own dated data)` : '';
-      return { verdict: 'inside_market', detail: `${v} ${entry.unit ?? ''}within ${entry.min}–${entry.max} ${entry.unit ?? ''}range${band}.` };
+      return { verdict: 'inside_market', detail: `${valueLabel(v, entry)} is within the ${rangeLabel(entry)} range${band}.` };
     }
-    const out = { verdict: 'outside_market', detail: `${v} ${entry.unit ?? ''}is ${v > entry.max ? 'above' : 'below'} the ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
+    const out = { verdict: 'outside_market', detail: `${valueLabel(v, entry)} is ${v > entry.max ? 'above' : 'below'} the ${rangeLabel(entry)} range.` };
     if (entry.favor) out.favor = v > entry.max ? entry.favor : invertFavor(entry.favor);
     return out;
   }
@@ -273,7 +284,7 @@ export function benchmarkTermSheet(input, grid = DEFAULT_GRID) {
       continue;
     }
     const { verdict, detail, favor } = compareTerm(value, entry, vocabulary);
-    const benchmark = entry.kind === 'range' ? `${entry.min}–${entry.max} ${entry.unit ?? ''}`.trim()
+    const benchmark = entry.kind === 'range' ? rangeLabel(entry)
       : entry.kind === 'flag' ? entry.values.map(String).join(', ') : entry.values.join(', ');
     const row = { name, value, verdict, detail, benchmark, source: { ...entry.source } };
     if (verdict === 'outside_market' && favor) row.favor = favor;

@@ -15,6 +15,10 @@
  *
  * Guards (deterministic, never silent):
  *   number guard   — an altered numeric token caps the class at fuzzy and is noted
+ *   insert guard   — tokens present in the quote but absent from the located span
+ *                    are noted and cap the class at fuzzy (a quote must not add words)
+ *   negation guard — an inserted or dropped negator ("not", "never", …) flips
+ *                    meaning: divergence is noted and caps the class at fuzzy
  *   omission check — tokens dropped from the located span are noted; an explicit
  *                    ellipsis in the quote marks the omission as accepted
  *
@@ -151,6 +155,31 @@ export function numericMismatches(quote, source) {
   const paired = [];
   for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
   return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
+}
+
+/** Negation tokens: inserting or dropping one flips a quote's meaning.
+ * @type {Set<string>} */
+const NEGATORS = new Set(["not", "no", "never", "none", "neither", "nor", "nobody", "nothing", "nowhere", "cannot"]);
+
+/**
+ * Deterministic negation guard: multiset-diff the negation tokens of quote
+ * vs. the located source span (mirrors numericMismatches). Inserting "not"
+ * into a quote — or silently dropping it — flips meaning, so any divergence
+ * must never pass as near-verbatim.
+ * @param {string[]} quote @param {string[]} source
+ * @returns {{ quoteOnly: string[], sourceOnly: string[] }} */
+export function negationDivergence(quote, source) {
+  const qNeg = multiset(quote.filter((t) => NEGATORS.has(t)));
+  const sNeg = multiset(source.filter((t) => NEGATORS.has(t)));
+  const quoteOnly = [];
+  const sourceOnly = [];
+  for (const [t, c] of qNeg) {
+    for (let k = 0; k < c - (sNeg.get(t) ?? 0); k++) quoteOnly.push(t);
+  }
+  for (const [t, c] of sNeg) {
+    for (let k = 0; k < c - (qNeg.get(t) ?? 0); k++) sourceOnly.push(t);
+  }
+  return { quoteOnly, sourceOnly };
 }
 
 /* ============================================================
@@ -589,9 +618,6 @@ function checkPinpoint(quote, anchor, built) {
     const pageText = built.fullText.slice(seg.start, seg.end);
     const lineTo = parsed.lineTo ?? parsed.lineFrom;
     if (!pageText.includes("\n")) {
-      if (parsed.lineFrom <= 1 && lineTo <= 1) {
-        return { raw: quote.pinpoint, parsed, status: "ok", detail: `quote is located on page ${anchorPage} (single line)` };
-      }
       return {
         raw: quote.pinpoint,
         parsed,
@@ -711,7 +737,10 @@ export function runCiteCheck(input) {
 
     if (rawContains(built.fullText, quote.text)) {
       classification = "exact";
-      anchor = anchorFromWindow(built, win ?? locateRaw(built.fullText, quote.text));
+      // the window search can tie on a case/punctuation-drifted look-alike;
+      // re-verify byte equality and fall back to the literal indexOf position
+      const exactWin = win !== null && win.verbatim === quote.text.trim() ? win : locateRaw(built.fullText, quote.text);
+      anchor = anchorFromWindow(built, exactWin);
       if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
     } else if (similarity >= 0.95 && coverage >= 0.95) {
       classification = "normalized";
@@ -739,6 +768,28 @@ export function runCiteCheck(input) {
         if (mism.paired.length + mism.quoteOnly.length > 0) {
           classification = "fuzzy";
           notes.push("number alteration caps the classification at fuzzy — requires human review");
+        }
+        // insert guard: tokens present in the quote but absent from the located span
+        let insertCapped = false;
+        for (const op of diff) {
+          if (op.op !== "insert") continue;
+          notes.push(`inserts "${op.quote.join(" ")}" — absent from the located source text`);
+          insertCapped = true;
+        }
+        if (insertCapped) {
+          classification = "fuzzy";
+          notes.push("inserted tokens cap the classification at fuzzy — requires human review");
+        }
+        // negation guard: an inserted or dropped negator flips meaning
+        const neg = negationDivergence(
+          quoteToks.map((t) => t.norm),
+          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
+        );
+        for (const q of neg.quoteOnly) notes.push(`negation "${q}" in the quote has no counterpart in the located source text — meaning may be flipped`);
+        for (const s of neg.sourceOnly) notes.push(`negation "${s}" in the located source text has no counterpart in the quote — meaning may be flipped`);
+        if (neg.quoteOnly.length + neg.sourceOnly.length > 0) {
+          classification = "fuzzy";
+          notes.push("negation divergence caps the classification at fuzzy — requires human review");
         }
       }
     } else if (similarity >= fuzzyThreshold && coverage >= 0.6) {

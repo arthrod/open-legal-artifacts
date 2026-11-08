@@ -11,8 +11,9 @@
  * Dependency-free ES module; browser + Node compatible.
  *
  * Classification (evaluated per clause, in order):
- *   deal_breaker — clause triggers an `avoid` rule (contains-match, or
- *                  similarity-match at the rule's threshold)
+ *   deal_breaker — clause triggers an `avoid` rule (verbatim containment of
+ *                  the avoid text in any mode, or similarity-match at the
+ *                  rule's threshold)
  *   compliant    — clause matches the preferred standard (best-window
  *                  similarity ≥ preferred threshold, and at least as strong as
  *                  the best fallback match)
@@ -249,13 +250,37 @@ export function redline(row, rule) {
  *   - lists ("- " items, scalars or mappings whose first key sits on the
  *     dash line, continuation keys aligned under it)
  *   - scalars: "double-quoted", 'single-quoted', numbers, true/false, null
- *   - blank lines and full-line # comments
- * Not supported (documented): inline comments, anchors, multi-line blocks,
+ *   - blank lines, full-line # comments, and inline " #" comments (a #
+ *     outside quotes at value start or after whitespace, per YAML; a # glued
+ *     to a token — "PB#1" — is part of the value)
+ * Not supported (documented): anchors, multi-line blocks,
  * flow collections, "- " items at irregular indentation.
+ *
+ * Inline comments are stripped BEFORE scalar parsing, so comment text can
+ * never silently end up inside a value; malformed structure remains a
+ * line-numbered parse error — never a guess.
  * @param {string} src
  * @returns {any} YNode
  */
 export function parseYaml(src) {
+  /** Strip a trailing inline comment: a `#` outside quotes that starts the value
+   *  or is preceded by whitespace begins a comment (YAML spec); a `#` glued to
+   *  other characters is part of the value. Quote-aware, char-by-char.
+   *  @param {string} val @returns {string} */
+  function stripComment(val) {
+    let quote = null;
+    for (let i = 0; i < val.length; i++) {
+      const c = val[i];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === "#" && (i === 0 || val[i - 1] === " " || val[i - 1] === "\t")) {
+        return val.slice(0, i);
+      }
+    }
+    return val;
+  }
   function scalar(raw) {
     const s = raw.trim();
     if (s === "" || s === "null" || s === "~") return null;
@@ -293,7 +318,7 @@ export function parseYaml(src) {
       const m = l.slice(li).match(KEY_RE);
       if (!m) throw new Error(`yaml: expected "key: value" at line ${i + 1}: "${l.trim()}"`);
       const key = m[1].trim();
-      const val = m[2];
+      const val = stripComment(m[2]);
       i++;
       if (val.trim() !== "") {
         obj[key] = scalar(val);
@@ -314,7 +339,7 @@ export function parseYaml(src) {
       const l = lines[i];
       const li = indentOf(l);
       if (li !== ind || !l.trimStart().startsWith("- ")) break;
-      const rest = l.trimStart().slice(2);
+      const rest = stripComment(l.trimStart().slice(2));
       if (rest.trim() === "") {
         i++;
         if (i < lines.length && indentOf(lines[i]) > ind) out.push(parseBlock(indentOf(lines[i])));
@@ -382,12 +407,23 @@ function scoreStandard(clauseText, std, tier) {
 export function classifyClause(clause, rule, th) {
   const approverFor = () => rule.escalation?.approver ?? "__DEFAULT__";
 
-  // 1. avoid rules first — a deal-breaker is a deal-breaker regardless of other matches
+  // 1. avoid rules first — a deal-breaker is a deal-breaker regardless of other matches.
+  // Verbatim fast path: avoid text buried VERBATIM inside a much longer clause
+  // dilutes whole-clause similarity below any threshold, so containment is
+  // checked first for every mode — a verbatim hit is always a deal-breaker.
+  // Near-verbatim (non-exact) triggers buried in a long clause escape whole-text
+  // similarity the same way, so similarity mode also scores the best window of
+  // the clause against the avoid text and takes the max.
   for (const av of rule.avoid) {
-    const hit =
-      av.mode === "contains"
-        ? normContains(clause.text, av.text)
-        : similarity(clause.text, av.text) >= (av.threshold ?? 0.8);
+    const verbatimHit = normContains(clause.text, av.text);
+    let hit;
+    if (av.mode === "contains") {
+      hit = verbatimHit;
+    } else {
+      const whole = similarity(clause.text, av.text);
+      const win = bestWindow(clause.text, av.text)?.score ?? 0;
+      hit = verbatimHit || Math.max(whole, win) >= (av.threshold ?? 0.8);
+    }
     if (hit) {
       return {
         row: {
@@ -399,8 +435,12 @@ export function classifyClause(clause, rule, th) {
           similarity: 1,
           clauseQuote: { text: clause.text, charStart: 0, charEnd: clause.text.length },
           clauseText: clause.text,
-          reason: `matches avoid rule${av.id ? ` "${av.id}"` : ""}: ${av.mode === "contains" ? "contains" : "similar to"} "${av.text}"`,
-          routedTo: approverFor() === "__DEFAULT__" ? null : approverFor(),
+          reason:
+            `matches avoid rule${av.id ? ` "${av.id}"` : ""}: ${verbatimHit ? "contains" : "similar to"} "${av.text}"` +
+            (rule.escalation === undefined
+              ? "; no escalation approver set on this rule — routed to the playbook default approver"
+              : ""),
+          routedTo: approverFor(),
         },
       };
     }
