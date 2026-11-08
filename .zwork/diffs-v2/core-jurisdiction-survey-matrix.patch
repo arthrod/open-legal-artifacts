@@ -1,0 +1,1355 @@
+diff --git a/open-artifacts/jurisdiction-survey-matrix/README.md b/open-artifacts/jurisdiction-survey-matrix/README.md
+index 67f361e..c54db2a 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/README.md
++++ b/open-artifacts/jurisdiction-survey-matrix/README.md
+@@ -19,14 +19,17 @@ cite-before-claim contract: **unverified cells are never guessed.**
+   content but carry a re-verification warning.
+ - Coverage stats (overall + per-jurisdiction + per-question), a prioritized
+   re-verification worklist (`toWorklist`), and CSV + Markdown exports where
+-  UNVERIFIED stays explicit and citations render as links.
++  UNVERIFIED stays explicit and citations render as links (http/https only —
++  unsafe schemes like `javascript:` are never linked; they render as inert
++  text with a warning, and CSV export neutralizes spreadsheet formula
++  injection).
+ - Demo loads your own survey (paste JSON or file, as-of picker) — client-side
+   only, no data leaves the machine.
+ 
+ ## Run
+ 
+ ```bash
+-node --test            # 16 tests (node:test)
++node --test            # 24 tests (node:test)
+ node examples/run.js   # builds the 7×4 worked example, writes matrix.json, survey.csv, survey.md
+ ```
+ 
+diff --git a/open-artifacts/jurisdiction-survey-matrix/core/core.js b/open-artifacts/jurisdiction-survey-matrix/core/core.js
+index b6899a5..bf0e585 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/core/core.js
++++ b/open-artifacts/jurisdiction-survey-matrix/core/core.js
+@@ -30,6 +30,18 @@ export function parseDate(d) {
+  * @type {{ maxAgeDays: number, requireSourceUrl: boolean }} */
+ export const DEFAULT_POLICY = { maxAgeDays: 180, requireSourceUrl: true };
+ 
++/** Link allowlist: only http(s) URLs are ever surfaced as links. Anything
++ * else — javascript:, data:, vbscript:, ftp:, … — returns null and renders as
++ * inert text with a warning, never as a clickable/exported link. Whitespace
++ * is trimmed first so it cannot smuggle a scheme.
++ * @param {any} u
++ * @returns {string|null} the trimmed URL when http(s), else null */
++export function safeUrl(u) {
++  if (typeof u !== "string") return null;
++  const t = u.trim();
++  return /^https?:\/\//i.test(t) ? t : null;
++}
++
+ /** All distinct digit runs in a string ("30 days, $200" → ["30","200"]).
+  * @param {string|null|undefined} s
+  * @returns {string[]} */
+@@ -66,7 +78,8 @@ export function classifyCell(cell, policy = {}, asOfIso) {
+   const p = { ...DEFAULT_POLICY, ...policy };
+   const hasAnswer = typeof cell?.answer === "string" && cell.answer.trim().length > 0;
+   const hasCitation = typeof cell?.citation === "string" && cell.citation.trim().length > 0;
+-  const hasSourceUrl = typeof cell?.sourceUrl === "string" && cell.sourceUrl.trim().length > 0;
++  const rawUrl = typeof cell?.sourceUrl === "string" ? cell.sourceUrl : "";
++  const hasSourceUrl = safeUrl(rawUrl) !== null; // unsafe schemes never count as a link to the law
+   const verified = parseDate(cell?.verifiedDate);
+ 
+   if (!hasAnswer && !hasCitation) return { status: "unverified", reason: "no answer provided", ageDays: null, warnings: [], cell };
+@@ -74,11 +87,20 @@ export function classifyCell(cell, policy = {}, asOfIso) {
+   if (!hasCitation)
+     return { status: "unverified", reason: "answer present but no source citation — unverifiable claims are never surfaced", ageDays: null, warnings: [], cell };
+   if (!hasSourceUrl && p.requireSourceUrl !== false)
+-    return { status: "unverified", reason: "citation present but no sourceUrl — a link to the underlying law is required before the cell renders (policy.requireSourceUrl)", ageDays: null, warnings: [], cell };
++    return {
++      status: "unverified",
++      reason: rawUrl.trim()
++        ? `citation present but sourceUrl is not an http(s) link ("${rawUrl.trim()}") — unsafe schemes are never linked (policy.requireSourceUrl)`
++        : "citation present but no sourceUrl — a link to the underlying law is required before the cell renders (policy.requireSourceUrl)",
++      ageDays: null, warnings: [], cell,
++    };
+   if (!verified)
+     return { status: "unverified", reason: "answer and citation present but verification date missing or malformed", ageDays: null, warnings: [], cell };
+ 
+   const warnings = figureWarnings(cell.answer, cell.quotedText);
++  // Even when policy allows missing URLs, an unsafe URL is never linked — say so.
++  if (rawUrl.trim() && !hasSourceUrl)
++    warnings.push(`sourceUrl "${rawUrl.trim()}" is not http(s) — shown as text, never linked`);
+ 
+   const asOf = parseDate(asOfIso ?? null);
+   if (asOf) {
+@@ -122,7 +144,18 @@ export function buildMatrix(survey, asOfIso) {
+   const knownJurisdictions = new Set(jurisdictions.map((j) => String(j).toLowerCase()));
+   const knownQuestions = new Set(questions.map((q) => String(q.id).toLowerCase()));
+   const cellIndex = new Map();
+-  for (const c of survey.cells ?? []) {
++  // Input shape: cells must be an array of cell objects. A keyed object (or
++  // any non-array) is reported and ignored — never a TypeError that crashes
++  // the caller mid-render (A08 finding: keyed-object cells used to throw
++  // "object is not iterable" and the demo silently kept the stale matrix).
++  const cells = Array.isArray(survey.cells) ? survey.cells : [];
++  if (survey.cells != null && !Array.isArray(survey.cells))
++    warnings.push(`input warning: cells must be an array of cell objects — got ${typeof survey.cells}, ignored`);
++  for (const c of cells) {
++    if (c == null || typeof c !== "object") {
++      warnings.push(`orphan cell ignored: cell entry is not an object (${JSON.stringify(c) ?? String(c)})`);
++      continue;
++    }
+     const jKey = String(c.jurisdiction ?? "").toLowerCase();
+     const qKey = String(c.question ?? "").toLowerCase();
+     const key = `${jKey}|${qKey}`;
+@@ -146,7 +179,7 @@ export function buildMatrix(survey, asOfIso) {
+       if (cls.status !== "unverified") {
+         out.answer = raw.answer;
+         out.citation = raw.citation;
+-        out.sourceUrl = typeof raw.sourceUrl === "string" && raw.sourceUrl.trim() ? raw.sourceUrl : null;
++        out.sourceUrl = safeUrl(raw.sourceUrl); // null unless http(s) — unsafe schemes are never surfaced as links
+         out.quotedText = typeof raw.quotedText === "string" && raw.quotedText.trim() ? raw.quotedText : null;
+         out.verifiedDate = raw.verifiedDate;
+         out.verifiedBy = raw.verifiedBy ?? null;
+@@ -253,8 +286,16 @@ export function worklistToMarkdown(matrix) {
+ /* ---------- exports ---------- */
+ 
+ function csvEscape(v) {
+-  const s = String(v ?? "");
+-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
++  if (v == null) return "";
++  let s = String(v);
++  // Formula-injection neutralization (OWASP CSV injection): a cell that
++  // starts with = + - @ (or contains tab/CR/LF) gets an apostrophe prefix so
++  // spreadsheet apps cannot interpret it as a formula. Impl lifted from the
++  // patent-claim-comparison core (tested there since B02 wave).
++  let prefixed = false;
++  if (/^[=+\-@\t\r]/.test(s) || /[\t\r\n]/.test(s)) { s = "'" + s; prefixed = true; }
++  if (prefixed || /[",\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
++  return s;
+ }
+ 
+ /**
+@@ -300,7 +341,10 @@ export function toMarkdown(matrix) {
+     lines.push(`## ${q.id}. ${q.text}`, "", "| Jurisdiction | Answer | Source | Verified | Status |", "|---|---|---|---|---|");
+     matrix.jurisdictions.forEach((j, r) => {
+       const c = matrix.grid[r][matrix.questions.indexOf(q)];
+-      const source = c.sourceUrl ? `[${c.citation}](${c.sourceUrl})` : c.citation;
++      // Defense-in-depth: even a hand-built matrix never exports a non-http(s) link.
++      const url = safeUrl(c.sourceUrl);
++      const unsafeNote = c.sourceUrl && !url && c.status !== "unverified" ? " (sourceUrl not http(s) — shown as text)" : "";
++      const source = url ? `[${c.citation}](${url})` : `${c.citation ?? ""}${unsafeNote}`;
+       const cells = c.status === "unverified"
+         ? ["**UNVERIFIED**", "—", "—", "⚠ " + c.reason]
+         : [c.answer, source, `${c.verifiedDate} (${c.verifiedBy ?? "?"})`,
+diff --git a/open-artifacts/jurisdiction-survey-matrix/core/core.test.js b/open-artifacts/jurisdiction-survey-matrix/core/core.test.js
+index 286e1a5..ebf71e3 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/core/core.test.js
++++ b/open-artifacts/jurisdiction-survey-matrix/core/core.test.js
+@@ -1,7 +1,7 @@
+ /** Tests for jurisdiction-survey-matrix core. Run: node --test (from artifact root) */
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown } from "./core.js";
++import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown, safeUrl } from "./core.js";
+ 
+ const AS_OF = "2026-11-07";
+ 
+@@ -177,3 +177,118 @@ test("coverage breakdown: byJurisdiction and byQuestion", () => {
+   assert.equal(m.coverage.byJurisdiction["US-CA"].verified, 2);
+   assert.deepEqual(m.coverage.byQuestion["threshold"], { total: 4, verified: 2, stale: 0, unverified: 2 });
+ });
++
++/* ---------- B08 fixes: URL scheme allowlist, CSV injection, input-shape crash ---------- */
++
++const VERIFIED_CELL = {
++  jurisdiction: "A", question: "q1", answer: "Yes (fictional).", citation: "Fictional Stat. § 1",
++  sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan",
++};
++
++test("safeUrl: only http/https schemes are linkable", () => {
++  assert.equal(safeUrl("https://fictional.example/x"), "https://fictional.example/x");
++  assert.equal(safeUrl("http://fictional.example/x"), "http://fictional.example/x");
++  assert.equal(safeUrl("HTTPS://Example.com/X"), "HTTPS://Example.com/X");
++  assert.equal(safeUrl("  https://fictional.example/x  "), "https://fictional.example/x");
++  assert.equal(safeUrl("javascript:alert(document.domain)"), null);
++  assert.equal(safeUrl(" javascript:alert(1)"), null); // leading whitespace must not smuggle a scheme
++  assert.equal(safeUrl("JAVASCRIPT:alert(1)"), null);
++  assert.equal(safeUrl("data:text/html,<script>alert(1)</script>"), null);
++  assert.equal(safeUrl("vbscript:msgbox(1)"), null);
++  assert.equal(safeUrl("ftp://fictional.example/x"), null);
++  assert.equal(safeUrl(""), null);
++  assert.equal(safeUrl(null), null);
++  assert.equal(safeUrl(42), null);
++});
++
++test("unsafe sourceUrl fails requireSourceUrl — a javascript: cell is never verified", () => {
++  const c = classifyCell({ ...VERIFIED_CELL, sourceUrl: "javascript:alert(document.domain)" }, {}, AS_OF);
++  assert.equal(c.status, "unverified");
++  assert.match(c.reason, /sourceUrl.*http/);
++  const https = classifyCell(VERIFIED_CELL, {}, AS_OF);
++  assert.equal(https.status, "verified");
++});
++
++test("unsafe sourceUrl is never surfaced as a link — inert text + warning, even with requireSourceUrl off", () => {
++  const m = buildMatrix(
++    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
++      policy: { requireSourceUrl: false },
++      cells: [{ ...VERIFIED_CELL, sourceUrl: "javascript:alert(1)" }] },
++    AS_OF,
++  );
++  const cell = m.grid[0][0];
++  assert.equal(cell.status, "verified"); // policy relaxed, but the URL itself is still never linked
++  assert.equal(cell.sourceUrl, null);
++  assert.ok((cell.warnings ?? []).some((w) => /sourceUrl.*not.*http/i.test(w) && /javascript:alert\(1\)/.test(w)));
++  const md = toMarkdown(m);
++  assert.ok(!md.includes("](javascript:"));
++  assert.match(md, /Fictional Stat\. § 1/); // citation still visible as inert text
++  assert.match(md, /javascript:alert\(1\)/); // ...and the rejected URL is shown as text with its warning
++});
++
++test("toMarkdown never emits a non-http(s) link, even for hand-built matrices", () => {
++  const m = buildMatrix(SURVEY, AS_OF);
++  m.grid[0][0].sourceUrl = "javascript:alert(document.domain)"; // hostile/buggy caller
++  const md = toMarkdown(m);
++  assert.ok(!/\]\(javascript:/i.test(md));
++  assert.match(md, /Fictional Civ\. Code § 1798\.82-like statute/);
++});
++
++test("toCsv neutralizes spreadsheet formula injection (= + - @ tab CR)", () => {
++  const hostile = {
++    topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
++    cells: [{
++      jurisdiction: "A", question: "q1",
++      answer: '=HYPERLINK("http://evil.example","click") — injected',
++      citation: "@SUM(1+1)*cmd|' /C calc'!A0",
++      sourceUrl: "https://fictional.example/x",
++      quotedText: "\tTAB-led quote\nsecond line",
++      verifiedDate: "2026-08-01", verifiedBy: "+CMD-injector\r",
++    }],
++  };
++  const csv = toCsv(buildMatrix(hostile, AS_OF));
++  for (const line of csv.trim().split("\n").slice(1)) {
++    // every exported cell that could start a formula (or already carries ' ) is apostrophe-prefixed and quoted
++    const fields = [];
++    let cur = "", inQ = false;
++    for (let i = 0; i < line.length; i++) {
++      const ch = line[i];
++      if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
++      else if (ch === "," && !inQ) { fields.push(cur); cur = ""; }
++      else cur += ch;
++    }
++    fields.push(cur);
++    for (const f of fields) {
++      assert.ok(!/^[=+\-@\t\r]/.test(f), `cell not hardened: ${JSON.stringify(f)}`);
++    }
++  }
++  assert.match(csv, /"'=HYPERLINK/); // the guard is visible in the bytes
++  assert.match(csv, /"'@SUM/);
++});
++
++test("toCsv leaves ordinary cells untouched (no spurious quoting/prefixing)", () => {
++  const csv = toCsv(buildMatrix(SURVEY, AS_OF));
++  const ca = csv.trim().split("\n").find((l) => l.startsWith("US-CA,deadline"));
++  assert.ok(ca && !ca.includes("'"), ca);
++});
++
++test("buildMatrix never throws on wrong cell shapes — keyed-object cells warn, not crash", () => {
++  const m = buildMatrix(
++    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
++      cells: { "a|q1": { answer: "yes", citation: "c", sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01" } } },
++    AS_OF,
++  ); // A08 repro: keyed object instead of array used to throw TypeError (object is not iterable)
++  assert.equal(m.grid[0][0].status, "unverified");
++  assert.ok(m.warnings.some((w) => /cells must be an array/i.test(w)));
++  assert.equal(m.coverage.unverified, 1);
++});
++
++test("buildMatrix tolerates non-object cell entries (null, string) with orphan warnings", () => {
++  const m = buildMatrix(
++    { topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }],
++      cells: [null, "not a cell", { jurisdiction: "A", question: "q1", answer: "ok", citation: "c", sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01" }] },
++    AS_OF,
++  );
++  assert.equal(m.grid[0][0].status, "verified");
++  assert.equal(m.warnings.filter((w) => /cell entry is not an object/i.test(w)).length, 2);
++});
+diff --git a/open-artifacts/jurisdiction-survey-matrix/demo/example.js b/open-artifacts/jurisdiction-survey-matrix/demo/example.js
+index 34b9a21..66472f2 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/demo/example.js
++++ b/open-artifacts/jurisdiction-survey-matrix/demo/example.js
+@@ -1,31 +1,111 @@
+-export default {
+-  "asOf": "2026-11-07",
+-  "survey": {
+-    "topic": "Data breach notification — individual notice (fictional survey for Cascade Logistics, Inc.)",
+-    "policy": { "maxAgeDays": 180 },
+-    "jurisdictions": ["US-CA", "US-IL", "US-NY", "US-TX", "EU", "UK", "BR"],
+-    "questions": [
+-      { "id": "deadline", "text": "Deadline to notify individuals after a breach of personal data?" },
+-      { "id": "threshold", "text": "What risk threshold triggers individual notice?" },
+-      { "id": "ag-report", "text": "Separate regulator/AG report required, and when?" },
+-      { "id": "penalty", "text": "Maximum penalty for late individual notice?" }
+-    ],
+-    "cells": [
+-      { "jurisdiction": "US-CA", "question": "deadline", "answer": "In the most expedient time possible and without unreasonable delay (fictionalized).", "citation": "Fictional CalCiv § 1798.82(a)-analog", "sourceUrl": "https://fictional.example/us-ca/civ-1798-82", "quotedText": "The disclosure shall be made in the most expedient time possible and without unreasonable delay.", "verifiedDate": "2026-08-01", "verifiedBy": "R. Castellan" },
+-      { "jurisdiction": "US-CA", "question": "threshold", "answer": "Reasonable likelihood of material damage to a resident (fictionalized).", "citation": "Fictional CalCiv § 1798.82(a)-analog", "sourceUrl": "https://fictional.example/us-ca/civ-1798-82", "quotedText": "any resident of California whose unencrypted personal information was, or is reasonably believed to have been, acquired by an unauthorized person", "verifiedDate": "2026-08-01", "verifiedBy": "R. Castellan" },
+-      { "jurisdiction": "US-CA", "question": "ag-report", "answer": "AG copy required when > 500 California residents affected (fictionalized).", "citation": "Fictional CalCiv § 1798.82(f)-analog", "sourceUrl": "https://fictional.example/us-ca/civ-1798-82", "quotedText": "Any person required to make notification shall submit a copy of the notification to the Attorney General when more than 500 California residents are notified.", "verifiedDate": "2026-08-01", "verifiedBy": "R. Castellan" },
+-      { "jurisdiction": "US-CA", "question": "penalty", "answer": "Civil penalties up to $200 per resident, capped (fictionalized).", "citation": "Fictional CalCiv § 1798.155-analog", "sourceUrl": "https://fictional.example/us-ca/civ-1798-155", "quotedText": "A civil penalty not exceeding two hundred dollars ($200) per resident for each violation.", "verifiedDate": "2026-08-01", "verifiedBy": "R. Castellan" },
+-      { "jurisdiction": "US-IL", "question": "deadline", "answer": "Notification within 30 days of discovery (fictionalized).", "citation": "Fictional 815 ILCS 530/10-analog", "sourceUrl": "https://fictional.example/us-il/815-ilcs-530/10", "quotedText": "Notification shall be made without unreasonable delay following discovery, and in no event later than 30 days after discovery of the breach.", "verifiedDate": "2026-02-14", "verifiedBy": "M. Delacroix" },
+-      { "jurisdiction": "US-IL", "question": "threshold", "answer": "Personal information was, or is reasonably believed to have been, acquired (fictionalized).", "citation": "Fictional 815 ILCS 530/5-analog", "sourceUrl": "https://fictional.example/us-il/815-ilcs-530/5", "quotedText": "personal information was, or is reasonably believed to have been, acquired by an unauthorized person", "verifiedDate": "2026-02-14", "verifiedBy": "M. Delacroix" },
+-      { "jurisdiction": "US-IL", "question": "penalty", "answer": "", "citation": "", "verifiedDate": null },
+-      { "jurisdiction": "US-NY", "question": "deadline", "answer": "Most expedient time possible and without unreasonable delay; statutory 30-day outer marker in current practice (fictionalized).", "citation": "Fictional GBL § 899-aa(4)-analog", "sourceUrl": "https://fictional.example/us-ny/gbl-899-aa", "quotedText": "The notification shall be made in the most expedient time possible and without unreasonable delay; where more than 5,000 residents are notified, notice shall be provided within 30 days in the manner prescribed.", "verifiedDate": "2026-01-20", "verifiedBy": "M. Delacroix" },
+-      { "jurisdiction": "US-NY", "question": "threshold", "answer": "Private information acquired or accessed (fictionalized).", "citation": "Fictional GBL § 899-aa(1)(b)-analog", "sourceUrl": "https://fictional.example/us-ny/gbl-899-aa", "quotedText": "private information was, or is reasonably believed to have been, acquired by, or accessed by, a person without valid authorization", "verifiedDate": "2026-01-20", "verifiedBy": "M. Delacroix" },
+-      { "jurisdiction": "EU", "question": "deadline", "answer": "Without undue delay to individuals when high risk (fictionalized GDPR-analog).", "citation": "Fictional GDPR-art-34-analog", "sourceUrl": "https://fictional.example/eu/gdpr/art-34", "quotedText": "the controller shall communicate the personal data breach to the data subject without undue delay", "verifiedDate": "2026-10-30", "verifiedBy": "A. Fern" },
+-      { "jurisdiction": "EU", "question": "threshold", "answer": "High risk to rights and freedoms (fictionalized).", "citation": "Fictional GDPR-art-34(1)-analog", "sourceUrl": "https://fictional.example/eu/gdpr/art-34", "quotedText": "when the personal data breach is likely to result in a high risk to the rights and freedoms of natural persons", "verifiedDate": "2026-10-30", "verifiedBy": "A. Fern" },
+-      { "jurisdiction": "EU", "question": "ag-report", "answer": "Supervisory authority within 72 hours of awareness (fictionalized).", "citation": "Fictional GDPR-art-33-analog", "sourceUrl": "https://fictional.example/eu/gdpr/art-33", "quotedText": "the controller shall notify the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of it", "verifiedDate": "2026-10-30", "verifiedBy": "A. Fern" },
+-      { "jurisdiction": "EU", "question": "penalty", "answer": "Up to 4% of global annual turnover for core obligations (fictionalized).", "citation": "Fictional GDPR-art-83(5)-analog", "sourceUrl": "https://fictional.example/eu/gdpr/art-83", "quotedText": "administrative fines up to 20 000 000 EUR, or in the case of an undertaking, up to 4% of the total worldwide annual turnover", "verifiedDate": "2026-10-30", "verifiedBy": "A. Fern" },
+-      { "jurisdiction": "UK", "question": "deadline", "answer": "Without undue delay (fictionalized UK GDPR-analog).", "citation": "Fictional UK-GDPR-art-34-analog", "sourceUrl": "https://fictional.example/uk/gdpr/art-34", "quotedText": "the controller shall communicate a personal data breach to the data subject without undue delay", "verifiedDate": "2025-03-11", "verifiedBy": "H. Whitlock" },
+-      { "jurisdiction": "BR", "question": "deadline", "answer": "Within 15 days per the fictionalized national data-protection statute.", "citation": "", "verifiedDate": "2026-09-05", "verifiedBy": "L. Andrade" }
+-    ]
++/**
++ * Worked example — employee non-compete enforceability, 51 jurisdictions
++ * (US states + DC) × 5 questions = 255 cells, generated deterministically
++ * from a compact seed table so the demo ships a full-scale matrix in a few
++ * KB. ALL data is fictional: statutes are "…-analog", URLs use the reserved
++ * domain fictional.example, and the verification-date spread (verified /
++ * stale / unverified) is derived from a stable hash of (jurisdiction,
++ * question) — no clock, no randomness, identical output on every load.
++ */
++const AS_OF = "2026-11-07";
++
++// [code, name, enforceable y|n|c, maxMonths, bluePencil y|n, consideration y|n, wageFloorK]
++const J = [
++  ["US-AL", "Alabama", "y", 24, "y", "n", 0], ["US-AK", "Alaska", "c", 12, "n", "y", 0],
++  ["US-AZ", "Arizona", "y", 12, "y", "n", 0], ["US-AR", "Arkansas", "y", 24, "y", "n", 0],
++  ["US-CA", "California", "n", 0, "n", "n", 0], ["US-CO", "Colorado", "n", 0, "n", "n", 74],
++  ["US-CT", "Connecticut", "c", 12, "y", "y", 0], ["US-DE", "Delaware", "c", 12, "y", "y", 0],
++  ["US-DC", "District of Columbia", "n", 0, "n", "n", 0], ["US-FL", "Florida", "c", 12, "y", "n", 0],
++  ["US-GA", "Georgia", "y", 24, "y", "n", 0], ["US-HI", "Hawaii", "c", 12, "n", "y", 0],
++  ["US-ID", "Idaho", "c", 18, "y", "n", 0], ["US-IL", "Illinois", "y", 24, "y", "y", 0],
++  ["US-IN", "Indiana", "c", 12, "y", "n", 0], ["US-IA", "Iowa", "c", 12, "y", "n", 0],
++  ["US-KS", "Kansas", "c", 12, "y", "n", 0], ["US-KY", "Kentucky", "c", 12, "y", "n", 0],
++  ["US-LA", "Louisiana", "c", 12, "y", "y", 0], ["US-ME", "Maine", "c", 24, "n", "n", 0],
++  ["US-MD", "Maryland", "c", 12, "y", "y", 0], ["US-MA", "Massachusetts", "c", 12, "y", "n", 75],
++  ["US-MI", "Michigan", "c", 12, "y", "n", 0], ["US-MN", "Minnesota", "c", 12, "y", "n", 40],
++  ["US-MS", "Mississippi", "y", 24, "y", "n", 0], ["US-MO", "Missouri", "c", 12, "y", "n", 0],
++  ["US-MT", "Montana", "c", 24, "n", "n", 0], ["US-NE", "Nebraska", "c", 12, "y", "n", 0],
++  ["US-NV", "Nevada", "c", 12, "y", "n", 0], ["US-NH", "New Hampshire", "c", 12, "y", "n", 0],
++  ["US-NJ", "New Jersey", "c", 12, "y", "y", 0], ["US-NM", "New Mexico", "c", 12, "y", "n", 0],
++  ["US-NY", "New York", "n", 0, "n", "n", 0], ["US-NC", "North Carolina", "y", 12, "y", "n", 0],
++  ["US-ND", "North Dakota", "c", 12, "y", "n", 0], ["US-OH", "Ohio", "c", 12, "y", "n", 0],
++  ["US-OK", "Oklahoma", "c", 12, "y", "n", 0], ["US-OR", "Oregon", "n", 0, "n", "n", 0],
++  ["US-PA", "Pennsylvania", "c", 24, "y", "y", 0], ["US-RI", "Rhode Island", "c", 12, "y", "n", 0],
++  ["US-SC", "South Carolina", "y", 24, "y", "n", 0], ["US-SD", "South Dakota", "y", 24, "y", "n", 0],
++  ["US-TN", "Tennessee", "c", 12, "y", "n", 0], ["US-TX", "Texas", "c", 24, "y", "n", 0],
++  ["US-UT", "Utah", "c", 12, "y", "n", 0], ["US-VT", "Vermont", "c", 12, "y", "y", 0],
++  ["US-VA", "Virginia", "c", 12, "y", "n", 0], ["US-WA", "Washington", "n", 0, "n", "n", 110],
++  ["US-WV", "West Virginia", "c", 12, "y", "n", 0], ["US-WI", "Wisconsin", "c", 12, "y", "n", 0],
++  ["US-WY", "Wyoming", "y", 24, "y", "n", 0],
++];
++
++const Q = [
++  { id: "enforce", text: "Are employee non-compete covenants enforceable?" },
++  { id: "term", text: "Longest presumptively reasonable duration?" },
++  { id: "scope", text: "May a court narrow (blue-pencil) an overbroad covenant?" },
++  { id: "consideration", text: "Is independent consideration required at signing?" },
++  { id: "wagefloor", text: "Annual wage floor below which covenants are void?" },
++];
++
++const BY = ["R. Castellan", "M. Delacroix", "A. Fern", "H. Whitlock", "L. Andrade"];
++
++function hash(s) { let h = 7; for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0; return h; }
++function isoMinusDays(iso, d) { return new Date(Date.parse(iso) - d * 86400000).toISOString().slice(0, 10); }
++
++function content(j, q, h) {
++  const [code, name, enf, months, blue, cons, wage] = j;
++  const sec = 1000 + (h % 900);
++  const cite = `Fictional ${name} statutes-analog § ${sec}`;
++  const url = `https://fictional.example/${code.toLowerCase()}/noncompete/${q}`;
++  let answer, quote;
++  if (q === "enforce") {
++    answer = enf === "y" ? "Generally enforceable when reasonable in time and scope (fictionalized)."
++      : enf === "n" ? "Void for most workers under the fictionalized statute-analog."
++      : "Enforceable only with adequate consideration and reasonable scope (fictionalized).";
++    quote = `Fictional ${name} statutes-analog § ${sec}: a covenant not to compete is ${enf === "y" ? "enforceable if it is reasonable" : enf === "n" ? "void, with limited exceptions" : "enforceable only to the extent reasonable and supported by consideration"}.`;
++  } else if (q === "term") {
++    answer = enf === "n" ? "Duration is moot — covenants are void for most workers (fictionalized)."
++      : `Up to ${months} months presumptively reasonable (fictionalized).`;
++    quote = `Fictional ${name} statutes-analog § ${sec}: no covenant shall exceed ${months} months in duration.`;
++  } else if (q === "scope") {
++    answer = blue === "y" ? "Yes — courts may blue-pencil overbroad terms (fictionalized)."
++      : "No — overbroad covenants are void without reformation (fictionalized).";
++    quote = `Fictional ${name} statutes-analog § ${sec}: courts ${blue === "y" ? "may reform" : "shall not reform"} an otherwise unreasonable covenant.`;
++  } else if (q === "consideration") {
++    answer = cons === "y" ? "Yes — independent consideration required at signing (fictionalized)."
++      : "Continued employment suffices; no independent consideration required (fictionalized).";
++    quote = `Fictional ${name} statutes-analog § ${sec}: a covenant is supported by ${cons === "y" ? "independent consideration provided at signing" : "continued employment"}.`;
++  } else {
++    answer = wage > 0 ? `Void below an annual wage of $${wage},000 for the worker (fictionalized).`
++      : "No statutory wage floor in the fictionalized statute-analog.";
++    quote = wage > 0
++      ? `Fictional ${name} statutes-analog § ${sec}: no covenant shall be enforceable against a worker earning less than $${wage},000 annually.`
++      : `Fictional ${name} statutes-analog § ${sec}: the chapter applies regardless of the worker's earnings.`;
++  }
++  return { answer, citation: cite, sourceUrl: url, quotedText: quote };
++}
++
++const cells = [];
++for (const j of J) {
++  for (const q of Q) {
++    const h = hash(`${j[0]}:${q.id}`);
++    const c = { jurisdiction: j[0], question: q.id, ...content(j, q.id, h) };
++    const b = h % 10;
++    if (b >= 9) { c.answer = ""; c.citation = ""; c.sourceUrl = ""; c.quotedText = ""; c.verifiedDate = null; } // never guessed
++    else if (b === 8) { delete c.citation; delete c.sourceUrl; c.verifiedDate = isoMinusDays(AS_OF, 30 + (h % 60)); } // answer, no source → unverified
++    else if (b >= 6) { c.verifiedDate = isoMinusDays(AS_OF, 200 + (h % 150)); c.verifiedBy = BY[h % 5]; } // stale
++    else { c.verifiedDate = isoMinusDays(AS_OF, 10 + (h % 150)); c.verifiedBy = BY[h % 5]; } // verified
++    cells.push(c);
+   }
+ }
++
++export default {
++  asOf: AS_OF,
++  survey: {
++    topic: "Employee non-compete enforceability — 51 jurisdictions × 5 questions (fictionalized survey for Meridian Fabrication Co.)",
++    policy: { maxAgeDays: 180 },
++    jurisdictions: J.map((j) => j[0]),
++    questions: Q,
++    cells,
++  },
++};
+diff --git a/open-artifacts/jurisdiction-survey-matrix/demo/fonts/Manrope-Variable.woff2 b/open-artifacts/jurisdiction-survey-matrix/demo/fonts/Manrope-Variable.woff2
+new file mode 100644
+index 0000000..662b813
+Binary files /dev/null and b/open-artifacts/jurisdiction-survey-matrix/demo/fonts/Manrope-Variable.woff2 differ
+diff --git a/open-artifacts/jurisdiction-survey-matrix/demo/index.html b/open-artifacts/jurisdiction-survey-matrix/demo/index.html
+index 8d309e1..7ac0afe 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/demo/index.html
++++ b/open-artifacts/jurisdiction-survey-matrix/demo/index.html
+@@ -4,6 +4,7 @@
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Jurisdiction survey matrix — open artifact</title>
++<link rel="icon" href="data:," />
+ <link rel="stylesheet" href="tokens.css" />
+ <style>
+   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+@@ -13,53 +14,90 @@
+   section { margin-top: 48px; }
+   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+-  .stats { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 24px; flex-wrap: wrap; }
+-  .stat { padding: 14px 22px; border-right: var(--hairline); min-width: 110px; }
+-  .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
+-  .stat span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+-  table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
+-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; text-align: left;
+-    border-bottom: 2px solid var(--text); padding: 8px; position: sticky; top: 0; background: #fff; }
+-  td { border-bottom: var(--hairline); padding: 8px; vertical-align: top; max-width: 260px; }
+-  td.jur { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
+-  tr:hover td { background: var(--hover); }
+-  .pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+-    letter-spacing: 0.05em; padding: 2px 7px; border: 1px solid var(--text); }
+-  .pill.verified { background: var(--flag-tint); }
+-  .pill.stale { background: #fff; }
+-  .pill.unverified { background: var(--text); color: var(--bg); }
+-  .cell-answer { margin-bottom: 4px; }
+-  .cell-cite { color: var(--text-secondary); font-size: 11px; }
+-  .cell-cite a { color: inherit; }
+-  .cell-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+-  .cell-warn { font-family: var(--font-mono); font-size: 11px; margin-top: 4px; color: var(--text); }
+-  .unverified-cell { font-family: var(--font-mono); font-size: 11px; }
+-  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
++  .stats { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; flex-wrap: wrap; }
++  .stat { padding: 12px 20px; border-right: var(--hairline); min-width: 100px; }
++  .stat b { display: block; font-family: var(--font-mono); font-size: 20px; font-weight: 500; }
++  .stat span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
++  button { font-family: var(--font-mono); font-size: 12px; padding: 8px 14px; border: 1px solid var(--text);
+     background: var(--text); color: var(--bg); cursor: pointer; }
+   button:hover { background: var(--accent); color: var(--text); }
+   button.ghost { background: transparent; color: var(--text); }
+-  textarea { width: 100%; min-height: 220px; font-family: var(--font-mono); font-size: 12px; padding: 12px;
+-    border: var(--hairline); background: #fff; box-sizing: border-box; }
+-  input[type="date"] { font-family: var(--font-mono); font-size: 13px; padding: 8px 10px; border: 1px solid var(--text); background: #fff; }
++  button:disabled { opacity: .4; cursor: not-allowed; }
++  button:disabled:hover { background: var(--text); color: var(--bg); }
++  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
++  .attention { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; border: var(--hairline);
++    border-left: 4px solid var(--accent); background: #fff; padding: 12px 16px; font-family: var(--font-mono); font-size: 12px; }
++  .attention b { font-size: 16px; }
++  .chipbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
++  .chip { font-family: var(--font-mono); font-size: 12px; padding: 5px 10px; border: var(--hairline);
++    background: #fff; color: var(--text); cursor: pointer; }
++  .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
++  input[type="text"], input[type="date"], input[type="number"] { font-family: var(--font-mono); font-size: 12px;
++    padding: 7px 9px; border: 1px solid var(--text); background: #fff; }
+   input[type="file"] { font-family: var(--font-mono); font-size: 12px; }
++  textarea { width: 100%; min-height: 120px; font-family: var(--font-mono); font-size: 12px; padding: 10px;
++    border: var(--hairline); background: #fff; box-sizing: border-box; }
++  .field { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase;
++    letter-spacing: 0.05em; color: var(--text-secondary); margin: 12px 0 4px; }
+   .msgs { font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+   .msgs .err { color: var(--text); background: var(--flag-tint); padding: 8px 12px; border: var(--hairline); }
+   .msgs .warn { padding: 4px 12px; }
++  .gridwrap { max-height: 68vh; overflow: auto; border: var(--hairline); background: #fff; }
++  table.matrix { border-collapse: collapse; font-size: 12px; width: max-content; min-width: 100%; }
++  .matrix th, .matrix td { border-bottom: var(--hairline); border-right: var(--hairline); padding: 6px 8px; text-align: left; }
++  .matrix thead th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
++    position: sticky; top: 0; background: #fff; z-index: 2; border-bottom: 2px solid var(--text); max-width: 230px; }
++  .matrix thead th:first-child { left: 0; z-index: 3; }
++  .matrix th.rowh { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; position: sticky;
++    left: 0; background: #fff; z-index: 1; }
++  .matrix th.rowh .mini { color: var(--text-secondary); font-weight: 400; font-size: 12px; }
++  .matrix td.cell { cursor: pointer; min-width: 170px; max-width: 260px; vertical-align: top; }
++  .matrix td.cell:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
++  .matrix td.dim { opacity: .3; }
++  .matrix tr.hid { display: none; }
++  .pill { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase;
++    letter-spacing: 0.05em; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
++  .pill.verified { background: var(--flag-tint); }
++  .pill.stale { background: #fff; }
++  .pill.unverified { background: var(--text); color: var(--bg); }
++  .snip { display: block; margin-top: 3px; color: var(--text-secondary); }
++  .marks { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
++  .countline { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; }
+   .bars { border: var(--hairline); background: #fff; }
+-  .bar-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: var(--hairline); }
++  .bar-row { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: var(--hairline); }
+   .bar-row:last-child { border-bottom: none; }
+   .bar-label { font-family: var(--font-mono); font-size: 12px; font-weight: 500; width: 70px; flex: none; }
+-  .bar-track { flex: 1; display: flex; height: 14px; border: 1px solid var(--text); }
+-  .bar-seg { height: 100%; }
++  .bar-track { flex: 1; display: flex; height: 12px; border: 1px solid var(--text); }
+   .bar-seg.verified { background: var(--text); }
+   .bar-seg.stale { background: var(--accent); }
+   .bar-seg.unverified { background: #fff; }
+-  .bar-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); width: 130px; flex: none; }
+-  .legend { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin: 8px 0 0; }
++  .bar-count { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); width: 150px; flex: none; }
++  .legend { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; }
+   .legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--text); vertical-align: -1px; margin: 0 4px 0 12px; }
++  .queue table, .audit table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
++  .queue th, .audit th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; text-align: left;
++    border-bottom: 2px solid var(--text); padding: 6px 8px; }
++  .queue td, .audit td { border-bottom: var(--hairline); padding: 6px 8px; vertical-align: top; }
++  .signoff { font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; border: 1px solid var(--text); display: inline-block; }
++  .signoff.ok { background: var(--flag-tint); }
++  .signoff.warn { background: var(--accent); }
++  #overlay { position: fixed; inset: 0; background: rgba(10,10,10,.3); z-index: 40; }
++  #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 100vw; background: var(--bg);
++    border-left: 1px solid var(--text); z-index: 50; overflow-y: auto; padding: 24px; }
++  #drawer h3 { font-family: var(--font-mono); font-size: 14px; font-weight: 500; margin-bottom: 12px; }
++  #drawer .d-q { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
++  #drawer .d-sec { margin-top: 16px; font-size: 13px; }
++  #drawer .d-sec h4 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
++  #drawer blockquote { border-left: 3px solid var(--accent); padding: 8px 12px; background: #fff; font-size: 13px; }
++  #drawer blockquote mark { background: var(--accent); padding: 0 2px; }
++  #drawer blockquote.flash { outline: 2px solid var(--text); }
++  .d-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
++  .warn-line { font-family: var(--font-mono); font-size: 12px; margin-top: 4px; }
++  #toast { position: fixed; left: 16px; bottom: 16px; z-index: 60; font-family: var(--font-mono); font-size: 12px;
++    background: var(--text); color: var(--bg); padding: 8px 14px; max-width: 70vw; }
+   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
++  details summary { font-family: var(--font-mono); font-size: 12px; cursor: pointer; margin: 12px 0 8px; }
+ </style>
+ </head>
+ <body>
+@@ -68,23 +106,52 @@
+     <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+     <div class="rule"></div>
+     <h1>Jurisdiction survey matrix</h1>
+-    <p class="lede">Jurisdictions × legal questions in one table — every populated cell carries a source
+-      citation, a <b>link to the underlying law</b>, and a verification date; stale cells are flagged, and
+-      <b>unverified cells are never guessed</b>. Open reimplementation of Anthropic's closed artifact.</p>
+-    <p class="lede" style="font-size:13px">Load your own survey below (paste or file) — everything renders
+-      client-side; no data leaves the machine. Worked example (fictional): breach-notification rules,
+-      7 jurisdictions × 4 questions, 180-day re-verification policy.</p>
++    <p class="lede">Jurisdictions × legal questions in one grid — every populated cell carries a source citation, a
++      <b>link to the underlying law</b>, and a verification date. Stale cells are flagged for re-verification and
++      <b>unverified cells are never guessed</b>: an answer without citation, http(s) source link, and a parseable
++      verification date cannot render as verified.</p>
++    <p class="lede" style="font-size:13px">Worked example (all fictional): employee non-compete enforceability,
++      51 jurisdictions × 5 questions = 255 cells with an honest verified/stale/unverified spread, 180-day
++      re-verification policy. Everything renders client-side; no data leaves the machine.</p>
+   </header>
+ 
++  <section>
++    <h2>Needs a human now</h2>
++    <div class="attention" id="attention" aria-live="polite"></div>
++  </section>
++
+   <section>
+     <h2>Load survey</h2>
+-    <textarea id="inputJson" spellcheck="false" aria-label="Survey JSON"></textarea>
++    <label class="field" for="gTopic">Topic</label>
++    <input type="text" id="gTopic" style="width:100%" />
++    <div class="row" style="margin-top:8px">
++      <label for="asOfInput" style="font-family:var(--font-mono);font-size:12px">as of</label>
++      <input type="date" id="asOfInput" />
++      <label for="actorInput" style="font-family:var(--font-mono);font-size:12px">reviewer</label>
++      <input type="text" id="actorInput" placeholder="who verifies" />
++      <label for="maxAgeInput" style="font-family:var(--font-mono);font-size:12px">re-verify after (days)</label>
++      <input type="number" id="maxAgeInput" min="1" style="width:70px" />
++    </div>
++    <label class="field" for="gJuris">Jurisdictions — one code per line</label>
++    <textarea id="gJuris" spellcheck="false" aria-label="Jurisdictions, one code per line"></textarea>
++    <label class="field" for="gQuestions">Questions — <code>id | question text</code> per line</label>
++    <textarea id="gQuestions" spellcheck="false" aria-label="Questions, id and text per line"></textarea>
++    <label class="field" for="gCells">Cells — paste rows <code>jurisdiction | questionId | answer | citation | sourceUrl | verifiedDate | verifiedBy</code> (leave fields empty when unknown; add <code>| quoted source text</code> as an 8th field)</label>
++    <textarea id="gCells" spellcheck="false" style="min-height:140px" aria-label="Cell rows, pipe-separated"></textarea>
+     <div class="row" style="margin-top:12px">
+-      <button id="renderBtn">Render survey</button>
+-      <input type="file" id="fileInput" accept=".json,application/json" aria-label="Load survey JSON file" />
+-      <label style="font-family:var(--font-mono);font-size:12px">as of <input type="date" id="asOfInput" /></label>
++      <button id="buildBtn">Build &amp; render survey</button>
++      <button id="exampleBtn" class="ghost">Load worked example (51×5)</button>
++      <button id="clearBtn" class="ghost">Start empty</button>
+     </div>
+-    <div class="msgs" id="msgs"></div>
++    <details>
++      <summary>Advanced — survey JSON (paste or file)</summary>
++      <textarea id="inputJson" spellcheck="false" style="min-height:200px" aria-label="Survey JSON (advanced)"></textarea>
++      <div class="row" style="margin-top:8px">
++        <button id="renderBtn" class="ghost">Render JSON</button>
++        <input type="file" id="fileInput" accept=".json,application/json" aria-label="Load survey JSON file" />
++      </div>
++    </details>
++    <div class="msgs" id="msgs" aria-live="polite"></div>
+   </section>
+ 
+   <section>
+@@ -92,125 +159,636 @@
+     <div class="stats" id="stats"></div>
+     <div class="bars" id="bars"></div>
+     <p class="legend">verified<i style="background:var(--text)"></i>stale<i style="background:var(--accent)"></i>unverified<i style="background:#fff"></i></p>
+-    <div class="row" style="margin-top:24px">
++    <div class="row" style="margin-top:16px">
++      <span id="signoffChip"></span>
++      <button id="signBtn">Sign off survey</button>
++    </div>
++    <div class="row" style="margin-top:16px">
+       <button id="csvBtn">Export CSV</button>
+       <button id="mdBtn" class="ghost">Export Markdown</button>
+       <button id="wlBtn" class="ghost">Export re-verification worklist</button>
++      <button id="logBtn" class="ghost">Export audit log (NDJSON)</button>
+     </div>
+   </section>
+ 
+   <section>
+     <h2>Matrix</h2>
+-    <div style="overflow-x:auto"><table id="matrix">
+-      <thead><tr><th>Jurisdiction</th><th>Question</th><th>Cell</th><th>Status</th></tr></thead>
+-      <tbody></tbody>
+-    </table></div>
++    <div class="chipbar" id="filters" role="group" aria-label="Cell filters">
++      <label for="searchInput" style="font-family:var(--font-mono);font-size:12px">find jurisdiction</label>
++      <input type="text" id="searchInput" placeholder="US-C…" />
++    </div>
++    <div class="gridwrap">
++      <table class="matrix" id="matrix" role="grid" aria-label="Survey matrix: jurisdictions by questions">
++        <thead><tr id="mHead"></tr></thead>
++        <tbody id="mBody"></tbody>
++      </table>
++    </div>
++    <p class="countline" id="countLine" aria-live="polite"></p>
++    <p class="countline">arrow keys move between cells · Enter opens details · citations show the quoted source</p>
++  </section>
++
++  <section class="queue">
++    <h2>Re-verification queue</h2>
++    <div style="overflow-x:auto">
++      <table id="queue">
++        <thead><tr><th scope="col">#</th><th scope="col">Jurisdiction</th><th scope="col">Question</th><th scope="col">Status</th><th scope="col">Why</th><th scope="col">Action</th></tr></thead>
++        <tbody></tbody>
++      </table>
++    </div>
++  </section>
++
++  <section class="audit">
++    <h2>Audit log</h2>
++    <div class="chipbar">
++      <label for="logFilter" style="font-family:var(--font-mono);font-size:12px">show</label>
++      <select id="logFilter" style="font-family:var(--font-mono);font-size:12px;padding:6px;border:1px solid var(--text);background:#fff">
++        <option value="all">all actions</option>
++      </select>
++      <button id="clearLogBtn" class="ghost">Clear log</button>
++    </div>
++    <div style="overflow-x:auto;max-height:40vh;overflow-y:auto">
++      <table id="audit">
++        <thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr></thead>
++        <tbody></tbody>
++      </table>
++    </div>
+   </section>
+ 
+   <footer class="disclaimer">
+     Deterministic core: the matrix renders only what was researched, cited, and linked — an optional LLM may draft cell
+     research (schema in spec.md) but its output is treated as <code>unverified</code> until a human records the
+-    citation + verification date. All example data fictional; fictional source URLs use the reserved domain
+-    fictional.example. Not legal advice.
++    citation + verification date. Non-http(s) source URLs are never linked. Review states and the audit log persist in
++    this browser (localStorage) and survive reload. All example data fictional; fictional source URLs use the reserved
++    domain fictional.example. Not legal advice.
+     <code>anthropic counterpart: Jurisdiction survey matrix (closed)</code>
+   </footer>
+ </div>
+ 
++<div id="overlay" hidden></div>
++<aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden>
++  <div class="row" style="justify-content:space-between;align-items:flex-start">
++    <h3 id="dTitle"></h3>
++    <button id="dClose" aria-label="Close cell details">×</button>
++  </div>
++  <div id="dStatus" aria-live="polite"></div>
++  <p class="d-q" id="dQ"></p>
++  <div id="dBody"></div>
++  <div class="d-actions">
++    <button id="dCheck">✓ Mark checked</button>
++    <button id="dFlag">⚑ Flag</button>
++    <button id="dReverify" title="Sets verifiedDate to the as-of date and the reviewer as verifiedBy">Re-verify</button>
++    <button id="dSource" class="ghost">View quoted source</button>
++    <button id="dCopy" class="ghost">Copy quote</button>
++    <a id="dLink" class="ghost" target="_blank" rel="noopener" style="display:none;font-family:var(--font-mono);font-size:12px;padding:8px 14px;border:1px solid var(--text)">Open source ↗</a>
++  </div>
++  <div class="d-sec" id="dSrcPanel" hidden>
++    <h4>Quoted source</h4>
++    <blockquote id="dQuote"></blockquote>
++    <p class="countline" id="dSrcUrl"></p>
++  </div>
++</aside>
++<div id="toast" role="status" aria-live="polite" hidden></div>
++
+ <script type="module">
+-  import { buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown } from "../core/core.js";
++  import { buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown, safeUrl } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
++  /* ---------- vendored from open-artifacts/_shared/persist.js (browser subset; MIT-feel, same repo) ---------- */
++  function memoryBackend(name) {
++    const map = new Map();
++    return {
++      backendName: name,
++      get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
++      set(k, v) { map.set(k, { kind: "value", value: JSON.parse(JSON.stringify(v ?? null)) }); },
++      remove(k) { map.delete(k); },
++      append(k, entry) { if (!map.has(k) || map.get(k).kind !== "log") map.set(k, { kind: "log", items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
++      entries(k) { const v = map.get(k); return v && v.kind === "log" ? v.items.slice() : []; },
++      exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join("\n") + (this.entries(k).length ? "\n" : ""); },
++    };
++  }
++  function probeLocalStorage() {
++    try {
++      const ls = globalThis.localStorage;
++      if (!ls) return null;
++      ls.setItem("__persist_probe__", "1");
++      const ok = ls.getItem("__persist_probe__") === "1";
++      ls.removeItem("__persist_probe__");
++      return ok ? ls : null;
++    } catch { return null; }
++  }
++  function localBackend(ns) {
++    const ls = probeLocalStorage();
++    if (!ls) return memoryBackend("memory-fallback");
++    const key = (k) => `${ns}:${k}`;
++    let degraded = false;
++    const mem = memoryBackend("memory");
++    const rd = (k) => { try { return ls.getItem(key(k)); } catch { return null; } };
++    return {
++      backendName: "local",
++      get(k) { if (degraded) return mem.get(k); const raw = rd(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
++      set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
++      remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
++      append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
++      entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
++      exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join("\n") + (es.length ? "\n" : ""); },
++    };
++  }
++  function createStorage(ns) { return probeLocalStorage() ? localBackend(ns) : memoryBackend("memory-fallback"); }
++
++  /* ---------- state + persistence ---------- */
++  const store = createStorage("jsm1");
+   const $ = (id) => document.getElementById(id);
+-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
++  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
++  const clone = (o) => JSON.parse(JSON.stringify(o));
++
++  const restored = store.get("state");
++  const state = restored && restored.input
++    ? restored
++    : { input: clone(EXAMPLE), asOf: EXAMPLE.asOf, actor: "", review: {}, signoff: null };
++  if (!state.review) state.review = {};
++  let logRows = store.entries("log");
++
++  function save() { store.set("state", state); }
++  function logRow(action, target, detail) {
++    const row = { t: new Date().toISOString(), actor: state.actor || "anonymous", action, target, detail };
++    logRows.push(row);
++    store.append("log", row);
++    renderAudit();
++  }
++  function toast(msg) {
++    const t = $("toast");
++    t.textContent = msg;
++    t.hidden = false;
++    clearTimeout(toast._h);
++    toast._h = setTimeout(() => { t.hidden = true; }, 3500);
++  }
++  function download(name, content, type) {
++    const a = document.createElement("a");
++    a.href = URL.createObjectURL(new Blob([content], { type }));
++    a.download = name;
++    a.click();
++    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
++  }
++
++  /* ---------- matrix render ---------- */
++  let m = null, rawCell = new Map(), filter = "all", cur = null;
++
++  const FILTERS = [
++    ["all", "All"], ["attention", "Needs attention"], ["stale", "Stale"], ["unverified", "Unverified"],
++    ["verified", "Verified"], ["flagged", "Flagged"], ["checked", "Checked"],
++  ];
+ 
+-  $("inputJson").value = JSON.stringify(EXAMPLE, null, 2);
+-  $("asOfInput").value = EXAMPLE.asOf;
++  function rev(j, qid) { return state.review[`${String(j).toLowerCase()}|${String(qid).toLowerCase()}`] ?? {}; }
++  function indexRaw() {
++    rawCell = new Map();
++    const cells = Array.isArray(state.input?.survey?.cells) ? state.input.survey.cells : [];
++    for (const c of cells) if (c && typeof c === "object")
++      rawCell.set(`${String(c.jurisdiction ?? "").toLowerCase()}|${String(c.question ?? "").toLowerCase()}`, c);
++  }
+ 
+-  let m = null; // current matrix
++  function cellMatches(j, qid, st) {
++    const rv = rev(j, qid);
++    if (filter === "flagged") return !!rv.flagged;
++    if (filter === "checked") return !!rv.checked;
++    if (filter === "attention") return st !== "verified" || !!rv.flagged;
++    if (filter === "all") return true;
++    return st === filter;
++  }
+ 
+   function render() {
+     $("msgs").innerHTML = "";
+-    let input;
++    const asOf = $("asOfInput").value || state.input.asOf || null;
+     try {
+-      input = JSON.parse($("inputJson").value);
++      m = buildMatrix(state.input.survey, asOf);
++      state.asOf = asOf;
+     } catch (e) {
+-      $("msgs").innerHTML = `<div class="err">Invalid JSON: ${esc(e.message)}</div>`;
++      $("msgs").innerHTML = `<div class="err">Could not render survey: ${esc(e?.message ?? String(e))}</div>`;
+       return;
+     }
+-    if (!input || typeof input !== "object" || !input.survey) {
+-      $("msgs").innerHTML = `<div class="err">Input must be a JSON object with a "survey" member (see the prefilled example).</div>`;
+-      return;
+-    }
+-    const asOf = $("asOfInput").value || input.asOf || null;
+-    m = buildMatrix(input.survey, asOf);
+-
+-    if (m.warnings.length) {
++    indexRaw();
++    if (m.warnings.length)
+       $("msgs").innerHTML = m.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
+-    }
+-
+     $("stats").innerHTML =
+       `<div class="stat"><b>${m.coverage.verified}/${m.coverage.total}</b><span>verified</span></div>` +
+       `<div class="stat"><b>${m.coverage.stale}</b><span>stale</span></div>` +
+       `<div class="stat"><b>${m.coverage.unverified}</b><span>unverified</span></div>` +
+       `<div class="stat"><b>${m.coverage.pctVerified}%</b><span>coverage</span></div>` +
+       `<div class="stat"><b>${m.policy.maxAgeDays}d</b><span>re-verify policy</span></div>`;
++    renderBars();
++    renderAttention();
++    renderMatrix();
++    renderQueue();
++    renderSignoff();
++    save();
++  }
+ 
++  function renderBars() {
+     $("bars").innerHTML = m.jurisdictions.map((j) => {
+       const c = m.coverage.byJurisdiction[j];
+-      const pct = (n) => c.total ? (n / c.total) * 100 : 0;
+-      return `<div class="bar-row"><span class="bar-label">${esc(j)}</span>` +
+-        `<span class="bar-track">` +
++      const pct = (n) => (c.total ? (n / c.total) * 100 : 0);
++      return `<div class="bar-row"><span class="bar-label">${esc(j)}</span><span class="bar-track">` +
+         `<span class="bar-seg verified" style="width:${pct(c.verified)}%"></span>` +
+         `<span class="bar-seg stale" style="width:${pct(c.stale)}%"></span>` +
+         `<span class="bar-seg unverified" style="width:${pct(c.unverified)}%"></span></span>` +
+         `<span class="bar-count">${c.verified}/${c.total} verified · ${c.stale} stale</span></div>`;
+     }).join("");
++  }
+ 
+-    const tb = $("matrix").querySelector("tbody");
+-    tb.innerHTML = "";
+-    m.jurisdictions.forEach((j, r) => {
+-      m.questions.forEach((q, c) => {
++  function renderAttention() {
++    let stale = 0, unv = 0, flagged = 0, checked = 0;
++    m.jurisdictions.forEach((j, r) => m.questions.forEach((q, c) => {
++      const rv = rev(j, q.id);
++      if (rv.flagged) flagged++;
++      if (rv.checked) checked++;
++      if (m.grid[r][c].status === "stale") stale++;
++      if (m.grid[r][c].status === "unverified") unv++;
++    }));
++    const total = stale + unv + flagged;
++    $("attention").innerHTML = total === 0
++      ? `<b>✓ ${m.coverage.total} cells verified</b> — nothing needs a human right now.`
++      : `<b>${total} cells need a human now</b><span>${stale} stale · ${unv} unverified · ${flagged} flagged</span>` +
++        `<button class="ghost" id="goAttention" aria-label="Filter the matrix to cells that need attention">Show them in the matrix</button>` +
++        `<span style="color:var(--text-secondary)">${checked} checked by reviewers</span>`;
++    const go = $("goAttention");
++    if (go) go.onclick = () => { setFilter("attention"); document.querySelector("#matrix").scrollIntoView({ behavior: "smooth" }); };
++  }
++
++  /* ---------- matrix grid ---------- */
++  function renderMatrix() {
++    $("mHead").innerHTML = `<th scope="col">Jurisdiction</th>` + m.questions.map((q) => {
++      const c = m.coverage.byQuestion[q.id] ?? { verified: 0, total: 0 };
++      return `<th scope="col" title="${esc(q.text)}">${esc(q.id)} · ${c.verified}/${c.total} ✓</th>`;
++    }).join("");
++    const q2 = ($("searchInput").value || "").toLowerCase();
++    let shown = 0, rows = 0;
++    $("mBody").innerHTML = m.jurisdictions.map((j, r) => {
++      const hide = q2 && !String(j).toLowerCase().includes(q2);
++      const rowMatch = filter === "all" || m.questions.some((q, c) => cellMatches(j, q.id, m.grid[r][c].status));
++      const cls = hide || (!rowMatch && filter !== "all") ? " class=\"hid\"" : "";
++      if (!hide && (rowMatch || filter === "all")) rows++;
++      const cj = m.coverage.byJurisdiction[j];
++      const cells = m.questions.map((q, c) => {
+         const cell = m.grid[r][c];
+-        const tr = document.createElement("tr");
+-        let cellHtml;
+-        if (cell.status === "unverified") {
+-          cellHtml = `<div class="unverified-cell">UNVERIFIED</div><div class="cell-warn">${esc(cell.reason)}</div>`;
+-        } else {
+-          const cite = cell.sourceUrl
+-            ? `<a href="${esc(cell.sourceUrl)}" target="_blank" rel="noopener">${esc(cell.citation)} ↗</a>`
+-            : esc(cell.citation);
+-          const warns = (cell.warnings ?? []).map((w) => `<div class="cell-warn">⚠ ${esc(w)}</div>`).join("");
+-          cellHtml = `<div class="cell-answer">${esc(cell.answer)}</div>` +
+-            `<div class="cell-cite">${cite}</div>` +
+-            `<div class="cell-date">verified ${esc(cell.verifiedDate)} · ${esc(cell.verifiedBy ?? "?")}</div>` +
+-            (cell.status === "stale" ? `<div class="cell-warn">⚠ ${esc(cell.reason)}</div>` : "") +
+-            warns;
+-        }
+-        tr.innerHTML = `<td class="jur">${esc(j)}</td><td>${esc(q.text)}</td><td>${cellHtml}</td>` +
+-          `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
+-        tb.appendChild(tr);
+-      });
++        const rv = rev(j, q.id);
++        const match = cellMatches(j, q.id, cell.status);
++        if (match) shown++;
++        const snip = cell.status === "unverified"
++          ? esc(cell.reason)
++          : esc(String(cell.answer).slice(0, 95)) + (String(cell.answer).length > 95 ? "…" : "");
++        const marks = (rv.checked ? "✓" : "") + (rv.flagged ? "⚑" : "");
++        return `<td class="cell ${cell.status}${match ? "" : " dim"}" role="gridcell" tabindex="-1" data-r="${r}" data-c="${c}"` +
++          ` aria-label="${esc(j)} ${esc(q.id)}: ${esc(cell.status)}${rv.checked ? ", checked" : ""}${rv.flagged ? ", flagged" : ""}. Activate for details.">` +
++          `<span class="pill ${cell.status}">${cell.status}</span> <span class="marks">${marks}</span>` +
++          `<span class="snip">${snip}</span></td>`;
++      }).join("");
++      return `<tr${cls}><th scope="row" class="rowh">${esc(j)} <span class="mini">${cj.verified}/${cj.total}</span></th>${cells}</tr>`;
++    }).join("");
++    const first = $("mBody").querySelector("td.cell");
++    if (first) first.tabIndex = 0;
++    $("countLine").textContent = `Showing ${shown} of ${m.coverage.total} cells across ${rows} of ${m.jurisdictions.length} jurisdictions · filter: ${FILTERS.find((f) => f[0] === filter)[1]}`;
++  }
++
++  function setFilter(f) {
++    filter = f;
++    document.querySelectorAll("#filters .chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.f === f)));
++    renderMatrix();
++  }
++
++  function buildFilterChips() {
++    const bar = $("filters");
++    FILTERS.forEach(([id, label]) => {
++      const b = document.createElement("button");
++      b.className = "chip";
++      b.dataset.f = id;
++      b.textContent = label;
++      b.setAttribute("aria-pressed", String(id === filter));
++      b.onclick = () => setFilter(id);
++      bar.appendChild(b);
++    });
++  }
++
++  $("matrix").addEventListener("click", (e) => {
++    const td = e.target.closest("td.cell");
++    if (td) openCell(+td.dataset.r, +td.dataset.c);
++  });
++  $("matrix").addEventListener("keydown", (e) => {
++    const td = e.target.closest("td.cell");
++    if (!td) return;
++    const R = m.jurisdictions.length, C = m.questions.length;
++    let r = +td.dataset.r, c = +td.dataset.c;
++    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCell(r, c); return; }
++    if (e.key === "ArrowRight") c = Math.min(C - 1, c + 1);
++    else if (e.key === "ArrowLeft") c = Math.max(0, c - 1);
++    else if (e.key === "ArrowDown") r = Math.min(R - 1, r + 1);
++    else if (e.key === "ArrowUp") r = Math.max(0, r - 1);
++    else if (e.key === "Home") c = 0;
++    else if (e.key === "End") c = C - 1;
++    else return;
++    e.preventDefault();
++    focusCell(r, c);
++  });
++  function focusCell(r, c) {
++    const td = $(`td.cell[data-r="${r}"][data-c="${c}"]`);
++    if (!td || td.parentElement.classList.contains("hid")) return;
++    $("mBody").querySelectorAll("td.cell").forEach((x) => (x.tabIndex = -1));
++    td.tabIndex = 0;
++    td.focus();
++  }
++  $("searchInput").oninput = () => renderMatrix();
++
++  /* ---------- cell drawer ---------- */
++  function markDigits(text) {
++    return esc(text).replace(/\d[\d,\.]*/g, (d) => `<mark>${d}</mark>`);
++  }
++  function openCell(r, c) {
++    cur = { r, c };
++    const j = m.jurisdictions[r], q = m.questions[c], cell = m.grid[r][c];
++    const rv = rev(j, q.id);
++    $("dTitle").textContent = `${j} · ${q.id}`;
++    $("dQ").textContent = q.text;
++    $("dStatus").innerHTML = `<span class="pill ${cell.status}">${cell.status}</span> ` +
++      (rv.checked ? `<span class="pill verified">checked</span> ` : "") + (rv.flagged ? `<span class="pill stale">flagged</span>` : "");
++    const raw = rawCell.get(`${String(j).toLowerCase()}|${String(q.id).toLowerCase()}`);
++    if (cell.status === "unverified") {
++      $("dBody").innerHTML = `<div class="d-sec"><h4>Answer</h4><p class="warn-line">UNVERIFIED — ${esc(cell.reason)}</p>` +
++        (raw?.answer ? `<p class="d-q">Drafted answer on file (not surfaced until sourced): ${esc(raw.answer)}</p>` : "") + `</div>`;
++    } else {
++      const url = safeUrl(raw?.sourceUrl);
++      $("dBody").innerHTML = `<div class="d-sec"><h4>Answer</h4><p>${esc(cell.answer)}</p></div>` +
++        `<div class="d-sec"><h4>Citation</h4><p>${esc(cell.citation)}` +
++        (url ? ` — <button class="ghost" id="dCite" style="padding:2px 8px">view quoted source</button>` : "") + `</p>` +
++        (raw?.sourceUrl && !url ? `<p class="warn-line">⚠ sourceUrl not http(s) — shown as text, never linked: ${esc(raw.sourceUrl)}</p>` : "") + `</div>` +
++        `<div class="d-sec"><h4>Verification</h4><p class="d-q">${esc(cell.verifiedDate)} by ${esc(cell.verifiedBy ?? "?")} — ${esc(cell.reason)}</p></div>` +
++        ((cell.warnings ?? []).length ? `<div class="d-sec"><h4>Warnings</h4>` + cell.warnings.map((w) => `<p class="warn-line">⚠ ${esc(w)}</p>`).join("") + "</div>" : "");
++      const dc = $("dCite");
++      if (dc) dc.onclick = showSource;
++    }
++    $("dCheck").textContent = rv.checked ? "✓ Unmark checked" : "✓ Mark checked";
++    $("dFlag").textContent = rv.flagged ? "⚑ Unflag" : "⚑ Flag";
++    const rvAble = raw && String(raw.answer ?? "").trim() && String(raw.citation ?? "").trim() && safeUrl(raw.sourceUrl);
++    $("dReverify").disabled = !rvAble;
++    $("dReverify").title = rvAble ? `Sets verifiedDate to ${state.asOf ?? "the as-of date"} and verifiedBy to the reviewer` : "Needs answer + citation + http(s) source URL before re-verification";
++    const url = safeUrl(raw?.sourceUrl);
++    if (url) { $("dLink").style.display = ""; $("dLink").href = url; } else { $("dLink").style.display = "none"; }
++    const hasQuote = cell.status !== "unverified" && typeof cell.quotedText === "string" && cell.quotedText.trim();
++    $("dSource").disabled = !hasQuote;
++    $("dCopy").disabled = !hasQuote;
++    $("dSrcPanel").hidden = true;
++    if (hasQuote) {
++      $("dQuote").innerHTML = markDigits(cell.quotedText);
++      $("dSrcUrl").textContent = `${cell.citation} · ${safeUrl(raw.sourceUrl) ?? "no http(s) source URL"}`;
++    }
++    $("overlay").hidden = false;
++    $("drawer").hidden = false;
++    $("dClose").focus();
++  }
++  function showSource() {
++    $("dSrcPanel").hidden = false;
++    const bq = $("dQuote");
++    bq.scrollIntoView({ block: "center", behavior: "smooth" });
++    bq.classList.add("flash");
++    setTimeout(() => bq.classList.remove("flash"), 1200);
++  }
++  function closeDrawer() {
++    $("drawer").hidden = true;
++    $("overlay").hidden = true;
++    cur = null;
++  }
++  $("dClose").onclick = closeDrawer;
++  $("overlay").onclick = closeDrawer;
++  document.addEventListener("keydown", (e) => {
++    if ($("drawer").hidden) return;
++    if (e.key === "Escape") { closeDrawer(); return; }
++    if (e.key === "Tab") {
++      const f = [...$("drawer").querySelectorAll("button, a[href], input, select, textarea")].filter((x) => !x.disabled && x.offsetParent !== null);
++      if (!f.length) return;
++      const first = f[0], last = f[f.length - 1];
++      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
++      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
++    }
++  });
++  function reviewKey() {
++    const j = m.jurisdictions[cur.r], q = m.questions[cur.c];
++    return { key: `${String(j).toLowerCase()}|${String(q.id).toLowerCase()}`, label: `${j} · ${q.id}` };
++  }
++  $("dCheck").onclick = () => {
++    if (!cur) return;
++    const { key, label } = reviewKey();
++    const rv = (state.review[key] ??= {});
++    rv.checked = !rv.checked;
++    rv.ts = new Date().toISOString();
++    logRow(rv.checked ? "check" : "uncheck", label, "");
++    render(); openCell(cur.r, cur.c);
++  };
++  $("dFlag").onclick = () => {
++    if (!cur) return;
++    const { key, label } = reviewKey();
++    const rv = (state.review[key] ??= {});
++    rv.flagged = !rv.flagged;
++    rv.ts = new Date().toISOString();
++    logRow(rv.flagged ? "flag" : "unflag", label, "");
++    render(); openCell(cur.r, cur.c);
++  };
++  $("dReverify").onclick = () => {
++    if (!cur) return;
++    const j = m.jurisdictions[cur.r], q = m.questions[cur.c];
++    const raw = rawCell.get(`${String(j).toLowerCase()}|${String(q.id).toLowerCase()}`);
++    if (!raw || !String(raw.answer ?? "").trim() || !String(raw.citation ?? "").trim() || !safeUrl(raw.sourceUrl)) {
++      toast("Re-verification needs an answer, a citation, and an http(s) source URL.");
++      return;
++    }
++    if (!state.asOf) { toast("Set an as-of date first (re-verification dates anchor to it)."); return; }
++    raw.verifiedDate = state.asOf;
++    raw.verifiedBy = state.actor || "unknown";
++    logRow("reverify", `${j} · ${q.id}`, `verifiedDate set to ${state.asOf} by ${raw.verifiedBy}`);
++    toast(`Re-verified ${j} · ${q.id} as of ${state.asOf}`);
++    render(); openCell(cur.r, cur.c);
++  };
++  $("dSource").onclick = showSource;
++  $("dCopy").onclick = async () => {
++    if (!cur) return;
++    const cell = m.grid[cur.r][cur.c];
++    try { await navigator.clipboard.writeText(cell.quotedText ?? ""); toast("Quoted source copied."); }
++    catch { toast("Copy failed — clipboard unavailable."); }
++  };
++
++  /* ---------- queue ---------- */
++  function renderQueue() {
++    const rows = toWorklist(m);
++    const tb = $("queue").querySelector("tbody");
++    if (!rows.length) { tb.innerHTML = `<tr><td colspan="6">Nothing queued — every cell is verified.</td></tr>`; return; }
++    tb.innerHTML = rows.slice(0, 400).map((r2, i) => {
++      const rv = rev(r2.jurisdiction, r2.questionId);
++      const raw = rawCell.get(`${String(r2.jurisdiction).toLowerCase()}|${String(r2.questionId).toLowerCase()}`);
++      const rvAble = raw && String(raw.answer ?? "").trim() && String(raw.citation ?? "").trim() && safeUrl(raw.sourceUrl) && state.asOf;
++      return `<tr><td>${i + 1}</td><td>${esc(r2.jurisdiction)}</td><td>${esc(r2.questionId)} — ${esc(String(r2.question).slice(0, 60))}</td>` +
++        `<td><span class="pill ${r2.status}">${r2.status}</span>${rv.flagged ? " ⚑" : ""}${rv.checked ? " ✓" : ""}</td>` +
++        `<td>${esc(r2.reason)}</td>` +
++        `<td><button class="ghost" data-q="${esc(r2.jurisdiction)}|${esc(r2.questionId)}" ${rvAble ? "" : "disabled"} ` +
++        `title="${rvAble ? `Re-verify as of ${esc(state.asOf)}` : "Needs answer + citation + http(s) source URL and an as-of date"}">Re-verify</button></td></tr>`;
++    }).join("") + (rows.length > 400 ? `<tr><td colspan="6">…${rows.length - 400} more (export the worklist for the full list)</td></tr>` : "");
++    tb.querySelectorAll("button[data-q]").forEach((b) => {
++      b.onclick = () => {
++        const [j, qid] = b.dataset.q.split("|");
++        const raw = rawCell.get(`${String(j).toLowerCase()}|${String(qid).toLowerCase()}`);
++        if (!raw) return;
++        raw.verifiedDate = state.asOf;
++        raw.verifiedBy = state.actor || "unknown";
++        logRow("reverify", `${j} · ${qid}`, `verifiedDate set to ${state.asOf} by ${raw.verifiedBy} (queue)`);
++        toast(`Re-verified ${j} · ${qid} as of ${state.asOf}`);
++        render();
++      };
+     });
+   }
+ 
+-  $("renderBtn").onclick = render;
+-  $("asOfInput").onchange = render;
++  /* ---------- sign-off ---------- */
++  function outstanding() {
++    let n = 0;
++    m.jurisdictions.forEach((j, r) => m.questions.forEach((q, c) => {
++      const rv = rev(j, q.id);
++      if (m.grid[r][c].status !== "verified" || rv.flagged) n++;
++    }));
++    return n;
++  }
++  function renderSignoff() {
++    const chip = $("signoffChip");
++    if (!state.signoff) { chip.innerHTML = ""; $("signBtn").textContent = "Sign off survey"; return; }
++    const n = outstanding();
++    chip.innerHTML = `<span class="signoff ${n ? "warn" : "ok"}">signed off by ${esc(state.signoff.by)} on ${esc(state.signoff.date)}` +
++      (n ? ` — ${n} cell${n > 1 ? "s" : ""} outstanding` : " — clean") + `</span>`;
++    $("signBtn").textContent = "Withdraw sign-off";
++  }
++  $("signBtn").onclick = () => {
++    if (state.signoff) {
++      logRow("unsignoff", state.input.survey?.topic ?? "", "");
++      state.signoff = null;
++      render();
++      return;
++    }
++    if (!state.actor) { toast("Enter a reviewer name first."); $("actorInput").focus(); return; }
++    if (!state.asOf) { toast("Set an as-of date first."); $("asOfInput").focus(); return; }
++    state.signoff = { by: state.actor, date: state.asOf };
++    logRow("signoff", state.input.survey?.topic ?? "", `${outstanding()} cells outstanding at sign-off`);
++    toast("Survey signed off.");
++    render();
++  };
++
++  /* ---------- audit log ---------- */
++  function renderAudit() {
++    const actions = [...new Set(["all", ...logRows.map((r) => r.action)])];
++    const sel = $("logFilter");
++    const keep = sel.value || "all";
++    sel.innerHTML = actions.map((a) => `<option value="${esc(a)}"${a === keep ? " selected" : ""}>${esc(a === "all" ? "all actions" : a)}</option>`).join("");
++    const rows = logRows.filter((r) => keep === "all" || r.action === keep).slice(-200).reverse();
++    $("audit").querySelector("tbody").innerHTML = rows.length
++      ? rows.map((r) => `<tr><td>${esc(r.t)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td>${esc(r.target)}</td><td>${esc(r.detail)}</td></tr>`).join("")
++      : `<tr><td colspan="5">No audit entries${keep === "all" ? "" : " for this action"}.</td></tr>`;
++  }
++  $("logFilter").onchange = renderAudit;
++  $("clearLogBtn").onclick = () => {
++    if (!confirm("Clear the audit log? The working state (checks, flags, sign-off) is kept.")) return;
++    logRows = [];
++    store.remove("log");
++    logRow("logcleared", "audit log", "log cleared at user request");
++    renderAudit();
++    toast("Audit log cleared.");
++  };
++
++  /* ---------- inputs ---------- */
++  function syncGuided() {
++    const s = state.input?.survey ?? {};
++    $("gTopic").value = s.topic ?? "";
++    $("gJuris").value = (s.jurisdictions ?? []).join("\n");
++    $("gQuestions").value = (s.questions ?? []).map((q) => typeof q === "string" ? q : `${q.id} | ${q.text}`).join("\n");
++    $("gCells").value = (Array.isArray(s.cells) ? s.cells : []).map((c) =>
++      [c.jurisdiction, c.question, c.answer, c.citation, c.sourceUrl, c.verifiedDate, c.verifiedBy, c.quotedText].map((v) => v ?? "").join(" | ")
++    ).join("\n");
++    $("maxAgeInput").value = s.policy?.maxAgeDays ?? 180;
++    $("asOfInput").value = state.asOf ?? "";
++    $("actorInput").value = state.actor ?? "";
++    $("inputJson").value = JSON.stringify(state.input, null, 2);
++  }
++  function parseGuided() {
++    const lines = (t) => t.split("\n").map((l) => l.trim()).filter(Boolean);
++    const jurisdictions = lines($("gJuris").value);
++    const questions = lines($("gQuestions").value).map((l, i) => {
++      const [id, ...rest] = l.split("|").map((x) => x.trim());
++      return rest.length && rest.join("|") ? { id, text: rest.join("|") } : { id: `q${i + 1}`, text: id };
++    });
++    const cells = lines($("gCells").value).map((l) => {
++      const p = l.split("|").map((x) => x.trim());
++      const c = { jurisdiction: p[0], question: p[1], answer: p[2] ?? "", citation: p[3] ?? "", sourceUrl: p[4] ?? "", verifiedDate: p[5] || null, verifiedBy: p[6] || null };
++      if (p[7]) c.quotedText = p[7];
++      return c;
++    });
++    return {
++      asOf: $("asOfInput").value || null,
++      survey: {
++        topic: $("gTopic").value.trim() || "Untitled survey",
++        policy: { maxAgeDays: Math.max(1, +$("maxAgeInput").value || 180) },
++        jurisdictions, questions, cells,
++      },
++    };
++  }
++  $("buildBtn").onclick = () => {
++    const input = parseGuided();
++    if (!input.survey.jurisdictions.length || !input.survey.questions.length) {
++      $("msgs").innerHTML = `<div class="err">A survey needs at least one jurisdiction and one question — fill the boxes above (or load the worked example).</div>`;
++      return;
++    }
++    state.input = input;
++    logRow("build", input.survey.topic, `${input.survey.jurisdictions.length} jurisdictions × ${input.survey.questions.length} questions, ${input.survey.cells.length} cells`);
++    render(); syncGuided();
++  };
++  $("exampleBtn").onclick = () => {
++    state.input = clone(EXAMPLE);
++    state.review = {}; state.signoff = null;
++    logRow("load", EXAMPLE.survey.topic, "worked example (51×5, fictional)");
++    render(); syncGuided();
++    toast("Worked example loaded — review states reset.");
++  };
++  $("clearBtn").onclick = () => {
++    state.input = { asOf: $("asOfInput").value || null, survey: { topic: "New survey", policy: { maxAgeDays: 180 }, jurisdictions: [], questions: [], cells: [] } };
++    state.review = {}; state.signoff = null;
++    logRow("load", "New survey", "cleared to empty");
++    render(); syncGuided();
++  };
++  $("renderBtn").onclick = () => {
++    try {
++      state.input = JSON.parse($("inputJson").value);
++      logRow("load", state.input?.survey?.topic ?? "", "advanced JSON");
++      render();
++    } catch (e) {
++      $("msgs").innerHTML = `<div class="err">Invalid JSON: ${esc(e.message)}</div>`;
++    }
++  };
+   $("fileInput").onchange = () => {
+     const f = $("fileInput").files[0];
+     if (!f) return;
+-    f.text().then((t) => { $("inputJson").value = t; render(); });
++    f.text().then((t) => { $("inputJson").value = t; $("renderBtn").click(); });
++  };
++  $("asOfInput").onchange = () => { render(); syncGuided(); logRow("asof", "policy", `as-of date set to ${state.asOf ?? "(none)"}`); };
++  $("actorInput").onchange = () => { state.actor = $("actorInput").value.trim(); save(); };
++  $("maxAgeInput").onchange = () => {
++    if (!state.input) state.input = { survey: {} };
++    if (!state.input.survey) state.input.survey = {};
++    const p = (state.input.survey.policy ??= {});
++    p.maxAgeDays = Math.max(1, +$("maxAgeInput").value || 180);
++    render(); syncGuided();
+   };
+ 
+-  function download(name, content, type) {
+-    const blob = new Blob([content], { type });
+-    const a = document.createElement("a");
+-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+-  }
+-  $("csvBtn").onclick = () => m && download("jurisdiction-survey.csv", toCsv(m), "text/csv");
+-  $("mdBtn").onclick = () => m && download("jurisdiction-survey.md", toMarkdown(m), "text/markdown");
+-  $("wlBtn").onclick = () => m && download("re-verification-worklist.md", worklistToMarkdown(m), "text/markdown");
++  /* ---------- exports ---------- */
++  const stamp = () => (state.asOf ? `-${state.asOf}` : "");
++  $("csvBtn").onclick = () => { if (m) { download(`jurisdiction-survey${stamp()}.csv`, toCsv(m), "text/csv"); logRow("export", "csv", `${m.coverage.total} rows`); } };
++  $("mdBtn").onclick = () => { if (m) { download(`jurisdiction-survey${stamp()}.md`, toMarkdown(m), "text/markdown"); logRow("export", "markdown", ""); } };
++  $("wlBtn").onclick = () => { if (m) { download(`re-verification-worklist${stamp()}.md`, worklistToMarkdown(m), "text/markdown"); logRow("export", "worklist", `${toWorklist(m).length} items`); } };
++  $("logBtn").onclick = () => { download(`audit-log${stamp()}.ndjson`, store.exportJsonl("log") || logRows.map((r) => JSON.stringify(r)).join("\n") + "\n", "application/x-ndjson"); };
+ 
++  /* ---------- init ---------- */
++  buildFilterChips();
++  syncGuided();
+   render();
++  renderAudit();
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/jurisdiction-survey-matrix/demo/tokens.css b/open-artifacts/jurisdiction-survey-matrix/demo/tokens.css
+index 24ee35d..068cdd1 100644
+--- a/open-artifacts/jurisdiction-survey-matrix/demo/tokens.css
++++ b/open-artifacts/jurisdiction-survey-matrix/demo/tokens.css
+@@ -4,7 +4,14 @@
+    ========================================================================= */
+ 
+ /* ---------- Webfonts ---------- */
+-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
++/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
++@font-face {
++  font-family: "Manrope";
++  src: url("fonts/Manrope-Variable.woff2") format("woff2");
++  font-weight: 400 700;
++  font-style: normal;
++  font-display: swap;
++}
+ 
+ /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+ @font-face {
+@@ -37,7 +44,7 @@
+ 
+   /* ----- Type stacks ----- */
+   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
++  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+ 
+   /* ----- Layout constants ----- */
+   --max-width: 1100px;
+@@ -127,7 +134,7 @@ a {
+ /* Eyebrow — preceded by 24px hairline */
+ .t-eyebrow {
+   font-family: var(--font-mono);
+-  font-size: 11px;
++  font-size: 12px;
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: var(--text-secondary);

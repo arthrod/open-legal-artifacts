@@ -102,6 +102,9 @@
 <script type="module">
   import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs } from "../core/core.js";
   import EXAMPLE from "./example.js";
+  import { makeLabelFn, TOOL_LABELS } from "../core/display-labels.js";
+
+  const L = makeLabelFn(TOOL_LABELS["matter-board"]);
 
   let diff = null, board = null;
 
@@ -119,9 +122,9 @@
     const items = [
       ...diff.changed.map((c) =>
         `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
-        `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
+        `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.severity}" data-key="${esc(c.severity)}">${esc(L(c.severity).label)}</span><br />` +
         `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
-      ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
+      ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: <span data-key="${esc(m.stage ?? "")}">${esc(L(m.stage ?? "?").label)}</span>)</li>`),
       ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
     ];
     document.getElementById("changelog").innerHTML = items.length
@@ -129,11 +132,11 @@
       : `<li><span class="ts">no changes — paste a previous snapshot below to see a diff</span></li>`;
 
     document.getElementById("board").innerHTML = board.stages.map((s) =>
-      `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
+      `<div class="col"><h3 data-key="${esc(s.stage)}">${esc(L(s.stage).label)} <span>(${s.matters.length})</span></h3>` +
       s.matters.map((m) => {
         const fl = flagOf(String(m.id));
         const dl = m.nextDeadline
-          ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
+          ? `<div class="dl ${fl ? fl.flag : ""}"${fl ? ` data-key="${esc(fl.flag)}"` : ""}>${fl ? `${esc(L(fl.flag).label)} · ` : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
         return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
           `<div class="nm">${esc(m.name)}</div>` +
           `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +

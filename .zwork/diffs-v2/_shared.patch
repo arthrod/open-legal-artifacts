@@ -1,0 +1,1741 @@
+diff --git a/open-artifacts/_shared/README.md b/open-artifacts/_shared/README.md
+new file mode 100644
+index 0000000..76d2301
+--- /dev/null
++++ b/open-artifacts/_shared/README.md
+@@ -0,0 +1,113 @@
++# _shared — canonical fleet modules (open-legal-artifacts)
++
++Dependency-free ESM modules + `node:test` suites shared across the 33
++artifact cores. Each module:
++
++- **pure ESM, zero imports** (only ECMAScript builtins; `persist.js` lazy-
++  imports `node:fs` inside its Node-only functions so the module still loads
++  in browsers),
++- **zero console side effects** (nothing logs at import or call time),
++- **≤20 KB source** so single-file demos can vendor them and still fit the
++  80 KB deploy cap,
++- covered by adversarial `node:test` suites (dangerous URI schemes, formula
++  injection, CJK/emoji names, 80-char ICS summaries, throwing localStorage).
++
++## Modules
++
++### hardening.js — `safeExternalUrl(s)`, `csvSafeEscape(v)`
++
++- `safeExternalUrl(s)` → normalized absolute URL string or `null`.
++  Allowlist: `http`/`https` only. Strips the control characters browsers
++  ignore (`TAB`/`LF`/`CR`/C0) before parsing so `java\tscript:` cannot
++  smuggle a scheme; relative and protocol-relative URLs are rejected
++  (no base is supplied).
++- `csvSafeEscape(v)` → one RFC 4180 CSV cell. Formula-injection guard:
++  a leading `= + - @ TAB CR` gets a `'` prefix (never double-prefixed),
++  then standard quoting rules (quote if `" , \n \r`; double embedded
++  quotes). `null`/`undefined` → empty string.
++
++### fuzzyname.js — `normalizeName(s)`, `similarity(a, b)`, `similarityReason(a, b)`
++
++- `normalizeName`: NFKC → casefold (incl. `ß→ss`) → strip combining marks →
++  keep `\p{L}\p{N}` tokens in any script (CJK/Cyrillic/Greek survive),
++  drop punctuation/emoji and corporate suffix tokens (`Inc.`, `LLC`, …).
++- `similarity(a, b)` → deterministic `[0,1]` = max of:
++  whole-string edit ratio (length-gated so short single-char swaps like
++  `J. Iwata` vs `K. Iwata` don't over-score), token alignment
++  (exact 1.0 > nickname 0.95 > initial 0.9 > edit-distance ≥0.75),
++  compact whitespace-free comparison (`田中 太郎` ≡ `田中太郎` → 1),
++  and a containment bonus capped at 0.8 (all shorter-side tokens matched).
++- `similarityReason(a, b)` → `{score, matchedVia}` where `matchedVia`
++  traces every aligned pair with its kind (`exact|nickname|initial|edit`)
++  — the audit trail for conflict-check UIs.
++- Nicknames live in the small `NICKNAMES` data table (Bob→Robert,
++  Bill→William, …); extend per domain, no code changes.
++
++### icsutil.js — `icsEscapeText(s)`, `foldIcsLine(line)`, `buildVEvent(ev)`, `buildIcs(events, opts)`
++
++- RFC 5545 TEXT escaping (`\\ \; \,` + literal `\n` for CR/LF).
++- Folding: every physical line ≤75 UTF-8 octets, CRLF joined, single-space
++  continuation prefix, never splits a multibyte code point (3-octet CJK,
++  4-octet emoji).
++- `buildVEvent({uid, dtStart, dtStamp?, summary?, description?,
++  location?, url?})` accepts `YYYY-MM-DD`, `YYYYMMDD`, or
++  `YYYY-MM-DDTHH:MM:SSZ`; **null** on invalid/missing date — never a
++  guessed event.
++- `buildIcs(events, {prodId})` wraps events in `VCALENDAR`/`VEVENT` with
++  CRLF everywhere and skips invalid events.
++
++### persist.js — `appendLog(file, x)`, `loadLog(file)`, `createStorage(ns, opts)`
++
++- `appendLog` / `loadLog` (async, Node-only): JSONL files; blank lines
++  skipped; a malformed line throws with its 1-based line number — data is
++  never silently dropped; missing file → `[]`. `appendLog` accepts one
++  entry or a batch array.
++- `createStorage(namespace, {backend: 'auto'|'local'|'memory'})` →
++  `{get, set, remove, append, entries, exportJsonl, backendName}`.
++  Probes localStorage with a real write before trusting it; falls back to
++  an in-memory store when absent or throwing (privacy mode / quota hit,
++  including degradation mid-session). Keys are namespaced `ns:key`.
++  `backendName` reports what's actually in use
++  (`local` / `memory` / `memory-fallback`).
++
++## Tests
++
++```bash
++cd open-artifacts/_shared && node --test    # 57 tests, fail=0
++```
++
++Suites pin the adversarial behaviors: `javascript:`/`data:`/control-char
++scheme smuggling, `=cmd()`/`@SUM()`/TAB/CR CSV leaders, CJK spacing,
++emoji, NFKC quirks (ﬁ, fullwidth), initials vs wrong initials, 80-char
++summary folding, throwing localStorage, malformed JSONL.
++
++## Vendoring (into an artifact)
++
++1. Copy the module file(s) verbatim into the artifact's `core/` directory.
++2. Add this provenance header comment at the top (keep it — byte-parity
++   tests strip nothing):
++
++   ```
++   // Vendored from open-artifacts/_shared/<module>.js (commit-anchored).
++   // Do not edit here — change the canonical module, then re-vendor.
++   ```
++
++3. Import locally: `import { safeExternalUrl } from './hardening.js';`
++4. Copy the matching `.test.js` too and add a byte-parity test:
++
++   ```js
++   import test from 'node:test'; import assert from 'node:assert/strict';
++   import { readFileSync } from 'node:fs';
++   test('vendored hardening.js is byte-identical to canonical _shared', () => {
++     const canon = readFileSync(new URL('../../../../_shared/hardening.js', import.meta.url), 'utf8');
++     const vendored = readFileSync(new URL('./hardening.js', import.meta.url), 'utf8');
++     assert.equal(vendored.replace(/^\/\/ Vendored[^\n]*\n\/\/ [^\n]*\n/, ''), canon);
++   });
++   ```
++
++Cores stay dependency-free (node builtins only); demos that inline a
++vendored module stay single-file and under the 80 KB cap (each module
++≤20 KB, see sizes above; check with `wc -c`).
++
++All example data in tests is fictional; real-source values, if ever added,
++must carry `[verify]` tags per the fleet corpus rules.
+diff --git a/open-artifacts/_shared/docio.js b/open-artifacts/_shared/docio.js
+new file mode 100644
+index 0000000..211405c
+--- /dev/null
++++ b/open-artifacts/_shared/docio.js
+@@ -0,0 +1,379 @@
++// docio.js — canonical _shared DOCX/XLSX/ZIP I/O. Dependency-free ESM (browser + Node).
++// API (contract per docs/plans-v3/backend.md):
++//   await readDocx(buf)  -> { text: string, paragraphs: string[] }   buf: ArrayBuffer | Uint8Array
++//   await readXlsx(buf)  -> { sheets: [{ name: string, rows: string[][] }] }
++//   writeDocx(paragraphs: (string | { text })[]) -> Blob (browser) | Buffer (Node)
++//   writeXlsx(rows: (string|number|null)[][], { name } = {}) -> Blob | Buffer
++//   redlineMarkdown(changes: { op: 'ins'|'del'|'ctx', text: string }[]) -> string
++// ZIP: reads STORE + DEFLATE; writes STORE (deterministic bytes on all platforms).
++// DEFLATE: node:zlib inflateRawSync in Node, DecompressionStream('deflate-raw') in
++// browsers; any other method or missing inflater throws Error('unsupported compression …')
++// with .name 'UnsupportedCompression'. No console output; no clocks/random in output.
++
++const IS_NODE = typeof process === 'object' && process !== null && !!(process.versions && process.versions.node);
++const XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
++const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
++
++// ---------- shared bits ----------
++
++const CRC_TABLE = (() => {
++  const t = new Uint32Array(256);
++  for (let n = 0; n < 256; n++) {
++    let c = n;
++    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
++    t[n] = c;
++  }
++  return t;
++})();
++
++function crc32(u8) {
++  let c = 0xFFFFFFFF;
++  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
++  return (c ^ 0xFFFFFFFF) >>> 0;
++}
++
++function unsupported(detail) {
++  const e = new Error('unsupported compression: ' + detail);
++  e.name = 'UnsupportedCompression';
++  e.code = 'UNSUPPORTED_COMPRESSION';
++  return e;
++}
++
++function toU8(buf) {
++  if (buf instanceof Uint8Array) return buf;
++  if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
++  if (buf && buf.buffer instanceof ArrayBuffer) return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
++  throw new TypeError('docio: expected ArrayBuffer or typed array');
++}
++
++const decodeXml = (s) => s.replace(/&(?:#x([0-9a-fA-F]+)|#([0-9]+)|amp|lt|gt|quot|apos);/g, (m, hex, dec) => {
++  if (hex) return String.fromCodePoint(parseInt(hex, 16));
++  if (dec) return String.fromCodePoint(parseInt(dec, 10));
++  return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[m.slice(1, -1)];
++});
++
++const encodeXml = (s) => String(s).replace(/[&<>"']/g, (c) =>
++  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
++
++function attr(tag, name) {
++  const m = new RegExp('\\s' + name + '="([^"]*)"').exec(tag);
++  return m ? m[1] : undefined;
++}
++
++function output(u8) {
++  if (IS_NODE && typeof Buffer !== 'undefined') return Buffer.from(u8);
++  return new Blob([u8]);
++}
++
++// ---------- zip writer (STORE, deterministic) ----------
++
++function buildZip(files) {
++  const enc = new TextEncoder();
++  const parts = [], cd = [];
++  let offset = 0;
++  for (const [name, content] of files) {
++    const data = typeof content === 'string' ? enc.encode(content) : content;
++    const nb = enc.encode(name), crc = crc32(data), lho = offset;
++    const lh = new Uint8Array(30), v = new DataView(lh.buffer);
++    v.setUint32(0, 0x04034b50, true);
++    v.setUint16(4, 20, true);        // version needed
++    v.setUint16(12, 0x21, true);     // date 1980-01-01 (fixed)
++    v.setUint32(14, crc, true);
++    v.setUint32(18, data.length, true);
++    v.setUint32(22, data.length, true);
++    v.setUint16(26, nb.length, true);
++    parts.push(lh, nb, data);
++    offset += 30 + nb.length + data.length;
++    const c = new Uint8Array(46), u = new DataView(c.buffer);
++    u.setUint32(0, 0x02014b50, true);
++    u.setUint16(4, 20, true);        // version made by
++    u.setUint16(6, 20, true);        // version needed
++    u.setUint16(14, 0x21, true);     // date
++    u.setUint32(16, crc, true);
++    u.setUint32(20, data.length, true);
++    u.setUint32(24, data.length, true);
++    u.setUint16(28, nb.length, true);
++    u.setUint32(42, lho, true);
++    cd.push(c, nb);
++  }
++  const cdSize = cd.reduce((n, p) => n + p.length, 0);
++  const eocd = new Uint8Array(22), e = new DataView(eocd.buffer);
++  e.setUint32(0, 0x06054b50, true);
++  e.setUint16(8, files.length, true);
++  e.setUint16(10, files.length, true);
++  e.setUint32(12, cdSize, true);
++  e.setUint32(16, offset, true);     // offset == cd start
++  const all = [...parts, ...cd, eocd];
++  const out = new Uint8Array(offset + cdSize + 22);
++  let o = 0;
++  for (const p of all) { out.set(p, o); o += p.length; }
++  return out;
++}
++
++// ---------- zip reader (STORE + DEFLATE) ----------
++
++let nodeInflateRaw = null;
++
++async function inflateRaw(raw) {
++  if (IS_NODE) {
++    if (!nodeInflateRaw) nodeInflateRaw = (await import('node:zlib')).inflateRawSync;
++    return new Uint8Array(nodeInflateRaw(raw));
++  }
++  if (typeof DecompressionStream === 'undefined')
++    throw unsupported('DEFLATE (no inflater available)');
++  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
++  return new Uint8Array(await new Response(stream).arrayBuffer());
++}
++
++async function openArchive(buf) {
++  const u8 = toU8(buf);
++  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
++  let eocd = -1;
++  const floor = Math.max(0, u8.length - 22 - 65536);
++  for (let i = u8.length - 22; i >= floor; i--) {
++    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
++  }
++  if (eocd < 0) throw new Error('not a zip archive (no end-of-central-directory record)');
++  const count = dv.getUint16(eocd + 10, true);
++  let p = dv.getUint32(eocd + 16, true);
++  const entries = new Map();
++  for (let n = 0; n < count; n++) {
++    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('corrupt zip central directory');
++    const entry = {
++      method: dv.getUint16(p + 10, true),
++      csize: dv.getUint32(p + 20, true),
++      lho: dv.getUint32(p + 42, true),
++    };
++    const nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
++    entries.set(new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen)), entry);
++    p += 46 + nlen + elen + clen;
++  }
++  const read = async (name) => {
++    const entry = entries.get(name);
++    if (!entry) return null;
++    if (dv.getUint32(entry.lho, true) !== 0x04034b50) throw new Error('corrupt zip local header: ' + name);
++    const nlen = dv.getUint16(entry.lho + 26, true), elen = dv.getUint16(entry.lho + 28, true);
++    const start = entry.lho + 30 + nlen + elen;
++    const raw = u8.subarray(start, start + entry.csize);
++    if (entry.method === 0) return raw;
++    if (entry.method !== 8) throw unsupported('method ' + entry.method + ' in ' + name);
++    return inflateRaw(raw);
++  };
++  return { entries, read };
++}
++
++// ---------- docx read ----------
++
++function docxParagraphs(xml) {
++  const out = [];
++  let cur = null, takeText = false;
++  for (const tk of xml.split(/(<[^>]*>)/)) {
++    if (!tk) continue;
++    if (tk.charCodeAt(0) === 60) {
++      const m = /^<(\/)?([^<\/\s>]+)([^>]*)>$/.exec(tk);
++      if (!m) continue;
++      const local = m[2].split(':').pop(); // namespace-agnostic
++      const closed = !!m[1], empty = m[3].trimEnd().endsWith('/');
++      if (local === 'p') {
++        if (closed || empty) {
++          if (cur !== null) { out.push(cur); cur = null; }
++          if (empty && !closed) out.push('');
++        } else if (cur === null) cur = '';
++      } else if (cur !== null) {
++        if (local === 't') takeText = !closed && !empty;
++        else if (local === 'tab' && !closed) { cur += '\t'; takeText = false; }
++        else if (local === 'br' && !closed) { cur += '\n'; takeText = false; }
++        else takeText = false;
++      }
++    } else if (takeText && cur !== null) {
++      cur += decodeXml(tk);
++      takeText = false;
++    }
++  }
++  if (cur !== null) out.push(cur);
++  return out;
++}
++
++export async function readDocx(buf) {
++  const arc = await openArchive(buf);
++  const names = [...arc.entries.keys()];
++  const name = names.includes('word/document.xml')
++    ? 'word/document.xml'
++    : names.find((k) => k.toLowerCase().endsWith('word/document.xml'));
++  if (!name) throw new Error('no word/document.xml in archive');
++  const xml = new TextDecoder().decode(await arc.read(name));
++  const paragraphs = docxParagraphs(xml);
++  return { text: paragraphs.join('\n'), paragraphs };
++}
++
++// ---------- xlsx read ----------
++
++function colIndex(letters) {
++  let n = 0;
++  for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
++  return n - 1;
++}
++
++function resolvePart(baseDir, target) {
++  if (target.startsWith('/')) return target.replace(/^\/+/, '');
++  const out = baseDir ? baseDir.split('/') : [];
++  for (const seg of target.split('/')) {
++    if (seg === '..') out.pop();
++    else if (seg && seg !== '.') out.push(seg);
++  }
++  return out.join('/');
++}
++
++function collectInlineT(xml) {
++  let s = '';
++  for (const t of xml.matchAll(/<t\b(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) s += decodeXml(t[1]);
++  return s;
++}
++
++function parseSheet(xml, shared) {
++  const rows = [];
++  for (const rm of xml.matchAll(/<row\b[^>]*>/g)) {
++    const rIdx = parseInt(attr(rm[0], 'r'), 10) - 1;
++    if (!(rIdx >= 0)) continue;
++    let body = '';
++    if (!rm[0].endsWith('/>')) {
++      const end = xml.indexOf('</row', rm.index);
++      if (end >= 0) body = xml.slice(rm.index + rm[0].length, end);
++    }
++    const cells = [];
++    for (const cm of body.matchAll(/<c\b[^>]*>/g)) {
++      const ref = /\sr="([A-Za-z]+)(\d+)"/.exec(cm[0]);
++      if (!ref) continue;
++      let inner = '';
++      if (!cm[0].endsWith('/>')) {
++        const end = body.indexOf('</c', cm.index);
++        inner = end < 0 ? body.slice(cm.index + cm[0].length) : body.slice(cm.index + cm[0].length, end);
++      }
++      const t = attr(cm[0], 't') || 'n';
++      const v = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(inner);
++      let val = '';
++      if (t === 'inlineStr') val = collectInlineT(/<is(?:\s[^>]*)?>([\s\S]*?)<\/is>/.exec(inner)?.[1] ?? '');
++      else if (t === 's') val = shared[parseInt(v?.[1], 10)] ?? '';
++      else if (t === 'b') val = v?.[1] === '1' ? 'TRUE' : 'FALSE';
++      else val = v ? decodeXml(v[1]) : '';
++      cells[colIndex(ref[1])] = val;
++    }
++    for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = '';
++    rows[rIdx] = cells;
++  }
++  for (let i = 0; i < rows.length; i++) if (!rows[i]) rows[i] = [];
++  return rows;
++}
++
++export async function readXlsx(buf) {
++  const arc = await openArchive(buf);
++  const read = async (name) => {
++    const names = [...arc.entries.keys()];
++    const full = names.includes(name) ? name : names.find((k) => k.toLowerCase() === name.toLowerCase());
++    return full ? new TextDecoder().decode(await arc.read(full)) : null;
++  };
++  const wb = await read('xl/workbook.xml');
++  if (!wb) throw new Error('no xl/workbook.xml in archive');
++  const relsXml = await read('xl/_rels/workbook.xml.rels') || '';
++  const relTarget = new Map();
++  for (const m of relsXml.matchAll(/<Relationship\b[^>]*>/g)) {
++    const id = attr(m[0], 'Id'), tgt = attr(m[0], 'Target');
++    if (id && tgt) relTarget.set(id, resolvePart('xl', tgt));
++  }
++  const shared = [];
++  const sst = await read('xl/sharedStrings.xml');
++  if (sst) for (const si of sst.matchAll(/<si\b[\s\S]*?<\/si>/g)) shared.push(collectInlineT(si[0]));
++  const sheets = [];
++  for (const m of wb.matchAll(/<sheet\b[^>]*>/g)) {
++    const rid = /\sr:id="([^"]*)"/.exec(m[0])?.[1];
++    let part = rid && relTarget.get(rid);
++    if (!part) {
++      const ks = [...arc.entries.keys()].filter((k) => /^xl\/worksheets\/[^/]+\.xml$/.test(k)).sort();
++      part = ks[sheets.length];
++    }
++    if (!part) continue;
++    const xml = await read(part);
++    if (xml) sheets.push({ name: attr(m[0], 'name') ?? '', rows: parseSheet(xml, shared) });
++  }
++  return { sheets };
++}
++
++// ---------- docx / xlsx write ----------
++
++export function writeDocx(paragraphs) {
++  const body = (paragraphs ?? []).map((p) => {
++    const text = typeof p === 'string' ? p : p && p.text != null ? String(p.text) : '';
++    return '<w:p><w:r><w:t xml:space="preserve">' + encodeXml(text) + '</w:t></w:r></w:p>';
++  }).join('');
++  const doc = XMLDECL +
++    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body +
++    '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>' +
++    '</w:body></w:document>';
++  return output(buildZip([
++    ['[Content_Types].xml', XMLDECL +
++      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
++      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
++      '<Default Extension="xml" ContentType="application/xml"/>' +
++      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
++      '</Types>'],
++    ['_rels/.rels', XMLDECL +
++      '<Relationships xmlns="' + RELS_NS + '">' +
++      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
++      '</Relationships>'],
++    ['word/document.xml', doc],
++  ]));
++}
++
++export function writeXlsx(rows, opts) {
++  const sheetName = (opts && typeof opts === 'object' && opts.name) || 'Sheet1';
++  const colName = (i) => {
++    let s = '';
++    for (let n = i + 1; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
++    return s;
++  };
++  const body = (rows ?? []).map((row, ri) => {
++    const cells = (row ?? []).map((v, ci) => {
++      const ref = ' r="' + colName(ci) + (ri + 1) + '"';
++      if (typeof v === 'number' && Number.isFinite(v)) return '<c' + ref + '><v>' + v + '</v></c>';
++      return '<c' + ref + ' t="inlineStr"><is><t xml:space="preserve">' + encodeXml(v == null ? '' : String(v)) + '</t></is></c>';
++    }).join('');
++    return '<row r="' + (ri + 1) + '">' + cells + '</row>';
++  }).join('');
++  const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
++  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
++  return output(buildZip([
++    ['[Content_Types].xml', XMLDECL +
++      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
++      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
++      '<Default Extension="xml" ContentType="application/xml"/>' +
++      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
++      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
++      '</Types>'],
++    ['_rels/.rels', XMLDECL +
++      '<Relationships xmlns="' + RELS_NS + '">' +
++      '<Relationship Id="rId1" Type="' + REL + '/officeDocument" Target="xl/workbook.xml"/>' +
++      '</Relationships>'],
++    ['xl/workbook.xml', XMLDECL +
++      '<workbook xmlns="' + SS + '" xmlns:r="' + REL + '"><sheets>' +
++      '<sheet name="' + encodeXml(sheetName) + '" sheetId="1" r:id="rId1"/>' +
++      '</sheets></workbook>'],
++    ['xl/_rels/workbook.xml.rels', XMLDECL +
++      '<Relationships xmlns="' + RELS_NS + '">' +
++      '<Relationship Id="rId1" Type="' + REL + '/worksheet" Target="worksheets/sheet1.xml"/>' +
++      '</Relationships>'],
++    ['xl/worksheets/sheet1.xml', XMLDECL +
++      '<worksheet xmlns="' + SS + '"><sheetData>' + body + '</sheetData></worksheet>'],
++  ]));
++}
++
++// ---------- redline ----------
++
++export function redlineMarkdown(changes) {
++  const list = changes ?? [];
++  const fence = list.some((c) => c && typeof c.text === 'string' && c.text.includes('```')) ? '````' : '```';
++  const lines = list.map((c) => {
++    const op = c && c.op === 'ins' ? '+ ' : c && c.op === 'del' ? '- ' : '  ';
++    return op + (c && c.text != null ? String(c.text) : '');
++  });
++  return fence + 'diff\n' + lines.join('\n') + (lines.length ? '\n' : '') + fence + '\n';
++}
+diff --git a/open-artifacts/_shared/docio.test.js b/open-artifacts/_shared/docio.test.js
+new file mode 100644
+index 0000000..4f9c1f2
+--- /dev/null
++++ b/open-artifacts/_shared/docio.test.js
+@@ -0,0 +1,177 @@
++// docio.test.js — node:test suite for _shared/docio.js.
++// Round-trips use the real writers (writeDocx/readDocx, writeXlsx/readXlsx).
++// Crafted archives (craftZip below) pin DEFLATE reading, sharedStrings, tabs/br,
++// and the 'unsupported compression' error. Fictional data; [verify] tags.
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { deflateRawSync } from 'node:zlib';
++import { readDocx, readXlsx, writeDocx, writeXlsx, redlineMarkdown } from './docio.js';
++
++const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
++const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
++
++// --- test-only zip builder (supports arbitrary methods, unlike the writer) ---
++function crc32(u8) {
++  let c = -1;
++  for (let i = 0; i < u8.length; i++) {
++    c ^= u8[i];
++    for (let k = 0; k < 8; k++) c = c & 1 ? -306674912 ^ (c >>> 1) : c >>> 1;
++  }
++  return ~c >>> 0;
++}
++
++function craftZip(files, method) {
++  const enc = new TextEncoder();
++  const parts = [], cd = [];
++  let off = 0;
++  for (const [name, content] of files) {
++    const raw = typeof content === 'string' ? enc.encode(content) : content;
++    const data = method === 8 ? deflateRawSync(raw) : raw;
++    const nb = enc.encode(name), crc = crc32(raw), lho = off;
++    const lh = new Uint8Array(30), v = new DataView(lh.buffer);
++    v.setUint32(0, 0x04034b50, true);
++    v.setUint16(8, method, true);
++    v.setUint32(14, crc, true);
++    v.setUint32(18, data.length, true);
++    v.setUint32(22, raw.length, true);
++    v.setUint16(26, nb.length, true);
++    parts.push(lh, nb, data);
++    off += 30 + nb.length + data.length;
++    const c = new Uint8Array(46), u = new DataView(c.buffer);
++    u.setUint32(0, 0x02014b50, true);
++    u.setUint16(10, method, true);
++    u.setUint32(16, crc, true);
++    u.setUint32(20, data.length, true);
++    u.setUint32(24, raw.length, true);
++    u.setUint16(28, nb.length, true);
++    u.setUint32(42, lho, true);
++    cd.push(c, nb);
++  }
++  const cdSize = cd.reduce((n, p) => n + p.length, 0);
++  const eocd = new Uint8Array(22), e = new DataView(eocd.buffer);
++  e.setUint32(0, 0x06054b50, true);
++  e.setUint16(8, files.length, true);
++  e.setUint16(10, files.length, true);
++  e.setUint32(12, cdSize, true);
++  e.setUint32(16, off, true);
++  const all = [...parts, ...cd, eocd];
++  const out = new Uint8Array(off + cdSize + 22);
++  let o = 0;
++  for (const p of all) { out.set(p, o); o += p.length; }
++  return out;
++}
++
++function docXml(body) {
++  return XML + '<w:document xmlns:w="' + W_NS + '"><w:body>' + body + '</w:body></w:document>';
++}
++
++test('docx round-trip: paragraphs, text join, entities, unicode; Buffer output', async () => {
++  const paras = ['Hello world', 'Second — with <tag> & "quotes" and \'apostrophes\'', ''];
++  const bytes = writeDocx(paras);
++  assert.ok(Buffer.isBuffer(bytes), 'node output must be a Buffer');
++  const { text, paragraphs } = await readDocx(bytes);
++  assert.deepEqual(paragraphs, paras);
++  assert.equal(text, paras.join('\n'));
++});
++
++test('writeDocx accepts {text} objects and is byte-deterministic', async () => {
++  const a = writeDocx([{ text: 'Obj para' }, 'plain']);
++  const b = writeDocx([{ text: 'Obj para' }, 'plain']);
++  assert.deepEqual(a, b);
++  const { paragraphs } = await readDocx(a);
++  assert.deepEqual(paragraphs, ['Obj para', 'plain']);
++});
++
++test('readDocx reads DEFLATE-compressed entries', async () => {
++  const zip = craftZip([
++    ['[Content_Types].xml', XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'],
++    ['word/document.xml', docXml('<w:p><w:r><w:t>Deflate read</w:t></w:r></w:p>')],
++  ], 8);
++  const { text, paragraphs } = await readDocx(zip);
++  assert.deepEqual(paragraphs, ['Deflate read']);
++  assert.equal(text, 'Deflate read');
++});
++
++test('docx parser: tabs, breaks, self-closing empty paragraph, namespace-agnostic', async () => {
++  const zip = craftZip([['word/document.xml', XML +
++    '<w:document xmlns:w="' + W_NS + '"><w:body>' +
++    '<w:p><w:r><w:t>a</w:t><w:tab/><w:br/><w:t xml:space="preserve">b</w:t></w:r></w:p>' +
++    '<w:p/>' +
++    '<w:p><w:r><w:t>coffee &amp; &#116;ea &#x2665;</w:t></w:r></w:p>' +
++    '</w:body></w:document>']], 0);
++  const { paragraphs } = await readDocx(zip);
++  assert.deepEqual(paragraphs, ['a\t\nb', '', 'coffee & tea ♥']);
++});
++
++test('unsupported compression method throws named error', async () => {
++  const zip = craftZip([['word/document.xml', docXml('<w:p/>')]], 12);
++  await assert.rejects(readDocx(zip), (err) =>
++    err.name === 'UnsupportedCompression' && /unsupported compression/.test(err.message));
++});
++
++test('non-zip input rejects with clear message', async () => {
++  await assert.rejects(readDocx(new TextEncoder().encode('not a zip').buffer), /not a zip/);
++  await assert.rejects(readXlsx(new Uint8Array([1, 2, 3])), /not a zip/);
++});
++
++test('xlsx round-trip: inline strings, numbers, holes, sheet name', async () => {
++  const rows = [['Item', 'Qty', 'Note'], ['Widget', 3, null], [null, 2.5, 'ships &amp; handles']];
++  const bytes = writeXlsx(rows, { name: 'Inventory' });
++  assert.ok(Buffer.isBuffer(bytes));
++  const { sheets } = await readXlsx(bytes);
++  assert.equal(sheets.length, 1);
++  assert.equal(sheets[0].name, 'Inventory');
++  assert.deepEqual(sheets[0].rows, [
++    ['Item', 'Qty', 'Note'],
++    ['Widget', '3', ''],
++    ['', '2.5', 'ships &amp; handles'],
++  ]);
++});
++
++test('xlsx reader: sharedStrings, rich runs, booleans, empty cells, row/col gaps', async () => {
++  const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
++  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
++  const zip = craftZip([
++    ['xl/workbook.xml', XML + '<workbook xmlns="' + SS + '" xmlns:r="' + REL + '">' +
++      '<sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>'],
++    ['xl/_rels/workbook.xml.rels', XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
++      '<Relationship Id="rId1" Type="' + REL + '/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
++    ['xl/sharedStrings.xml', XML + '<sst xmlns="' + SS + '" count="4" uniqueCount="4">' +
++      '<si><t>Alpha</t></si>' +
++      '<si><t>unused</t></si>' +
++      '<si><r><t xml:space="preserve">Beta </t></r><r><t>&amp; Co</t></r></si>' +
++      '<si><t xml:space="preserve"> lead</t></si>' +
++      '</sst>'],
++    ['xl/worksheets/sheet1.xml', XML + '<worksheet xmlns="' + SS + '"><sheetData>' +
++      '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>2</v></c>' +
++      '<c r="C1" t="s"><v>3</v></c><c r="D1"><v>2.5</v></c></row>' +
++      '<row r="3"><c r="A3" t="b"><v>1</v></c><c r="C3"/></row>' +
++      '</sheetData></worksheet>'],
++  ], 0);
++  const { sheets } = await readXlsx(zip);
++  assert.equal(sheets[0].name, 'Data');
++  assert.deepEqual(sheets[0].rows, [
++    ['Alpha', 'Beta & Co', ' lead', '2.5'],
++    [],
++    ['TRUE', '', ''],
++  ]);
++});
++
++test('xlsx round-trip of an empty workbook', async () => {
++  const { sheets } = await readXlsx(writeXlsx([]));
++  assert.deepEqual(sheets, [{ name: 'Sheet1', rows: [] }]);
++});
++
++test('redlineMarkdown renders diff fences with +/-/context markers', () => {
++  const md = redlineMarkdown([
++    { op: 'ctx', text: 'The parties agree as follows:' },
++    { op: 'del', text: 'old clause 1' },
++    { op: 'ins', text: 'new clause 1' },
++  ]);
++  assert.equal(md, '```diff\n  The parties agree as follows:\n- old clause 1\n+ new clause 1\n```\n');
++});
++
++test('redlineMarkdown escalates the fence when text contains ```', () => {
++  const md = redlineMarkdown([{ op: 'ins', text: 'see ```code``` inside' }]);
++  assert.equal(md, '````diff\n+ see ```code``` inside\n````\n');
++});
+diff --git a/open-artifacts/_shared/fuzzyname.js b/open-artifacts/_shared/fuzzyname.js
+new file mode 100644
+index 0000000..be0f4b4
+--- /dev/null
++++ b/open-artifacts/_shared/fuzzyname.js
+@@ -0,0 +1,180 @@
++/**
++ * fuzzyname.js — unicode-aware person/party-name matching (dependency-free ESM).
++ *
++ *   normalizeName(s)     — NFKC + casefold + diacritic strip; keeps \p{L}\p{N}
++ *                          tokens in any script, drops punctuation/emoji and
++ *                          corporate suffix tokens (Inc., LLC, …).
++ *   similarity(a, b)     — deterministic score in [0,1]: max(whole-string
++ *                          edit distance, token alignment with initial
++ *                          expansion + nickname map, compact CJK form,
++ *                          containment bonus).
++ *   similarityReason(a,b)— the same score plus a matchedVia trace explaining
++ *                          exactly how each token matched (or why it didn't).
++ *
++ * Canonical source: open-artifacts/_shared/ (see README.md for vendoring).
++ * Zero console side effects. All example names fictional.
++ */
++
++/** Small nickname → canonical given-name table. Data only; extend per domain. */
++const NICKNAMES = {
++  al: 'albert', alex: 'alexander', andy: 'andrew', drew: 'andrew',
++  ben: 'benjamin', beth: 'elizabeth', liz: 'elizabeth', lizzie: 'elizabeth',
++  betsy: 'elizabeth', bob: 'robert', bobby: 'robert', rob: 'robert',
++  billy: 'william', bill: 'william', will: 'william', charlie: 'charles',
++  chuck: 'charles', dave: 'david', davey: 'david', ed: 'edward',
++  eddie: 'edward', fred: 'frederick', gene: 'eugene', greg: 'gregory',
++  hank: 'henry', harry: 'henry', jack: 'john', johnny: 'john', jim: 'james',
++  jimmy: 'james', joe: 'joseph', joey: 'joseph', kate: 'katherine',
++  katie: 'katherine', kathy: 'katherine', ken: 'kenneth', kenny: 'kenneth',
++  larry: 'lawrence', maggie: 'margaret', meg: 'margaret', peggy: 'margaret',
++  mike: 'michael', mickey: 'michael', rich: 'richard', rick: 'richard',
++  dick: 'richard', stan: 'stanley', steve: 'steven', sue: 'susan',
++  sunny: 'susan', ted: 'theodore', theo: 'theodore', tom: 'thomas',
++  tommy: 'thomas', tony: 'anthony', vicky: 'victoria',
++};
++
++const canon = (t) => NICKNAMES[t] ?? t;
++
++/** Legal-entity suffix tokens dropped before comparison (fleet convention:
++ *  intake-queue normalizeName). Person-name given names are never dropped. */
++const CORP_SUFFIXES = new Set([
++  'inc', 'incorporated', 'llc', 'llp', 'ltd', 'limited', 'co', 'corp',
++  'corporation', 'company', 'plc', 'pc', 'pa',
++]);
++
++/**
++ * Normalize a name for comparison: NFKC compatibility fold, casefold,
++ * strip combining marks (Latin diacritics), drop everything that is not
++ * a letter, number, or whitespace, drop corporate suffix tokens, collapse
++ * whitespace. Non-Latin scripts (CJK, Cyrillic, Greek…) survive intact.
++ *
++ * @param {unknown} s
++ * @returns {string}
++ */
++export function normalizeName(s) {
++  if (s == null) return '';
++  return String(s)
++    .normalize('NFKC')
++    .toLowerCase()
++    .replace(/ß/g, 'ss') // casefold edge NFKC+toLowerCase misses
++    .normalize('NFKD')
++    .replace(/\p{M}/gu, '') // combining marks (é → e); harmless for CJK
++    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
++    .split(/\s+/)
++    .filter((t) => t && !CORP_SUFFIXES.has(t))
++    .join(' ');
++}
++
++const tokens = (s) => normalizeName(s).split(' ').filter(Boolean);
++
++/** Levenshtein edit distance (iterative DP). */
++function editDistance(a, b) {
++  if (a === b) return 0;
++  if (!a.length) return b.length;
++  if (!b.length) return a.length;
++  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
++  for (let i = 1; i <= a.length; i++) {
++    const cur = [i];
++    for (let j = 1; j <= b.length; j++) {
++      cur[j] = Math.min(
++        prev[j] + 1,
++        cur[j - 1] + 1,
++        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
++      );
++    }
++    prev = cur;
++  }
++  return prev[b.length];
++}
++
++const ratio = (a, b) => {
++  if (!a.length && !b.length) return 1;
++  if (!a.length || !b.length) return 0;
++  return 1 - editDistance(a, b) / Math.max(a.length, b.length);
++};
++
++/** Score one token pair; the trace kind names HOW they matched. */
++function tokenScore(a, b) {
++  if (a === b) return { score: 1, kind: 'exact' };
++  // Initial expansion: single-letter token matching a longer token's first
++  // letter ("j" ≈ "john") — conflicts keep initials but make them comparable.
++  if (a.length === 1 && b.length > 1 && b[0] === a[0]) return { score: 0.9, kind: 'initial' };
++  if (b.length === 1 && a.length > 1 && a[0] === b[0]) return { score: 0.9, kind: 'initial' };
++  if (canon(a) === canon(b)) return { score: 0.95, kind: 'nickname' };
++  if (Math.min(a.length, b.length) >= 3) {
++    const r = ratio(a, b);
++    if (r >= 0.75) return { score: r, kind: 'edit' };
++  }
++  return { score: 0, kind: 'none' };
++}
++
++/**
++ * Deterministic name similarity in [0,1]. Takes the best of:
++ *  - whole normalized-string edit ratio,
++ *  - greedy best-pair token alignment (exact > nickname > initial > edit),
++ *  - compact (whitespace-removed) comparison so CJK "田中 太郎" ≡ "田中太郎".
++ *
++ * @param {unknown} a
++ * @param {unknown} b
++ * @returns {number}
++ */
++export function similarity(a, b) {
++  return similarityReason(a, b).score;
++}
++
++/**
++ * Same score as similarity(), plus the matchedVia trace: one entry per
++ * aligned token pair {kind, a, b, score} (kinds: exact | nickname |
++ * initial | edit), empty when nothing matched.
++ *
++ * @param {unknown} a
++ * @param {unknown} b
++ * @returns {{score: number, matchedVia: {kind: string, a: string, b: string, score: number}[]}}
++ */
++export function similarityReason(a, b) {
++  const na = normalizeName(a);
++  const nb = normalizeName(b);
++  if (!na || !nb) return { score: 0, matchedVia: [] };
++
++  // Character-level ratios overvalue single-char swaps on short strings
++  // ("j iwata" vs "k iwata" would score 0.86), so they are trusted only for
++  // longer strings; exact equality is always trusted at any length.
++  const whole = na === nb ? 1 : Math.max(na.length, nb.length) >= 12 ? ratio(na, nb) : 0;
++  const ca = na.replace(/ /g, '');
++  const cb = nb.replace(/ /g, '');
++  const compact = ca === cb ? 1 : Math.max(ca.length, cb.length) >= 10 ? ratio(ca, cb) : 0;
++
++  // Token alignment: score every pair, greedily take best (deterministic:
++  // ties broken by (−score, ai, bi)).
++  const A = tokens(a);
++  const B = tokens(b);
++  const pairs = [];
++  for (let ai = 0; ai < A.length; ai++) {
++    for (let bi = 0; bi < B.length; bi++) {
++      const t = tokenScore(A[ai], B[bi]);
++      if (t.score > 0) pairs.push({ score: t.score, kind: t.kind, ai, bi, a: A[ai], b: B[bi] });
++    }
++  }
++  pairs.sort((p, q) => q.score - p.score || p.ai - q.ai || p.bi - q.bi);
++  const usedA = new Set();
++  const usedB = new Set();
++  const matchedVia = [];
++  let sum = 0;
++  for (const p of pairs) {
++    if (usedA.has(p.ai) || usedB.has(p.bi)) continue;
++    usedA.add(p.ai);
++    usedB.add(p.bi);
++    sum += p.score;
++    matchedVia.push({ kind: p.kind, a: p.a, b: p.b, score: p.score });
++  }
++  const align = A.length && B.length ? sum / Math.max(A.length, B.length) : 0;
++
++  // Containment: every token of the shorter name matched, the longer name
++  // just adds tokens (suffix drift like "… Solar" vs "… Solar Group").
++  // Capped at 0.8 — containment alone is weaker evidence than a full match.
++  const minLen = Math.min(A.length, B.length);
++  const minSideMatched = (A.length <= B.length ? usedA : usedB).size;
++  const containment = minLen ? (minSideMatched / minLen) * 0.8 : 0;
++
++  return { score: Math.max(whole, compact, align, containment), matchedVia };
++}
+diff --git a/open-artifacts/_shared/fuzzyname.test.js b/open-artifacts/_shared/fuzzyname.test.js
+new file mode 100644
+index 0000000..c2a88f8
+--- /dev/null
++++ b/open-artifacts/_shared/fuzzyname.test.js
+@@ -0,0 +1,100 @@
++// fuzzyname.test.js — unicode-aware name normalization + similarity.
++// Adversarial: CJK names, emoji, NFKC quirks, initials, nicknames.
++// All names fictional. Run: node --test fuzzyname.test.js
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { normalizeName, similarity, similarityReason } from './fuzzyname.js';
++
++// ------------------------------------------------------ normalizeName
++
++test('normalizeName: casefold, strip punctuation and diacritics (Latin)', () => {
++  assert.equal(normalizeName('José MUÑOZ'), 'jose munoz');
++  assert.equal(normalizeName('  Zoë   Brontë '), 'zoe bronte');
++  assert.equal(normalizeName('O\'Brien-Smith'), 'o brien smith');
++});
++
++test('normalizeName: NFKC compatibility folding (ﬁ→fi, fullwidth→ascii)', () => {
++  assert.equal(normalizeName('Baﬁle'), 'bafile'); // ligature ﬁ
++  assert.equal(normalizeName('ＡＢＣ　太郎'), 'abc 太郎'); // fullwidth + ideographic space
++});
++
++test('normalizeName: keeps non-Latin script tokens (CJK, Cyrillic, Greek)', () => {
++  assert.equal(normalizeName('田中 太郎'), '田中 太郎');
++  assert.equal(normalizeName('ИВАНОВ Иван'), 'иванов иван');
++  assert.equal(normalizeName('Γιώργος Παπαδόπουλος'), 'γιωργος παπαδοπουλος');
++});
++
++test('normalizeName: drops emoji and symbols, keeps letters/numbers', () => {
++  assert.equal(normalizeName('Zoë 🌟⚖️ Lane'), 'zoe lane');
++  assert.equal(normalizeName('Unit 7 ✅'), 'unit 7');
++});
++
++test('normalizeName: nullish/empty → empty string, never throws', () => {
++  assert.equal(normalizeName(null), '');
++  assert.equal(normalizeName(undefined), '');
++  assert.equal(normalizeName(''), '');
++  assert.equal(normalizeName('!!! ...'), '');
++});
++
++// ------------------------------------------------------ similarity
++
++test('similarity: exact after normalization → 1', () => {
++  assert.equal(similarity('Northwind Logistics, Inc.', 'northwind logistics'), 1);
++  assert.equal(similarity('José Muñoz', 'JOSE MUNOZ'), 1);
++});
++
++test('similarity: initial expansion (J. Iwata ≈ John Iwata)', () => {
++  const s = similarity('J. Iwata', 'John Iwata');
++  assert.ok(s >= 0.85, `expected >= 0.85, got ${s}`);
++  assert.ok(similarity('J. Iwata', 'K. Iwata') < 0.7, 'different initials must not match');
++});
++
++test('similarity: nickname map (Bob ≈ Robert)', () => {
++  const s = similarity('Bob Huang', 'Robert Huang');
++  assert.ok(s >= 0.9, `expected >= 0.9, got ${s}`);
++  assert.ok(similarity('Bob Huang', 'Robert Huang') > similarity('Bob Huang', 'Reginald Huang'));
++});
++
++test('similarity: CJK — space difference does not defeat the match', () => {
++  assert.equal(similarity('田中 太郎', '田中太郎'), 1);
++  assert.ok(similarity('田中 太郎', '佐藤 花子') < 0.4);
++});
++
++test('similarity: small edits (typos, suffix drift) score high', () => {
++  assert.ok(similarity('Brightpath Solar', 'Brightpath Solar Group') >= 0.7);
++  assert.ok(similarity('Northwind Logistics', 'Northwind Logistica') >= 0.85);
++});
++
++test('similarity: unrelated names score low; empty → 0', () => {
++  assert.ok(similarity('Northwind Logistics', 'Zephyr Wind Farms') < 0.4);
++  assert.equal(similarity('', 'Anyone'), 0);
++  assert.equal(similarity(null, 'Anyone'), 0);
++});
++
++// ------------------------------------------------ similarityReason
++
++test('similarityReason: returns a trace explaining how tokens matched', () => {
++  const r = similarityReason('J. Iwata', 'John Iwata');
++  assert.equal(typeof r.score, 'number');
++  assert.equal(r.score, similarity('J. Iwata', 'John Iwata'));
++  assert.ok(Array.isArray(r.matchedVia));
++  const kinds = r.matchedVia.map((m) => m.kind);
++  assert.ok(kinds.includes('initial'), `expected an initial match in trace: ${JSON.stringify(r.matchedVia)}`);
++});
++
++test('similarityReason: nickname match is traced as nickname', () => {
++  const r = similarityReason('Bob Huang', 'Robert Huang');
++  const kinds = r.matchedVia.map((m) => m.kind);
++  assert.ok(kinds.includes('nickname'), `expected a nickname match: ${JSON.stringify(r.matchedVia)}`);
++});
++
++test('similarityReason: exact normalization match is traced as exact', () => {
++  const r = similarityReason('José Muñoz', 'JOSE MUNOZ');
++  assert.ok(r.matchedVia.every((m) => m.kind === 'exact'));
++});
++
++test('similarityReason: no match → empty trace, low score', () => {
++  const r = similarityReason('Northwind Logistics', 'Zephyr Wind Farms');
++  assert.equal(r.matchedVia.length, 0);
++  assert.ok(r.score < 0.4);
++});
+diff --git a/open-artifacts/_shared/hardening.js b/open-artifacts/_shared/hardening.js
+new file mode 100644
+index 0000000..80f18a8
+--- /dev/null
++++ b/open-artifacts/_shared/hardening.js
+@@ -0,0 +1,60 @@
++/**
++ * hardening.js — shared output/input hardening helpers (dependency-free ESM).
++ *
++ *   safeExternalUrl(s)  — http/https-only URL gate; null for anything else
++ *                         (javascript:, data:, vbscript:, file:, relative…).
++ *   csvSafeEscape(v)    — RFC 4180 cell escaping + CSV formula-injection
++ *                         guard for leaders = + - @ TAB CR.
++ *
++ * Canonical source: open-artifacts/_shared/ (see README.md for vendoring).
++ * Zero console side effects. All example data fictional.
++ */
++
++/** ASCII TAB/LF/CR and C0 control characters, which browsers strip from
++ *  URLs before scheme parsing — the guard must strip them first too. */
++// eslint-disable-next-line no-control-regex
++const URL_CTRL = /[\u0000-\u001f\u007f]/g;
++
++/**
++ * Return the normalized absolute http(s) URL string, or null when the value
++ * is missing, not a URL, relative, or uses any other scheme.
++ *
++ * @param {unknown} s
++ * @returns {string | null}
++ */
++export function safeExternalUrl(s) {
++  if (typeof s !== 'string') return null;
++  // Browsers ignore leading/trailing whitespace *and* embedded TAB/CR/LF
++  // before parsing a URL; strip exactly that set, nothing more.
++  const cleaned = s.replace(URL_CTRL, '').trim();
++  if (!cleaned) return null;
++  let url;
++  try {
++    url = new URL(cleaned); // no base ⇒ relative URLs throw ⇒ rejected
++  } catch {
++    return null;
++  }
++  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
++  return url.href;
++}
++
++/** Formula-injection leader characters (OWASP CSV injection): = + - @ TAB CR. */
++const FORMULA_LEADER = /^[=+\-@\t\r]/;
++
++/**
++ * Escape one CSV cell per RFC 4180, with a formula-injection guard:
++ * values whose first character is = + - @ TAB CR are prefixed with a
++ * single quote so spreadsheet apps render them as text, never execute
++ * them. Already-prefixed values are passed through unchanged (no
++ * double-guarding).
++ *
++ * @param {unknown} v
++ * @returns {string}
++ */
++export function csvSafeEscape(v) {
++  if (v == null) return '';
++  let s = String(v);
++  if (FORMULA_LEADER.test(s) && !s.startsWith("'")) s = "'" + s;
++  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
++  return s;
++}
+diff --git a/open-artifacts/_shared/hardening.test.js b/open-artifacts/_shared/hardening.test.js
+new file mode 100644
+index 0000000..9ca7d22
+--- /dev/null
++++ b/open-artifacts/_shared/hardening.test.js
+@@ -0,0 +1,90 @@
++// hardening.test.js — adversarial suite for safeExternalUrl + csvSafeEscape.
++// All data fictional. Run: node --test hardening.test.js
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { safeExternalUrl, csvSafeEscape } from './hardening.js';
++
++// ------------------------------------------------------ safeExternalUrl
++
++test('safeExternalUrl accepts plain http/https and normalizes', () => {
++  assert.equal(safeExternalUrl('https://example.com/a?b=1'), 'https://example.com/a?b=1');
++  assert.equal(safeExternalUrl('HTTP://EXAMPLE.com/Path'), 'http://example.com/Path');
++  assert.equal(safeExternalUrl('http://example.com'), 'http://example.com/');
++});
++
++test('safeExternalUrl rejects dangerous schemes', () => {
++  for (const bad of [
++    'javascript:alert(1)',
++    'JAVASCRIPT:alert(1)',
++    'data:text/html;base64,PHNjcmlwdD4=',
++    'vbscript:msgbox(1)',
++    'file:///etc/passwd',
++    'ftp://example.com/file',
++    'mailto:someone@example.org',
++    'about:blank',
++    'blob:https://example.com/xyz',
++  ]) {
++    assert.equal(safeExternalUrl(bad), null, `expected null for ${bad}`);
++  }
++});
++
++test('safeExternalUrl defeats scheme-smuggling with control chars/whitespace', () => {
++  // Browsers strip TAB/CR/LF inside URLs before parsing; the guard must too.
++  assert.equal(safeExternalUrl('java\tscript:alert(1)'), null);
++  assert.equal(safeExternalUrl('java\nscript:alert(1)'), null);
++  assert.equal(safeExternalUrl('  javascript:alert(1)'), null);
++  assert.equal(safeExternalUrl('javascript\t:alert(1)'), null);
++});
++
++test('safeExternalUrl rejects relative and protocol-relative URLs', () => {
++  assert.equal(safeExternalUrl('/local/path'), null);
++  assert.equal(safeExternalUrl('//evil.example.com/x'), null);
++  assert.equal(safeExternalUrl('just text'), null);
++});
++
++test('safeExternalUrl rejects empty/null/non-string input', () => {
++  assert.equal(safeExternalUrl(''), null);
++  assert.equal(safeExternalUrl(null), null);
++  assert.equal(safeExternalUrl(undefined), null);
++  assert.equal(safeExternalUrl(12345), null);
++});
++
++// ------------------------------------------------------ csvSafeEscape
++
++test('csvSafeEscape passes plain values through unchanged', () => {
++  assert.equal(csvSafeEscape('hello'), 'hello');
++  assert.equal(csvSafeEscape('Northwind Logistics'), 'Northwind Logistics');
++  assert.equal(csvSafeEscape(''), ''); // empty stays empty, no guard needed
++});
++
++test('csvSafeEscape quotes per RFC4180 (comma, quote, newline) and doubles quotes', () => {
++  assert.equal(csvSafeEscape('a,b'), '"a,b"');
++  assert.equal(csvSafeEscape('say "hi"'), '"say ""hi"""');
++  assert.equal(csvSafeEscape('line1\nline2'), '"line1\nline2"');
++  assert.equal(csvSafeEscape('line1\r\nline2'), '"line1\r\nline2"');
++});
++
++test('csvSafeEscape prefixes formula-injection leaders', () => {
++  assert.equal(csvSafeEscape('=cmd|/C calc'), "'=cmd|/C calc");
++  assert.equal(csvSafeEscape('+SUM(A1:A2)'), "'+SUM(A1:A2)");
++  assert.equal(csvSafeEscape('-2+1'), "'-2+1");
++  assert.equal(csvSafeEscape('@import(x)'), "'@import(x)");
++  assert.equal(csvSafeEscape('\tabc'), "'\tabc");
++  // CR leader: guard prefix, then RFC4180 quoting because the cell contains CR
++  assert.equal(csvSafeEscape('\rabc'), '"\'\rabc"');
++});
++
++test('csvSafeEscape guards before quoting: injected cell with commas is quoted with guard inside', () => {
++  assert.equal(csvSafeEscape('=HYPERLINK("http://x","a,b")'), '"\'=HYPERLINK(""http://x"",""a,b"")"');
++});
++
++test('csvSafeEscape does not double-guard an already-prefixed value', () => {
++  assert.equal(csvSafeEscape("'=already guarded"), "'=already guarded");
++});
++
++test('csvSafeEscape handles null/undefined/numbers deterministically', () => {
++  assert.equal(csvSafeEscape(null), '');
++  assert.equal(csvSafeEscape(undefined), '');
++  assert.equal(csvSafeEscape(42), '42');
++  assert.equal(csvSafeEscape(-7), "'-7"); // negative numbers are guarded too
++});
+diff --git a/open-artifacts/_shared/icsutil.js b/open-artifacts/_shared/icsutil.js
+new file mode 100644
+index 0000000..1968a88
+--- /dev/null
++++ b/open-artifacts/_shared/icsutil.js
+@@ -0,0 +1,124 @@
++/**
++ * icsutil.js — RFC 5545 (iCalendar) output helpers (dependency-free ESM).
++ *
++ *   icsEscapeText(s)  — TEXT escaping: \\ \; \, and literal \n for newlines.
++ *   foldIcsLine(line) — fold to ≤75 octets per physical line, CRLF joined,
++ *                       never splitting a multibyte character.
++ *   buildVEvent(ev)   — one VEVENT as folded CRLF lines, or null when the
++ *                       event has no valid date (never a guessed event).
++ *   buildIcs(evs, o)  — full VCALENDAR string; invalid events are skipped.
++ *
++ * Canonical source: open-artifacts/_shared/ (see README.md for vendoring).
++ * Zero console side effects. All example data fictional.
++ */
++
++/** Escape an iCalendar TEXT value (RFC 5545 §3.3.11). */
++export function icsEscapeText(s) {
++  return String(s ?? '')
++    .replace(/\\/g, '\\\\')
++    .replace(/;/g, '\\;')
++    .replace(/,/g, '\\,')
++    .replace(/\r\n|\r|\n/g, '\\n');
++}
++
++/** UTF-8 octets one code point occupies. */
++const cpOctets = (cp) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
++
++/**
++ * Fold one logical line so every physical line is ≤75 octets (RFC 5545 §3.1),
++ * continuation lines prefixed with a single space, joined with CRLF. A code
++ * point is never split across lines.
++ *
++ * @param {string} line
++ * @returns {string}
++ */
++export function foldIcsLine(line) {
++  const out = [];
++  let cur = '';
++  let curOct = 0;
++  for (const ch of String(line)) {
++    const chOct = cpOctets(ch.codePointAt(0));
++    if (curOct + chOct > 75) {
++      out.push(cur);
++      cur = ' ';
++      curOct = 1;
++    }
++    cur += ch;
++    curOct += chOct;
++  }
++  out.push(cur);
++  return out.join('\r\n');
++}
++
++const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
++const DATE_UTC = /^(\d{4})(\d{2})(\d{2})$/;
++const DT_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
++
++/** Accept YYYY-MM-DD | YYYYMMDD | YYYY-MM-DDTHH:MM:SSZ → basic iCal form. */
++function toIcalDate(s) {
++  const t = String(s ?? '').trim();
++  let m = DATE_ONLY.exec(t) ?? DATE_UTC.exec(t);
++  if (m) {
++    const [, y, mo, d] = m;
++    const iso = `${y}-${mo}-${d}`;
++    if (Number.isNaN(Date.parse(iso))) return null;
++    return { value: `${y}${mo}${d}`, dateOnly: true };
++  }
++  m = DT_UTC.exec(t);
++  if (m) {
++    const [, y, mo, d, h, mi, se] = m;
++    if (Number.isNaN(Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${se}Z`))) return null;
++    return { value: `${y}${mo}${d}T${h}${mi}${se}Z`, dateOnly: false };
++  }
++  return null;
++}
++
++/**
++ * Build one VEVENT as folded, CRLF-terminated lines. Requires uid and a
++ * parseable dtStart; returns null otherwise.
++ *
++ * @param {{uid: string, dtStart: string, dtStamp?: string, summary?: string,
++ *          description?: string, location?: string, url?: string}} ev
++ * @returns {string | null}
++ */
++export function buildVEvent(ev) {
++  if (!ev || typeof ev.uid !== 'string' || !ev.uid) return null;
++  const start = toIcalDate(ev.dtStart);
++  if (!start) return null;
++  const stamp = toIcalDate(ev.dtStamp ?? ev.dtStart);
++  const lines = [
++    'BEGIN:VEVENT',
++    `UID:${icsEscapeText(ev.uid)}`,
++    `DTSTAMP:${stamp ? (stamp.dateOnly ? stamp.value + 'T000000Z' : stamp.value) : '19700101T000000Z'}`,
++    start.dateOnly ? `DTSTART;VALUE=DATE:${start.value}` : `DTSTART:${start.value}`,
++  ];
++  if (ev.summary != null) lines.push(`SUMMARY:${icsEscapeText(ev.summary)}`);
++  if (ev.description != null) lines.push(`DESCRIPTION:${icsEscapeText(ev.description)}`);
++  if (ev.location != null) lines.push(`LOCATION:${icsEscapeText(ev.location)}`);
++  if (ev.url != null) lines.push(`URL:${icsEscapeText(ev.url)}`);
++  lines.push('END:VEVENT');
++  return lines.map(foldIcsLine).join('\r\n') + '\r\n';
++}
++
++/**
++ * Build a complete VCALENDAR from events; events that fail buildVEvent are
++ * skipped, not guessed.
++ *
++ * @param {Parameters<typeof buildVEvent>[0][]} events
++ * @param {{prodId?: string}} [opts]
++ * @returns {string}
++ */
++export function buildIcs(events, opts = {}) {
++  const lines = [
++    'BEGIN:VCALENDAR',
++    'VERSION:2.0',
++    `PRODID:${icsEscapeText(opts.prodId ?? '-//open-legal-artifacts//_shared icsutil//EN')}`,
++    'CALSCALE:GREGORIAN',
++  ];
++  for (const ev of events ?? []) {
++    const block = buildVEvent(ev);
++    if (block) lines.push(...block.split('\r\n').filter(Boolean));
++  }
++  lines.push('END:VCALENDAR');
++  return lines.map(foldIcsLine).join('\r\n') + '\r\n';
++}
+diff --git a/open-artifacts/_shared/icsutil.test.js b/open-artifacts/_shared/icsutil.test.js
+new file mode 100644
+index 0000000..422549c
+--- /dev/null
++++ b/open-artifacts/_shared/icsutil.test.js
+@@ -0,0 +1,128 @@
++// icsutil.test.js — RFC 5545 helpers: CRLF, TEXT escaping, ≤75-octet folding,
++// VEVENT/VCALENDAR builders. Run: node --test icsutil.test.js
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { icsEscapeText, foldIcsLine, buildVEvent, buildIcs } from './icsutil.js';
++
++// ------------------------------------------------------ TEXT escaping
++
++test('icsEscapeText escapes backslash, semicolon, comma, newlines', () => {
++  assert.equal(icsEscapeText('plain'), 'plain');
++  assert.equal(icsEscapeText('a;b'), 'a\\;b');
++  assert.equal(icsEscapeText('a,b'), 'a\\,b');
++  assert.equal(icsEscapeText('a\\b'), 'a\\\\b');
++  assert.equal(icsEscapeText('a\nb'), 'a\\nb');
++  assert.equal(icsEscapeText('a\rb'), 'a\\nb'); // CR alone also becomes literal \n
++  assert.equal(icsEscapeText('Doe; John, Esq.\nLine 2'), 'Doe\\; John\\, Esq.\\nLine 2');
++});
++
++// ------------------------------------------------------ folding
++
++test('foldIcsLine: short lines pass through unchanged', () => {
++  assert.equal(foldIcsLine('UID:V1@x'), 'UID:V1@x');
++});
++
++test('foldIcsLine: 80-char summary folds so every physical line is ≤75 octets', () => {
++  const summary = 'S'.repeat(80);
++  const line = `SUMMARY:${summary}`; // 88 octets
++  const folded = foldIcsLine(line);
++  const parts = folded.split('\r\n');
++  assert.ok(parts.length >= 2, 'expected folding');
++  for (const p of parts) {
++    assert.ok(Buffer.byteLength(p, 'utf8') <= 75, `line over 75 octets: ${Buffer.byteLength(p, 'utf8')}`);
++  }
++  assert.ok(parts.slice(1).every((p) => p.startsWith(' ')), 'continuations start with one space');
++  assert.equal(parts.join('').replace(/ /g, ''), line.replace(/ /g, '')); // content preserved modulo fold spaces
++});
++
++test('foldIcsLine: never splits a multibyte character across lines', () => {
++  const line = 'SUMMARY:' + '田中太郎、訴訟期限のリマインダー'.repeat(4); // 3-octet chars
++  const parts = foldIcsLine(line).split('\r\n');
++  for (const p of parts) {
++    assert.ok(Buffer.byteLength(p, 'utf8') <= 75);
++  }
++  // Rejoin: strip fold continuation spaces and compare to original.
++  const first = parts[0];
++  const rest = parts.slice(1).map((p) => p.slice(1));
++  assert.equal(first + rest.join(''), line);
++});
++
++test('foldIcsLine: emoji (4-octet) does not overflow the limit', () => {
++  const line = 'SUMMARY:' + '⚖️🔔'.repeat(30);
++  for (const p of foldIcsLine(line).split('\r\n')) {
++    assert.ok(Buffer.byteLength(p, 'utf8') <= 75);
++  }
++});
++
++// ------------------------------------------------------ VEVENT builder
++
++test('buildVEvent: date-only deadline → VALUE=DATE, CRLF, folded', () => {
++  const out = buildVEvent({
++    uid: 'V1@demo',
++    dtStamp: '2026-11-07',
++    dtStart: '2026-11-13',
++    summary: 'Filing deadline — Doe v. Roe [fictional]',
++  });
++  assert.ok(out.includes('BEGIN:VEVENT'));
++  assert.ok(out.includes('UID:V1@demo'));
++  assert.ok(out.includes('DTSTAMP:20261107T000000Z'));
++  assert.ok(out.includes('DTSTART;VALUE=DATE:20261113'));
++  assert.ok(out.includes('END:VEVENT'));
++  assert.ok(out.endsWith('\r\n'));
++});
++
++test('buildVEvent: UTC datetime dtStart → basic format', () => {
++  const out = buildVEvent({
++    uid: 'V2@demo',
++    dtStamp: '2026-11-07',
++    dtStart: '2026-11-13T14:30:00Z',
++    summary: 'Hearing',
++  });
++  assert.ok(out.includes('DTSTART:20261113T143000Z'));
++});
++
++test('buildVEvent: escapes TEXT values', () => {
++  const out = buildVEvent({
++    uid: 'V3@demo',
++    dtStamp: '2026-11-07',
++    dtStart: '2026-11-13',
++    summary: 'Doe; John, Esq. — deposition',
++    description: 'Line 1\nLine 2',
++  });
++  assert.ok(out.includes('Doe\\; John\\, Esq.'));
++  assert.ok(out.includes('Line 1\\nLine 2'));
++});
++
++test('buildVEvent: invalid or missing date → null (never a guessed event)', () => {
++  assert.equal(buildVEvent({ uid: 'x', dtStamp: '2026-11-07', dtStart: 'not-a-date', summary: 's' }), null);
++  assert.equal(buildVEvent({ uid: 'x', dtStamp: '2026-11-07', summary: 's' }), null);
++});
++
++// ------------------------------------------------------ VCALENDAR builder
++
++test('buildIcs: wraps events, CRLF everywhere, skips invalid events', () => {
++  const ics = buildIcs([
++    { uid: 'A@demo', dtStamp: '2026-11-07', dtStart: '2026-11-13', summary: 'First' },
++    { uid: 'B@demo', dtStamp: '2026-11-07', dtStart: 'garbage', summary: 'Bad' },
++    { uid: 'C@demo', dtStamp: '2026-11-07', dtStart: '2026-12-01', summary: 'Second' },
++  ], { prodId: '-//demo//open-legal-artifacts//EN' });
++  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'));
++  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
++  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, 2);
++  for (const line of ics.split('\r\n')) {
++    assert.ok(!line.includes('\n'), 'no bare LF inside lines');
++  }
++  assert.ok([...ics.matchAll(/\r\n/g)].length >= ics.split('\r\n').length - 1);
++  assert.ok(ics.includes('PRODID:-//demo//open-legal-artifacts//EN'));
++  // every physical line ≤75 octets
++  for (const line of ics.split('\r\n')) {
++    assert.ok(Buffer.byteLength(line, 'utf8') <= 75, `line >75 octets: "${line}"`);
++  }
++});
++
++test('buildIcs: empty input still yields a valid empty calendar', () => {
++  const ics = buildIcs([]);
++  assert.ok(ics.includes('BEGIN:VCALENDAR'));
++  assert.ok(ics.includes('END:VCALENDAR'));
++  assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, 0);
++});
+diff --git a/open-artifacts/_shared/persist.js b/open-artifacts/_shared/persist.js
+new file mode 100644
+index 0000000..58b3a2d
+--- /dev/null
++++ b/open-artifacts/_shared/persist.js
+@@ -0,0 +1,194 @@
++/**
++ * persist.js — JSONL append/load + storage wrappers (dependency-free ESM).
++ *
++ * Node/browser safe:
++ *   appendLog(file, entryOrEntries) — append JSONL (Node fs; batch ok).
++ *   loadLog(file)                   — parse JSONL; line-numbered error on
++ *                                     malformed lines (never silently drops);
++ *                                     missing file → [].
++ *   createStorage(ns, {backend})    — get/set/remove/append/entries/exportJsonl
++ *                                     over localStorage when usable, with an
++ *                                     in-memory fallback when localStorage is
++ *                                     absent or throws (privacy mode/quota).
++ *                                     backend: 'auto' | 'local' | 'memory'.
++ *
++ * 'node:fs' is imported lazily inside appendLog/loadLog so the module can be
++ * vendored into browser bundles without a build-time Node import.
++ * Zero console side effects. All example data fictional.
++ */
++
++/** @typedef {{get(k: string): unknown, set(k: string, v: unknown): void,
++ *             remove(k: string): void, append(k: string, entry: unknown): void,
++ *             entries(k: string): unknown[], exportJsonl(k: string): string,
++ *             backendName: string}} Storage */
++
++function memoryBackend(name) {
++  const map = new Map(); // key → array of ops (last set wins, appends accumulate)
++  return /** @type {Storage} */ ({
++    backendName: name,
++    get(k) {
++      const v = map.get(k);
++      return v === undefined ? null : v.value;
++    },
++    set(k, v) {
++      map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) });
++    },
++    remove(k) {
++      map.delete(k);
++    },
++    append(k, entry) {
++      if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] });
++      map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null)));
++    },
++    entries(k) {
++      const v = map.get(k);
++      return v && v.kind === 'log' ? v.items.slice() : [];
++    },
++    exportJsonl(k) {
++      return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : '');
++    },
++  });
++}
++
++/** Probe localStorage: usable only if getItem AND setItem both work. */
++function probeLocalStorage() {
++  try {
++    const ls = globalThis.localStorage;
++    if (!ls) return null;
++    const probeKey = '__persist_probe__';
++    ls.setItem(probeKey, '1');
++    const ok = ls.getItem(probeKey) === '1';
++    ls.removeItem(probeKey);
++    return ok ? ls : null;
++  } catch {
++    return null;
++  }
++}
++
++function localBackend(namespace) {
++  const ls = probeLocalStorage();
++  if (!ls) return memoryBackend('memory-fallback'); // throws in privacy mode → fallback
++  const key = (k) => `${namespace}:${k}`;
++  const read = (k) => {
++    try {
++      const raw = ls.getItem(key(k));
++      return raw == null ? null : raw;
++    } catch {
++      return null;
++    }
++  };
++  let degraded = false;
++  const mem = memoryBackend('memory');
++  return /** @type {Storage} */ ({
++    backendName: 'local',
++    get(k) {
++      if (degraded) return mem.get(k);
++      const raw = read(k);
++      if (raw == null) return null;
++      try {
++        return JSON.parse(raw);
++      } catch {
++        return null; // unreadable payload is surfaced as absent, never guessed
++      }
++    },
++    set(k, v) {
++      if (degraded) return mem.set(k, v);
++      try {
++        ls.setItem(key(k), JSON.stringify(v ?? null));
++      } catch {
++        degraded = true; // quota hit mid-session → fall back from now on
++        mem.set(k, v);
++      }
++    },
++    remove(k) {
++      if (degraded) return mem.remove(k);
++      try {
++        ls.removeItem(key(k));
++      } catch {
++        degraded = true;
++      }
++    },
++    append(k, entry) {
++      const cur = this.entries(k);
++      cur.push(entry);
++      this.set(k, cur);
++    },
++    entries(k) {
++      const v = this.get(k);
++      return Array.isArray(v) ? v : [];
++    },
++    exportJsonl(k) {
++      const es = this.entries(k);
++      return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : '');
++    },
++  });
++}
++
++/**
++ * Create a storage wrapper. backend 'auto' prefers localStorage when it
++ * actually works, otherwise in-memory.
++ *
++ * @param {string} namespace
++ * @param {{backend?: 'auto' | 'local' | 'memory'}} [opts]
++ * @returns {Storage}
++ */
++export function createStorage(namespace, opts = {}) {
++  const backend = opts.backend ?? 'auto';
++  if (backend === 'memory') return memoryBackend('memory');
++  if (backend === 'local') return localBackend(namespace);
++  return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory');
++}
++
++async function nodeFs() {
++  try {
++    return await import('node:fs');
++  } catch {
++    throw new Error('appendLog/loadLog require Node (node:fs unavailable)');
++  }
++}
++
++/**
++ * Append one entry or a batch of entries to a JSONL file (one JSON object
++ * per line, trailing newline). Creates the file on first append.
++ *
++ * @param {string} file
++ * @param {unknown} entryOrEntries
++ * @returns {Promise<void>}
++ */
++export async function appendLog(file, entryOrEntries) {
++  const fsMod = await nodeFs();
++  const list = Array.isArray(entryOrEntries) ? entryOrEntries : [entryOrEntries];
++  const block = list.map((e) => JSON.stringify(e ?? null)).join('\n') + '\n';
++  await fsMod.promises.appendFile(file, block, 'utf8');
++}
++
++/**
++ * Load a JSONL file. Blank lines are skipped; a malformed line throws an
++ * error naming the 1-based line number — data is never silently dropped.
++ * A missing file yields [].
++ *
++ * @param {string} file
++ * @returns {Promise<unknown[]>}
++ */
++export async function loadLog(file) {
++  const fsMod = await nodeFs();
++  let raw;
++  try {
++    raw = await fsMod.promises.readFile(file, 'utf8');
++  } catch (err) {
++    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return [];
++    throw err;
++  }
++  const out = [];
++  const lines = raw.split('\n');
++  for (let i = 0; i < lines.length; i++) {
++    const line = lines[i].trim();
++    if (!line) continue;
++    try {
++      out.push(JSON.parse(line));
++    } catch {
++      throw new Error(`loadLog: malformed JSONL at ${file} line ${i + 1}`);
++    }
++  }
++  return out;
++}
+diff --git a/open-artifacts/_shared/persist.test.js b/open-artifacts/_shared/persist.test.js
+new file mode 100644
+index 0000000..204f31c
+--- /dev/null
++++ b/open-artifacts/_shared/persist.test.js
+@@ -0,0 +1,130 @@
++// persist.test.js — appendLog/loadLog (JSONL) + storage wrappers with
++// localStorage safety and in-memory fallback. Run: node --test persist.test.js
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { appendLog, loadLog, createStorage } from './persist.js';
++
++const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'persist-test-'));
++
++// ------------------------------------------------------ JSONL log (node)
++
++test('appendLog/loadLog round-trips JSONL entries in order', async () => {
++  const file = path.join(tmp(), 'log.jsonl');
++  await appendLog(file, { id: 1, note: 'first' });
++  await appendLog(file, { id: 2, note: 'second' });
++  await appendLog(file, { id: 3, note: 'third' });
++  const entries = await loadLog(file);
++  assert.deepEqual(entries.map((e) => e.id), [1, 2, 3]);
++  assert.equal(entries[1].note, 'second');
++});
++
++test('appendLog accepts an array (batch) and loadLog skips blank trailing line', async () => {
++  const file = path.join(tmp(), 'batch.jsonl');
++  await appendLog(file, [{ a: 1 }, { a: 2 }]);
++  const raw = fs.readFileSync(file, 'utf8');
++  assert.ok(raw.endsWith('\n'));
++  assert.equal(raw.split('\n').filter(Boolean).length, 2);
++  assert.equal((await loadLog(file)).length, 2);
++});
++
++test('loadLog throws a line-numbered error on malformed JSONL (never silently drops)', async () => {
++  const file = path.join(tmp(), 'bad.jsonl');
++  fs.writeFileSync(file, '{"ok":1}\n{not json}\n{"ok":2}\n', 'utf8');
++  await assert.rejects(() => loadLog(file), /line 2/);
++});
++
++test('loadLog on a missing file → empty array', async () => {
++  assert.deepEqual(await loadLog(path.join(tmp(), 'nope.jsonl')), []);
++});
++
++// ------------------------------------------------------ storage wrappers
++
++test('createStorage: in-memory backend round-trip, append order, exportJsonl', () => {
++  const s = createStorage('t-mem', { backend: 'memory' });
++  assert.equal(s.backendName, 'memory');
++  assert.equal(s.get('k'), null);
++  s.set('k', { n: 1 });
++  assert.deepEqual(s.get('k'), { n: 1 });
++  s.append('log', { i: 1 });
++  s.append('log', { i: 2 });
++  assert.deepEqual(s.entries('log'), [{ i: 1 }, { i: 2 }]);
++  const jsonl = s.exportJsonl('log');
++  assert.equal(jsonl, '{"i":1}\n{"i":2}\n');
++});
++
++test('createStorage: localStorage backend persists under namespaced keys', () => {
++  const store = new Map();
++  const g = globalThis;
++  const prev = g.localStorage;
++  g.localStorage = {
++    getItem: (k) => (store.has(k) ? store.get(k) : null),
++    setItem: (k, v) => void store.set(k, String(v)),
++    removeItem: (k) => void store.delete(k),
++  };
++  try {
++    const s = createStorage('t-local', { backend: 'local' });
++    assert.equal(s.backendName, 'local');
++    s.set('pref', { theme: 'light' });
++    s.append('audit', { step: 'ingest' });
++    assert.deepEqual(s.get('pref'), { theme: 'light' });
++    assert.deepEqual(s.entries('audit'), [{ step: 'ingest' }]);
++    assert.ok([...store.keys()].every((k) => k.startsWith('t-local:')), 'keys namespaced');
++  } finally {
++    g.localStorage = prev ?? undefined;
++    if (!prev) delete g.localStorage;
++  }
++});
++
++test('createStorage: localStorage that THROWS (privacy mode/quota) falls back to memory without throwing', () => {
++  const g = globalThis;
++  const prev = g.localStorage;
++  g.localStorage = {
++    getItem: () => { throw new Error('blocked'); },
++    setItem: () => { throw new Error('quota'); },
++    removeItem: () => { throw new Error('blocked'); },
++  };
++  try {
++    const s = createStorage('t-blocked', { backend: 'local' });
++    assert.equal(s.backendName, 'memory-fallback');
++    s.set('k', 'v'); // must not throw
++    assert.equal(s.get('k'), 'v');
++    s.append('log', { ok: true });
++    assert.deepEqual(s.entries('log'), [{ ok: true }]);
++  } finally {
++    g.localStorage = prev ?? undefined;
++    if (!prev) delete g.localStorage;
++  }
++});
++
++test('createStorage: auto prefers localStorage when usable, else memory', () => {
++  const plain = createStorage('t-auto-mem', { backend: 'auto' }); // node: no localStorage
++  assert.equal(plain.backendName, 'memory');
++
++  const g = globalThis;
++  const prev = g.localStorage;
++  const store = new Map();
++  g.localStorage = {
++    getItem: (k) => (store.has(k) ? store.get(k) : null),
++    setItem: (k, v) => void store.set(k, String(v)),
++    removeItem: (k) => void store.delete(k),
++  };
++  try {
++    const s = createStorage('t-auto-local', { backend: 'auto' });
++    assert.equal(s.backendName, 'local');
++  } finally {
++    g.localStorage = prev ?? undefined;
++    if (!prev) delete g.localStorage;
++  }
++});
++
++test('createStorage: set overwrites; remove clears; JSON round-trip for objects', () => {
++  const s = createStorage('t-mut', { backend: 'memory' });
++  s.set('x', { a: [1, 2] });
++  s.set('x', { a: [3] });
++  assert.deepEqual(s.get('x'), { a: [3] });
++  s.remove('x');
++  assert.equal(s.get('x'), null);
++});

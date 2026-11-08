@@ -1,6 +1,6 @@
 // Per-artifact detail page — #/a/<name>, rendered from artifacts.json.
 import { catalog, GITHUB, type OpenEntry, type OriginalEntry } from "../data/catalog.js";
-import { el } from "../router.js";
+import { el, notFound } from "../router.js";
 
 /** Relative-from-dist path to an open-artifacts directory. */
 function oaPath(name: string, tail = ""): string {
@@ -88,9 +88,5 @@ export function artifactPage(name: string): HTMLElement {
   if (open) return openPage(open);
   const original = catalog.originals.find((a) => a.name === name);
   if (original) return originalPage(original);
-  return el(`<div class="page">
-    <h1>Not found</h1>
-    <p class="lede">No artifact named <code>${name}</code> in the catalog.</p>
-    <p><a class="backlink" href="#/">← Back to the catalog</a></p>
-  </div>`);
+  return notFound();
 }

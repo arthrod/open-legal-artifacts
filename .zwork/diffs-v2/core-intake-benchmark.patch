@@ -1,0 +1,771 @@
+diff --git a/open-artifacts/intake-benchmark/README.md b/open-artifacts/intake-benchmark/README.md
+index 42b1bac..3c81e5b 100644
+--- a/open-artifacts/intake-benchmark/README.md
++++ b/open-artifacts/intake-benchmark/README.md
+@@ -30,7 +30,7 @@ Beyond the base rubric:
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 32 tests
++node --test "core/*.test.js"     # 34 tests
+ node examples/run.js             # regenerates output.json, comparison.csv/.md, drift.json/.md
+ ```
+ 
+diff --git a/open-artifacts/intake-benchmark/core/core.js b/open-artifacts/intake-benchmark/core/core.js
+index 4cfb393..c2def9d 100644
+--- a/open-artifacts/intake-benchmark/core/core.js
++++ b/open-artifacts/intake-benchmark/core/core.js
+@@ -222,14 +222,25 @@ export function scoreFlow(flow, requiredFields, config = {}) {
+   }
+ 
+   // ---- speed ------------------------------------------------------------
++  // Unmeasured latency is a blank, never a zero (the rubric's own honesty
++  // rule): a flow with no latency data gets speed = null (dimension
++  // excluded, warning), and a partially measured flow is scored on its
++  // measured steps only, with a loud coverage warning.
+   let total_latency = null;
+   let speed = null;
+   if (steps.length) {
+-    const missingLatency = steps.filter((st) => typeof st.latency_seconds !== 'number' || st.latency_seconds < 0);
+-    if (missingLatency.length) warnings.push(`${missingLatency.length} step(s) lack latency_seconds; counted as 0.`);
+-    total_latency = steps.reduce((s, st) => s + (typeof st.latency_seconds === 'number' ? st.latency_seconds : 0), 0);
+-    const target = config.latencyTargetSeconds ?? DEFAULT_LATENCY_TARGET_SECONDS;
+-    speed = clamp100((Math.min(1, target / Math.max(total_latency, 1)) * 100));
++    const measured = steps.filter((st) => typeof st.latency_seconds === 'number' && st.latency_seconds >= 0);
++    if (measured.length === 0) {
++      warnings.push('no step has latency_seconds; speed is blank (excluded), not 0 — an unmeasured flow never wins the speed axis.');
++    } else {
++      if (measured.length < steps.length) {
++        const coverage = Math.round((measured.length / steps.length) * 100);
++        warnings.push(`${steps.length - measured.length} of ${steps.length} step(s) lack latency_seconds; speed scored on the ${measured.length} measured step(s) only (${coverage}% coverage) — not a like-for-like speed comparison.`);
++      }
++      total_latency = measured.reduce((s, st) => s + st.latency_seconds, 0);
++      const target = config.latencyTargetSeconds ?? DEFAULT_LATENCY_TARGET_SECONDS;
++      speed = clamp100((Math.min(1, target / Math.max(total_latency, 1)) * 100));
++    }
+   }
+ 
+   // ---- retention --------------------------------------------------------
+diff --git a/open-artifacts/intake-benchmark/core/core.test.js b/open-artifacts/intake-benchmark/core/core.test.js
+index ad8e827..946abea 100644
+--- a/open-artifacts/intake-benchmark/core/core.test.js
++++ b/open-artifacts/intake-benchmark/core/core.test.js
+@@ -46,10 +46,20 @@ describe('scoreFlow dimensions', () => {
+     const s = scoreFlow(flow(), REQUIRED, { latencyTargetSeconds: 100000 });
+     assert.equal(s.dimensions.speed, 100);
+   });
+-  test('steps without latency warn and count as 0', () => {
+-    const s = scoreFlow({ id: 'x', name: 'X', steps: [{ id: 's', fields: ['full_name'] }] }, REQUIRED);
+-    assert.equal(s.metrics.total_latency_seconds, 0);
+-    assert.ok(s.warnings.some((w) => /latency_seconds/.test(w)));
++  test('no measured latency anywhere → speed is blank (null), never 100', () => {
++    const s = scoreFlow({ id: 'x', name: 'X', steps: [{ id: 's', fields: ['full_name'] }, { id: 's2', fields: ['contact_email'] }] }, REQUIRED);
++    assert.equal(s.metrics.total_latency_seconds, null);
++    assert.equal(s.dimensions.speed, null, 'unmeasured latency must not score 100 (or anything)');
++    assert.ok(s.warnings.some((w) => /no step has latency_seconds.*speed is blank/.test(w)));
++  });
++  test('partial latency coverage → speed scored on measured steps only, with loud coverage warning', () => {
++    const s = scoreFlow({ id: 'x', name: 'X', steps: [
++      { id: 's1', fields: ['full_name'], latency_seconds: 180 },
++      { id: 's2', fields: ['contact_email'] }, // unmeasured
++    ] }, REQUIRED, { latencyTargetSeconds: 180 });
++    assert.equal(s.metrics.total_latency_seconds, 180); // measured steps only
++    assert.equal(s.dimensions.speed, 100);
++    assert.ok(s.warnings.some((w) => /1 of 2 step\(s\) lack latency_seconds/.test(w) && /50% coverage/.test(w)));
+   });
+   test('no steps → completeness 0, fallback/speed null, warning', () => {
+     const s = scoreFlow({ id: 'x', name: 'X', steps: [] }, REQUIRED);
+@@ -206,6 +216,31 @@ describe('fair mode', () => {
+     assert.ok(fw.composite < withT.composite);
+     assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /retention/.test(w)));
+   });
++  test('unmeasured flow cannot win the speed axis (report M1 repro)', () => {
++    const input = {
++      scenario: { required_fields: REQUIRED },
++      flows: [
++        flow({ id: 'measured', name: 'Measured', steps: [
++          { id: 's1', purpose: 'identity', fields: ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location', 'insurance_carrier'], latency_seconds: 1200, fallback: 'phone' },
++        ] }), // 1200s vs 900s target → speed 75
++        flow({ id: 'paper', name: 'Paper, unmeasured', steps: [
++          { id: 'p1', purpose: 'paper', fields: ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location', 'insurance_carrier'], fallback: 'n/a' },
++        ] }), // no latency data at all
++      ],
++    };
++    const plain = benchmark(input);
++    const measured = plain.flows.find((f) => f.id === 'measured');
++    const paper = plain.flows.find((f) => f.id === 'paper');
++    assert.equal(measured.dimensions.speed, 75);
++    assert.equal(paper.dimensions.speed, null, 'unmeasured flow must not score 100 on speed');
++    // fair mode: speed now missing from one flow → excluded for everyone, named in warning,
++    // and being unmeasured no longer beats the measured flow's 75
++    const fair = benchmark({ ...input, config: { fairMode: true } });
++    const fairMeasured = fair.flows.find((f) => f.id === 'measured');
++    const fairPaper = fair.flows.find((f) => f.id === 'paper');
++    assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /speed/.test(w)));
++    assert.ok(!(fairPaper.composite > fairMeasured.composite), 'unmeasured flow must not outscore the measured one via a dimension it lacks');
++  });
+   test('fair mode with all dimensions shared changes nothing and stays quiet', () => {
+     const input = { scenario: { required_fields: REQUIRED }, flows: [flow({ abandonment_rate: 0.2 }), flow({ id: 'two', name: 'Flow Two', abandonment_rate: 0.4 })] };
+     const plain = benchmark(input);
+diff --git a/open-artifacts/intake-benchmark/demo/fonts/Manrope-Variable.woff2 b/open-artifacts/intake-benchmark/demo/fonts/Manrope-Variable.woff2
+new file mode 100644
+index 0000000..662b813
+Binary files /dev/null and b/open-artifacts/intake-benchmark/demo/fonts/Manrope-Variable.woff2 differ
+diff --git a/open-artifacts/intake-benchmark/demo/index.html b/open-artifacts/intake-benchmark/demo/index.html
+index 0a56e77..c8fbe4b 100644
+--- a/open-artifacts/intake-benchmark/demo/index.html
++++ b/open-artifacts/intake-benchmark/demo/index.html
+@@ -4,33 +4,87 @@
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>Intake Flow Benchmark — open artifact</title>
++<link rel="icon" href="data:,">
+ <link rel="stylesheet" href="tokens.css">
+ <style>
+-  header { padding: 28px var(--pad-x-mobile); }
++  header { padding: 28px var(--pad-x-mobile) 0; }
+   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 0 var(--pad-x-mobile); }
+   h1 { font-family: var(--font-mono); font-size: 20px; letter-spacing: 0.02em; margin-top: 8px; }
+-  .lede { color: var(--text-secondary); max-width: 640px; margin-top: 10px; }
++  .lede { color: var(--text-secondary); max-width: 640px; margin-top: 10px; font-size: 15px; }
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 18px 0; }
+-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px 0 64px; }
+-  @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
+-  textarea { width: 100%; min-height: 460px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
+-  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 0 24px; }
++  main { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; padding: 24px 0 64px; }
++  main > section { min-width: 0; }
++  .step > div, .fhead > .field, .scrow > span, .checkline, .row2 > .field { min-width: 0; }
++  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
++  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin: 26px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
++  .field { margin: 10px 0; }
++  label { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
++  .checkline { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
++  .checkline label { margin: 0; }
++  input[type="text"], input[type="number"], select, textarea {
++    width: 100%; min-width: 0; font-family: var(--font-body); font-size: 14px; border: var(--hairline); background: #fff; padding: 8px 10px; }
++  .checkline input { width: auto; }
++  .hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
++  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
++  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
++  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 9px 16px; cursor: pointer; }
+   button:hover { background: var(--accent); color: var(--text); }
+-  .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
++  button.ghost, button.xbtn { background: #fff; color: var(--text); border: var(--hairline); padding: 6px 10px; }
++  button.ghost:hover, button.xbtn:hover { background: var(--hover); }
++  button.xbtn { color: var(--bad); }
++  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 20px; }
++  .fcard { border: var(--hairline); padding: 12px 12px 14px; margin: 12px 0; background: #fff; }
++  .fhead { display: grid; grid-template-columns: 2.2fr 1fr 1.2fr; gap: 8px; }
++  .sec2 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 12px 0 4px; }
++  .step { display: grid; grid-template-columns: 1.1fr 1.9fr 0.7fr 1.5fr auto; gap: 6px; align-items: end; margin: 6px 0; }
++  @media (max-width: 480px) { .step, .fhead, .row2 { grid-template-columns: 1fr; } }
++  .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; margin: 8px 0; }
++  details.adv { margin-top: 18px; border: var(--hairline); padding: 10px 12px; }
++  details.adv summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
++  textarea#input { min-height: 300px; font-family: var(--font-mono); font-size: 12px; margin-top: 8px; resize: vertical; }
++  .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 6px; }
+   table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 8px; }
+   th, td { border: var(--hairline); padding: 8px 10px; text-align: right; }
+   th:first-child, td:first-child { text-align: left; }
+-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
++  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
++  th .kind { display: block; font-size: 12px; color: var(--text-secondary); text-transform: none; letter-spacing: 0; }
++  tbody tr:hover td { background: var(--hover); }
+   tr.composite td { font-weight: 700; background: #fff; }
+-  tr.composite td:first-child { border-left: var(--hairline); }
+-  .rank { font-family: var(--font-mono); font-size: 12px; margin: 16px 0 4px; }
+-  .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 4px; }
++  .dimlink { background: none; border: none; padding: 0; color: var(--text); font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
++  .dimlink:hover { background: none; color: var(--text); text-decoration: underline; }
++  .rank { font-family: var(--font-mono); font-size: 13px; margin: 14px 0 2px; }
+   .muted { color: var(--text-secondary); font-size: 13px; }
+-  .csv { width: 100%; min-height: 140px; font-family: var(--font-mono); font-size: 11px; border: var(--hairline); background: #fff; padding: 10px; }
+-  select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 6px 8px; margin-left: 8px; }
+-  .badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 8px; border: var(--hairline); margin-top: 12px; }
+-  .badge.robust { border-color: var(--good, #2a7); color: var(--good, #2a7); }
++  .mono { font-family: var(--font-mono); font-size: 12px; }
++  .nm { display: inline-block; border: 1px solid var(--border); color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; padding: 1px 6px; }
++  .badge { display: inline-block; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em; padding: 3px 8px; border: var(--hairline); margin-top: 6px; }
++  .badge.robust { border-color: var(--ok); color: var(--ok); }
+   .badge.fragile { border-color: var(--bad); color: var(--bad); }
++  .delta { font-family: var(--font-mono); font-size: 12px; }
++  .delta.up { color: var(--ok); } .delta.down { color: var(--bad); }
++  .warnblock { border: 1px solid var(--warn); padding: 10px 14px; margin: 14px 0; }
++  .warnblock p { font-size: 13px; margin: 4px 0; }
++  .warnblock.bad { border-color: var(--bad); }
++  .card { border: var(--hairline); padding: 12px 14px; margin: 10px 0; background: #fff; }
++  .card h3 { font-family: var(--font-mono); font-size: 13px; margin-bottom: 8px; }
++  .scrow { display: grid; grid-template-columns: 150px 52px 90px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
++  @media (max-width: 480px) { .scrow { grid-template-columns: 1fr 1fr; } }
++  .scname { font-size: 13px; font-weight: 600; }
++  .scval { font-family: var(--font-mono); font-size: 13px; text-align: right; }
++  .bar-wrap { height: 6px; background: var(--hover); display: block; }
++  .bar { display: block; height: 6px; background: var(--text); }
++  .scwhy { font-size: 12px; }
++  .chip { display: inline-block; border: 1px solid var(--border); padding: 0 6px; margin: 2px 3px 2px 0; font-family: var(--font-mono); font-size: 12px; }
++  .chip.crit { border-color: var(--bad); color: var(--bad); }
++  details.drill { border: var(--hairline); padding: 8px 12px; margin: 8px 0; background: #fff; }
++  details.drill summary { font-weight: 600; cursor: pointer; font-size: 14px; }
++  details.drill ol { margin: 8px 0 4px 20px; font-size: 13px; }
++  details.drill li { margin: 6px 0; }
++  .hl { animation: flash 1.8s ease; }
++  @keyframes flash { 0% { background: var(--flag-tint); } 100% { background: transparent; } }
++  .log-tbl { font-size: 12px; }
++  .log-tbl td, .log-tbl th { padding: 5px 8px; text-align: left; }
++  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(16px); background: var(--text); color: var(--bg); font-family: var(--font-mono); font-size: 13px; padding: 10px 16px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 10; max-width: 90vw; }
++  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+ </style>
+ </head>
+ <body>
+@@ -38,21 +92,112 @@
+   <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
+   <h1>intake-benchmark</h1>
+   <div class="rule"></div>
+-  <p class="lede">Benchmark any two intake flows — software vs. human paper process — on one explicit rubric: completeness, redundancy, fallbacks, speed, retention. Fictional data.</p>
++  <p class="lede">Benchmark any two intake flows — software vs. human paper process — on one explicit rubric: completeness, redundancy, fallbacks, speed, retention. Deterministic, fully local: nothing leaves this browser, and unmeasured data is a blank, never a zero.</p>
+ </div></header>
+ 
+ <div class="wrap"><main>
+-  <section>
+-    <div class="sec">Runs JSON (editable) <label>canon: <select id="canon"></select></label></div>
+-    <textarea id="input" spellcheck="false"></textarea>
+-    <button id="run">Compare flows →</button>
+-    <div id="err" class="err"></div>
++  <section aria-label="Benchmark inputs">
++    <h2>Scenario</h2>
++    <div class="field"><label for="scn-name">Scenario name</label>
++      <input type="text" id="scn-name" placeholder="e.g. Personal-injury intake (fictional firm)"></div>
++    <div class="field"><label for="canon">Field canon (practice area)</label>
++      <select id="canon"></select>
++      <p class="hint" id="canon-desc"></p></div>
++    <div class="field" id="req-wrap"><label for="req">Required fields (comma-separated)</label>
++      <input type="text" id="req" placeholder="full_name, contact_email, …"></div>
++    <div class="row2">
++      <div class="field"><label for="target">Speed target (seconds)</label>
++        <input type="number" id="target" min="1" step="1"></div>
++    </div>
++    <div class="checkline"><input type="checkbox" id="fair">
++      <label for="fair">Fair mode — score only dimensions every flow reports</label></div>
++
++    <h2 id="flows-h">Flows <button class="ghost" id="add-flow">+ Add flow</button></h2>
++    <div id="flows"></div>
++
++    <div class="actions">
++      <button id="run">Compare flows →</button>
++      <button class="ghost" id="example">Load example</button>
++      <button class="ghost" id="clear">Clear</button>
++    </div>
++    <div id="err" class="err" role="alert"></div>
++
++    <details class="adv" id="adv">
++      <summary>Advanced — edit runs as JSON</summary>
++      <label class="sr" for="input">Runs JSON</label>
++      <textarea id="input" spellcheck="false"></textarea>
++      <p><button class="ghost" id="apply-json">Apply JSON</button></p>
++      <div id="jerr" class="err"></div>
++    </details>
++  </section>
++
++  <section aria-label="Benchmark results">
++    <div id="out" aria-live="polite"></div>
++
++    <h2 id="log-h">Run log <span class="hint" id="log-count"></span></h2>
++    <p class="hint">Append-only, saved in this browser and restored on reload.</p>
++    <table class="log-tbl"><thead><tr>
++      <th scope="col">When</th><th scope="col">Scenario</th><th scope="col">Canon</th>
++      <th scope="col">Winner</th><th scope="col">Stability</th></tr></thead>
++      <tbody id="log-tbl"></tbody></table>
++    <div class="actions">
++      <button class="ghost" id="dl-log">Export log (NDJSON)</button>
++      <button class="xbtn" id="clr-log">Clear log</button>
++    </div>
+   </section>
+-  <section id="out" aria-live="polite"></section>
+ </main></div>
+ 
++<div id="toast" role="status"></div>
++
+ <script type="module">
+-import { benchmark, exportCsv, rankStability, listCanons, getCanon } from '../core/core.js';
++import { benchmark, exportCsv, exportMd, rankStability, listCanons, getCanon, validateCapture, compare } from '../core/core.js';
++
++/* ---- vendored from open-artifacts/_shared/persist.js (browser subset) ---- */
++function memoryBackend(name) {
++  const map = new Map();
++  return {
++    backendName: name,
++    get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
++    set(k, v) { map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) }); },
++    remove(k) { map.delete(k); },
++    append(k, entry) { if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
++    entries(k) { const v = map.get(k); return v && v.kind === 'log' ? v.items.slice() : []; },
++    exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : ''); },
++  };
++}
++function probeLocalStorage() {
++  try {
++    const ls = globalThis.localStorage;
++    if (!ls) return null;
++    ls.setItem('__persist_probe__', '1');
++    const ok = ls.getItem('__persist_probe__') === '1';
++    ls.removeItem('__persist_probe__');
++    return ok ? ls : null;
++  } catch { return null; }
++}
++function localBackend(namespace) {
++  const ls = probeLocalStorage();
++  if (!ls) return memoryBackend('memory-fallback');
++  const key = (k) => `${namespace}:${k}`;
++  const read = (k) => { try { const raw = ls.getItem(key(k)); return raw == null ? null : raw; } catch { return null; } };
++  let degraded = false;
++  const mem = memoryBackend('memory');
++  return {
++    backendName: 'local',
++    get(k) { if (degraded) return mem.get(k); const raw = read(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
++    set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
++    remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
++    append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
++    entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
++    exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : ''); },
++  };
++}
++function createStorage(namespace) {
++  return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory');
++}
++
++const store = createStorage('intake-benchmark');
++const K = { state: 'state', log: 'log', base: 'baseline' };
+ 
+ const SAMPLE = {
+   scenario: {
+@@ -76,60 +221,315 @@ const SAMPLE = {
+   ]
+ };
+ 
++const DIMS = [
++  ['completeness', 'Completeness'],
++  ['non_redundancy', 'Non-redundancy'],
++  ['fallback_quality', 'Fallback quality'],
++  ['speed', 'Speed'],
++  ['retention', 'Retention'],
++  ['deadline_capture', 'Deadline capture'],
++  ['conflict_check', 'Conflict check'],
++];
++
+ const $ = (id) => document.getElementById(id);
+-$('input').value = JSON.stringify(SAMPLE, null, 2);
+-function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+-const fmt = (v) => v == null ? '—' : String(v);
++const clone = (o) => JSON.parse(JSON.stringify(o));
++function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
++const fmtDur = (s) => s >= 86400 ? (s/86400).toFixed(1)+'d' : s >= 3600 ? (s/3600).toFixed(1)+'h' : s >= 60 ? Math.round(s/60)+'m' : s+'s';
++const uid = () => 's' + Math.random().toString(36).slice(2, 7);
++
++let state = clone(SAMPLE);
++let baseline = store.get(K.base) || null;
++let lastResult = null, lastStab = null, lastQa = null;
+ 
+-// Canon picker: swap the scenario for a shipped practice-area canon (fields
+-// tagged core/deadline/conflict — the flows are then scored on deadline and
+-// conflict capture too, and unasked critical fields are listed).
++/* ---------- toast + download ---------- */
++let toastT;
++function toast(msg) {
++  const t = $('toast'); t.textContent = msg; t.classList.add('on');
++  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2800);
++}
++function download(name, text, type = 'text/plain') {
++  const a = document.createElement('a');
++  a.href = URL.createObjectURL(new Blob([text], { type }));
++  a.download = name; document.body.appendChild(a); a.click(); a.remove();
++  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
++}
++const today = () => new Date().toISOString().slice(0, 10);
++
++let saveT;
++function saveSoon() { clearTimeout(saveT); saveT = setTimeout(() => store.set(K.state, state), 400); }
++
++/* ---------- guided form ---------- */
++function stepRow(i, j, st) {
++  const pfx = `s-${i}-${j}`;
++  return `<div class="step">
++    <div><label class="sr" for="${pfx}-p">Step ${j+1} purpose</label>
++      <input type="text" id="${pfx}-p" placeholder="purpose" data-fi="${i}" data-si="${j}" data-k="purpose" value="${esc(st.purpose ?? '')}"></div>
++    <div><label class="sr" for="${pfx}-f">Step ${j+1} fields asked</label>
++      <input type="text" id="${pfx}-f" placeholder="fields, comma-separated" data-fi="${i}" data-si="${j}" data-k="fields" value="${esc((st.fields ?? []).join(', '))}"></div>
++    <div><label class="sr" for="${pfx}-l">Step ${j+1} latency seconds</label>
++      <input type="number" id="${pfx}-l" min="0" placeholder="—" data-fi="${i}" data-si="${j}" data-k="latency_seconds" value="${st.latency_seconds ?? ''}"></div>
++    <div><label class="sr" for="${pfx}-b">Step ${j+1} fallback</label>
++      <input type="text" id="${pfx}-b" placeholder="fallback" data-fi="${i}" data-si="${j}" data-k="fallback" value="${esc(st.fallback ?? '')}"></div>
++    <button class="xbtn" data-delstep="${i}:${j}" aria-label="Remove step ${j+1}">✕</button>
++  </div>`;
++}
++function flowCard(f, i) {
++  const steps = (f.steps ?? []).map((st, j) => stepRow(i, j, st)).join('');
++  return `<section class="fcard" aria-label="Flow ${i+1}">
++    <div class="fhead">
++      <div class="field"><label for="fn-${i}">Flow name</label>
++        <input type="text" id="fn-${i}" data-fi="${i}" data-k="name" value="${esc(f.name ?? '')}" placeholder="e.g. Guided web form"></div>
++      <div class="field"><label for="fk-${i}">Kind</label>
++        <select id="fk-${i}" data-fi="${i}" data-k="kind">${['software','human','hybrid','unspecified'].map((k) => `<option${f.kind === k ? ' selected' : ''}>${k}</option>`).join('')}</select></div>
++      <div class="field"><label for="fa-${i}">Abandonment (0–1)</label>
++        <input type="number" id="fa-${i}" data-fi="${i}" data-k="abandonment_rate" min="0" max="1" step="0.01" placeholder="not measured" value="${f.abandonment_rate ?? ''}"></div>
++    </div>
++    <div class="sec2">Steps</div>
++    ${steps || '<p class="hint">No steps yet — every rubric dimension needs at least one.</p>'}
++    <p class="actions"><button class="ghost" data-addstep="${i}">+ Add step</button>
++    ${state.flows.length > 1 ? `<button class="xbtn" data-delflow="${i}" aria-label="Remove flow ${i+1} (${esc(f.name || 'untitled')})">✕ Remove flow</button>` : ''}</p>
++  </section>`;
++}
++function renderFlows() { $('flows').innerHTML = state.flows.map(flowCard).join(''); }
++
++$('flows').addEventListener('input', (e) => {
++  const t = e.target, fi = t.dataset.fi;
++  if (fi == null) return;
++  const f = state.flows[+fi]; if (!f) return;
++  const k = t.dataset.k, si = t.dataset.si;
++  if (si == null) {
++    if (k === 'abandonment_rate') {
++      const v = t.value.trim();
++      if (v === '') delete f.abandonment_rate;
++      else { const n = Number(v); if (Number.isFinite(n) && n >= 0 && n <= 1) f.abandonment_rate = n; }
++    } else f[k] = t.value;
++  } else {
++    const st = (f.steps ??= [])[+si]; if (!st) return;
++    if (k === 'fields') st.fields = t.value.split(',').map((s) => s.trim()).filter(Boolean);
++    else if (k === 'latency_seconds') {
++      const v = t.value.trim();
++      if (v === '') delete st.latency_seconds;
++      else { const n = Number(v); if (Number.isFinite(n) && n >= 0) st.latency_seconds = n; }
++    } else if (k === 'fallback') {
++      const v = t.value.trim(); if (v === '') delete st.fallback; else st.fallback = v;
++    } else st[k] = t.value;
++  }
++  saveSoon();
++});
++$('flows').addEventListener('click', (e) => {
++  const b = e.target.closest('button'); if (!b) return;
++  if (b.dataset.addstep != null) { (state.flows[+b.dataset.addstep].steps ??= []).push({ id: uid(), purpose: '', fields: [] }); renderFlows(); saveSoon(); }
++  if (b.dataset.delstep) { const [i, j] = b.dataset.delstep.split(':').map(Number); state.flows[i].steps.splice(j, 1); renderFlows(); saveSoon(); }
++  if (b.dataset.delflow != null) { state.flows.splice(+b.dataset.delflow, 1); renderFlows(); saveSoon(); }
++});
++$('add-flow').addEventListener('click', () => {
++  state.flows.push({ id: 'flow-' + uid(), name: '', kind: 'software', steps: [{ id: uid(), purpose: '', fields: [] }] });
++  renderFlows(); saveSoon();
++});
++
++function syncCanonUI() {
++  const id = state.scenario?.canon || '';
++  $('canon').value = id;
++  $('canon-desc').textContent = id ? getCanon(id).description : 'Custom — score against the required fields you list below.';
++  $('req-wrap').style.display = id ? 'none' : '';
++}
++function syncScenarioInputs() {
++  $('scn-name').value = state.scenario?.name ?? '';
++  $('req').value = (state.scenario?.required_fields ?? []).join(', ');
++  $('target').value = state.config?.latencyTargetSeconds ?? 900;
++  $('fair').checked = !!state.config?.fairMode;
++  syncCanonUI();
++}
+ const canonSel = $('canon');
+-canonSel.appendChild(new Option('custom (as written)', ''));
++canonSel.appendChild(new Option('custom (my field list)', ''));
+ for (const id of listCanons()) canonSel.appendChild(new Option(getCanon(id).name, id));
+ canonSel.addEventListener('change', () => {
+-  const parsed = JSON.parse($('input').value);
+-  if (canonSel.value) {
+-    const c = getCanon(canonSel.value);
+-    parsed.scenario = { name: `${c.name} (fictional demo flows)`, canon: c.id };
+-  } else {
+-    parsed.scenario = JSON.parse(JSON.stringify(SAMPLE.scenario));
++  const id = canonSel.value;
++  if (id) state.scenario.canon = id; else delete state.scenario.canon;
++  syncCanonUI(); saveSoon(); run();
++});
++$('scn-name').addEventListener('input', (e) => { (state.scenario ??= {}).name = e.target.value; saveSoon(); });
++$('req').addEventListener('input', (e) => { (state.scenario ??= {}).required_fields = e.target.value.split(',').map((s) => s.trim()).filter(Boolean); saveSoon(); });
++$('target').addEventListener('input', (e) => { const n = Number(e.target.value); (state.config ??= {}).latencyTargetSeconds = Number.isFinite(n) && n >= 1 ? n : 900; saveSoon(); });
++$('fair').addEventListener('change', (e) => { (state.config ??= {}).fairMode = e.target.checked; saveSoon(); run(); });
++
++/* ---------- advanced JSON ---------- */
++$('adv').addEventListener('toggle', () => { if ($('adv').open) $('input').value = JSON.stringify(state, null, 2); });
++function jsonErrLine(src, e) {
++  const m = /position (\d+)/.exec(e.message || '');
++  if (!m) return String(e.message ?? e);
++  return `error near line ${src.slice(0, +m[1]).split('\n').length}: ${e.message}`;
++}
++$('apply-json').addEventListener('click', () => {
++  $('jerr').textContent = '';
++  let v; try { v = JSON.parse($('input').value); }
++  catch (e) { $('jerr').textContent = 'JSON ' + jsonErrLine($('input').value, e); return; }
++  if (!v || typeof v !== 'object' || !Array.isArray(v.flows) || !v.flows.length) {
++    $('jerr').textContent = 'JSON needs a top-level "flows" array with at least one flow.'; return;
+   }
+-  $('input').value = JSON.stringify(parsed, null, 2);
+-  run();
++  state = v; state.scenario ??= {}; state.config ??= {};
++  syncScenarioInputs(); renderFlows(); saveSoon(); run();
++  $('adv').open = false; toast('JSON applied.');
+ });
+ 
+-function run() {
++/* ---------- run + results ---------- */
++const stateFlow = (id) => state.flows.find((f) => f.id === id);
++function canonFields(cls) {
++  if (!state.scenario?.canon) return [];
++  try { return getCanon(state.scenario.canon).fields.filter((f) => f.risk_class === cls).map((f) => f.name); } catch { return []; }
++}
++function why(dim, f, r) {
++  const m = f.metrics;
++  const req = m.covered_fields.length + m.missing_fields.length;
++  switch (dim) {
++    case 'completeness': return m.missing_fields.length ? `missing ${m.missing_fields.length}/${req}: ${m.missing_fields.join(', ')}` : `all ${req} required fields covered`;
++    case 'non_redundancy': return m.duplicates ? `${m.duplicates} duplicate ask${m.duplicates > 1 ? 's' : ''} in ${m.field_asks} field asks` : `no duplicate asks across ${m.field_asks} field asks`;
++    case 'fallback_quality': { const sf = stateFlow(f.id); const n = sf ? sf.steps.filter((s) => s.fallback && String(s.fallback).trim()).length : 0; return `${n}/${m.steps} steps have a fallback`; }
++    case 'speed': {
++      if (f.dimensions.speed == null) return 'no latency data — left blank, never scored as 0';
++      const sf = stateFlow(f.id); const un = sf ? sf.steps.filter((s) => s.latency_seconds == null).length : 0;
++      return `${fmtDur(m.total_latency_seconds)} total vs ${fmtDur(r.latencyTargetSeconds)} target${un ? ` · ${un} step(s) unmeasured — partial coverage` : ''}`;
++    }
++    case 'retention': return f.dimensions.retention == null ? 'abandonment not measured — left blank, never scored as 0' : `${Math.round(m.abandonment_rate * 100)}% abandonment → ${f.dimensions.retention} retention`;
++    default: { const cls = dim === 'deadline_capture' ? 'deadline' : 'conflict'; const cf = canonFields(cls); const cov = cf.filter((x) => m.covered_fields.includes(x)).length; return cf.length ? `${cov}/${cf.length} ${cls}-class canon fields captured` : '—'; }
++  }
++}
++const fmtCell = (f, dim) => { const v = f.dimensions[dim]; return v == null ? '<span class="nm">not measured</span>' : String(v); };
++function deltaHtml(d) {
++  const c = d.composite;
++  const rank = d.rank.changed ? ` <span class="delta">rank #${d.rank.from ?? '?'} → #${d.rank.to}</span>` : '';
++  return ` <span class="delta ${c > 0 ? 'up' : c < 0 ? 'down' : ''}">${c > 0 ? '+' : ''}${c} vs baseline</span>${rank}`;
++}
++
++function run(silent = false) {
+   $('err').textContent = '';
+-  try { render(benchmark(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
++  if (!state.flows.length || state.flows.every((f) => !(f.steps || []).length)) {
++    toast('Add at least one flow with at least one step first.'); return;
++  }
++  let r; try { r = benchmark(clone(state)); }
++  catch (e) { $('err').textContent = 'Rubric error: ' + (e.message ?? e); return; }
++  let st = null, qa = null;
++  try { st = rankStability(clone(state)); } catch { /* best-effort */ }
++  try { qa = validateCapture(clone(state)); } catch { /* best-effort */ }
++  lastResult = r; lastStab = st; lastQa = qa;
++  store.set(K.state, state);
++  if (!silent) {
++    store.append(K.log, {
++      t: new Date().toISOString(), scenario: r.scenario, canon: state.scenario?.canon || 'custom',
++      winner: { id: r.flows[0].id, name: r.flows[0].name, composite: r.flows[0].composite },
++      flows: r.flows.map((f) => ({ id: f.id, name: f.name, composite: f.composite, rank: f.rank })),
++      stability: st ? st.verdict : null,
++    });
++  }
++  renderOut(); renderLog();
+ }
+ 
+-function render(r) {
++function renderOut() {
++  const r = lastResult;
++  if (!r) { $('out').innerHTML = ''; return; }
++  const st = lastStab, qa = lastQa;
++  let deltas = null;
++  if (baseline) { try { deltas = new Map(compare(r, baseline).flows.map((d) => [d.id, d])); } catch { /* ids changed */ } }
++
+   let h = `<div class="sec">${esc(r.scenario)}</div>`;
+-  for (const f of r.flows) h += `<p class="rank">#${f.rank} · ${esc(f.name)} (${esc(f.kind)}) — composite <strong>${f.composite}</strong></p>`;
+-  h += `<table><tr><th>Dimension</th>${r.flows.map((f) => `<th>${esc(f.name)}</th>`).join('')}</tr>`;
+-  for (const dim of r.dimensionOrder) {
+-    const cls = dim === 'composite' ? ' class="composite"' : '';
+-    h += `<tr${cls}><td>${dim}</td>${r.flows.map((f) => `<td>${fmt(dim === 'composite' ? f.composite : f.dimensions[dim])}</td>`).join('')}</tr>`;
++  for (const f of r.flows) {
++    h += `<p class="rank">#${f.rank} · ${esc(f.name)} (${esc(f.kind)}) — composite <strong>${f.composite}</strong>${deltas && deltas.get(f.id) ? deltaHtml(deltas.get(f.id)) : ''}</p>`;
++  }
++  if (st) h += `<p><span class="badge ${st.verdict}">${st.verdict}</span> <span class="muted">winner unchanged in ${st.runs - st.flips}/${st.runs} perturbed weightings (dimension drops + ±${Math.round(st.jitter * 100)}% mixes)</span></p>`;
++
++  const warns = [...(r.warnings || []), ...((qa && qa.warnings) || []).map((x) => 'capture: ' + x)];
++  if (qa && qa.errors.length) h += `<div class="warnblock bad" role="note"><div class="sec2">Capture QA errors</div>${qa.errors.map((x) => `<p>✕ ${esc(x)}</p>`).join('')}</div>`;
++  if (warns.length) h += `<div class="warnblock" role="note"><div class="sec2">Warnings (${warns.length}) — read before quoting scores</div>${warns.map((x) => `<p>⚠ ${esc(x)}</p>`).join('')}</div>`;
++
++  h += `<table><thead><tr><th scope="col">Dimension</th>${r.flows.map((f) => `<th scope="col"><button class="dimlink" data-flow="${esc(f.id)}" title="Show this flow's steps">${esc(f.name)}</button><span class="kind">${esc(f.kind)}</span></th>`).join('')}</tr></thead><tbody>`;
++  for (const [dim, label] of DIMS) {
++    h += `<tr><th scope="row"><button class="dimlink" data-dim="${dim}" title="Show the ${esc(label)} scorecard">${label}</button></th>${r.flows.map((f) => `<td>${fmtCell(f, dim)}</td>`).join('')}</tr>`;
+   }
+-  h += `</table><div class="sec">Missing canon fields</div>`;
+-  for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_fields.length ? esc(f.metrics.missing_fields.join(', ')) : 'none'}</p>`;
+-  const anyCritical = r.flows.some((f) => f.metrics.missing_critical.length);
+-  if (anyCritical) {
+-    h += `<div class="sec">Missing critical (deadline/conflict) fields</div>`;
+-    for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_critical.length ? esc(f.metrics.missing_critical.join(', ')) : 'none'}</p>`;
++  h += `<tr class="composite"><th scope="row">Composite</th>${r.flows.map((f) => `<td>${f.composite}</td>`).join('')}</tr></tbody></table>`;
++
++  h += `<div class="sec">Per-dimension scorecards</div>`;
++  for (const [dim, label] of DIMS) {
++    const anyData = r.flows.some((f) => f.dimensions[dim] != null);
++    h += `<div class="card" id="dim-${dim}" tabindex="-1"><h3>${label}</h3>`;
++    for (const f of r.flows) {
++      const v = f.dimensions[dim];
++      h += `<div class="scrow"><span class="scname">${esc(f.name)}</span><span class="scval">${v == null ? '<span class="nm">not measured</span>' : v}</span><span class="bar-wrap">${v == null ? '' : `<span class="bar" style="width:${v}%"></span>`}</span><span class="scwhy muted">${esc(why(dim, f, r))}</span></div>`;
++    }
++    if (!anyData) h += `<p class="hint">No flow reports data here — the dimension is excluded from every composite, never scored as zero.</p>`;
++    h += `</div>`;
+   }
+-  // Rank-stability badge: does the winner survive perturbed rubric weights?
+-  try {
+-    const st = rankStability(JSON.parse($('input').value));
+-    h += `<div class="sec">Rank stability</div><p><span class="badge ${st.verdict}">${st.verdict}</span> <span class="muted">winner unchanged in ${st.runs - st.flips}/${st.runs} perturbed weightings (dimension drops + ±${Math.round(st.jitter * 100)}% mixes)</span></p>`;
+-  } catch { /* stability analysis is best-effort; the table above stands */ }
+-  if (r.warnings.length) h += `<div class="sec">Warnings</div>` + r.warnings.map((w) => `<p class="muted">⚠ ${esc(w)}</p>`).join('');
+-  h += `<div class="sec">CSV export</div><textarea class="csv" readonly>${esc(exportCsv(r))}</textarea>`;
++
++  h += `<div class="sec">Flow drill-down</div>`;
++  for (const f of r.flows) {
++    const sf = stateFlow(f.id) || { steps: [] };
++    h += `<details class="drill" id="flow-${esc(f.id)}"><summary>${esc(f.name)} — ${sf.steps.length} step${sf.steps.length === 1 ? '' : 's'}</summary><ol>${sf.steps.map((s) => `<li><strong>${esc(s.purpose || '(untitled step)')}</strong> — ${(s.fields || []).length ? s.fields.map((x) => `<span class="chip">${esc(x)}</span>`).join('') : 'no field asks'}${s.latency_seconds != null ? ` · <span class="mono">${fmtDur(s.latency_seconds)}</span>` : ' · <span class="nm">latency not measured</span>'}${s.fallback ? ` · fallback: ${esc(s.fallback)}` : ' · no fallback'}</li>`).join('')}</ol></details>`;
++  }
++
++  if (state.scenario?.canon) {
++    const miss = r.flows.filter((f) => f.metrics.missing_fields.length);
++    h += `<div class="sec">Canon coverage gaps</div>`;
++    if (!miss.length) h += `<p class="muted">Every flow covers every canon field.</p>`;
++    else for (const f of miss) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_fields.map((x) => `<span class="chip${f.metrics.missing_critical.includes(x) ? ' crit' : ''}" title="${f.metrics.missing_critical.includes(x) ? 'deadline/conflict-critical' : 'canon field'}">${esc(x)}</span>`).join('')}</p>`;
++  }
++
++  h += `<div class="sec">Exports &amp; baseline</div><div class="actions">
++    <button data-dl="csv">Download CSV</button>
++    <button class="ghost" data-dl="md">Download Markdown</button>
++    ${baseline ? `<button class="ghost" id="clr-base">Clear baseline</button>` : `<button class="ghost" id="set-base">Save run as baseline</button>`}
++  </div>`;
+   $('out').innerHTML = h;
+ }
+-$('run').addEventListener('click', run);
+-render(benchmark(SAMPLE));
++
++$('out').addEventListener('click', (e) => {
++  const b = e.target.closest('button'); if (!b) return;
++  const jump = (el) => { if (!el) return; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('hl'); void el.offsetWidth; el.classList.add('hl'); };
++  if (b.dataset.dim) jump($('dim-' + b.dataset.dim));
++  if (b.dataset.flow) { const el = $('flow-' + b.dataset.flow); if (el) { el.open = true; jump(el); } }
++  if (b.dataset.dl === 'csv' && lastResult) { download(`intake-benchmark-${today()}.csv`, exportCsv(lastResult), 'text/csv'); toast('CSV downloaded.'); }
++  if (b.dataset.dl === 'md' && lastResult) { download(`intake-benchmark-${today()}.md`, exportMd(lastResult), 'text/markdown'); toast('Markdown downloaded.'); }
++  if (b.id === 'set-base') { baseline = clone(lastResult); store.set(K.base, baseline); renderOut(); toast('Baseline saved — future runs show drift vs this run.'); }
++  if (b.id === 'clr-base') { baseline = null; store.remove(K.base); renderOut(); toast('Baseline cleared.'); }
++});
++
++/* ---------- run log ---------- */
++function renderLog() {
++  const rows = store.entries(K.log);
++  $('log-count').textContent = rows.length ? `${rows.length} run${rows.length === 1 ? '' : 's'}` : 'empty';
++  $('log-tbl').innerHTML = rows.slice().reverse().map((e) => `<tr><td>${esc(new Date(e.t).toLocaleString())}</td><td>${esc(e.scenario ?? '')}</td><td>${esc(e.canon ?? '')}</td><td>${esc(e.winner?.name ?? '')} (${e.winner?.composite ?? ''})</td><td>${esc(e.stability ?? '')}</td></tr>`).join('');
++}
++$('dl-log').addEventListener('click', () => {
++  const s = store.exportJsonl(K.log);
++  if (!s.trim()) { toast('Log is empty — run a comparison first.'); return; }
++  download(`intake-benchmark-log-${today()}.ndjson`, s, 'application/x-ndjson');
++  toast('Audit log exported (NDJSON).');
++});
++$('clr-log').addEventListener('click', () => {
++  if (!store.entries(K.log).length) { toast('Log is already empty.'); return; }
++  if (!confirm('Clear the saved run log? This cannot be undone.')) return;
++  store.remove(K.log); renderLog(); toast('Run log cleared.');
++});
++
++/* ---------- top actions + init ---------- */
++$('run').addEventListener('click', () => run());
++$('example').addEventListener('click', () => {
++  state = clone(SAMPLE); syncScenarioInputs(); renderFlows(); saveSoon(); run();
++  toast('Example scenario loaded.');
++});
++$('clear').addEventListener('click', () => {
++  state = { scenario: { name: '' }, config: {}, flows: [{ id: 'flow-' + uid(), name: '', kind: 'software', steps: [] }] };
++  lastResult = lastStab = lastQa = null;
++  syncScenarioInputs(); renderFlows(); saveSoon(); renderOut();
++  toast('Cleared — describe your scenario to start.');
++});
++
++const saved = store.get(K.state);
++let restored = false;
++if (saved && typeof saved === 'object' && Array.isArray(saved.flows) && saved.flows.length) { state = saved; restored = true; }
++syncScenarioInputs();
++renderFlows();
++renderLog();
++run(true);
++if (restored) toast('Restored your last working session from this browser.');
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/intake-benchmark/demo/tokens.css b/open-artifacts/intake-benchmark/demo/tokens.css
+index 24ee35d..068cdd1 100644
+--- a/open-artifacts/intake-benchmark/demo/tokens.css
++++ b/open-artifacts/intake-benchmark/demo/tokens.css
+@@ -4,7 +4,14 @@
+    ========================================================================= */
+ 
+ /* ---------- Webfonts ---------- */
+-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
++/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
++@font-face {
++  font-family: "Manrope";
++  src: url("fonts/Manrope-Variable.woff2") format("woff2");
++  font-weight: 400 700;
++  font-style: normal;
++  font-display: swap;
++}
+ 
+ /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+ @font-face {
+@@ -37,7 +44,7 @@
+ 
+   /* ----- Type stacks ----- */
+   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
++  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+ 
+   /* ----- Layout constants ----- */
+   --max-width: 1100px;
+@@ -127,7 +134,7 @@ a {
+ /* Eyebrow — preceded by 24px hairline */
+ .t-eyebrow {
+   font-family: var(--font-mono);
+-  font-size: 11px;
++  font-size: 12px;
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: var(--text-secondary);
+diff --git a/open-artifacts/intake-benchmark/spec.md b/open-artifacts/intake-benchmark/spec.md
+index 03b7a5d..3ba68e2 100644
+--- a/open-artifacts/intake-benchmark/spec.md
++++ b/open-artifacts/intake-benchmark/spec.md
+@@ -16,7 +16,7 @@ fields, and scores each flow on transparent dimensions:
+ | completeness | distinct canon fields asked ÷ canon size |
+ | non_redundancy | 1 − (duplicate field asks ÷ total field asks) |
+ | fallback_quality | steps with a stated fallback ÷ total steps (null if no steps) |
+-| speed | min(1, latency_target ÷ total latency) × 100 |
++| speed | min(1, latency_target ÷ total measured latency) × 100 — **null (blank) if no step is measured**; partially measured flows are scored on their measured steps only, with a coverage warning |
+ | retention | (1 − abandonment_rate) × 100 (null if unmeasured) |
+ | deadline_capture | deadline-class canon fields asked ÷ deadline-class fields (null if canon untagged) |
+ | conflict_check | conflict-class canon fields asked ÷ conflict-class fields (null if canon untagged) |
+@@ -62,7 +62,9 @@ compare(resultAfter, resultBefore);               // re-run drift diff
+ 
+ Errors (thrown): zero flows; unknown weight keys; unknown canon id; unknown
+ risk_class tag; abandonment_rate outside 0–1. Warnings (not errors): flow
+-with no steps; steps without latency; canon overriding required_fields.
++with no steps; steps lacking latency_seconds (speed goes blank or is scored
++on measured steps only, never zero-filled); canon overriding
++required_fields.
+ 
+ ## Rank stability
+ 
+@@ -124,9 +126,10 @@ step latency), and `abandonment_rate` outside 0–1.
+    flows.
+ 2. **Every score is a formula** — no proprietary black-box "intake quality";
+    the table states exactly what completeness and redundancy mean.
+-3. **Honest about missing data** — unmeasured abandonment is a blank, not a
+-   zero, and composites renormalize instead of silently penalizing; fair
+-   mode makes cross-flow comparison explicit rather than implicit.
++3. **Honest about missing data** — unmeasured abandonment or latency is a
++   blank, not a zero, and composites renormalize instead of silently
++   penalizing; fair mode makes cross-flow comparison explicit rather than
++   implicit. A flow that omits latency data never wins the speed axis.
+ 4. **Auditable capture step** — the LLM (if used) only transcribes observable
+    behavior into JSON; scoring stays deterministic and reproducible, and
+    `validateCapture()` checks the transcription against the schema.

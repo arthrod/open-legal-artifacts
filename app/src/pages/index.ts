@@ -6,7 +6,7 @@
 // and re-render explicitly (replaceState fires no hashchange).
 import { catalog, GITHUB, PRACTICE_AREAS, READER_QUESTIONS } from "../data/catalog.js";
 import { el, render, currentQuery } from "../router.js";
-import { parseState, serializeState, filterOpen, type IndexState } from "../lib/index-filter.js";
+import { parseState, serializeState, filterOpen, nextStateOnSearch, type IndexState } from "../lib/index-filter.js";
 
 const AREA_IDS = new Set(PRACTICE_AREAS.map((a) => a.id));
 
@@ -69,7 +69,9 @@ function buildToolbar(state: IndexState): HTMLElement {
   input.addEventListener("input", () => {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => {
-      applyState({ area: state.area, q: input.value }, { kind: "search" });
+      // Typing is search intent: clear the inherited area filter so a
+      // known artifact is never a false negative (plan item 2).
+      applyState(nextStateOnSearch(state, input.value), { kind: "search" });
     }, 150);
   });
 
@@ -175,12 +177,19 @@ export function indexPage(): HTMLElement {
 
     if (results.length === 0) {
       const where = areaLabel ? ` in ${areaLabel}` : "";
+      // Deep-link escape: if the query matches outside the inherited area,
+      // offer the unfiltered view (reuses filterOpen — no new helper).
+      const allCount = filterOpen(open, { area: null, q: state.q }).length;
       const empty = el(`<div class="empty-state">
         <p>No matches for ‘${esc(state.q)}’${where}.</p>
         <button type="button" class="secondary" data-action="clear">Clear search and filters</button>
+        ${allCount > 0 ? `<button type="button" class="secondary" data-action="show-all">${allCount} match${allCount === 1 ? "" : "es"} in all categories → show them</button>` : ""}
       </div>`);
-      empty.querySelector("button")!.addEventListener("click", () => {
+      empty.querySelector("button[data-action='clear']")!.addEventListener("click", () => {
         location.hash = "#/";
+      });
+      empty.querySelector("button[data-action='show-all']")?.addEventListener("click", () => {
+        location.hash = serializeState({ area: null, q: state.q });
       });
       openSection.appendChild(empty);
     } else {

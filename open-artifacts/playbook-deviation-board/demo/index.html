@@ -56,6 +56,8 @@ button.card:hover { background: var(--hover); }
 .pill.deviates { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
 .pill.deal_breaker { background: var(--text); color: var(--bg); border-color: var(--text); }
 .pill.unclassified { background: transparent; color: var(--text-secondary); border-style: dashed; }
+.pill small { font-size: 9.5px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.legend { font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; max-width: 78ch; }
 .dchip { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; margin-top: 6px; border: var(--hairline); color: var(--text); background: var(--hover); }
 .dchip.reject { color: var(--bad); border-color: var(--bad); }
 .dchip.accept { color: var(--ok); border-color: var(--ok); }
@@ -148,6 +150,7 @@ code { font-family: var(--font-mono); font-size: 12px; background: var(--hover);
   <section>
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
+    <p class="legend" id="legend"></p>
     <div class="row-btns">
       <label for="actorInput" style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)">Reviewer</label>
       <input type="text" id="actorInput" style="width:180px" />
@@ -197,6 +200,10 @@ code { font-family: var(--font-mono); font-size: 12px; background: var(--hover);
 
 <script type="module">
 import { parseYaml, buildBoard, renderBoard } from "../core/core.js";
+/* Track B render labels — pasted from _shared/display-labels.js (canonical module stays vendored in core/, byte-parity-tested; page was 79.3 KB at HEAD, an import would blow the 80 KB val cap). */
+const CAN = { compliant: "VERIFIED", deviates: "SUPPORTED", deal_breaker: "CONFLICT", unclassified: "UNVERIFIED" };
+const canonOf = (key) => CAN[key];
+const LEGEND_TEXT = "Verdicts mean the same thing in every artifact — VERIFIED (checked, matched) · SUPPORTED (located, needs review) · UNVERIFIED (not checkable) · NOT FOUND (absent from the record) · CONFLICT (sources disagree).";
 
 /* ---------- vendored from open-artifacts/_shared/persist.js (browser subset; Node fs fns trimmed) ---------- */
 function memoryBackend(name) {
@@ -323,6 +330,11 @@ const DEC = { accept: "Accepted", negotiate: "Negotiate", reject: "Rejected", re
 const TIER = (t) => (t === "preferred" ? "Preferred" : t === null ? "—" : `Fallback tier ${t}`);
 const dateStr = () => new Date().toISOString().slice(0, 10);
 
+/* Track B: canonical verdict pills + rule topics instead of raw rule ids */
+const verdictPill = (cls) => `<span class="pill ${cls}" data-key="${esc(cls)}">${CAN[cls]}<small> ${esc(HL[cls])}</small></span>`;
+let ruleTopics = new Map(); // ruleId -> topic (user data — humanized fallback when absent)
+const ruleLabel = (ruleId) => ruleId == null ? "— (no rule assigned)" : ruleTopics.get(ruleId) ?? String(ruleId).replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+
 function save() {
 store.set("state", state);
 $("storeNote").textContent = store.backendName === "local" ? "saved · localStorage" : "saved · session only (storage unavailable)";
@@ -377,6 +389,7 @@ try { contract = readContract(); }
 catch (e) { return fail(e.message); }
 state.playbookSrc = $("pbInput").value;
 state.contract = contract;
+ruleTopics = new Map((Array.isArray(playbook.rules) ? playbook.rules : []).filter((r) => r && r.id !== undefined).map((r) => [r.id, r.topic]));
 board = buildBoard({ playbook, contract });
 save();
 const s = board.summary;
@@ -395,8 +408,8 @@ const s = board.summary;
 const cell = (n, label, key) => `<button type="button" data-verdict="${key}" aria-pressed="${filters.verdict === key}"><b>${n}</b><span>${label}</span></button>`;
 $("counts").innerHTML =
 `<div style="flex:1;min-width:120px;padding:10px 16px"><b style="font-family:var(--font-mono);font-size:20px;font-weight:500">${board.rows.length}</b><span style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)">clauses · ${esc(board.playbookId)}</span></div>` +
-cell(s.compliant, "compliant", "compliant") + cell(s.deviates, "deviates", "deviates") +
-cell(s.dealBreaker, "deal-breaker", "deal_breaker") + cell(s.unclassified, "unclassified", "unclassified");
+cell(s.compliant, `${canonOf("compliant")} — compliant`, "compliant") + cell(s.deviates, `${canonOf("deviates")} — deviates`, "deviates") +
+cell(s.dealBreaker, `${canonOf("deal_breaker")} — deal-breaker`, "deal_breaker") + cell(s.unclassified, `${canonOf("unclassified")} — unclassified`, "unclassified");
 $("counts").querySelectorAll("button[data-verdict]").forEach((b) =>
 b.addEventListener("click", () => { filters.verdict = filters.verdict === b.dataset.verdict ? "all" : b.dataset.verdict; $("fVerdict").value = filters.verdict; renderCounts(); renderBoardCols(); }));
 }
@@ -411,7 +424,7 @@ $(id).value = has ? cur : "all";
 if (!has) filters[id === "fRule" ? "rule" : id === "fApprover" ? "approver" : "verdict"] = "all";
 };
 setSel("fVerdict", ["compliant", "deviates", "deal_breaker", "unclassified"].filter((c) => board.rows.some((r) => r.classification === c)).map((c) => [c, HL[c]]), "All verdicts", filters.verdict);
-setSel("fRule", rules.map((v) => [v, v === "—" ? "— (no rule assigned)" : v]), "All rules", filters.rule);
+setSel("fRule", rules.map((v) => [v, v === "—" ? "— (no rule assigned)" : ruleLabel(v)]), "All rules", filters.rule);
 setSel("fApprover", approvers.map((v) => [v, v]), "All approvers", filters.approver);
 }
 
@@ -427,7 +440,7 @@ const rows = filteredRows();
 const COLS = ["compliant", "deviates", "deal_breaker", "unclassified"];
 $("board").innerHTML = COLS.map((cls) => {
 const cr = rows.filter((r) => r.classification === cls);
-return `<div class="col"><h3>${HL[cls]} <span>(${cr.length})</span></h3>` +
+return `<div class="col"><h3 data-key="${esc(cls)}">${canonOf(cls)} <small style="text-transform:none;color:var(--text-secondary)">(${HL[cls]})</small> <span>(${cr.length})</span></h3>` +
 (cr.length ? cr.map(cardHtml).join("") : `<div class="empty">no rows</div>`) + `</div>`;
 }).join("");
 $("filterStatus").textContent = board ? `Showing ${rows.length} of ${board.rows.length} clauses` : "";
@@ -438,7 +451,7 @@ function cardHtml(r) {
 const d = state.decisions[r.clauseId];
 return `<button type="button" class="card ${r.classification}" data-clause="${esc(r.clauseId)}" aria-label="${esc(r.clauseId)} ${esc(r.heading ?? "")}: ${HL[r.classification]}. ${r.ruleId ? "Rule " + esc(r.ruleId) + "," : ""} routed to ${esc(r.routedTo ?? "nobody")}. Open detail drawer">` +
 `<span class="nm" style="display:block"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</span>` +
-`<span class="meta" style="display:block">${r.ruleId ? `rule ${esc(r.ruleId)} · ` : ""}${TIER(r.matchedTier)} · sim ${r.similarity.toFixed(2)}</span>` +
+`<span class="meta" style="display:block">${r.ruleId ? `<span data-key="${esc(r.ruleId)}" title="rule id: ${esc(r.ruleId)}">rule ${esc(ruleLabel(r.ruleId))}</span> · ` : ""}${TIER(r.matchedTier)} · sim ${r.similarity.toFixed(2)}</span>` +
 (r.routedTo ? `<span class="meta" style="display:block">→ ${esc(r.routedTo)}</span>` : "") +
 (d ? `<span class="dchip ${esc(d.decision)}">${DEC[d.decision]}</span>` : "") + `</button>`;
 }
@@ -446,7 +459,7 @@ return `<button type="button" class="card ${r.classification}" data-clause="${es
 function renderSource() {
 $("source").innerHTML = state.contract.clauses.map((c, i) => {
 const row = board.rows[i];
-const v = row ? `<span class="pill ${row.classification}" style="margin-left:8px">${HL[row.classification]}</span>` : "";
+const v = row ? verdictPill(row.classification) : "";
 return `<div class="src" id="src-${esc(c.id)}" data-clause="${esc(c.id)}"><span class="srcid">${esc(c.id)}${c.heading ? " · " + esc(c.heading) : ""}${v}</span><p class="srctext">${esc(textOf(c))}</p></div>`;
 }).join("");
 }
@@ -474,9 +487,9 @@ let drawer = document.querySelector("aside.drawer");
 if (!drawer) { drawer = document.createElement("aside"); drawer.className = "drawer"; drawer.setAttribute("role", "dialog"); drawer.setAttribute("aria-modal", "true"); drawer.setAttribute("aria-labelledby", "dwTitle"); document.body.appendChild(drawer); }
 drawer.innerHTML =
 `<button class="act ghost small x" id="dwClose" aria-label="Close detail drawer">✕ Close</button>` +
-`<span class="pill ${r.classification}">${HL[r.classification]}</span>` +
+verdictPill(r.classification) +
 `<h3 id="dwTitle"><code>${esc(r.clauseId)}</code> ${esc(r.heading ?? "")}</h3>` +
-`<div class="kv"><b>Rule</b> ${esc(r.ruleId ?? "— (no rule assigned)")} · ${TIER(r.matchedTier)} · similarity ${r.similarity.toFixed(2)}<br>` +
+`<div class="kv"><b>Rule</b> <span data-key="${esc(r.ruleId ?? "")}" title="rule id: ${esc(r.ruleId ?? "")}">${esc(ruleLabel(r.ruleId))}</span> · ${TIER(r.matchedTier)} · similarity ${r.similarity.toFixed(2)}<br>` +
 `<b>Routed to</b> ${esc(r.routedTo ?? "nobody (compliant)")}${r.matchedLabel ? `<br><b>Matched</b> ${esc(r.matchedLabel)}` : ""}</div>` +
 `<p style="font-size:13.5px;line-height:1.6">${esc(r.reason)}.</p>` +
 `<blockquote id="dwQuote">${esc(quote.replace(/\n/g, " "))}</blockquote>` +
@@ -583,6 +596,7 @@ store.remove("state"); store.remove("log"); location.reload();
 });
 
 /* ---------- boot ---------- */
+$("legend").textContent = LEGEND_TEXT;
 fillInputs();
 syncModes();
 runBoard(true);

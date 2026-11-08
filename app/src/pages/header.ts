@@ -1,4 +1,5 @@
 import { el } from "../router.js";
+import { GITHUB } from "../data/catalog.js";
 
 /** Shared page header for demo pages. */
 export function demoHeader(opts: {
@@ -9,7 +10,11 @@ export function demoHeader(opts: {
   repoName: string;
 }): HTMLElement {
   return el(`<div class="page">
-    <a class="backlink" href="#/">← All artifacts</a>
+    <nav class="demo-nav" aria-label="Artifact">
+      <a class="backlink" href="#/">← Catalog</a>
+      <span class="demo-nav-current" aria-current="page">Demo</span>
+      <a class="backlink" href="${GITHUB}/tree/main/open-artifacts/${opts.repoName}/" rel="noopener" target="_blank">Repo ↗</a>
+    </nav>
     <h1>${opts.title}</h1>
     <p class="lede">${opts.lede}</p>
     <div class="meta-grid">

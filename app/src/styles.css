@@ -554,6 +554,10 @@ pre {
   margin-top: 0.6rem;
 }
 
+.empty-state button + button {
+  margin-left: 0.6rem;
+}
+
 /* ---------- External catalog rows ---------- */
 
 .ext-list {
@@ -622,6 +626,28 @@ pre {
 .backlink {
   display: inline-block;
   margin-bottom: 0.5rem;
+}
+
+/* 3-item artifact nav row: ← Catalog · Demo (current) · Repo ↗ */
+.demo-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1.4rem;
+  align-items: baseline;
+}
+
+.demo-nav .backlink {
+  margin-bottom: 0;
+}
+
+.demo-nav-current {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.05rem;
 }
 
 .meta-grid {

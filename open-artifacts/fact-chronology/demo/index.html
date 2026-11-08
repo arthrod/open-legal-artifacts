@@ -35,6 +35,10 @@
   .sig { margin-left: 6px; }
   .tag { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 0 5px; margin-left: 6px; white-space: nowrap; }
   .tag.warn { border-color: var(--accent); color: var(--text); background: rgba(234,209,130,.25); }
+  .tag.v-verified { border-color: var(--ok); color: var(--ok); }
+  .tag.v-supported { border-color: var(--warn); color: var(--warn); }
+  .tag.v-notfound { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .legend { font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; max-width: 78ch; }
   .conflict, .gapbox, .diffbox { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
   .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
   .computed { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
@@ -70,6 +74,7 @@
   <section>
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
+    <p class="legend" id="legend"></p>
     <div class="row-btns">
       <button id="mdBtn">Export current view (.md)</button>
       <button id="jsonBtn" class="ghost">Export output.json</button>
@@ -119,18 +124,26 @@
 <script type="module">
   import { buildChronology, renderChronology, diffChronology } from "../core/core.js";
   import EXAMPLE, { EXAMPLE_V1 } from "./example.js";
+  import { makeLabelFn, mapToCanonical, TOOL_LABELS, LEGEND_TEXT } from "../core/display-labels.js";
 
   const out = buildChronology(EXAMPLE);
   const s = out.summary;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const SIGN = { high: "🔴", medium: "🟡", low: "⚪" };
+  const L = makeLabelFn(TOOL_LABELS["fact-chronology"]);
+  const quoteTag = (qs) => {
+    const m = mapToCanonical("fact-chronology", qs);
+    const mark = qs === "verified" ? "✓" : qs === "approximate" ? "≈" : "✗";
+    return `<span class="tag ${m.cls}" data-key="${esc(qs)}" title="${esc(L(qs).label)}">quote ${mark} ${m.canonical}</span>`;
+  };
+  document.getElementById("legend").textContent = LEGEND_TEXT;
   let format = "working";
 
   document.getElementById("counts").innerHTML =
     `<div><b>${s.facts}</b><span>facts</span></div>` +
     `<div><b>${s.dated}</b><span>dated entries</span></div>` +
     `<div><b>${s.merged}</b><span>merged dupes</span></div>` +
-    `<div><b>${s.unfoundQuotes}</b><span>unfound quotes</span></div>` +
+    `<div><b>${s.unfoundQuotes}</b><span>not found</span></div>` +
     `<div><b>${s.conflicts}</b><span>conflicts</span></div>` +
     `<div><b>${s.gaps}</b><span>gaps &gt; 90d</span></div>` +
     `<div><b>v${out.version}</b><span>version</span></div>`;
@@ -139,9 +152,9 @@
     const parts = [];
     if (a.priv === "flag") parts.push(`<span class="tag warn">PRIVILEGE FLAG</span>`);
     else if (a.priv === "review") parts.push(`<span class="tag">priv: review</span>`);
-    if (a.quoteStatus === "verified") parts.push(`<span class="tag">quote ✓ verified</span>`);
-    else if (a.quoteStatus === "approximate") parts.push(`<span class="tag warn">quote ≈ approximate</span>`);
-    else if (a.quoteStatus === "unfound") parts.push(`<span class="tag warn">quote ✗ unfound</span>`);
+    if (a.quoteStatus === "verified") parts.push(quoteTag("verified"));
+    else if (a.quoteStatus === "approximate") parts.push(quoteTag("approximate"));
+    else if (a.quoteStatus === "unfound") parts.push(quoteTag("unfound"));
     return parts.join("");
   }
 
@@ -156,14 +169,14 @@
     ).join("");
     const merged = e.mergedFrom.length > 0 ? `<div class="src computed">merged from ${esc(e.mergedFrom.join(", "))} — same event, multiple sources</div>` : "";
     return `<div class="row">` +
-      `<div class="when"><b>${d ? esc(d.raw) : "?"}</b>${d ? `<span class="prec">${d.precision}</span>` : ""}${e.topic ? `<br>${esc(e.topic)}` : ""}</div>` +
+      `<div class="when"><b>${d ? esc(d.raw) : "?"}</b>${d ? `<span class="prec" data-key="${esc(d.precision)}">${esc(L(d.precision).label)}</span>` : ""}${e.topic ? `<br>${esc(e.topic)}` : ""}</div>` +
       `<div class="what">${esc(e.text)}${sig}${tags}${e.dateLabel ? ` <span style="color:var(--text-secondary)">(${esc(e.dateLabel)})</span>` : ""}` +
       (sources || merged ? sources + merged : "") +
       `</div></div>`;
   };
 
   const impeachmentLine = (c) =>
-    `<div class="conflict"><span class="k">${format === "witness" ? "impeachment" : esc(c.kind)}</span><b>${esc(c.topic)}</b> — ${esc(c.detail)}. Facts: <code>${esc(c.factIds.join(" vs "))}</code>. <span class="computed">[computed from: ${esc(c.factIds.join(", "))}]</span></div>`;
+    `<div class="conflict"><span class="k" data-key="${esc(c.kind)}">${format === "witness" ? "impeachment" : esc(L(c.kind).label)}</span><b>${esc(c.topic)}</b> — ${esc(c.detail)}. Facts: <code>${esc(c.factIds.join(" vs "))}</code>. <span class="computed">[computed from: ${esc(c.factIds.join(", "))}]</span></div>`;
 
   function render() {
     const isSof = format === "sof";

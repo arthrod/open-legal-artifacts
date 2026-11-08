@@ -1,0 +1,719 @@
+diff --git a/open-artifacts/venture-term-sheet-benchmark/README.md b/open-artifacts/venture-term-sheet-benchmark/README.md
+index 2668dd8..6ad8f08 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/README.md
++++ b/open-artifacts/venture-term-sheet-benchmark/README.md
+@@ -27,7 +27,7 @@ sourced, editable** market grid:
+ ## Run
+ 
+ ```bash
+-node --test "core/*.test.js"     # 20 tests
++node --test "core/*.test.js"     # 25 tests
+ node examples/run.js             # regenerates output.json + benchmark.md
+ ```
+ 
+diff --git a/open-artifacts/venture-term-sheet-benchmark/core/core.js b/open-artifacts/venture-term-sheet-benchmark/core/core.js
+index da6d5a7..7e58454 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/core/core.js
++++ b/open-artifacts/venture-term-sheet-benchmark/core/core.js
+@@ -174,6 +174,15 @@ function bandLabel(v, e) {
+   return 'above p75';
+ }
+ 
++/** Value with its unit for prose, e.g. `1.5 x` / `0.5` when unitless. */
++function valueLabel(v, e) { return e.unit ? `${v} ${e.unit}` : `${v}`; }
++
++/** Human range label: point ranges collapse to one value — `1 x`, never `1–1 x`. */
++function rangeLabel(e) {
++  const unit = e.unit ? ` ${e.unit}` : '';
++  return e.min === e.max ? `${e.min}${unit}` : `${e.min}–${e.max}${unit}`;
++}
++
+ /**
+  * Compare one term value against one benchmark entry.
+  * Vocabulary (optional, whole-grid + NVCA structural set) enables the typo
+@@ -190,14 +199,16 @@ function bandLabel(v, e) {
+  */
+ export function compareTerm(value, entry, vocabulary = null) {
+   if (entry.kind === 'range') {
++    if (!Number.isFinite(entry.min) || !Number.isFinite(entry.max)) return { verdict: 'unknown_value_type', detail: 'Benchmark range entry has no finite bounds — fix the grid entry; nothing was guessed.' };
++    if (entry.min > entry.max) return { verdict: 'unknown_value_type', detail: `Benchmark range entry is degenerate (min ${entry.min} > max ${entry.max}) — fix the grid entry; nothing was guessed.` };
+     const v = Number(value);
+-    if (!Number.isFinite(v)) return { verdict: 'unknown_value_type', detail: `Value ${JSON.stringify(value)} is not numeric; benchmark is a ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
++    if (typeof value === 'boolean' || !Number.isFinite(v)) return { verdict: 'unknown_value_type', detail: `Value ${JSON.stringify(value)} is ${typeof value === 'boolean' ? 'a boolean' : 'not numeric'}; benchmark is a ${rangeLabel(entry)} range.` };
+     if (v >= entry.min && v <= entry.max) {
+       const band = Number.isFinite(entry.p25) && Number.isFinite(entry.p50) && Number.isFinite(entry.p75)
+         ? ` — ${bandLabel(v, entry)} band (EXAMPLE percentiles — replace with your own dated data)` : '';
+-      return { verdict: 'inside_market', detail: `${v} ${entry.unit ?? ''}within ${entry.min}–${entry.max} ${entry.unit ?? ''}range${band}.` };
++      return { verdict: 'inside_market', detail: `${valueLabel(v, entry)} is within the ${rangeLabel(entry)} range${band}.` };
+     }
+-    const out = { verdict: 'outside_market', detail: `${v} ${entry.unit ?? ''}is ${v > entry.max ? 'above' : 'below'} the ${entry.min}–${entry.max} ${entry.unit ?? ''}range.` };
++    const out = { verdict: 'outside_market', detail: `${valueLabel(v, entry)} is ${v > entry.max ? 'above' : 'below'} the ${rangeLabel(entry)} range.` };
+     if (entry.favor) out.favor = v > entry.max ? entry.favor : invertFavor(entry.favor);
+     return out;
+   }
+@@ -273,7 +284,7 @@ export function benchmarkTermSheet(input, grid = DEFAULT_GRID) {
+       continue;
+     }
+     const { verdict, detail, favor } = compareTerm(value, entry, vocabulary);
+-    const benchmark = entry.kind === 'range' ? `${entry.min}–${entry.max} ${entry.unit ?? ''}`.trim()
++    const benchmark = entry.kind === 'range' ? rangeLabel(entry)
+       : entry.kind === 'flag' ? entry.values.map(String).join(', ') : entry.values.join(', ');
+     const row = { name, value, verdict, detail, benchmark, source: { ...entry.source } };
+     if (verdict === 'outside_market' && favor) row.favor = favor;
+diff --git a/open-artifacts/venture-term-sheet-benchmark/core/core.test.js b/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
+index ebe555b..706d231 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
++++ b/open-artifacts/venture-term-sheet-benchmark/core/core.test.js
+@@ -14,6 +14,36 @@ describe('compareTerm', () => {
+     const e = { kind: 'range', min: 1, max: 2, unit: 'seats', source: { name: 's', asOf: '2026-01' } };
+     assert.equal(compareTerm('two', e).verdict, 'unknown_value_type');
+   });
++  test('range: booleans are never counted as numbers against a range entry', () => {
++    const e = { kind: 'range', min: 1, max: 1, unit: 'x', source: { name: 's', asOf: '2026-01' } };
++    for (const b of [true, false]) {
++      const r = compareTerm(b, e);
++      assert.equal(r.verdict, 'unknown_value_type', String(b));
++      assert.match(r.detail, /boolean/i);
++      assert.doesNotMatch(r.detail, /within|above|below/); // never placed in the range
++    }
++  });
++  test('range detail is a clean human sentence — unit never glued into prose', () => {
++    const e = { kind: 'range', min: 1, max: 2, unit: 'x', source: { name: 's', asOf: '2026-01' } };
++    assert.equal(compareTerm(1.5, e).detail, '1.5 x is within the 1–2 x range.');
++    assert.equal(compareTerm(3, e).detail, '3 x is above the 1–2 x range.');
++    assert.equal(compareTerm(0.5, e).detail, '0.5 x is below the 1–2 x range.');
++    const noUnit = { kind: 'range', min: 0, max: 1, source: { name: 's', asOf: '2026-01' } };
++    assert.equal(compareTerm(0.5, noUnit).detail, '0.5 is within the 0–1 range.');
++    const nn = compareTerm('two', e);
++    assert.equal(nn.verdict, 'unknown_value_type');
++    assert.equal(nn.detail, 'Value "two" is not numeric; benchmark is a 1–2 x range.');
++  });
++  test('range: empty or degenerate bounds are refused, never guessed', () => {
++    const src = { name: 's', asOf: '2026-01' };
++    const inverted = { kind: 'range', min: 2, max: 1, unit: 'x', source: src };
++    const r = compareTerm(1.5, inverted);
++    assert.equal(r.verdict, 'unknown_value_type');
++    assert.match(r.detail, /degenerate|min .*max/i);
++    const boundless = { kind: 'range', unit: 'x', source: src };
++    assert.equal(compareTerm(1.5, boundless).verdict, 'unknown_value_type');
++    assert.match(compareTerm(1.5, boundless).detail, /finite bounds/i);
++  });
+   test('enum: membership decides', () => {
+     const e = { kind: 'enum', values: ['pari_passu'], source: { name: 's', asOf: '2026-01' } };
+     assert.equal(compareTerm('pari_passu', e).verdict, 'inside_market');
+@@ -121,6 +151,20 @@ describe('benchmarkTermSheet', () => {
+     assert.equal(low.terms[0].verdict, 'outside_market');
+     assert.equal(low.terms[0].favor, 'company'); // below the range favors the company
+   });
++  test('boolean value against a range benchmark counts unknown, not off/inside market', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: true } } });
++    assert.equal(r.counts.unknown_value_type, 1);
++    assert.equal(r.counts.inside_market, 0);
++    assert.equal(r.counts.outside_market, 0);
++  });
++  test('point ranges render as a single value, never a degenerate “1–1 x” label', () => {
++    const r = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: 1.5 } } });
++    assert.equal(r.terms[0].benchmark, '1 x');
++    assert.equal(r.terms[0].detail, '1.5 x is above the 1 x range.');
++    const ok = benchmarkTermSheet({ term_sheet: { round: 'series_a', terms: { liquidation_preference_multiple: 1 } } });
++    assert.equal(ok.terms[0].benchmark, '1 x');
++    assert.equal(ok.terms[0].detail, '1 x is within the 1 x range.');
++  });
+   test('boolean term with a flag entry scores a real verdict (founder_vesting_restart)', () => {
+     const r = benchmarkTermSheet({ term_sheet: { round: 'seed', terms: { founder_vesting_restart: true } } });
+     assert.equal(r.counts.outside_market, 1);
+diff --git a/open-artifacts/venture-term-sheet-benchmark/demo/fonts/Manrope-Variable.woff2 b/open-artifacts/venture-term-sheet-benchmark/demo/fonts/Manrope-Variable.woff2
+new file mode 100644
+index 0000000..662b813
+Binary files /dev/null and b/open-artifacts/venture-term-sheet-benchmark/demo/fonts/Manrope-Variable.woff2 differ
+diff --git a/open-artifacts/venture-term-sheet-benchmark/demo/index.html b/open-artifacts/venture-term-sheet-benchmark/demo/index.html
+index b6dc9fa..38fa958 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/demo/index.html
++++ b/open-artifacts/venture-term-sheet-benchmark/demo/index.html
+@@ -3,109 +3,440 @@
+ <head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
++<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23fafaf8'/%3E%3Crect x='1' y='7' width='14' height='2' fill='%23ffd400'/%3E%3C/svg%3E">
+ <title>Term Sheet Benchmark — open artifact</title>
+ <link rel="stylesheet" href="tokens.css">
+ <style>
+   header { padding: 28px var(--pad-x-mobile); }
+   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 0 var(--pad-x-mobile); }
+   h1 { font-family: var(--font-mono); font-size: 20px; letter-spacing: 0.02em; margin-top: 8px; }
+-  .lede { color: var(--text-secondary); max-width: 640px; margin-top: 10px; }
++  .lede { color: var(--text-secondary); max-width: 660px; margin-top: 10px; font-size: 14px; }
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 18px 0; }
+-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px 0 64px; }
+-  main > section { min-width: 0; } /* allow grid items to shrink; tables/exports scroll instead of forcing page width */
+-  @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
+-  textarea { width: 100%; min-height: 440px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
+-  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 0 24px; }
++  .t-eyebrow { font-size: 12px; } /* fleet 12px floor override (tokens ship 11px) */
++  main { display: grid; grid-template-columns: 5fr 7fr; gap: 32px; padding: 32px 0 64px; }
++  main > section { min-width: 0; }
++  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
++  textarea { width: 100%; min-height: 120px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
++  button { font-family: var(--font-mono); font-size: 12.5px; background: var(--text); color: var(--bg); border: none; padding: 9px 14px; cursor: pointer; }
+   button:hover { background: var(--accent); color: var(--text); }
++  button.ghost { background: transparent; color: var(--text); border: var(--hairline); padding: 6px 10px; }
++  button.ghost[aria-pressed="true"], button.ghost[aria-expanded="true"] { background: var(--text); color: var(--bg); }
++  .primary { margin: 16px 0 8px; padding: 11px 20px; }
+   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
++  .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 26px 0 8px; color: var(--text-secondary); }
++  .muted { color: var(--text-secondary); font-size: 13px; }
++  .note { color: var(--text-secondary); font-size: 12px; }
++  /* guided form */
++  .frow { display: grid; grid-template-columns: 170px 1fr; gap: 10px; align-items: center; padding: 6px 0; border-bottom: var(--hairline); }
++  .frow label { font-size: 13.5px; font-weight: 500; }
++  .frow label .slug { display: block; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); font-weight: 400; }
++  select, input[type="text"], input[type="number"] { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: #fff; padding: 7px 8px; width: 100%; }
++  .frow .cap { font-size: 12px; }
++  /* results table */
+   table { border-collapse: collapse; width: 100%; font-size: 13px; }
+   th, td { border: var(--hairline); padding: 7px 9px; text-align: left; vertical-align: top; }
+-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
+-  .v { font-family: var(--font-mono); font-size: 11px; }
+-  .v.outside_market { background: var(--flag-tint); padding: 2px 5px; }
+-  .v.no_benchmark, .v.unknown_value_type { background: var(--border); padding: 2px 5px; }
+-  .src { color: var(--text-secondary); font-size: 11px; }
++  th[scope="col"] { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
+   td a { color: var(--text); text-decoration-color: var(--accent); }
+-  .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 6px; }
+-  .muted { color: var(--text-secondary); font-size: 13px; }
+-  .counts { font-size: 20px; margin: 4px 0; }
++  .chip { font-family: var(--font-mono); font-size: 12px; padding: 2px 7px; white-space: nowrap; }
++  .chip.inside_market { color: var(--ok); border: 1px solid var(--ok); }
++  .chip.outside_market { background: var(--flag-tint); }
++  .chip.unknown_value_type, .chip.no_benchmark { color: var(--text-secondary); border: var(--hairline); }
++  .chip.ex { background: transparent; color: var(--warn); border: 1px dashed var(--warn); }
++  .chip.ex::after { content: " · example"; color: var(--text-secondary); }
++  .fav { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--warn); margin-top: 3px; }
++  .detail { color: var(--text-secondary); font-size: 12px; margin-top: 4px; max-width: 340px; }
++  .src { color: var(--text-secondary); font-size: 12px; }
++  /* distribution bar */
++  .dist { margin-top: 5px; max-width: 220px; }
++  .track { position: relative; height: 10px; border: var(--hairline); background: #fff; }
++  .band { position: absolute; top: 2px; bottom: 2px; background: var(--hover); }
++  .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
++  .mark { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--text); }
++  .mark.hi::after, .mark.lo::after { content: "▸"; position: absolute; top: -13px; font-size: 12px; }
++  .mark.lo::after { content: "◂"; left: -8px; }
++  .mark.hi::after { right: -8px; }
++  .axis { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .exband { font-family: var(--font-mono); font-size: 12px; color: var(--warn); }
++  /* filters */
++  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
++  .chips button { background: transparent; color: var(--text); border: var(--hairline); padding: 4px 9px; }
++  .chips button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
++  .counts { font-size: 19px; margin: 4px 0; }
++  .rowbtns { display: flex; gap: 4px; }
++  .rowbtns button { padding: 3px 7px; font-size: 12px; }
++  /* sign-off */
++  .signoff { list-style: none; }
++  .signoff li { padding: 5px 0; border-bottom: var(--hairline); font-size: 13.5px; }
++  .signoff .auto { font-size: 13px; }
++  .oktxt { color: var(--ok); } .warntxt { color: var(--warn); }
++  .stamp { font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; border: 1px solid var(--ok); color: var(--ok); }
++  .stamp.no { border: var(--hairline); color: var(--text-secondary); }
++  /* grid panel */
++  .gentry { border: var(--hairline); padding: 10px 12px; margin: 8px 0; }
++  .gentry.hl { outline: 3px solid var(--accent); }
++  .ghead { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
++  .ghead b { font-size: 13.5px; }
++  .ovr { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: var(--hairline); display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; align-items: end; }
++  .ovr label { display: block; font-size: 12px; color: var(--text-secondary); }
++  .ovr input { margin-top: 2px; }
++  .warnbox { color: var(--bad); font-size: 12px; font-family: var(--font-mono); margin-top: 6px; }
++  /* audit */
++  .audit { max-height: 220px; overflow-y: auto; border: var(--hairline); padding: 8px 12px; }
++  .audit div { font-size: 12.5px; padding: 3px 0; border-bottom: var(--hairline); }
++  .audit .t { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .audit .k { font-family: var(--font-mono); font-size: 12px; }
++  .exports { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
++  .exports button { padding: 7px 12px; }
++  details summary { font-family: var(--font-mono); font-size: 12.5px; cursor: pointer; margin: 12px 0 8px; color: var(--text-secondary); }
+ </style>
+ </head>
+ <body>
+ <header><div class="wrap">
+-  <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
+-  <h1>venture-term-sheet-benchmark</h1>
++  <span class="t-eyebrow">Open legal artifacts · venture-term-sheet-benchmark</span>
++  <h1>Term sheet benchmark</h1>
+   <div class="rule"></div>
+-  <p class="lede">Terms × a dated, sourced, editable market grid. Structural enums cite the NVCA model docs; numeric ranges are labeled example defaults you replace. Nothing guessed.</p>
++  <p class="lede">Terms × a dated, sourced, editable market grid. Structural enums cite the NVCA model docs; numeric ranges are labeled example defaults you replace with your own dated data. Deterministic and LLM-free: same input + same grid → same verdicts every run — verify with “Run twice” below.</p>
++  <p class="note" id="persistnote"></p>
+ </div></header>
+ 
+ <div class="wrap"><main>
+   <section>
+-    <div class="sec">Term sheet JSON (editable)</div>
+-    <textarea id="input" spellcheck="false"></textarea>
+-    <button id="run">Benchmark terms →</button>
+-    <div id="err" class="err"></div>
++    <div class="sec">1 · Deal</div>
++    <div class="frow"><label for="f-company">Company</label><input type="text" id="f-company"></div>
++    <div class="frow"><label for="f-round">Round</label><select id="f-round"></select></div>
++    <div class="frow"><label for="f-vintage">Vintage</label><input type="number" id="f-vintage" min="1990" max="2100"></div>
++
++    <div class="sec">2 · Terms — pick term by term</div>
++    <div id="terms"></div>
++
++    <div class="sec">3 · Or paste the term sheet</div>
++    <label class="note" for="paste">Paste term-sheet text (PDF text, email, memo) — deterministic keyword capture fills the form; you verify every value.</label>
++    <textarea id="paste" style="min-height:100px;margin-top:6px" placeholder="e.g. “1.5x non-participating liquidation preference; broad-based weighted average anti-dilution; two investor board seats…”"></textarea>
++    <div class="rowbtns" style="margin:8px 0">
++      <button id="capture">Capture into form →</button>
++    </div>
++    <div id="capnote" class="note" aria-live="polite"></div>
++
++    <details><summary>Advanced JSON</summary>
++      <label class="note" for="json">Raw term-sheet JSON (what the core consumes)</label>
++      <textarea id="json" spellcheck="false" style="min-height:180px"></textarea>
++      <div class="rowbtns" style="margin:8px 0"><button id="loadjson" class="ghost">Load JSON into form</button></div>
++      <div id="jerr" class="err" aria-live="polite"></div>
++    </details>
++
++    <button id="run" class="primary">Benchmark terms →</button>
++    <div id="err" class="err" aria-live="polite"></div>
++  </section>
++
++  <section>
++    <div id="out" aria-live="polite"></div>
++    <div class="sec">Sign-off checklist</div>
++    <div id="signoff"></div>
++    <div class="sec">Market grid — sources, bands &amp; per-entry overrides</div>
++    <div id="gridpanel"></div>
++    <div class="sec">Audit log — append-only, survives reload</div>
++    <div id="auditpanel"></div>
+   </section>
+-  <section id="out" aria-live="polite"></section>
+ </main></div>
+ 
+ <script type="module">
+-import { benchmarkTermSheet, exportCsv, exportMd, TERM_CATALOG } from '../core/core.js';
+-
+-const SAMPLE = {
+-  term_sheet: {
+-    company: "Quillform Analytics, Inc. (fictional)",
+-    round: "series_a", vintage: 2026,
+-    lead_investor: "Fathom Ridge Capital (fictional)",
+-    terms: {
+-      liquidation_preference_multiple: 1.5,
+-      participation: "participating",
+-      anti_dilution: "full_ratchet",
+-      seniority: "senior_to_all_prior",
+-      investor_board_seats: 2,
+-      dividends: "cumulative",
+-      redemption: "investor_demand_after_5y",
+-      pro_rata_rights: "granted_major_investors",
+-      pay_to_play: "none",
+-      founder_vesting_restart: true
+-    }
+-  }
+-};
++import { benchmarkTermSheet, exportCsv, exportMd, withGrid, DEFAULT_GRID, TERM_CATALOG } from '../core/core.js';
+ 
++/* ---- vendored from open-artifacts/_shared/persist.js (browser half: createStorage) ---- */
++function memoryBackend(name){const map=new Map();return{backendName:name,get(k){const v=map.get(k);return v===undefined?null:v.value},set(k,v){map.set(k,{kind:'value',value:JSON.parse(JSON.stringify(v??null))})},remove(k){map.delete(k)},append(k,entry){if(!map.has(k)||map.get(k).kind!=='log')map.set(k,{kind:'log',items:[]});map.get(k).items.push(JSON.parse(JSON.stringify(entry??null)))},entries(k){const v=map.get(k);return v&&v.kind==='log'?v.items.slice():[]},exportJsonl(k){return this.entries(k).map(e=>JSON.stringify(e)).join('\n')+(this.entries(k).length?'\n':'')}}}
++function probeLocalStorage(){try{const ls=globalThis.localStorage;if(!ls)return null;ls.setItem('__p__','1');const ok=ls.getItem('__p__')==='1';ls.removeItem('__p__');return ok?ls:null}catch{return null}}
++function localBackend(ns){const ls=probeLocalStorage();if(!ls)return memoryBackend('memory-fallback');const key=k=>ns+':'+k;const read=k=>{try{const r=ls.getItem(key(k));return r==null?null:r}catch{return null}};let degraded=false;const mem=memoryBackend('memory');return{backendName:'local',get(k){if(degraded)return mem.get(k);const raw=read(k);if(raw==null)return null;try{return JSON.parse(raw)}catch{return null}},set(k,v){if(degraded)return mem.set(k,v);try{ls.setItem(key(k),JSON.stringify(v??null))}catch{degraded=true;mem.set(k,v)}},remove(k){if(degraded)return mem.remove(k);try{ls.removeItem(key(k))}catch{degraded=true}},append(k,entry){this.set(k,this.entries(k).concat([entry]))},entries(k){const v=this.get(k);return Array.isArray(v)?v:[]},exportJsonl(k){const es=this.entries(k);return es.map(e=>JSON.stringify(e)).join('\n')+(es.length?'\n':'')}}}
++function createStorage(ns){return probeLocalStorage()?localBackend(ns):memoryBackend('memory')}
++
++/* ---- vendored from open-artifacts/_shared/docio.js (writer half: writeDocx/writeXlsx, deterministic STORE zip) ---- */
++const XMLDECL='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
++const RELS_NS='http://schemas.openxmlformats.org/package/2006/relationships';
++const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c}return t})();
++function crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=CRC_TABLE[(c^u8[i])&0xFF]^(c>>>8);return(c^0xFFFFFFFF)>>>0}
++function encodeXml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
++function buildZip(files){const enc=new TextEncoder();const parts=[],cd=[];let offset=0;for(const[name,content]of files){const data=typeof content==='string'?enc.encode(content):content;const nb=enc.encode(name),crc=crc32(data),lho=offset;const lh=new Uint8Array(30),v=new DataView(lh.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(12,0x21,true);v.setUint32(14,crc,true);v.setUint32(18,data.length,true);v.setUint32(22,data.length,true);v.setUint16(26,nb.length,true);parts.push(lh,nb,data);offset+=30+nb.length+data.length;const c=new Uint8Array(46),u=new DataView(c.buffer);u.setUint32(0,0x02014b50,true);u.setUint16(4,20,true);u.setUint16(6,20,true);u.setUint16(14,0x21,true);u.setUint32(16,crc,true);u.setUint32(20,data.length,true);u.setUint32(24,data.length,true);u.setUint16(28,nb.length,true);u.setUint32(42,lho,true);cd.push(c,nb)}const cdSize=cd.reduce((n,p)=>n+p.length,0);const eocd=new Uint8Array(22),e=new DataView(eocd.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cdSize,true);e.setUint32(16,offset,true);const all=parts.concat(cd,[eocd]);const out=new Uint8Array(offset+cdSize+22);let o=0;for(const p of all){out.set(p,o);o+=p.length}return out}
++function writeDocx(paragraphs){const body=(paragraphs??[]).map(p=>{const text=typeof p==='string'?p:p&&p.text!=null?String(p.text):'';return'<w:p><w:r><w:t xml:space="preserve">'+encodeXml(text)+'</w:t></w:r></w:p>'}).join('');const doc=XMLDECL+'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'+body+'<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>';return new Blob([buildZip([['[Content_Types].xml',XMLDECL+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],['_rels/.rels',XMLDECL+'<Relationships xmlns="'+RELS_NS+'"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],['word/document.xml',doc]])])}
++function writeXlsx(rows,opts){const sheetName=(opts&&opts.name)||'Sheet1';const colName=i=>{let s='';for(let n=i+1;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+((n-1)%26))+s;return s};const body=(rows??[]).map((row,ri)=>(row??[]).map((v,ci)=>{const ref=' r="'+colName(ci)+(ri+1)+'"';if(typeof v==='number'&&Number.isFinite(v))return'<c'+ref+'><v>'+v+'</v></c>';return'<c'+ref+' t="inlineStr"><is><t xml:space="preserve">'+encodeXml(v==null?'':String(v))+'</t></is></c>'}).join('')).map((cells,ri)=>'<row r="'+(ri+1)+'">'+cells+'</row>').join('');const SS='http://schemas.openxmlformats.org/spreadsheetml/2006/main',REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';return new Blob([buildZip([['[Content_Types].xml',XMLDECL+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],['_rels/.rels',XMLDECL+'<Relationships xmlns="'+RELS_NS+'"><Relationship Id="rId1" Type="'+REL+'/officeDocument" Target="xl/workbook.xml"/></Relationships>'],['xl/workbook.xml',XMLDECL+'<workbook xmlns="'+SS+'" xmlns:r="'+REL+'"><sheets><sheet name="'+encodeXml(sheetName)+'" sheetId="1" r:id="rId1"/></sheets></workbook>'],['xl/_rels/workbook.xml.rels',XMLDECL+'<Relationships xmlns="'+RELS_NS+'"><Relationship Id="rId1" Type="'+REL+'/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],['xl/worksheets/sheet1.xml',XMLDECL+'<worksheet xmlns="'+SS+'"><sheetData>'+body+'</sheetData></worksheet>']])])}
++
++/* ---- shell ---- */
++const STORE = createStorage('vtsb');
+ const $ = (id) => document.getElementById(id);
+-$('input').value = JSON.stringify(SAMPLE, null, 2);
+-function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+-
+-function render(r) {
+-  let h = `<div class="sec">${esc(r.company || 'Term sheet')} · ${esc(r.round)}${r.vintage ? ' ' + r.vintage : ''} · grid as of ${esc(r.gridAsOf)}</div>
+-    <p class="counts">${r.counts.inside_market} inside · ${r.counts.outside_market} outside · ${r.counts.no_benchmark} no benchmark</p>`;
+-  for (const w of r.warnings) h += `<p class="muted">⚠ ${esc(w)}</p>`;
+-  h += `<table><tr><th>Term</th><th>Value</th><th>Verdict</th><th>Benchmark</th><th>Source</th></tr>`;
+-  for (const t of r.terms) {
++const esc = (s) => { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; };
++const TERMS = ['liquidation_preference_multiple','participation','anti_dilution','seniority','investor_board_seats','dividends','redemption','pro_rata_rights','pay_to_play','founder_vesting_restart'];
++const HTERM = { liquidation_preference_multiple:'Liquidation preference', participation:'Participation', anti_dilution:'Anti-dilution', seniority:'Seniority', investor_board_seats:'Investor board seats', dividends:'Dividends', redemption:'Redemption', pro_rata_rights:'Pro-rata rights', pay_to_play:'Pay-to-play', founder_vesting_restart:'Founder vesting restart' };
++const OPTS = { participation:['non_participating','participating'], anti_dilution:['broad_based_weighted_average','narrow_weighted_average','full_ratchet','none'], seniority:['pari_passu','senior_to_this_series_only','senior_to_all_prior'], dividends:['none','non_cumulative','cumulative'], redemption:['none','investor_demand_after_5y'], pro_rata_rights:['granted_major_investors','granted_all'], pay_to_play:['none','present'] };
++const VLAB = { inside_market:'In market', outside_market:'Off market', unknown_value_type:'Unknown value', no_benchmark:'No benchmark' };
++function hval(v){ if (typeof v === 'boolean') return v ? 'yes' : 'no'; const M = { non_participating:'Non-participating', broad_based_weighted_average:'Broad-based weighted average', narrow_weighted_average:'Narrow weighted average', full_ratchet:'Full ratchet', pari_passu:'Pari passu', senior_to_this_series_only:'Senior to this series only', senior_to_all_prior:'Senior to all prior', non_cumulative:'Non-cumulative', cumulative:'Cumulative', investor_demand_after_5y:'Investor demand after 5y', granted_major_investors:'Major investors', granted_all:'All investors', present:'Present', none:'None' }; return M[v] ?? String(v).replace(/_/g,' '); }
++const ROUNDS = Object.keys(DEFAULT_GRID.rounds);
++const isExample = (t) => t.source && /EXAMPLE/.test(t.source.name);
++
++let S = {
++  company: 'Quillform Analytics, Inc. (fictional)', round: 'series_a', vintage: 2026,
++  terms: { liquidation_preference_multiple: 1.5, participation: 'participating', anti_dilution: 'full_ratchet', seniority: 'senior_to_all_prior', investor_board_seats: 2, dividends: 'cumulative', redemption: 'investor_demand_after_5y', pro_rata_rights: 'granted_major_investors', pay_to_play: 'none', founder_vesting_restart: true },
++  overrides: {}, decisions: {}, signoff: { example: false, sources: false, counsel: false }, filter: 'all', stamped: false,
++};
++(function restore(){ const sv = STORE.get('state'); if (sv && typeof sv === 'object' && sv.terms && typeof sv.terms === 'object') { S = { ...S, ...sv }; } })();
++let AUDIT = STORE.entries('audit');
++function auditAdd(kind, msg){ const e = { t: new Date().toISOString(), kind, msg }; STORE.append('audit', e); AUDIT.push(e); renderAudit(); }
++function save(){ STORE.set('state', S); }
++
++function grid(){ const r = Object.keys(S.overrides); return r.length ? withGrid({ rounds: S.overrides }) : DEFAULT_GRID; }
++function input(){ return { term_sheet: { company: S.company, round: S.round, vintage: S.vintage || null, terms: S.terms } }; }
++function run(){ return benchmarkTermSheet(input(), grid()); }
++let R = run();
++
++/* ---- guided form ---- */
++function termOptions(slug){
++  const e = grid().rounds[S.round]?.[slug];
++  const set = new Set([...(OPTS[slug] ?? []), ...(e && e.kind === 'enum' ? e.values : [])]);
++  if (S.terms[slug] != null && typeof S.terms[slug] === 'string') set.add(S.terms[slug]);
++  return [...set];
++}
++function renderForm(){
++  $('f-company').value = S.company; $('f-vintage').value = S.vintage;
++  const rs = $('f-round'); rs.innerHTML = ROUNDS.map(r => `<option${r === S.round ? ' selected' : ''}>${esc(r)}</option>`).join('');
++  let h = '';
++  for (const slug of TERMS) {
++    const e = grid().rounds[S.round]?.[slug];
++    const id = 't-' + slug, v = S.terms[slug];
++    let ctl;
++    if (e && e.kind === 'range') ctl = `<input type="number" id="${id}" step="${slug === 'investor_board_seats' ? 1 : 0.5}" value="${v ?? ''}" aria-describedby="c-${id}">`;
++    else if (e && e.kind === 'flag') ctl = `<select id="${id}"><option value="yes"${v === true ? ' selected' : ''}>Yes</option><option value="no"${v !== true ? ' selected' : ''}>No</option></select>`;
++    else ctl = `<select id="${id}">${termOptions(slug).map(o => `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(hval(o))}</option>`).join('')}</select>`;
++    h += `<div class="frow"><label for="${id}">${esc(HTERM[slug])}<span class="slug">${esc(slug)}</span></label><div>${ctl}<div class="cap note" id="c-${id}">${e && e.kind === 'enum' ? `standard: ${e.values.map(hval).join(', ')}` : e && e.kind === 'range' ? `market range: ${e.min}${e.min === e.max ? '' : '–' + e.max}${e.unit ? ' ' + e.unit : ''} ${e.p25 != null ? '· example bands p25 ' + e.p25 + ' / p50 ' + e.p50 + ' / p75 ' + e.p75 : ''}` : e && e.kind === 'flag' ? `standard: ${e.values[0] ? 'no restart' : 'restart'}` : '—'}</div></div></div>`;
++  }
++  $('terms').innerHTML = h;
++  for (const slug of TERMS) $('t-' + slug).addEventListener('change', (ev) => {
++    const e = grid().rounds[S.round]?.[slug];
++    if (e && e.kind === 'range') S.terms[slug] = ev.target.value === '' ? null : Number(ev.target.value);
++    else if (e && e.kind === 'flag') S.terms[slug] = ev.target.value === 'yes';
++    else S.terms[slug] = ev.target.value;
++    save(); rerender();
++  });
++}
++$('f-company').addEventListener('input', e => { S.company = e.target.value; save(); rerender(); });
++$('f-round').addEventListener('change', e => { S.round = e.target.value; save(); renderForm(); rerender(); });
++$('f-vintage').addEventListener('input', e => { S.vintage = e.target.value ? Number(e.target.value) : null; save(); rerender(); });
++
++/* ---- heuristic paste capture (deterministic; human verifies) ---- */
++$('capture').addEventListener('click', () => {
++  const t = ' ' + $('paste').value.toLowerCase().replace(/[–—−-]/g, ' ').replace(/\s+/g, ' ') + ' ';
++  const got = {}; const set = (k, v) => { if (!(k in got)) got[k] = v; };
++  if (t.includes('non participating')) set('participation', 'non_participating'); else if (t.includes('participating')) set('participation', 'participating');
++  if (t.includes('broad based weighted average')) set('anti_dilution', 'broad_based_weighted_average');
++  else if (t.includes('narrow weighted average')) set('anti_dilution', 'narrow_weighted_average');
++  else if (t.includes('full ratchet')) set('anti_dilution', 'full_ratchet');
++  if (t.includes('pari passu')) set('seniority', 'pari_passu');
++  else if (t.includes('senior to all prior')) set('seniority', 'senior_to_all_prior');
++  if (t.includes('non cumulative')) set('dividends', 'non_cumulative');
++  else if (t.includes('cumulative')) set('dividends', 'cumulative');
++  if (t.includes('pay to play')) set('pay_to_play', 'present');
++  if (/restart\w* vesting|vesting (is )?restart/.test(t)) set('founder_vesting_restart', true);
++  let m; const liq = t.indexOf('liquidation preference');
++  if (liq >= 0 && (m = /(\d+(?:\.\d+)?)\s*x\b/.exec(t.slice(liq, liq + 140)))) set('liquidation_preference_multiple', parseFloat(m[1]));
++  const bd = t.indexOf('board');
++  if (bd >= 0 && (m = /(\d)\s*(?:investor\s*)?(?:board\s*)?seats?/.exec(t.slice(bd, bd + 140)))) set('investor_board_seats', parseInt(m[1], 10));
++  if (t.includes('pro rata') && t.includes('all investors')) set('pro_rata_rights', 'granted_all');
++  else if (t.includes('pro rata')) set('pro_rata_rights', 'granted_major_investors');
++  if (t.includes('redemption')) set('redemption', 'investor_demand_after_5y');
++  const n = Object.keys(got).length;
++  if (!n) { $('capnote').textContent = 'No recognized terms found in the pasted text — nothing changed.'; return; }
++  Object.assign(S.terms, got); save(); renderForm(); rerender();
++  $('capnote').textContent = `Captured ${n} term${n > 1 ? 's' : ''}: ${Object.entries(got).map(([k, v]) => `${HTERM[k]} = ${hval(v)}`).join('; ')}. Heuristic — verify each value above.`;
++  auditAdd('capture', `Heuristic capture from pasted text: ${n} terms.`);
++});
++
++/* ---- advanced JSON ---- */
++let jsonSynced = '';
++function syncJson(){ const s = JSON.stringify(input(), null, 2); if ($('json').value === jsonSynced) $('json').value = s; jsonSynced = s; }
++document.querySelector('details').addEventListener('toggle', (e) => { if (e.target.open) syncJson(); });
++$('loadjson').addEventListener('click', () => {
++  const txt = $('json').value; $('jerr').textContent = '';
++  let v; try { v = JSON.parse(txt); } catch (e) {
++    const m = /position (\d+)/.exec(String(e.message));
++    $('jerr').textContent = m ? `Line ${txt.slice(0, +m[1]).split('\n').length}: ${e.message}` : String(e.message); return;
++  }
++  const ts = v?.term_sheet;
++  if (!ts || typeof ts.terms !== 'object' || !ts.terms) { $('jerr').textContent = 'JSON must have a term_sheet object with a terms object.'; return; }
++  if (ts.round && !ROUNDS.includes(ts.round)) $('jerr').textContent = `Note: round “${ts.round}” has no grid; core will warn and score nothing.`;
++  S.company = ts.company ?? S.company; S.round = ts.round ?? S.round; S.vintage = ts.vintage ?? S.vintage;
++  S.terms = { ...S.terms, ...ts.terms }; save(); renderForm(); rerender(); syncJson();
++  auditAdd('json', 'Loaded term sheet from advanced JSON.');
++});
++
++/* ---- results, filters, decisions ---- */
++const FILTERS = [['all', 'All'], ['outside_market', 'Off market'], ['inside_market', 'In market'], ['unknown_value_type', 'Unknown'], ['no_benchmark', 'No benchmark'], ['todo', 'Needs decision']];
++function distBar(e, v){
++  if (e.kind !== 'range') return '';
++  const lo = Math.min(e.min, e.max), hi = Math.max(e.min, e.max), span = hi - lo || 1;
++  const pct = (x) => Math.max(0, Math.min(100, (x - lo) / span * 100));
++  let inner = '';
++  if (e.p25 != null && e.p50 != null && e.p75 != null) {
++    inner += `<span class="band" style="left:${pct(e.p25)}%;width:${pct(e.p75) - pct(e.p25)}%"></span>`;
++    for (const p of [e.p25, e.p50, e.p75]) inner += `<span class="tick" style="left:${pct(p)}%"></span>`;
++  }
++  let mark = '', mlbl = '';
++  if (v != null && typeof v !== 'boolean' && Number.isFinite(Number(v))) {
++    const nv = Number(v), off = nv > hi ? ' hi' : nv < lo ? ' lo' : '';
++    inner += `<span class="mark${off}" style="left:${pct(nv)}%"></span>`;
++    mlbl = ` · value ${nv} ${e.unit ?? ''}${off ? (nv > hi ? ' (above range)' : ' (below range)') : ''}`;
++  }
++  const b = e.p25 != null ? ` p25 ${e.p25} · p50 ${e.p50} · p75 ${e.p75}` : '';
++  return `<div class="dist" role="img" aria-label="Market range ${e.min}${e.min === e.max ? '' : '–' + e.max}${e.unit ? ' ' + e.unit : ''}${b}${mlbl}"><div class="track">${inner}</div><div class="axis"><span>${e.min}${e.unit ? ' ' + e.unit : ''}</span>${e.min === e.max ? '<span>point value — renders “1x”, never “1–1 x”</span>' : ''}<span>${e.max}${e.unit ? ' ' + e.unit : ''}</span></div>${e.p25 != null ? '<div class="exband">EXAMPLE bands — replace with dated data</div>' : ''}</div>`;
++}
++function renderResults(){
++  let h = `<div class="sec">${esc(R.company || 'Term sheet')} · ${esc(R.round)}${R.vintage ? ' ' + R.vintage : ''} · grid as of ${esc(R.gridAsOf)}</div>
++    <p class="counts">${R.counts.inside_market} inside · ${R.counts.outside_market} outside · ${R.counts.unknown_value_type} unknown · ${R.counts.no_benchmark} no benchmark</p>`;
++  for (const w of R.warnings) h += `<p class="note">⚠ ${esc(w)}</p>`;
++  const offNoDec = R.terms.filter(t => t.verdict === 'outside_market' && !S.decisions[t.name]).length;
++  const n = { all: R.terms.length, outside_market: 0, inside_market: 0, unknown_value_type: 0, no_benchmark: 0, todo: offNoDec };
++  for (const t of R.terms) n[t.verdict]++;
++  h += `<div class="chips" role="group" aria-label="Filter verdicts">` + FILTERS.map(([k, lab]) => `<button class="fchip" data-f="${k}" aria-pressed="${S.filter === k}">${lab} ${n[k]}</button>`).join('') + `</div>`;
++  h += `<table><tr><th scope="col">Term</th><th scope="col">Value</th><th scope="col">Verdict</th><th scope="col">Market benchmark</th><th scope="col">Your call</th></tr>`;
++  for (const t of R.terms) {
++    if (S.filter !== 'all' && (S.filter === 'todo' ? !(t.verdict === 'outside_market' && !S.decisions[t.name]) : t.verdict !== S.filter)) continue;
+     const cat = TERM_CATALOG[t.name];
+-    const termCell = cat ? `<a href="${cat.url}" target="_blank" rel="noopener" title="${esc(cat.definition)}">${esc(t.name)}</a>` : esc(t.name);
+-    const favor = t.verdict === 'outside_market' && t.favor && t.favor !== 'neutral' ? ` · favors ${esc(t.favor)}` : '';
+-    h += `<tr><td>${termCell}</td><td>${esc(t.value)}</td>
+-    <td><span class="v ${t.verdict}">${esc(t.verdict)}</span><span class="src">${favor}</span></td><td>${esc(t.benchmark)}</td>
+-    <td class="src">${t.source ? `${esc(t.source.name)} (${esc(t.source.asOf)})` : '—'}</td></tr>`;
++    const termCell = cat ? `<a href="${cat.url}" target="_blank" rel="noopener" title="${esc(cat.definition)}">${esc(HTERM[t.name] ?? t.name)}</a>` : esc(HTERM[t.name] ?? t.name);
++    const e = grid().rounds[S.round]?.[t.name];
++    const ex = isExample(t);
++    const d = S.decisions[t.name];
++    h += `<tr><td>${termCell}</td><td>${esc(hval(t.value))}</td>
++      <td><span class="chip ${t.verdict}${ex && t.verdict !== 'inside_market' ? ' ex' : ''}">${esc(VLAB[t.verdict])}</span>${t.favor && t.favor !== 'neutral' ? `<span class="fav">favors ${esc(t.favor)}</span>` : ''}<div class="detail">${esc(t.detail)}</div></td>
++      <td>${esc(t.benchmark)}${e ? distBar(e, t.value) : ''}${t.source ? `<div class="src"><button class="ghost gsrc" data-src="${esc(t.name)}" aria-label="Show ${esc(HTERM[t.name] ?? t.name)} source in the market grid">${esc(t.source.name)} · ${esc(t.source.asOf)}</button></div>` : '<div class="src">—</div>'}</td>
++      <td><div class="rowbtns">${['accept', 'negotiate', 'flag'].map(k => `<button class="ghost dec" data-t="${esc(t.name)}" data-d="${k}" aria-pressed="${d === k}" aria-label="${k} ${esc(HTERM[t.name] ?? t.name)}">${k === 'accept' ? '✓ accept' : k === 'negotiate' ? '⚖ negotiate' : '⚑ flag'}</button>`).join('')}</div></td></tr>`;
+   }
+-  h += `</table><div class="sec">Report export</div><textarea readonly style="min-height:150px">${esc(exportMd(r))}</textarea>`;
+-  h += `<button id="csv">Download CSV</button>`;
++  h += `</table><div class="exports">
++    <button class="ghost" id="x-csv">Download CSV</button><button class="ghost" id="x-md">Download Markdown</button>
++    <button class="ghost" id="x-docx" aria-label="Download board memo as Word document">Download memo (.docx)</button><button class="ghost" id="x-xlsx" aria-label="Download terms as Excel workbook">Download (.xlsx)</button>
++  </div>
++  <p class="note">Deterministic core — no LLM, no clocks, no random: <button class="ghost" id="deter" aria-label="Run the benchmark twice and compare outputs byte for byte">run twice &amp; compare</button> <span id="deterout" aria-live="polite"></span></p>`;
+   $('out').innerHTML = h;
+-  $('csv').addEventListener('click', () => {
+-    const blob = new Blob([exportCsv(r)], { type: 'text/csv' });
+-    const a = document.createElement('a');
+-    a.href = URL.createObjectURL(blob);
+-    a.download = `term-sheet-benchmark-${r.round}.csv`;
+-    a.click();
+-    URL.revokeObjectURL(a.href);
++  for (const b of $('out').querySelectorAll('.fchip')) b.addEventListener('click', () => { S.filter = b.dataset.f; save(); renderResults(); renderSignoff(); });
++  for (const b of $('out').querySelectorAll('.dec')) b.addEventListener('click', () => {
++    const t = b.dataset.t, k = b.dataset.d;
++    if (S.decisions[t] === k) delete S.decisions[t]; else S.decisions[t] = k;
++    save(); auditAdd('decision', `${HTERM[t] ?? t}: ${S.decisions[t] ?? 'cleared'} (value ${hval(R.terms.find(x => x.name === t)?.value)}).`);
++    renderResults(); renderSignoff();
++  });
++  for (const b of $('out').querySelectorAll('.gsrc')) b.addEventListener('click', () => {
++    const el = document.getElementById('g-' + b.dataset.src);
++    if (!el) return;
++    document.getElementById('gridpanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
++    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
++    el.classList.remove('hl'); void el.offsetWidth; el.classList.add('hl');
++  });
++  const fname = ext => `term-sheet-benchmark-${R.round}-${new Date().toISOString().slice(0, 10)}.${ext}`;
++  const dl = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
++  const rows = () => [['Term', 'Value', 'Verdict', 'Favor', 'Benchmark', 'Source', 'As of', 'Decision'], ...R.terms.map(t => [HTERM[t.name] ?? t.name, String(t.value), VLAB[t.verdict], t.favor ?? '', t.benchmark, t.source?.name ?? '', t.source?.asOf ?? '', S.decisions[t.name] ?? ''])];
++  $('x-csv').addEventListener('click', () => { dl(new Blob([exportCsv(R)], { type: 'text/csv' }), fname('csv')); auditAdd('export', `CSV · ${R.terms.length} rows.`); });
++  $('x-md').addEventListener('click', () => { dl(new Blob([exportMd(R)], { type: 'text/markdown' }), fname('md')); auditAdd('export', 'Markdown report.'); });
++  $('x-docx').addEventListener('click', () => {
++    const P = [`Term sheet benchmark — ${R.company || 'term sheet'} (${R.round}${R.vintage ? ', ' + R.vintage : ''})`, `Benchmark grid as of ${R.gridAsOf}. ${R.counts.inside_market} inside market, ${R.counts.outside_market} outside market, ${R.counts.no_benchmark} without benchmark.`, ''];
++    for (const t of R.terms) P.push(`${HTERM[t.name] ?? t.name}: ${t.value} — ${VLAB[t.verdict]}${t.favor && t.favor !== 'neutral' ? ' (favors ' + t.favor + ')' : ''}${isExample(t) ? ' [EXAMPLE verdict — not market data]' : ''} — benchmark ${t.benchmark} — ${t.source ? t.source.name + ' (as of ' + t.source.asOf + ')' : 'no entry'}${S.decisions[t.name] ? ' — your call: ' + S.decisions[t.name] : ''}`);
++    for (const w of R.warnings) P.push('Warning: ' + w);
++    P.push('', R.sourceNote, '', 'Deterministic output of the open venture-term-sheet-benchmark. Not legal advice; verdicts describe distance from an editable grid, not deal quality.');
++    dl(writeDocx(P), fname('docx')); auditAdd('export', 'Word board memo (.docx, deterministic bytes).');
++  });
++  $('x-xlsx').addEventListener('click', () => { dl(writeXlsx(rows(), { name: 'benchmark' }), fname('xlsx')); auditAdd('export', 'XLSX workbook (deterministic bytes).'); });
++  $('deter').addEventListener('click', () => {
++    const a = benchmarkTermSheet(input(), grid()), b = benchmarkTermSheet(input(), grid());
++    $('deterout').textContent = JSON.stringify(a) === JSON.stringify(b) ? '✓ identical output on two consecutive runs (byte-equal JSON).' : '✗ runs differ — please report this.';
+   });
+ }
+-$('run').addEventListener('click', () => {
+-  $('err').textContent = '';
+-  try { render(benchmarkTermSheet(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
+-});
+-render(benchmarkTermSheet(SAMPLE));
++
++/* ---- sign-off ---- */
++const SO = [['example', 'EXAMPLE numeric defaults reviewed — replaced with dated data, or example verdicts accepted as example-only.'], ['sources', 'Grid sources and as-of dates checked against the round in view.'], ['counsel', 'Reviewed with counsel; ready to share with the deal team.']];
++function renderSignoff(){
++  const off = R.terms.filter(t => t.verdict === 'outside_market');
++  const todo = off.filter(t => !S.decisions[t.name]).length;
++  const autoOk = todo === 0 && off.length >= 0;
++  let h = `<ul class="signoff">
++    <li class="auto">${autoOk ? '<span class="oktxt">✓</span>' : '<span class="warntxt">○</span>'} Every off-market term carries an accept / negotiate / flag decision <span class="note">(auto — ${off.length - todo}/${off.length} done)</span></li>`;
++  for (const [k, lab] of SO) h += `<li><label><input type="checkbox" data-so="${k}"${S.signoff[k] ? ' checked' : ''}> ${esc(lab)}</label></li>`;
++  const done = autoOk && SO.every(([k]) => S.signoff[k]);
++  if (done && !S.stamped) { S.stamped = true; save(); auditAdd('signoff', 'Checklist complete — signed off.'); }
++  if (!done && S.stamped) { S.stamped = false; save(); }
++  h += `</ul><p style="margin-top:8px"><span class="stamp${done ? '' : ' no'}">${done ? 'Signed off ✓ — logged in the audit trail' : 'Not signed off'}</span></p>`;
++  $('signoff').innerHTML = h;
++  for (const c of $('signoff').querySelectorAll('input[type="checkbox"]')) c.addEventListener('change', () => {
++    S.signoff[c.dataset.so] = c.checked; save(); auditAdd('signoff', `${c.dataset.so}: ${c.checked ? 'checked' : 'unchecked'}.`); renderSignoff();
++  });
++}
++
++/* ---- grid panel: sources visible + per-entry withGrid overrides ---- */
++function rangeText(e){ const u = e.unit ? ' ' + e.unit : ''; return e.min === e.max ? `${e.min}${u}` : `${e.min}–${e.max}${u}`; }
++function renderGrid(){
++  const g = grid(); const entries = g.rounds[S.round] ?? {};
++  let h = `<p class="note">Grid as of <b>${esc(g.asOf)}</b> — ${esc(g.sourceNote)} Overriding an entry rebuilds the grid per-entry via the core's <code>withGrid()</code> merge.</p>`;
++  const ovrCount = Object.values(S.overrides).reduce((n, r) => n + Object.keys(r).length, 0);
++  if (ovrCount) h += `<button class="ghost" id="ovclear" style="margin:6px 0">Clear ${ovrCount} override${ovrCount > 1 ? 's' : ''}</button>`;
++  for (const slug of Object.keys(entries)) {
++    const e = entries[slug]; const ov = S.overrides[S.round]?.[slug];
++    const bands = e.kind === 'range' && e.p25 != null ? distBar(e, null) : '';
++    const src = `<div class="src" style="margin-top:4px">Source: ${esc(e.source.name)} · as of ${esc(e.source.asOf)}${e.favor ? ` · off-market drift favors ${esc(e.favor)}` : ''}</div>`;
++    let ovrHtml = '';
++    if (ov) ovrHtml = `<div class="warnbox" style="color:var(--warn)">overridden by you — “${esc(ov.source.name)}” (${esc(ov.source.asOf)})</div>`;
++    if (ovOpen === slug) {
++      const degen = e.kind === 'range' && e.min > e.max;
++      if (e.kind === 'range') {
++        ovrHtml = `<div class="ovr">
++          <div><label for="ov-min">min</label><input type="number" id="ov-min" step="0.5" value="${e.min}"></div>
++          <div><label for="ov-max">max</label><input type="number" id="ov-max" step="0.5" value="${e.max}"></div>
++          <div><label for="ov-unit">unit</label><input type="text" id="ov-unit" value="${esc(e.unit ?? '')}"></div>
++          <div><label for="ov-name">source name</label><input type="text" id="ov-name" value="${esc(/EXAMPLE/.test(e.source.name) ? '' : e.source.name)}" placeholder="your dated source"></div>
++          <div><label for="ov-asof">as of</label><input type="text" id="ov-asof" value="${esc(e.source.asOf)}" placeholder="YYYY-MM"></div>
++          <div><button id="ov-apply">Apply override</button></div></div>
++          ${degen ? '<div class="warnbox">min &gt; max — degenerate range. The core refuses to score it (guard: “fix the grid entry; nothing was guessed”) — apply to see the guard in the table.</div>' : ''}`;
++      } else if (e.kind === 'enum') {
++        ovrHtml = `<div class="ovr"><div style="grid-column:1/-1"><label for="ov-vals">standard set (comma-separated slugs)</label><input type="text" id="ov-vals" value="${esc(e.values.join(', ')).replace(/"/g, '&quot;')}"></div>
++          <div><label for="ov-name">source name</label><input type="text" id="ov-name" value="${esc(/EXAMPLE/.test(e.source.name) ? '' : e.source.name)}"></div>
++          <div><label for="ov-asof">as of</label><input type="text" id="ov-asof" value="${esc(e.source.asOf)}"></div>
++          <div><button id="ov-apply">Apply override</button></div></div>`;
++      }
++    }
++    h += `<div class="gentry" id="g-${esc(slug)}" tabindex="-1"><div class="ghead"><b>${esc(HTERM[slug] ?? slug)}</b><span><code class="note">${esc(slug)}</code> · ${e.kind} · standard: <b>${esc(e.kind === 'range' ? rangeText(e) : e.kind === 'flag' ? (e.values[0] ? 'no restart' : 'restart') : e.values.map(hval).join(', '))}</b>${e.favor ? ` <span class="fav">favors ${esc(e.favor)}</span>` : ''}</span></div>${bands}${src}${ovrHtml}
++      <div class="rowbtns" style="margin-top:8px"><button class="ghost ovbtn" data-ov="${esc(slug)}" aria-expanded="${ovOpen === slug}">${ovOpen === slug ? 'Close editor' : ov ? 'Edit override' : 'Override entry'}</button>${ov ? `<button class="ghost ovrst" data-rst="${esc(slug)}" aria-label="Reset ${esc(HTERM[slug] ?? slug)} to shipped grid entry">Reset to shipped</button>` : ''}</div></div>`;
++  }
++  $('gridpanel').innerHTML = h;
++  const oc = $('ovclear'); if (oc) oc.addEventListener('click', () => { S.overrides = {}; save(); auditAdd('grid', 'All overrides cleared.'); renderForm(); rerender(); });
++  for (const b of $('gridpanel').querySelectorAll('.ovbtn')) b.addEventListener('click', () => { ovOpen = ovOpen === b.dataset.ov ? null : b.dataset.ov; renderGrid(); });
++  for (const b of $('gridpanel').querySelectorAll('.ovrst')) b.addEventListener('click', () => {
++    delete S.overrides[S.round][b.dataset.rst]; if (!Object.keys(S.overrides[S.round]).length) delete S.overrides[S.round];
++    save(); auditAdd('grid', `${b.dataset.rst}: override reset to shipped entry.`); renderForm(); rerender();
++  });
++  const ap = $('ov-apply'); if (ap) ap.addEventListener('click', () => {
++    const slug = ovOpen; const base = DEFAULT_GRID.rounds[S.round][slug];
++    const name = $('ov-name').value.trim() || 'User-provided dated source (replace label with citation)', asOf = $('ov-asof').value.trim() || 'undated';
++    let entry;
++    if (base.kind === 'range') {
++      entry = { kind: 'range', min: Number($('ov-min').value), max: Number($('ov-max').value), unit: $('ov-unit').value.trim() || undefined, source: { name, asOf } };
++      if (base.p25 != null && Number.isFinite(entry.min) && entry.min <= entry.max) { const span = (entry.max - entry.min) / 3; entry.p25 = + (entry.min + span).toFixed(4); entry.p50 = + (entry.min + 2 * span).toFixed(4); entry.p75 = + entry.max; }
++    } else { entry = { kind: 'enum', values: $('ov-vals').value.split(',').map(s => s.trim()).filter(Boolean), source: { name, asOf } }; }
++    if (base.favor) entry.favor = base.favor;
++    if (base.kind === 'range' && (!Number.isFinite(entry.min) || !Number.isFinite(entry.max))) { auditAdd('grid', `${slug}: override rejected — bounds must be numbers.`); return; }
++    if (entry.kind === 'enum' && !entry.values.length) { auditAdd('grid', `${slug}: override rejected — standard set cannot be empty.`); return; }
++    (S.overrides[S.round] ??= {})[slug] = entry;
++    save(); auditAdd('grid', `${slug} overridden: ${entry.kind === 'range' ? rangeText(entry) : entry.values.join(', ')} — “${name}” (${asOf}).`);
++    ovOpen = null; renderForm(); rerender();
++  });
++}
++let ovOpen = null;
++
++/* ---- audit panel ---- */
++function renderAudit(){
++  $('auditpanel').innerHTML = `<p class="note">${AUDIT.length} entries · backend: ${STORE.backendName} · append-only — nothing is edited or deleted.</p>
++  <div class="audit" role="log" aria-label="Audit log entries">${AUDIT.slice(-40).map(e => `<div><span class="t">${esc(e.t)}</span> <span class="k">[${esc(e.kind)}]</span> ${esc(e.msg)}</div>`).join('') || '<div class="note">empty</div>'}</div>
++  <button class="ghost" id="x-audit" style="margin-top:8px">Export audit log (JSONL)</button>`;
++  $('x-audit').addEventListener('click', () => { dl2(STORE.exportJsonl('audit'), `tsb-audit-${new Date().toISOString().slice(0, 10)}.jsonl`); auditAdd('export', 'Audit log JSONL.'); });
++}
++function dl2(txt, name){ const b = new Blob([txt], { type: 'application/jsonl' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); URL.revokeObjectURL(a.href); }
++
++/* ---- run + boot ---- */
++$('run').addEventListener('click', () => { R = run(); renderResults(); renderSignoff(); auditAdd('run', `Benchmark: ${R.counts.inside_market} in / ${R.counts.outside_market} out / ${R.counts.unknown_value_type} unknown / ${R.counts.no_benchmark} none.`); });
++function rerender(){ R = run(); renderResults(); renderSignoff(); renderGrid(); }
++$('persistnote').textContent = `Working state and the audit log persist in this browser (localStorage via vendored _shared/persist.js) and survive reload. Backend: ${STORE.backendName}.`;
++renderForm(); rerender(); renderAudit();
++if (!AUDIT.length) auditAdd('boot', 'Session state restored / initialized.');
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/venture-term-sheet-benchmark/demo/tokens.css b/open-artifacts/venture-term-sheet-benchmark/demo/tokens.css
+index 24ee35d..068cdd1 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/demo/tokens.css
++++ b/open-artifacts/venture-term-sheet-benchmark/demo/tokens.css
+@@ -4,7 +4,14 @@
+    ========================================================================= */
+ 
+ /* ---------- Webfonts ---------- */
+-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
++/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
++@font-face {
++  font-family: "Manrope";
++  src: url("fonts/Manrope-Variable.woff2") format("woff2");
++  font-weight: 400 700;
++  font-style: normal;
++  font-display: swap;
++}
+ 
+ /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+ @font-face {
+@@ -37,7 +44,7 @@
+ 
+   /* ----- Type stacks ----- */
+   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
++  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+ 
+   /* ----- Layout constants ----- */
+   --max-width: 1100px;
+@@ -127,7 +134,7 @@ a {
+ /* Eyebrow — preceded by 24px hairline */
+ .t-eyebrow {
+   font-family: var(--font-mono);
+-  font-size: 11px;
++  font-size: 12px;
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: var(--text-secondary);
+diff --git a/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md b/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
+index 76fd698..055bfcd 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
++++ b/open-artifacts/venture-term-sheet-benchmark/examples/benchmark.md
+@@ -4,7 +4,7 @@ Benchmark grid as of **2026-01**. 3 inside market · 7 outside market · 0 witho
+ 
+ | Term | Value | Verdict | Benchmark | Source |
+ |---|---|---|---|---|
+-| liquidation_preference_multiple | 1.5 | **outside_market** (favors investor) | 1–1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
++| liquidation_preference_multiple | 1.5 | **outside_market** (favors investor) | 1 x | NVCA structure + EXAMPLE numeric default — replace with dated market data (as of 2026-01) |
+ | participation | participating | **outside_market** (favors investor) | non_participating | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+ | anti_dilution | full_ratchet | **outside_market** (favors investor) | broad_based_weighted_average | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+ | seniority | senior_to_all_prior | **outside_market** (favors investor) | pari_passu | NVCA Model Legal Documents (public structural baseline, nvca.org) (as of 2026-01) |
+diff --git a/open-artifacts/venture-term-sheet-benchmark/examples/output.json b/open-artifacts/venture-term-sheet-benchmark/examples/output.json
+index 372a0e8..8bad363 100644
+--- a/open-artifacts/venture-term-sheet-benchmark/examples/output.json
++++ b/open-artifacts/venture-term-sheet-benchmark/examples/output.json
+@@ -9,8 +9,8 @@
+       "name": "liquidation_preference_multiple",
+       "value": 1.5,
+       "verdict": "outside_market",
+-      "detail": "1.5 xis above the 1–1 xrange.",
+-      "benchmark": "1–1 x",
++      "detail": "1.5 x is above the 1 x range.",
++      "benchmark": "1 x",
+       "source": {
+         "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
+         "asOf": "2026-01"
+@@ -57,7 +57,7 @@
+       "name": "investor_board_seats",
+       "value": 2,
+       "verdict": "inside_market",
+-      "detail": "2 seatswithin 1–2 seatsrange — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
++      "detail": "2 seats is within the 1–2 seats range — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
+       "benchmark": "1–2 seats",
+       "source": {
+         "name": "EXAMPLE DEFAULT — not market data; replace with your own dated source",

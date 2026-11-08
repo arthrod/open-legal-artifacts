@@ -27,6 +27,9 @@
   .badge { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; display: inline-block; border: 1.5px solid transparent; }
   .badge.deadline_upcoming { color: var(--warn); border-color: var(--warn); }
   .badge.data_needed { color: var(--warn); border-color: var(--warn); }
+  .badge.v-unverified { color: var(--text-secondary); border: 1px dashed var(--text-secondary); }
+  .badge small { font-size: 10px; letter-spacing: 0; }
+  .rchip { font-family: var(--font-mono); font-size: 11px; border: var(--hairline); background: var(--hover); padding: 1px 5px; white-space: nowrap; }
   .badge.filed_timely { color: var(--ok); border: var(--hairline); }
   .badge.filed_late, .badge.deadline_passed_unfiled { background: var(--text); color: var(--bg); border-color: var(--text); }
   .big { font-family: var(--font-mono); font-size: 20px; margin: 6px 0 2px; }
@@ -64,6 +67,7 @@
 
 <script type="module">
 import { runRadar, toICS } from "../core/core.js";
+import { makeLabelFn, mapToCanonical, humanizeKey, TOOL_LABELS, LEGEND_TEXT } from "../core/display-labels.js";
 
 const EXAMPLE = {
   asOf: "2026-11-07",
@@ -90,6 +94,22 @@ $input.value = JSON.stringify(EXAMPLE, null, 2);
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+// render-time labels (Track B): cores keep emitting ids; only this layer humanizes
+const L = makeLabelFn(TOOL_LABELS["limitations-radar"]);
+const FAM = { PI: "personal injury", CO: "breach of contract (oral)", CW: "breach of contract (written)", F: "fraud", PD: "property damage" };
+const ruleLabel = (id) => {
+  if (id === "MARGIN") return "Filing margin";
+  const m = /^(\w{2})-SOL-([A-Z]{2})$/.exec(id);
+  if (m) return `${m[1]} · ${FAM[m[2]]} · limitations period`;
+  return humanizeKey(id);
+};
+const statusBadge = (c) => {
+  const lbl = L(c.status).label;
+  const m = mapToCanonical("limitations-radar", c.status);
+  if (m) return `<span class="badge ${esc(c.status)} ${m.cls}" data-key="${esc(c.status)}" title="${esc(lbl)}">${m.canonical}<small> ${esc(lbl)}</small></span>`;
+  return `<span class="badge ${esc(c.status)}" data-key="${esc(c.status)}">${esc(lbl)}</span>`;
+};
+
 document.getElementById("run").addEventListener("click", () => {
   $err.textContent = "";
   try {
@@ -98,19 +118,20 @@ document.getElementById("run").addEventListener("click", () => {
     for (const c of r.results) {
       const hardFail = c.status === "filed_late" || c.status === "deadline_passed_unfiled";
       const expired = hardFail; // tint = one-class hard failures only; soft flags keep amber outline badges
-      html += `<div class="claim${expired ? " expired" : ""}"><h3>${esc(c.claimId)} · ${esc(c.claimType ?? "?")} (${esc(c.jurisdiction ?? "?")}) <span class="badge ${esc(c.status)}">${esc(c.status)}</span></h3>`;
+      html += `<div class="claim${expired ? " expired" : ""}"><h3>${esc(c.claimId)} · ${esc(L(c.claimType ?? "?").label)} (${esc(c.jurisdiction ?? "?")}) ${statusBadge(c)}</h3>`;
       if (c.deadline) {
         html += `<div class="big">${esc(c.deadline)}</div>`;
-        html += `<div class="sub">accrual ${esc(c.accrualDate)}${c.tollDays ? ` + ${c.tollDays} tolling days` : ""} · ${c.basis.map((b) => `<code>${esc(b.ruleId)}</code>`).join(" ")}</div>`;
+        html += `<div class="sub">accrual ${esc(c.accrualDate)}${c.tollDays ? ` + ${c.tollDays} tolling days` : ""} · ${c.basis.map((b) => `<span class="rchip" data-key="${esc(b.ruleId)}" title="${esc(b.text)}">${esc(ruleLabel(b.ruleId))}</span>`).join(" ")}</div>`;
         if (c.savedByDays != null) html += `<div class="sub">${c.savedByDays >= 0 ? `Filed ${esc(c.filingDate)} — <strong>saved by ${c.savedByDays} days</strong>` : `Filed ${esc(c.filingDate)} — <strong>past deadline by ${Math.abs(c.savedByDays)} days</strong>`}</div>`;
         else if (c.daysRemainingAsOf != null) html += `<div class="sub">${c.daysRemainingAsOf >= 0 ? `${c.daysRemainingAsOf} days remaining as of ${esc(r.asOf)}` : `expired ${Math.abs(c.daysRemainingAsOf)} days ago`}</div>`;
       }
       for (const f of c.flags) html += `<div class="conflict">Flag: ${esc(f)}</div>`;
-      for (const x of c.conflicts) html += `<div class="conflict">⚠️ <strong>${esc(x.code)}</strong>: ${esc(x.text)}</div>`;
+      for (const x of c.conflicts) html += `<div class="conflict">⚠️ <strong data-key="${esc(x.code)}">${esc(L(x.code).label)}</strong>: ${esc(x.text)}</div>`;
       html += `</div>`;
     }
     html += `<p style="font-size:12px;font-family:var(--font-mono)"><a href="#" id="dl">Download calendar alerts (.ics)</a></p>`;
     html += `<div class="gate">⚠️ ${esc(r.gate.message)}</div>`;
+    html += `<div class="sub" style="margin-top:8px">${esc(LEGEND_TEXT)}</div>`;
     $out.innerHTML = html;
     document.getElementById("dl").addEventListener("click", (ev) => {
       ev.preventDefault();

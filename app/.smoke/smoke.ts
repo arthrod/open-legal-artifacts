@@ -149,5 +149,71 @@ check(
     parseState(new URLSearchParams("area=contracts&q=renewal"), AREA_IDS).q === "renewal",
 );
 
+// search interaction: typing clears the inherited area filter (item 2)
+import { nextStateOnSearch } from "../src/lib/index-filter.ts";
+
+check(
+  "search-state: typing with area active clears area",
+  JSON.stringify(nextStateOnSearch({ area: "deadlines", q: "" }, "tabular")) ===
+    JSON.stringify({ area: null, q: "tabular" }),
+);
+check(
+  "search-state: deleting all text keeps the clicked area filter",
+  JSON.stringify(nextStateOnSearch({ area: "deadlines", q: "tab" }, "   ")) ===
+    JSON.stringify({ area: "deadlines", q: "" }),
+);
+check(
+  "search-state: hash coherence after auto-clear",
+  serializeState(nextStateOnSearch({ area: "deadlines", q: "" }, "tabular")) === "#/?q=tabular",
+);
+check(
+  "search-state: deep-link recovery counts (dogfood scenario)",
+  filterOpen(catalog.open, { area: null, q: "tabular" }).length === 1 &&
+    filterOpen(
+      catalog.open,
+      parseState(new URLSearchParams("area=deadlines&q=tabular"), AREA_IDS),
+    ).length === 0,
+);
+
+// 404 pure helpers (item 1)
+import { attemptedSlug, suggestArtifacts } from "../src/lib/notfound.ts";
+import { notFoundHtml } from "../../vt-val/notfound.ts";
+
+const NAMES = catalog.open.map((a: { name: string }) => a.name);
+check(
+  "404: attemptedSlug extracts typo'd slugs",
+  attemptedSlug("#/a/cite-chek") === "cite-chek" &&
+    attemptedSlug("/open-artifacts/tabular-revie/demo/index.html") === "tabular-revie" &&
+    attemptedSlug("/nope") === "nope" &&
+    attemptedSlug("#/?q=x") === "" &&
+    attemptedSlug("/a/a%20b") === "ab",
+);
+check(
+  "404: suggestArtifacts ranks the near-miss first; empty slug → default trio",
+  suggestArtifacts("cite-chek", NAMES)[0] === "cite-check" &&
+    JSON.stringify(suggestArtifacts("", NAMES)) === JSON.stringify(NAMES.slice(0, 3)) &&
+    suggestArtifacts("zzz-no-overlap-at-all", NAMES).length === 3,
+);
+check(
+  "404: suggestArtifacts always returns 3 (padding with defaults)",
+  suggestArtifacts("cite-chek", NAMES).length === 3 &&
+    suggestArtifacts("cite-chek", NAMES)[0] === "cite-check" &&
+    new Set(suggestArtifacts("cite-chek", NAMES)).size === 3 &&
+    suggestArtifacts("cite-chek", NAMES).slice(1).includes("cite-check") === false,
+);
+const nfHtml = notFoundHtml("/a/<script>");
+check(
+  "404html: escapes input, states 404 · text/html, links to catalog search",
+  nfHtml.includes("&lt;script&gt;") &&
+    !nfHtml.includes("<script>") &&
+    nfHtml.includes("404") &&
+    nfHtml.includes("text/html") &&
+    nfHtml.includes("/#/?q="),
+);
+check(
+  "404html: search link carries the encoded attempted slug",
+  notFoundHtml("/a/cite-chek").includes("/#/?q=cite-chek"),
+);
+
 console.log(failed === 0 ? "\nALL PASS" : `\n${failed} FAILED`);
 process.exit(failed === 0 ? 0 : 1);

@@ -6,12 +6,13 @@
 //   vt-val/site/<artifact>.html <- open-artifacts/<a>/demo/index.html, inlined
 
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = join(ROOT, "vt-val", "site");
+const GITHUB = "https://github.com/arthrod/open-legal-artifacts";
 mkdirSync(SITE, { recursive: true });
 
 const MIME = { css: "text/css", js: "text/javascript", mjs: "text/javascript" }; // fonts NEVER data-URI'd: single-file pages would carry +32-64KB and blow the VT 80KB cap
@@ -72,10 +73,19 @@ function bundle(htmlPath) {
   return html;
 }
 
-// Bundle-time chrome for artifact pages: site back-link + disclaimer footer.
-function decorate(html) {
-  if (!html.includes("ola-backlink")) {
-    const bar = `<a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">\u2190 Open Legal Artifacts</a>`;
+// Bundle-time chrome for artifact pages: navbar + disclaimer footer.
+function decorate(html, info) {
+  const { repoUrl } = info;
+  if (!html.includes("ola-backlink") && !html.includes("ola-navbar")) {
+    const M = `font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;`;
+    const L = `color:#6b6b6b;text-decoration:none;`;
+    const bar = `<div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;${M}font-size:11px;">` +
+      `<a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open\u00b7legal\u00b7artifacts</a>` +
+      `<span style="display:inline-flex;gap:16px;white-space:nowrap;">` +
+      `<a href="/" style="${L}">Catalog</a>` +
+      `<span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span>` +
+      `<a href="${repoUrl}" rel="noopener" target="_blank" style="${L}">Repo \u2197</a>` +
+      `</span></div></div>`;
     html = html.replace(/<body([^>]*)>/i, (m) => m + bar);
   }
   if (!html.includes("<footer") && !/not legal advice/i.test(html)) {
@@ -106,11 +116,12 @@ let n = 0, oversized = 0;
 const seen = new Set();
 for (const OA of demoRoots) {
   if (!existsSync(OA)) continue;
+  const root = basename(OA); // "open-artifacts" | "artifacts"
   for (const entry of readdirSync(OA)) {
     const demo = join(OA, entry, "demo", "index.html");
     if (!statSync(join(OA, entry)).isDirectory() || !existsSync(demo) || seen.has(entry)) continue;
     seen.add(entry);
-    let html = decorate(bundle(demo));
+    let html = decorate(bundle(demo), { entry, repoUrl: `${GITHUB}/tree/main/${root}/${entry}` });
     // Single-file deploy: system-font fallback only. Strip ALL @font-face blocks
     // (Manrope variable + Departure Mono) — var stacks fall back to system-ui/ui-monospace.
     const pre = html.length;
@@ -118,6 +129,14 @@ for (const OA of demoRoots) {
     if (pre !== html.length || html.length > 78_000) {
       oversized++;
       console.warn(`  ⚠ ${entry}: ${(pre / 1024).toFixed(1)} KB → font stripped (${(html.length / 1024).toFixed(1)} KB)`);
+    }
+    if (html.length > 79_500) {
+      // still near/over the VT 80KB cap after font strip: minify inline script/css
+      html = html.replace(/\/\*[\s\S]*?\*\//g, "");            // block comments
+      html = html.replace(/(^|\n)\s*\/\/[^\n]*/g, "$1");          // line comments
+      html = html.replace(/\n\s+\n/g, "\n");                        // blank/indent lines
+      html = html.replace(/(\n)\s+/g, "$1  ");                       // leading indentation
+      console.warn(`  ⚙ ${entry}: minified to ${(html.length / 1024).toFixed(1)} KB`);
     }
     writeFileSync(join(SITE, `${entry}.html`), html);
     n++;

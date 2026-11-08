@@ -28,6 +28,18 @@ export function serializeState(state: IndexState): string {
   return params.length ? `#/?${params.join("&")}` : "#/";
 }
 
+/**
+ * Next index state after a search-box edit (item 2 decision):
+ * typing a query clears the inherited area filter (kills the silent
+ * AND-condition false negative); deleting all text returns to the
+ * deliberately-clicked filter view. Filter clicks keep `q` — explicit
+ * action wins; only typing clears `area`.
+ */
+export function nextStateOnSearch(prev: IndexState, q: string): IndexState {
+  const trimmed = q.trim();
+  return trimmed ? { area: null, q: trimmed } : { area: prev.area, q: "" };
+}
+
 /** Searchable fields concatenated for matching (D7). */
 function haystack(a: {
   title: string;

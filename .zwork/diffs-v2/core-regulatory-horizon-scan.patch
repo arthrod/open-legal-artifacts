@@ -1,0 +1,1575 @@
+diff --git a/open-artifacts/regulatory-horizon-scan/README.md b/open-artifacts/regulatory-horizon-scan/README.md
+index bcd937f..626701e 100644
+--- a/open-artifacts/regulatory-horizon-scan/README.md
++++ b/open-artifacts/regulatory-horizon-scan/README.md
+@@ -31,7 +31,7 @@ when a rule changes**.
+ ## Run
+ 
+ ```bash
+-node --test core/core.test.js  # 26 tests (node:test)
++node --test core/core.test.js  # 30 tests (node:test)
+ node examples/run.js          # regenerates examples/scan.json, scan.csv, digest.md, report.md
+ ```
+ 
+@@ -45,15 +45,16 @@ inlined by `deploy/build-site.mjs` at bundle time).
+ 1. **Auditable scoring.** Anthropic's impact ranking is opaque. Here the rubric
+    is versioned data (`examples/input.json`), each score carries a full
+    breakdown, and `diffRubrics` shows exactly what changed between versions.
+-2. **Deterministic provenance & stage discipline.** The counterpart's
+-   source-tier and ANPR/RFI policies are LLM prose; here they are tested code:
+-   non-primary sources are band-capped with a trace-to-primary flag, ANPR/RFI
+-   items never reach "high", and comment deadlines score and appear as
+-   timeline milestones.
++2. **Deterministic provenance & stage discipline.** Source tiers and
++   ANPR/RFI caution are enforced by tested code, not prose: non-primary
++   sources are band-capped with a trace-to-primary flag, ANPR/RFI items never
++   reach "high", and comment deadlines score and appear as timeline milestones.
+ 3. **Coverage check.** Profile jurisdictions/topics absent from the feed are
+    surfaced with severity before ranking (Step 0).
+-4. **Diff view.** The closed artifact snapshots; this core diffs — added,
+-   removed, and per-field changes between feed snapshots.
++4. **Field-level diff.** Feed snapshots are diffed item by item across the 10
++   tracked fields (added, removed, and per-field changes), and `diffRubrics`
++   diffs rubric versions too — so weight, threshold, or taxonomy changes
++   between scans are visible, not just status shifts.
+ 5. **No hidden clock.** All time math anchors to a caller-supplied `asOf`, so
+    scans are reproducible byte-for-byte.
+ 6. **LLM never scores.** The deterministic core does dedupe/merge/classify/
+diff --git a/open-artifacts/regulatory-horizon-scan/core/core.js b/open-artifacts/regulatory-horizon-scan/core/core.js
+index 9053b4c..5b37d09 100644
+--- a/open-artifacts/regulatory-horizon-scan/core/core.js
++++ b/open-artifacts/regulatory-horizon-scan/core/core.js
+@@ -92,9 +92,11 @@ const US_STATE_NAMES = new Map([
+ const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadline", "itemType", "provenance", "summary", "source", "link"];
+ 
+ /**
+- * Dedupe feed items. Two items are duplicates when they share an id, or when
+- * their normalized titles are near-identical AND jurisdictions match.
+- * First occurrence wins (feed order = trust order), but the kept item is
++ * Dedupe feed items. Two items are duplicates when they share a non-empty
++ * id, or when their normalized titles are near-identical AND jurisdictions
++ * match. Items with a missing/empty id (e.g. manual entry) are never treated
++ * as sharing one — they can only dedupe via the normalized title+jurisdiction
++ * key. First occurrence wins (feed order = trust order), but the kept item is
+  * enriched: any MERGE_FIELD missing on the kept item is filled from the
+  * duplicate (richest source wins), and `mergedFrom` records the dropped ids.
+  * @param {Array<any>} items
+@@ -103,13 +105,13 @@ const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadli
+ export function dedupeItems(items) {
+   const unique = [];
+   const duplicates = [];
+-  /** @type {Map<string, string>} normTitle|juris -> kept id */
+-  const seen = new Map();
+-  /** @type {Map<string, any>} kept id -> kept item (mutated on merge) */
++  /** @type {Map<string, any>} dedupe key (id, or title|juris when id-less) -> kept item */
+   const kept = new Map();
+-  const seenIds = new Set();
+-  const mergeInto = (keptId, dup, reason) => {
+-    const target = kept.get(keptId);
++  /** @type {Map<string, string>} non-empty feed id -> dedupe key of its kept item */
++  const seenIds = new Map();
++  /** @type {Map<string, string>} normalized title|jurisdiction -> dedupe key of its kept item */
++  const seenTitles = new Map();
++  const mergeInto = (target, dup, reason) => {
+     const mergedFields = [];
+     if (target) {
+       for (const f of MERGE_FIELDS) {
+@@ -121,24 +123,25 @@ export function dedupeItems(items) {
+       if (!target.mergedFrom) target.mergedFrom = [];
+       target.mergedFrom.push(String(dup.id ?? ""));
+     }
+-    duplicates.push({ keptId, droppedId: String(dup.id ?? ""), reason, mergedFields });
++    duplicates.push({ keptId: String(target?.id ?? ""), droppedId: String(dup.id ?? ""), reason, mergedFields });
+   };
+   for (const it of items ?? []) {
+     const id = String(it.id ?? "");
+     const juris = normalizeJurisdiction(it.jurisdiction);
+-    const key = `${normalizeTitle(it.title)}|${juris}`;
+-    if (seenIds.has(id)) {
+-      mergeInto(id, it, "duplicate id");
++    const titleKey = `${normalizeTitle(it.title)}|${juris}`;
++    const ownerKey = id || titleKey; // id-less items own their title+jurisdiction key
++    if (id && seenIds.has(id)) {
++      mergeInto(kept.get(seenIds.get(id)), it, "duplicate id");
+       continue;
+     }
+-    if (seen.has(key)) {
+-      mergeInto(seen.get(key), it, "same normalized title + jurisdiction");
++    if (seenTitles.has(titleKey)) {
++      mergeInto(kept.get(seenTitles.get(titleKey)), it, "same normalized title + jurisdiction");
+       continue;
+     }
+-    seenIds.add(id);
+-    seen.set(key, id);
++    if (id) seenIds.set(id, ownerKey);
++    seenTitles.set(titleKey, ownerKey);
+     const copy = { ...it, jurisdiction: juris };
+-    kept.set(id, copy);
++    kept.set(ownerKey, copy);
+     unique.push(copy);
+   }
+   return { unique, duplicates };
+@@ -198,9 +201,9 @@ export function scoreItem(item, rubric, profile, asOfIso) {
+   if (profile.jurisdictions.includes(juris)) {
+     jPts = jf.points.exact;
+     jRule = "exact profile jurisdiction match";
+-  } else if (juris.startsWith("US-") && profile.jurisdictions.includes("US-FED")) {
+-    jPts = jf.points.exact; // federal rules apply nationwide
+-    jRule = "US state rule, but US-FED in profile (federal overlay applies nationwide)";
++  } else if (juris.startsWith("US-") && juris !== "US-FED" && profile.jurisdictions.includes("US-FED")) {
++    jPts = jf.points.adjacent ?? 0; // a state rule binds in its state, not nationwide
++    jRule = "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)";
+   } else if (juris.startsWith("EU") && profile.jurisdictions.some((j) => j.startsWith("EU"))) {
+     jPts = jf.points.adjacent ?? 0;
+     jRule = "adjacent EU jurisdiction";
+diff --git a/open-artifacts/regulatory-horizon-scan/core/core.test.js b/open-artifacts/regulatory-horizon-scan/core/core.test.js
+index 1276713..2fbc427 100644
+--- a/open-artifacts/regulatory-horizon-scan/core/core.test.js
++++ b/open-artifacts/regulatory-horizon-scan/core/core.test.js
+@@ -99,6 +99,23 @@ test("scoreItem: unknown status and missing date score low but never guess", ()
+   assert.match(b.rule, /no parseable effective date/);
+ });
+ 
++test("scoreItem: US state law outside profile scores adjacent (never exact) when only US-FED is in profile", () => {
++  const tx = { ...ITEM, id: "tx-rule", title: "Texas Biometric Retention Schedule", jurisdiction: "Texas" };
++  const fedOnly = scoreItem(tx, RUBRIC, { jurisdictions: ["US-FED"], coreTopics: ["privacy"] }, AS_OF)
++    .breakdown.find((b) => b.factor === "jurisdiction");
++  assert.equal(fedOnly.points, 15); // adjacent tier — a TX-only rule is not a US-FED match
++  assert.ok(!/nationwide/.test(fedOnly.rule), `rule text must not claim a state rule applies nationwide: "${fedOnly.rule}"`);
++  // state listed in profile -> still exact
++  const inProfile = scoreItem({ ...tx, jurisdiction: "California" }, RUBRIC, { jurisdictions: ["US-CA"], coreTopics: ["privacy"] }, AS_OF)
++    .breakdown.find((b) => b.factor === "jurisdiction");
++  assert.equal(inProfile.points, 30);
++  assert.match(inProfile.rule, /exact/);
++  // no US jurisdiction in profile at all -> other
++  const none = scoreItem(tx, RUBRIC, { jurisdictions: ["EU"], coreTopics: ["privacy"] }, AS_OF)
++    .breakdown.find((b) => b.factor === "jurisdiction");
++  assert.equal(none.points, 0);
++});
++
+ test("scoreItem: already-effective rules get no proximity points", () => {
+   const s = scoreItem({ ...ITEM, effectiveDate: "2026-10-01" }, RUBRIC, PROFILE, AS_OF);
+   assert.equal(s.scoring ?? s ? s.breakdown.find((x) => x.factor === "proximity").points : 0, 0);
+@@ -179,6 +196,29 @@ test("dedupeItems merge fills missing dates but never overwrites existing values
+   assert.equal(unique[0].status, ITEM.status);
+ });
+ 
++/* ---------- B07 fix: id-less (manual-entry) items are never collapsed as "duplicate id" ---------- */
++
++test("dedupeItems keeps distinct id-less items separate (manual-entry feeds)", () => {
++  const { unique, duplicates } = dedupeItems([
++    { title: "Colorado Chatbot Safety Act", jurisdiction: "US-CO" },
++    { title: "EU AI Act transparency rules", jurisdiction: "EU" },
++    { title: "New York wage rules", jurisdiction: "New York" },
++  ]);
++  assert.equal(unique.length, 3);
++  assert.deepEqual(duplicates, []);
++});
++
++test("dedupeItems still merges id-less items sharing normalized title + jurisdiction", () => {
++  const { unique, duplicates } = dedupeItems([
++    { title: "Colorado Chatbot Safety Act", jurisdiction: "US-CO" },
++    { title: "colorado chatbot safety act!", jurisdiction: "Colorado", link: "https://example.gov/co-chatbot" },
++  ]);
++  assert.equal(unique.length, 1);
++  assert.equal(unique[0].link, "https://example.gov/co-chatbot"); // merge still enriches the kept item
++  assert.equal(duplicates.length, 1);
++  assert.equal(duplicates[0].reason, "same normalized title + jurisdiction");
++});
++
+ /* ---------- improvement 4: coverage gaps (Step 0) ---------- */
+ 
+ test("coverageGaps reports profile jurisdictions and topics with zero feed items, with severity", () => {
+@@ -268,16 +308,7 @@ const EXPECTED_DIGEST = `# Regulatory horizon scan digest
+ - commentWindow +0 (no comment deadline)
+ - status +15 (status="final")
+ 
+-### 2. Texas Biometric Retention Schedule — score 93
+-
+-\`tx-biometric-retention\` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
+-- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
+-- topic +25 (core topic)
+-- proximity +15 (effective in 145d (<= 180d threshold))
+-- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
+-- status +8 (status="proposed")
+-
+-### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
++### 2. FCC AI Voice Disclosure in Outreach Calls — score 85
+ 
+ \`us-fcc-ai-disclosure\` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
+ - jurisdiction +30 (exact profile jurisdiction match)
+@@ -286,6 +317,15 @@ const EXPECTED_DIGEST = `# Regulatory horizon scan digest
+ - commentWindow +0 (no comment deadline)
+ - status +15 (status="final")
+ 
++### 3. Texas Biometric Retention Schedule — score 78
++
++\`tx-biometric-retention\` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
++- jurisdiction +15 (US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state))
++- topic +25 (core topic)
++- proximity +15 (effective in 145d (<= 180d threshold))
++- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
++- status +8 (status="proposed")
++
+ ## Medium band (2 items)
+ 
+ ### 4. SEC ANPR: Artificial Intelligence Model Risk — score 78 (band capped)
+@@ -394,6 +434,21 @@ test("demo escapes every feed-derived interpolation reaching innerHTML", () => {
+   }
+ });
+ 
++/* ---------- B07 fix: "better than counterpart" claims stay defensible ---------- */
++
++const README_MD = readFileSync(new URL("../README.md", import.meta.url), "utf8");
++const SPEC_MD = readFileSync(new URL("../spec.md", import.meta.url), "utf8");
++
++test("README/spec contain no falsified counterpart claims (snapshot-only, LLM-prose wording)", () => {
++  for (const [name, doc] of [["README.md", README_MD], ["spec.md", SPEC_MD]]) {
++    assert.ok(!doc.includes("LLM prose"), `${name}: "counterpart policies are LLM prose" was falsified — keep the defensible tested-code claim`);
++    assert.ok(!/closed artifact snapshots|shows a snapshot/.test(doc), `${name}: "counterpart has no diff" was falsified — claim field-level + rubric-version diff instead`);
++  }
++  // the defensible replacements must actually be present
++  assert.match(README_MD, /field-level/i);
++  assert.match(SPEC_MD, /rubric/);
++});
++
+ test("demo score cell renders the actual cap flag text, not a literal per flag", () => {
+   assert.ok(!/>capped<\/span>/.test(DEMO_HTML), "flags cell must not hardcode 'capped'");
+   assert.ok(DEMO_HTML.includes('<span class="flag">${esc(f)}</span>'), "flags cell renders esc(f)");
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/example.js b/open-artifacts/regulatory-horizon-scan/demo/example.js
+index ded46db..9780f72 100644
+--- a/open-artifacts/regulatory-horizon-scan/demo/example.js
++++ b/open-artifacts/regulatory-horizon-scan/demo/example.js
+@@ -1,3 +1,7 @@
++// Worked example — fictional data only (every jurisdiction/statute is invented
++// or fictionalized; links resolve nowhere). 33 unique feed items + 1 known
++// duplicate so dedupe transparency has something to show. previousFeed is the
++// prior snapshot the diff view compares against.
+ export default {
+   "asOf": "2026-11-07",
+   "profile": {
+@@ -32,162 +36,52 @@ export default {
+     }
+   },
+   "previousFeed": [
+-    {
+-      "id": "ca-ccpa-amend",
+-      "title": "CCPA Amendment: Children's Data Opt-In",
+-      "jurisdiction": "California",
+-      "status": "proposed",
+-      "itemType": "rule",
+-      "effectiveDate": "2027-06-30",
+-      "commentDeadline": "2026-09-30",
+-      "publishedDate": "2026-08-12",
+-      "summary": "Requires opt-in consent before processing minors' personal information; drafted under the CCPA (California Consumer Privacy Act, fictional amendment).",
+-      "source": "CA Privacy Agency tracker",
+-      "provenance": "primary",
+-      "link": "https://example.gov/ca-ccpa-amend"
+-    },
+-    {
+-      "id": "us-fcc-ai-disclosure",
+-      "title": "FCC AI Voice Disclosure in Outreach Calls",
+-      "jurisdiction": "US-FED",
+-      "status": "proposed",
+-      "itemType": "rule",
+-      "effectiveDate": null,
+-      "commentDeadline": "2026-10-15",
+-      "publishedDate": "2026-09-02",
+-      "summary": "Proposed disclosure banner for AI-generated voice in commercial outreach calls.",
+-      "source": "Federal-register-like feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/fcc-ai-voice"
+-    },
+-    {
+-      "id": "ny-pay-transparency",
+-      "title": "NY Wage Transparency for Remote Roles",
+-      "jurisdiction": "New York",
+-      "status": "final",
+-      "itemType": "rule",
+-      "effectiveDate": "2026-09-17",
+-      "commentDeadline": null,
+-      "publishedDate": "2026-03-03",
+-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
+-      "source": "NY DOL bulletin (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/ny-pay-transparency"
+-    },
+-    {
+-      "id": "eu-umbrella-2026",
+-      "title": "EU Umbrella Data Regulation 2026",
+-      "jurisdiction": "EU",
+-      "status": "rumored",
+-      "itemType": "rule",
+-      "effectiveDate": null,
+-      "commentDeadline": null,
+-      "publishedDate": null,
+-      "summary": "Press-reported draft covering cross-border data flows; no official text published.",
+-      "source": "Trade press",
+-      "provenance": "secondary",
+-      "link": null
+-    }
++    { "id": "ca-ccpa-amend", "title": "CCPA Amendment: Children's Data Opt-In", "jurisdiction": "California", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-06-30", "commentDeadline": "2026-09-30", "publishedDate": "2026-08-12", "summary": "Requires opt-in consent before processing minors' personal information; drafted under the CCPA (fictional amendment).", "source": "CA Privacy Agency tracker", "provenance": "primary", "link": "https://example.gov/ca-ccpa-amend" },
++    { "id": "us-fcc-ai-disclosure", "title": "FCC AI Voice Disclosure in Outreach Calls", "jurisdiction": "US-FED", "status": "proposed", "itemType": "rule", "effectiveDate": null, "commentDeadline": "2026-10-15", "publishedDate": "2026-09-02", "summary": "Proposed disclosure banner for AI-generated voice in commercial outreach calls.", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/fcc-ai-voice" },
++    { "id": "ny-pay-transparency", "title": "NY Wage Transparency for Remote Roles", "jurisdiction": "New York", "status": "final", "itemType": "rule", "effectiveDate": "2026-09-17", "commentDeadline": null, "publishedDate": "2026-03-03", "summary": "Salary ranges must be posted for remote roles performed from New York.", "source": "NY DOL bulletin (fictional)", "provenance": "primary", "link": "https://example.gov/ny-pay-transparency" },
++    { "id": "eu-umbrella-2026", "title": "EU Umbrella Data Regulation 2026", "jurisdiction": "EU", "status": "rumored", "itemType": "rule", "effectiveDate": null, "commentDeadline": null, "publishedDate": null, "summary": "Press-reported draft covering cross-border data flows; no official text published.", "source": "Trade press", "provenance": "secondary", "link": null },
++    { "id": "tx-biometric-retention", "title": "Texas Biometric Retention Schedule", "jurisdiction": "Texas", "status": "proposed", "itemType": "NPRM", "effectiveDate": "2027-04-01", "commentDeadline": "2026-11-25", "publishedDate": "2026-10-30", "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.", "source": "Texas register feed (fictional)", "provenance": "primary", "link": "https://example.gov/tx-biometric" },
++    { "id": "us-sec-ai-anpr", "title": "SEC ANPR: Artificial Intelligence Model Risk", "jurisdiction": "US-FED", "status": "proposed", "itemType": "ANPR", "effectiveDate": null, "commentDeadline": "2026-12-01", "publishedDate": "2026-10-20", "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/sec-ai-anpr" },
++    { "id": "us-co-ai-impact", "title": "Colorado AI Impact Assessment Act", "jurisdiction": "Colorado", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-02-01", "commentDeadline": null, "publishedDate": "2026-06-11", "summary": "Deployers of artificial-intelligence systems in consequential decisions must run annual impact assessments.", "source": "CO Secretary of State register (fictional)", "provenance": "primary", "link": "https://example.gov/co-ai-impact" },
++    { "id": "us-ftc-facial-sweep", "title": "FTC Facial-Recognition Sweep (closed)", "jurisdiction": "US-FED", "status": "effective", "itemType": "guidance", "effectiveDate": "2026-05-02", "commentDeadline": null, "publishedDate": "2026-04-02", "summary": "Enforcement sweep on facial-recognition data practices; wound down.", "source": "Trade press", "provenance": "secondary", "link": null },
++    { "id": "ny-dfs-part500-old", "title": "NYDFS Part 500 (pre-amendment text)", "jurisdiction": "New York", "status": "effective", "itemType": "rule", "effectiveDate": "2025-11-01", "commentDeadline": null, "publishedDate": "2025-06-01", "summary": "Superseded baseline cybersecurity regulation text.", "source": "NY DFS register (fictional)", "provenance": "primary", "link": "https://example.gov/nydfs-500-old" }
+   ],
+   "currentFeed": [
+-    {
+-      "id": "ca-ccpa-amend",
+-      "title": "CCPA Amendment: Children's Data Opt-In",
+-      "jurisdiction": "California",
+-      "status": "final",
+-      "itemType": "rule",
+-      "effectiveDate": "2027-01-01",
+-      "commentDeadline": null,
+-      "publishedDate": "2026-08-12",
+-      "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
+-      "source": "CA Privacy Agency tracker",
+-      "provenance": "primary",
+-      "link": "https://example.gov/ca-ccpa-amend"
+-    },
+-    {
+-      "id": "ca-ccpa-amend-dup",
+-      "title": "CCPA amendment: childrens data opt in",
+-      "jurisdiction": "CA",
+-      "status": "final",
+-      "itemType": "rule",
+-      "effectiveDate": "2027-01-01",
+-      "commentDeadline": null,
+-      "publishedDate": null,
+-      "summary": "Same rule, surfaced by a second aggregator feed.",
+-      "source": "Aggregator B",
+-      "provenance": "secondary",
+-      "link": "https://example.org/b/ca-ccpa"
+-    },
+-    {
+-      "id": "us-fcc-ai-disclosure",
+-      "title": "FCC AI Voice Disclosure in Outreach Calls",
+-      "jurisdiction": "US-FED",
+-      "status": "final",
+-      "itemType": "rule",
+-      "effectiveDate": "2027-02-15",
+-      "commentDeadline": null,
+-      "publishedDate": "2026-09-02",
+-      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+-      "source": "Federal-register-like feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/fcc-ai-voice"
+-    },
+-    {
+-      "id": "ny-pay-transparency",
+-      "jurisdiction": "New York",
+-      "title": "NY Wage Transparency for Remote Roles",
+-      "status": "effective",
+-      "itemType": "rule",
+-      "effectiveDate": "2026-09-17",
+-      "commentDeadline": null,
+-      "publishedDate": "2026-03-03",
+-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
+-      "source": "NY DOL bulletin (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/ny-pay-transparency"
+-    },
+-    {
+-      "id": "eu-umbrella-2026",
+-      "title": "EU Umbrella Data Regulation 2026",
+-      "jurisdiction": "EU",
+-      "status": "proposed",
+-      "itemType": "rule",
+-      "effectiveDate": "2028-03-01",
+-      "commentDeadline": null,
+-      "publishedDate": "2026-10-28",
+-      "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
+-      "source": "EUR-Lex-like feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.eu/umbrella-2026"
+-    },
+-    {
+-      "id": "tx-biometric-retention",
+-      "title": "Texas Biometric Retention Schedule",
+-      "jurisdiction": "Texas",
+-      "status": "proposed",
+-      "itemType": "NPRM",
+-      "effectiveDate": "2027-04-01",
+-      "commentDeadline": "2026-11-25",
+-      "publishedDate": "2026-10-30",
+-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+-      "source": "Texas register feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/tx-biometric"
+-    },
+-    {
+-      "id": "us-sec-ai-anpr",
+-      "title": "SEC ANPR: Artificial Intelligence Model Risk",
+-      "jurisdiction": "US-FED",
+-      "status": "proposed",
+-      "itemType": "ANPR",
+-      "effectiveDate": null,
+-      "commentDeadline": "2026-12-01",
+-      "publishedDate": "2026-10-20",
+-      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
+-      "source": "Federal-register-like feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/sec-ai-anpr"
+-    }
++    { "id": "ca-ccpa-amend", "title": "CCPA Amendment: Children's Data Opt-In", "jurisdiction": "California", "status": "final", "itemType": "rule", "effectiveDate": "2027-01-01", "commentDeadline": null, "publishedDate": "2026-08-12", "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date. Cal. Civ. Code §1798.12(c) as amended by AB 2915 (fictional).", "source": "CA Privacy Agency tracker", "provenance": "primary", "link": "https://example.gov/ca-ccpa-amend" },
++    { "id": "ca-ccpa-amend-dup", "title": "CCPA amendment: childrens data opt in", "jurisdiction": "CA", "status": "final", "itemType": "rule", "effectiveDate": "2027-01-01", "commentDeadline": null, "publishedDate": null, "summary": "Same rule, surfaced by a second aggregator feed.", "source": "Aggregator B", "provenance": "secondary", "link": "https://example.org/b/ca-ccpa" },
++    { "id": "ca-cppa-risk-assess", "title": "CPPA Cybersecurity Risk Assessment Regulations", "jurisdiction": "California", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-07-01", "commentDeadline": "2026-11-14", "publishedDate": "2026-10-28", "summary": "Annual cybersecurity risk assessments for high-risk processing; comments close within a week of the scan date. 11 CCR §7100 series (fictional).", "source": "CA Privacy Agency tracker", "provenance": "primary", "link": "https://example.gov/ca-cppa-risk" },
++    { "id": "ca-data-broker-renewal", "title": "CA Data Broker Registry Annual Renewal", "jurisdiction": "California", "status": "effective", "itemType": "rule", "effectiveDate": "2027-01-31", "commentDeadline": null, "publishedDate": "2026-02-10", "summary": "Data broker registry renewal with expanded onboarding-data disclosures. Cal. Civ. Code §1798.99.82 (fictionalized).", "source": "CA AG registry (fictional)", "provenance": "primary", "link": "https://example.gov/ca-broker-renewal" },
++    { "id": "ca-ab2013-training-data", "title": "CA AI Training Data Transparency Act", "jurisdiction": "California", "status": "final", "itemType": "rule", "effectiveDate": "2027-01-01", "commentDeadline": null, "publishedDate": "2026-09-30", "summary": "Developers of generative AI systems must publish training-data disclosures. AB 2013 (2026), §2 (fictional).", "source": "Trade press", "provenance": "secondary", "link": "https://example.org/ca-ab2013" },
++    { "id": "ca-chda-expansion", "title": "CA Consumer Health Data Act Expansion", "jurisdiction": "California", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-10-01", "commentDeadline": "2026-12-08", "publishedDate": "2026-11-02", "summary": "Extends health-data privacy duties to wearable telemetry; SB 1416 (fictional).", "source": "CA Legislature feed (fictional)", "provenance": "primary", "link": "https://example.gov/ca-chda" },
++    { "id": "us-fcc-ai-disclosure", "title": "FCC AI Voice Disclosure in Outreach Calls", "jurisdiction": "US-FED", "status": "final", "itemType": "rule", "effectiveDate": "2027-02-15", "commentDeadline": null, "publishedDate": "2026-09-02", "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published. 47 CFR §64.1200(k) (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/fcc-ai-voice" },
++    { "id": "us-ftc-ai-endorsements", "title": "FTC Guides: AI-Generated Endorsements", "jurisdiction": "US-FED", "status": "final", "itemType": "guidance", "effectiveDate": "2026-12-15", "commentDeadline": null, "publishedDate": "2026-10-19", "summary": "AI-generated endorsements must be disclosed and substantiated; guide amendment 16 CFR Part 255 (fictionalized).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/ftc-ai-endorse" },
++    { "id": "us-eeoc-ai-hiring", "title": "EEOC NPRM: AI Hiring Bias Audits", "jurisdiction": "US-FED", "status": "proposed", "itemType": "NPRM", "effectiveDate": null, "commentDeadline": "2026-12-10", "publishedDate": "2026-10-27", "summary": "Third-party bias audits for automated decision systems in hiring; employment practices guidance (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/eeoc-ai-hiring" },
++    { "id": "us-cisa-incident-72h", "title": "CISA Cyber Incident Reporting Rule (72-hour)", "jurisdiction": "US-FED", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-03-01", "commentDeadline": "2026-11-20", "publishedDate": "2026-10-14", "summary": "Cybersecurity incident reporting within 72 hours for critical infrastructure; breach notification duties (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/cisa-72h" },
++    { "id": "us-hhs-ai-deident", "title": "HHS ANPR: AI De-Identification of Health Data", "jurisdiction": "US-FED", "status": "proposed", "itemType": "ANPR", "effectiveDate": null, "commentDeadline": "2026-12-15", "publishedDate": "2026-10-30", "summary": "Advance notice on artificial-intelligence de-identification standards for PHI privacy (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/hhs-ai-deident" },
++    { "id": "us-irs-ai-prep", "title": "IRS RFI: AI Tax-Prep Software Oversight", "jurisdiction": "US-FED", "status": "proposed", "itemType": "RFI", "effectiveDate": null, "commentDeadline": "2027-01-15", "publishedDate": "2026-11-03", "summary": "Request for information on oversight of generative AI tax-preparation tools (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/irs-ai-rfi" },
++    { "id": "us-dot-av-data", "title": "DOT RFI: Automated Vehicle Data Retention", "jurisdiction": "US-FED", "status": "proposed", "itemType": "RFI", "effectiveDate": null, "commentDeadline": "2027-01-30", "publishedDate": "2026-10-21", "summary": "Retention limits for sensor and biometric-adjacent data collected by automated vehicles (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/dot-av-rfi" },
++    { "id": "us-sec-ai-anpr", "title": "SEC ANPR: Artificial Intelligence Model Risk", "jurisdiction": "US-FED", "status": "proposed", "itemType": "ANPR", "effectiveDate": null, "commentDeadline": "2026-12-01", "publishedDate": "2026-10-20", "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers (fictional).", "source": "Federal-register-like feed (fictional)", "provenance": "primary", "link": "https://example.gov/sec-ai-anpr" },
++    { "id": "us-tsa-pipeline-cyber", "title": "TSA Pipeline Cybersecurity Directive 3", "jurisdiction": "US-FED", "status": "effective", "itemType": "rule", "effectiveDate": "2026-08-01", "commentDeadline": null, "publishedDate": "2026-06-24", "summary": "Already-effective cybersecurity directive for pipeline operators; incident reporting drills (fictional).", "source": "TSA directive feed (fictional)", "provenance": "primary", "link": "https://example.gov/tsa-pipeline-3" },
++    { "id": "us-ed-ferpa-ai", "title": "ED Guidance: FERPA and AI Tutoring Platforms", "jurisdiction": "US-FED", "status": "effective", "itemType": "guidance", "effectiveDate": null, "commentDeadline": null, "publishedDate": "2026-09-15", "summary": "Student-data privacy guidance for AI tutoring platforms; undated guidance, kept on the timeline (fictional).", "source": "ED policy feed (fictional)", "provenance": "primary", "link": "https://example.gov/ed-ferpa-ai" },
++    { "id": "us-dol-remote-pay", "title": "DOL Rumored Rule: Remote-Worker Pay Records", "jurisdiction": "US-FED", "status": "rumored", "itemType": "rule", "effectiveDate": null, "commentDeadline": null, "publishedDate": null, "summary": "Press-reported draft on employment pay-record retention for remote workplace staff; no official text (fictional).", "source": "Trade press", "provenance": "secondary", "link": null },
++    { "id": "ny-pay-transparency", "title": "NY Wage Transparency for Remote Roles", "jurisdiction": "New York", "status": "effective", "itemType": "rule", "effectiveDate": "2026-09-17", "commentDeadline": null, "publishedDate": "2026-03-03", "summary": "Salary ranges must be posted for remote roles performed from New York. NY Labor Law §194-b (fictionalized).", "source": "NY DOL bulletin (fictional)", "provenance": "primary", "link": "https://example.gov/ny-pay-transparency" },
++    { "id": "ny-shift-scheduling", "title": "NY Advance Notice for Workplace Shift Scheduling", "jurisdiction": "New York", "status": "effective", "itemType": "rule", "effectiveDate": "2026-10-31", "commentDeadline": null, "publishedDate": "2026-08-08", "summary": "14-day advance notice of workplace schedules; recently effective employment rule (fictional).", "source": "NY DOL bulletin (fictional)", "provenance": "primary", "link": "https://example.gov/ny-shift-notice" },
++    { "id": "ny-dfs-ai-underwriting", "title": "NYDFS Amendment: AI in Insurance Underwriting", "jurisdiction": "New York", "status": "final", "itemType": "rule", "effectiveDate": "2027-05-01", "commentDeadline": null, "publishedDate": "2026-10-05", "summary": "Cybersecurity and bias controls for automated decision systems in underwriting. 11 NYCRR 500.14 (fictionalized).", "source": "NY DFS register (fictional)", "provenance": "primary", "link": "https://example.gov/nydfs-ai-500" },
++    { "id": "ny-shield-amend", "title": "NY SHIELD Act Breach Notification Update", "jurisdiction": "New York", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-09-15", "commentDeadline": "2026-12-05", "publishedDate": "2026-11-04", "summary": "Shortens breach notification window to 30 days; expands data protection safeguards (fictional).", "source": "NY Legislature feed (fictional)", "provenance": "primary", "link": "https://example.gov/ny-shield-2" },
++    { "id": "ny-ag-broker-registration", "title": "NY Data Broker Registration Act", "jurisdiction": "New York", "status": "effective", "itemType": "rule", "effectiveDate": "2027-01-05", "commentDeadline": null, "publishedDate": "2026-07-22", "summary": "First registration cycle for data brokers under the new privacy statute (fictional).", "source": "NY AG register (fictional)", "provenance": "primary", "link": "https://example.gov/ny-broker-reg" },
++    { "id": "tx-biometric-retention", "title": "Texas Biometric Retention Schedule", "jurisdiction": "Texas", "status": "proposed", "itemType": "NPRM", "effectiveDate": "2027-04-01", "commentDeadline": "2026-11-25", "publishedDate": "2026-10-30", "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems. Tex. Bus. & Com. Code §503.020 (fictionalized).", "source": "Texas register feed (fictional)", "provenance": "primary", "link": "https://example.gov/tx-biometric" },
++    { "id": "tx-dgps-privacy-sweep", "title": "Texas DGPS Privacy Enforcement Sweep", "jurisdiction": "Texas", "status": "effective", "itemType": "guidance", "effectiveDate": null, "commentDeadline": null, "publishedDate": "2026-09-09", "summary": "Enforcement sweep notices on data protection practices; undated ongoing action (fictional).", "source": "TX DGPS feed (fictional)", "provenance": "primary", "link": "https://example.gov/tx-dgps-sweep" },
++    { "id": "us-co-ai-impact", "title": "Colorado AI Impact Assessment Act", "jurisdiction": "Colorado", "status": "final", "itemType": "rule", "effectiveDate": "2027-02-01", "commentDeadline": null, "publishedDate": "2026-06-11", "summary": "Deployers of artificial intelligence systems in consequential decisions must run annual impact assessments. CO Rev. Stat. §6-1-1703 (fictionalized).", "source": "CO Secretary of State register (fictional)", "provenance": "primary", "link": "https://example.gov/co-ai-impact" },
++    { "id": "us-il-bipa-amend", "title": "Illinois BIPA Amendment: Retention Schedules", "jurisdiction": "Illinois", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-08-01", "commentDeadline": "2026-12-01", "publishedDate": "2026-10-26", "summary": "Published biometric retention and destruction schedule under BIPA. 740 ILCS 14/15(b) (fictionalized).", "source": "IL General Assembly feed (fictional)", "provenance": "primary", "link": "https://example.gov/il-bipa-2026" },
++    { "id": "us-wa-health-data", "title": "Washington Consumer Health Data Act Rulemaking", "jurisdiction": "Washington", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-06-30", "commentDeadline": "2026-12-18", "publishedDate": "2026-10-12", "summary": "Consumer health data privacy duties for connected-device telemetry (fictional).", "source": "WA AG rulemaking feed (fictional)", "provenance": "primary", "link": "https://example.gov/wa-health-data" },
++    { "id": "us-or-privacy-tribunal", "title": "Oregon Privacy Tribunal Procedures", "jurisdiction": "Oregon", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-03-15", "commentDeadline": "2026-12-22", "publishedDate": "2026-11-01", "summary": "Appeals procedure for privacy enforcement penalties (fictional).", "source": "OR DOJ feed (fictional)", "provenance": "primary", "link": "https://example.gov/or-tribunal" },
++    { "id": "us-ga-employment-ai", "title": "Georgia Employment AI Disclosure Bill", "jurisdiction": "Georgia", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-07-01", "commentDeadline": "2027-01-10", "publishedDate": "2026-10-29", "summary": "Workplace notice when artificial-intelligence screens employment applications (fictional).", "source": "GA Legislature feed (fictional)", "provenance": "secondary", "link": null },
++    { "id": "eu-umbrella-2026", "title": "EU Umbrella Data Regulation 2026", "jurisdiction": "EU", "status": "proposed", "itemType": "rule", "effectiveDate": "2028-03-01", "commentDeadline": null, "publishedDate": "2026-10-28", "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway. Regulation (EU) 2026/1744, Art. 5 (fictional).", "source": "EUR-Lex-like feed (fictional)", "provenance": "primary", "link": "https://example.eu/umbrella-2026" },
++    { "id": "eu-ai-act-transparency", "title": "EU AI Act GPAI Transparency Deadline", "jurisdiction": "EU", "status": "final", "itemType": "rule", "effectiveDate": "2027-08-02", "commentDeadline": null, "publishedDate": "2026-05-04", "summary": "Foundation model providers must publish training-data summaries and copyright policy. Art. 53 obligations (fictionalized).", "source": "EUR-Lex-like feed (fictional)", "provenance": "primary", "link": "https://example.eu/ai-act-gpai" },
++    { "id": "eu-cyber-resilience", "title": "EU Cyber Resilience Act Reporting Phase", "jurisdiction": "EU", "status": "final", "itemType": "rule", "effectiveDate": "2027-09-01", "commentDeadline": null, "publishedDate": "2026-04-14", "summary": "Incident reporting duties for connected products begin; vulnerability handling (fictionalized).", "source": "EUR-Lex-like feed (fictional)", "provenance": "primary", "link": "https://example.eu/cra-reporting" },
++    { "id": "eu-data-act-residency", "title": "EU Data Act Implementing Act on Residency", "jurisdiction": "EU", "status": "proposed", "itemType": "rule", "effectiveDate": null, "commentDeadline": "2026-12-18", "publishedDate": "2026-11-05", "summary": "Implementing rules for data-access and residency terms (fictional).", "source": "EUR-Lex-like feed (fictional)", "provenance": "primary", "link": "https://example.eu/data-act-ia" },
++    { "id": "eu-gdpr-fines-guidance", "title": "EDPB Guidance on GDPR Fine Calculation", "jurisdiction": "EU", "status": "effective", "itemType": "guidance", "effectiveDate": "2026-07-01", "commentDeadline": null, "publishedDate": "2026-06-18", "summary": "Already-effective fine-calculation methodology for data protection enforcement (fictionalized).", "source": "EDPB-like feed (fictional)", "provenance": "primary", "link": "https://example.eu/edpb-fines" },
++    { "id": "us-ut-ai-policy", "title": "Utah AI Policy Amendments", "jurisdiction": "Utah", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-05-15", "commentDeadline": "2026-12-12", "publishedDate": "2026-10-16", "summary": "Disclosure duties for generative AI in consumer transactions (fictional).", "source": "UT Legislature feed (fictional)", "provenance": "secondary", "link": "https://example.gov/ut-ai-2027" }
+   ]
+ }
+ ;
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/fonts/Manrope-Variable.woff2 b/open-artifacts/regulatory-horizon-scan/demo/fonts/Manrope-Variable.woff2
+new file mode 100644
+index 0000000..662b813
+Binary files /dev/null and b/open-artifacts/regulatory-horizon-scan/demo/fonts/Manrope-Variable.woff2 differ
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/index.html b/open-artifacts/regulatory-horizon-scan/demo/index.html
+index 4639005..d347f08 100644
+--- a/open-artifacts/regulatory-horizon-scan/demo/index.html
++++ b/open-artifacts/regulatory-horizon-scan/demo/index.html
+@@ -4,56 +4,118 @@
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Regulatory horizon scan — open artifact</title>
++<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23fafaf8'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%23ffd400'/%3E%3C/svg%3E" />
+ <link rel="stylesheet" href="tokens.css" />
+ <style>
+   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
+   h1 { font-family: var(--font-body); font-size: 26px; letter-spacing: 0.01em; font-weight: 700; }
+   .lede { font-size: 17px; color: var(--text-secondary); max-width: 62ch; margin-bottom: 8px; }
+-  section { margin-top: 48px; }
++  section { margin-top: 44px; }
+   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+-  textarea { width: 100%; min-height: 180px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+-    border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
++  .h2row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
++  textarea, input[type="text"], input[type="date"], select { font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
++    border: var(--hairline); background: #fff; padding: 8px 10px; }
++  textarea { width: 100%; min-height: 96px; padding: 12px; resize: vertical; }
++  select, input[type="date"] { padding: 6px 8px; }
++  label { font-size: 13px; }
++  .frow { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
++  .frow > div { display: flex; flex-direction: column; gap: 4px; }
+   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
+     background: var(--text); color: var(--bg); cursor: pointer; }
+   button:hover { background: var(--accent); color: var(--text); border-color: var(--text); }
+   button.ghost { background: transparent; color: var(--text); }
+-  table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border: var(--hairline); }
+-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+-    text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+-  td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+-  tr:hover td { background: var(--hover); }
+-  .band-high td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+-  .band-medium td:first-child { box-shadow: inset 4px 0 0 #b9a800; }
+-  .band-low td:first-child { box-shadow: inset 4px 0 0 var(--border); }
+-  .score { font-family: var(--font-mono); font-weight: 500; }
+-  details { margin-top: 4px; }
+-  summary { cursor: pointer; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+-  .breakdown li { list-style: none; font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+-  .breakdown b { color: var(--text); font-family: var(--font-mono); }
+-  .chip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: var(--hairline);
++  button.small { padding: 4px 10px; font-size: 12px; }
++  #statusLine { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12px;
++    border: var(--hairline); background: #fff; padding: 10px 14px; margin-top: 20px; }
++  #statusLine b { font-weight: 500; }
++  .ok { color: var(--text-secondary); font-size: 13px; }
++  .err { color: #b00020; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
++  .chip { display: inline-block; font-family: var(--font-mono); font-size: 12px; border: var(--hairline);
+     padding: 2px 8px; margin: 2px 4px 2px 0; background: #fff; }
+-  .chip.dup { background: var(--flag-tint); border-color: var(--text); color: var(--bad); border-color: var(--bad);}
++  .chip.dup { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+   .chip.gap-high { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+   .chip.gap-medium { color: var(--warn); border-color: var(--warn); }
+   .chip.gap-low { color: var(--text-secondary); }
+-  .flag { font-family: var(--font-mono); font-size: 10px; color: var(--bad); }
++  .chip.band-high { border-color: var(--accent); background: var(--accent); color: var(--text); }
++  .chip.band-medium { border-color: var(--warn); color: var(--warn); }
++  .chip.band-low { color: var(--text-secondary); }
++  .flag { font-family: var(--font-mono); font-size: 12px; color: var(--bad); }
++  /* weights */
+   .weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px 24px; margin-top: 8px; }
+   .weights fieldset { border: var(--hairline); padding: 8px 12px 10px; margin: 0; }
+-  .weights legend { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 4px; }
++  .weights legend { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 4px; }
+   .wrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
+-  .wrow label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+-  .wrow input { width: 64px; font-family: var(--font-mono); font-size: 12px; padding: 3px 6px; border: var(--hairline); background: #fff; }
++  .wrow label { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .wrow input { width: 64px; padding: 3px 6px; }
++  .rdiff { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
++  .rdiff code { color: var(--text); }
++  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
++  /* timeline */
++  .tl-scroll { overflow-x: auto; border: var(--hairline); background: #fff; padding: 12px 12px 8px; }
++  .tl { min-width: 720px; }
++  .tl-months { position: relative; height: 20px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
++  .tl-months span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
++  .tl-lane { display: grid; grid-template-columns: 84px 1fr; align-items: center; border-top: var(--hairline); min-height: 30px; }
++  .tl-juris { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .tl-track { position: relative; height: 26px; }
++  .tl-dot { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; border-radius: 50%;
++    border: 2px solid var(--text); background: var(--bg); padding: 0; cursor: pointer; }
++  .tl-dot:hover { outline: 2px solid var(--accent); }
++  .tl-dot.band-high { background: var(--accent); }
++  .tl-dot.band-medium { background: #fff; border-color: var(--warn); }
++  .tl-dot.past { opacity: 0.45; }
++  .tl-dot.kind-comment { border-radius: 2px; }
++  .tl-now { position: absolute; top: -6px; bottom: 0; width: 0; border-left: 2px solid var(--bad); }
++  .tl-now i { position: absolute; top: -16px; left: 4px; font-style: normal; font-family: var(--font-mono); font-size: 12px; color: var(--bad); white-space: nowrap; }
++  .tl-legend { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 8px; display: flex; gap: 16px; flex-wrap: wrap; }
++  .dotdemo { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--text); background: var(--accent); vertical-align: -1px; }
++  /* cards */
++  .card { border: var(--hairline); background: #fff; margin-bottom: 14px; padding: 14px 16px; box-shadow: inset 4px 0 0 var(--border); }
++  .card.band-high { box-shadow: inset 4px 0 0 var(--accent); }
++  .card.band-medium { box-shadow: inset 4px 0 0 #b9a800; }
++  .card.flash { outline: 3px solid var(--accent); outline-offset: 2px; }
++  .card-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
++  .card-rank { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .card-title { font-size: 16px; font-weight: 700; flex: 1 1 320px; }
++  .card-score { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
++  .card-chips { margin-top: 6px; }
++  .card-dates { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
++  .cite { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
++  .cite button { font-size: 12px; padding: 2px 8px; margin-left: 6px; }
++  .card-review { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; padding-top: 10px; border-top: var(--hairline); }
++  .card-review label { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  .card-review input[type="checkbox"] { width: 15px; height: 15px; }
++  .card-review input[type="text"] { width: 180px; }
++  .card-review select { max-width: 140px; }
++  .done-yes { color: var(--ok); font-weight: 500; }
++  .bk { margin: 8px 0 0; columns: 2; column-gap: 24px; }
++  .bk li { list-style: none; font-size: 12px; color: var(--text-secondary); margin-top: 3px; break-inside: avoid; }
++  .bk b { color: var(--text); font-family: var(--font-mono); font-weight: 500; }
++  .bk li.flag { color: var(--bad); }
++  @media (max-width: 760px) { .bk { columns: 1; } }
++  /* diff + log */
+   .diff li { list-style: none; padding: 6px 0; border-bottom: var(--hairline); font-size: 13px; }
+   .from { text-decoration: line-through; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+-  .to { font-family: var(--font-mono); font-size: 12px; background: var(--flag-tint); padding: 0 3px; color: var(--warn); border-color: var(--warn);}
+-  .tl-label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-top: 14px; }
+-  .ok { color: var(--text-secondary); font-size: 13px; }
+-  .err { color: #b00020; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
++  .to { font-family: var(--font-mono); font-size: 12px; background: var(--flag-tint); padding: 0 3px; color: var(--warn); }
++  #logTable { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
++  #logTable th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 6px 8px; }
++  #logTable td { border-bottom: var(--hairline); padding: 5px 8px; font-family: var(--font-mono); vertical-align: top; }
++  /* drawer + toast */
++  #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(430px, 92vw); background: #fff; border-left: 2px solid var(--text);
++    box-shadow: -8px 0 24px rgba(0,0,0,0.12); padding: 20px; overflow-y: auto; z-index: 50; }
++  #drawer h3 { font-size: 16px; margin: 6px 0 8px; }
++  #drawer .src { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  #drawer blockquote { border-left: 3px solid var(--accent); padding: 10px 12px; margin: 14px 0; font-size: 14px; line-height: 1.6; background: var(--hover); }
++  #drawer mark { background: var(--accent); padding: 0 2px; }
++  #scrim { position: fixed; inset: 0; background: rgba(10,10,10,0.3); z-index: 40; }
++  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
++    font-family: var(--font-mono); font-size: 12px; padding: 8px 16px; z-index: 60; opacity: 0; pointer-events: none; transition: opacity var(--t-fast); }
++  #toast.show { opacity: 1; }
+   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
+-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
++  [hidden] { display: none !important; }
+ </style>
+ </head>
+ <body>
+@@ -62,22 +124,33 @@
+     <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+     <div class="rule"></div>
+     <h1>Regulatory horizon scan</h1>
+-    <p class="lede">Feed of regulatory items in, deduped + classified + impact-ranked scan out —
+-      scored by a transparent, versioned rubric you can audit, re-weight, and diff. Open reimplementation of
+-      Anthropic's closed artifact; the scoring is <b>never</b> a black box.</p>
+-    <p class="lede" style="font-size:13px">Every point of every score carries a factor, a rule, and a reason.
+-      Comment windows and ANPR/RFI nuance are first-class; non-primary sources are flagged and capped;
+-      undated items are kept on the timeline, never dropped.</p>
++    <p class="lede">Feed of regulatory items in, deduped + classified + impact-ranked scan out — scored by a transparent,
++      versioned rubric you can audit, re-weight, and diff. Every point of every score carries a factor, a rule, and a reason.</p>
+   </header>
+ 
++  <div id="statusLine" aria-live="polite"></div>
++
+   <section>
+-    <h2>Feed input (JSON — prefilled worked example)</h2>
+-    <textarea id="input" spellcheck="false" aria-label="Feed input JSON"></textarea>
++    <h2>Feed input</h2>
++    <div class="frow">
++      <div><label for="asOf">As-of date (anchors all time math)</label><input type="date" id="asOf" /></div>
++    </div>
++    <div style="margin-top:12px">
++      <label for="pasteBox">Paste feed items — one JSON item per line, a JSON array, or a full <code>{"currentFeed": […]}</code> document</label>
++      <textarea id="pasteBox" spellcheck="false" style="margin-top:4px; min-height:64px"
++        placeholder='{"title": "WA Chatbot Disclosure Bill", "jurisdiction": "Washington", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-04-01", "summary": "Disclosure duties for generative AI chatbots (fictional).", "source": "WA Legislature feed (fictional)", "provenance": "primary", "link": "https://example.gov/wa-chatbot"}'></textarea>
++    </div>
+     <div class="row">
+-      <button id="run">Run scan</button>
+-      <button id="diffBtn" class="ghost">Diff vs previous snapshot</button>
+-      <button id="csvBtn" class="ghost">Export CSV</button>
+-      <button id="mdBtn" class="ghost">Download digest (.md)</button>
++      <button id="addBtn">Add items to feed</button>
++      <button id="replaceBtn" class="ghost">Replace feed</button>
++      <button id="exampleBtn" class="ghost">Reload worked example</button>
++      <button id="clearBtn" class="ghost">Clear feed</button>
++      <button id="advToggle" class="ghost" aria-expanded="false" aria-controls="adv">Advanced: full feed JSON ▾</button>
++    </div>
++    <div id="adv" hidden style="margin-top:12px">
++      <label for="input">Full feed JSON (asOf + currentFeed — asOf here is wired to the scan)</label>
++      <textarea id="input" spellcheck="false" style="min-height:180px"></textarea>
++      <div class="row"><button id="run">Run scan</button></div>
+     </div>
+     <p class="err" id="err" hidden></p>
+   </section>
+@@ -89,168 +162,515 @@
+       <button id="rerun" class="ghost">Apply weights &amp; re-run</button>
+       <button id="resetW" class="ghost">Reset to rubric defaults</button>
+     </div>
++    <p class="rdiff" id="rubricDiff"></p>
++  </section>
++
++  <section>
++    <h2>Filters</h2>
++    <div class="frow">
++      <div style="flex:1 1 220px"><label for="q">Search title / summary / source</label><input type="text" id="q" style="width:100%" /></div>
++      <div><label for="fBand">Band</label><select id="fBand"><option value="all">All bands</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
++      <div><label for="fJuris">Jurisdiction</label><select id="fJuris"></select></div>
++      <div><label for="fTopic">Topic</label><select id="fTopic"></select></div>
++      <div><label for="fRev">Review state</label><select id="fRev"><option value="all">All</option><option value="unchecked">Unchecked</option><option value="checked">Checked</option></select></div>
++      <div style="flex-direction:row; align-items:center; gap:6px; padding-bottom:8px"><input type="checkbox" id="f90" /><label for="f90">Action date within 90 days</label></div>
++    </div>
++    <p class="ok" id="filterCount" aria-live="polite" style="margin-top:10px"></p>
+   </section>
+ 
+   <section>
+-    <h2>Ranked scan</h2>
++    <h2>Horizon timeline — effective dates ● and comment deadlines ■, banded by month</h2>
++    <div class="tl-scroll"><div class="tl" id="timeline"></div></div>
++    <p class="tl-legend"><span><span class="dotdemo"></span> high band</span><span><span class="dotdemo" style="background:#fff;border-color:var(--warn)"></span> medium band</span><span><span class="dotdemo" style="background:var(--bg)"></span> low band</span><span>■ comment deadline</span><span style="color:var(--bad)">│ as-of</span><span>click a dot to jump to its card</span></p>
++    <div id="undated" class="ok" style="margin-top:8px"></div>
++  </section>
++
++  <section>
++    <h2>Ranked scan — item cards</h2>
+     <div id="gaps"></div>
+     <div id="dedupe" class="ok"></div>
+-    <div style="overflow-x:auto"><table id="scanTable">
+-      <thead><tr><th>#</th><th>Rule</th><th>Juris</th><th>Topic</th><th>Type</th><th>Status</th><th>Effective</th><th>Comments close</th><th>Score</th><th>Why this score</th></tr></thead>
+-      <tbody></tbody>
+-    </table></div>
++    <div id="cards" style="margin-top:12px"></div>
+   </section>
+ 
+   <section>
+-    <h2>Timeline — actionBy = earliest of effective date / comment deadline</h2>
+-    <ul id="timeline" class="diff"></ul>
++    <div class="h2row"><h2 style="margin-bottom:0">Diff — rule changes since previous snapshot</h2>
++      <button id="diffBtn" class="ghost small">Diff vs previous snapshot</button></div>
++    <ul id="diff" class="diff"></ul>
+   </section>
+ 
+   <section>
+-    <h2>Diff view — rule changes since previous snapshot</h2>
+-    <ul id="diff" class="diff"></ul>
++    <div class="h2row"><h2 style="margin-bottom:0">Audit log — append-only, survives reload</h2>
++      <span class="row" style="margin-top:0">
++        <button id="logExport" class="ghost small">Export log (.jsonl)</button>
++        <button id="logClear" class="ghost small">Clear log</button>
++      </span></div>
++    <p class="ok" id="logCount"></p>
++    <div style="overflow-x:auto"><table id="logTable"><thead><tr>
++      <th scope="col">When (local)</th><th scope="col">Action</th><th scope="col">Item</th><th scope="col">Detail</th>
++    </tr></thead><tbody></tbody></table></div>
++  </section>
++
++  <section>
++    <h2>Exports</h2>
++    <div class="row">
++      <button id="csvBtn" class="ghost">Export CSV</button>
++      <button id="mdBtn" class="ghost">Download digest (.md)</button>
++    </div>
+   </section>
+ 
+   <footer class="disclaimer">
+     Deterministic core, no LLM in the loop — the model (if any) only structures the feed, never scores.
++    Working state (feed, weights, review decisions, audit log) persists in this browser via localStorage; nothing leaves the page.
+     All example data fictional. Not legal advice; jurisdictions &amp; weights are configurable rules-as-data.
+     <code>anthropic counterpart: Regulatory horizon scan (closed)</code>
+   </footer>
+ </div>
+ 
++<div id="scrim" hidden></div>
++<aside id="drawer" role="dialog" aria-label="Source detail" hidden>
++  <button id="drawerClose" class="small ghost" aria-label="Close source panel" style="float:right">✕ close</button>
++  <div class="src" id="drawerKicker">SOURCE</div>
++  <h3 id="drawerTitle"></h3>
++  <div class="src" id="drawerCite"></div>
++  <blockquote id="drawerQuote"></blockquote>
++  <div class="row" style="margin-top:0"><button id="drawerCopy" class="ghost small" aria-label="Copy quote and citation">Copy quote + citation</button></div>
++</aside>
++<div id="toast" role="status"></div>
++
+ <script type="module">
+-  import { scanFeed, diffFeeds, toCsv, toMarkdown } from "../core/core.js";
++  import { scanFeed, diffFeeds, diffRubrics, toCsv, toMarkdown, parseDate, daysUntil } from "../core/core.js";
+   import EXAMPLE from "./example.js";
+ 
+-  const DEFAULT_RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile, AS_OF = EXAMPLE.asOf;
+-  let rubric = structuredClone(DEFAULT_RUBRIC);
++  /* ---- vendored from open-artifacts/_shared/persist.js (browser subset: createStorage + backends; Node-only appendLog/loadLog omitted) ---- */
++  function memoryBackend(name) {
++    const map = new Map();
++    return { backendName: name,
++      get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
++      set(k, v) { map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) }); },
++      remove(k) { map.delete(k); },
++      append(k, entry) { if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
++      entries(k) { const v = map.get(k); return v && v.kind === 'log' ? v.items.slice() : []; },
++      exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : ''); } };
++  }
++  function probeLocalStorage() {
++    try { const ls = globalThis.localStorage; if (!ls) return null;
++      const pk = '__persist_probe__'; ls.setItem(pk, '1'); const ok = ls.getItem(pk) === '1'; ls.removeItem(pk); return ok ? ls : null;
++    } catch { return null; }
++  }
++  function localBackend(namespace) {
++    const ls = probeLocalStorage(); if (!ls) return memoryBackend('memory-fallback');
++    const key = (k) => namespace + ":" + k;
++    const read = (k) => { try { const raw = ls.getItem(key(k)); return raw == null ? null : raw; } catch { return null; } };
++    let degraded = false; const mem = memoryBackend('memory');
++    return { backendName: 'local',
++      get(k) { if (degraded) return mem.get(k); const raw = read(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
++      set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
++      remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
++      append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
++      entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
++      exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : ''); } };
++  }
++  function createStorage(namespace, opts = {}) {
++    const backend = opts.backend ?? 'auto';
++    if (backend === 'memory') return memoryBackend('memory');
++    if (backend === 'local') return localBackend(namespace);
++    return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory');
++  }
++  /* ---- end vendored persist.js ---- */
++
++  const store = createStorage("rhs-horizon-demo");
++  const DEFAULT_RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile;
++  const OWNERS = ["Unassigned", "A. Rodrigues", "K. Osei", "M. Lindqvist"];
++  const DEFAULT_FILTERS = { q: "", band: "all", juris: "all", topic: "all", rev: "all", next90: false };
++  let state = { asOf: EXAMPLE.asOf, feed: structuredClone(EXAMPLE.currentFeed), rubric: structuredClone(DEFAULT_RUBRIC),
++    review: {}, filters: { ...DEFAULT_FILTERS } };
++  let lastScan = null, lastFiltered = [];
+   const $ = (id) => document.getElementById(id);
++  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
++  const asOfDate = () => parseDate(state.asOf);
+ 
+-  $("input").value = JSON.stringify({ asOf: AS_OF, currentFeed: EXAMPLE.currentFeed }, null, 2);
+-  let lastScan = null;
++  /* ---- persistence ---- */
++  function save() { store.set("state", { asOf: state.asOf, feed: state.feed, rubric: state.rubric, review: state.review, filters: state.filters }); }
++  function logAction(action, item, detail) {
++    store.append("log", { t: new Date().toISOString(), action, item: item ?? null, detail: detail ?? null });
++    renderLog();
++  }
++  function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600); }
+ 
+-  /* ---- rubric weight editor (every factor point is an editable number) ---- */
++  /* ---- rubric weight editor ---- */
+   function buildWeights() {
+-    const host = $("weights");
+-    host.innerHTML = "";
+-    for (const f of rubric.factors) {
++    const host = $("weights"); host.innerHTML = "";
++    for (const f of state.rubric.factors) {
+       const fs = document.createElement("fieldset");
+-      const legend = document.createElement("legend");
+-      legend.textContent = f.id;
+-      fs.appendChild(legend);
+-      for (const [k, v] of Object.entries(f.points ?? {})) {
+-        fs.appendChild(wrow(`${f.id}:${k}`, v));
+-      }
+-      (f.thresholds ?? []).forEach((t, i) => {
+-        fs.appendChild(wrow(`${f.id}:≤${t.withinDays}d`, t.points, i));
+-      });
++      const legend = document.createElement("legend"); legend.textContent = f.label || f.id; fs.appendChild(legend);
++      for (const [k, v] of Object.entries(f.points ?? {})) fs.appendChild(wrow(f.id, k, v));
++      (f.thresholds ?? []).forEach((t, i) => fs.appendChild(wrow(f.id, `≤${t.withinDays}d`, t.points, i)));
+       host.appendChild(fs);
+     }
+   }
+-  function wrow(label, value, thr) {
+-    const div = document.createElement("div");
+-    div.className = "wrow";
+-    const lab = document.createElement("label");
+-    lab.textContent = label;
+-    const inp = document.createElement("input");
+-    inp.type = "number"; inp.value = value; inp.step = "1";
+-    inp.dataset.factor = label.split(":")[0]; inp.dataset.key = label.split(":")[1];
+-    if (thr !== undefined) inp.dataset.thr = thr;
+-    div.append(lab, inp);
+-    return div;
++  function wrow(factor, key, value, thr) {
++    const div = document.createElement("div"); div.className = "wrow";
++    const id = "w-" + factor + "-" + key + "-" + (thr ?? "");
++    const lab = document.createElement("label"); lab.htmlFor = id; lab.textContent = key;
++    const inp = document.createElement("input"); inp.type = "number"; inp.id = id; inp.value = value; inp.step = "1";
++    inp.dataset.factor = factor; inp.dataset.key = key; if (thr !== undefined) inp.dataset.thr = thr;
++    div.append(lab, inp); return div;
+   }
+   function readWeights() {
+     const next = structuredClone(DEFAULT_RUBRIC);
+     for (const inp of $("weights").querySelectorAll("input")) {
+-      const f = next.factors.find((x) => x.id === inp.dataset.factor);
+-      if (!f) continue;
+-      const n = Number(inp.value);
+-      if (!Number.isFinite(n)) continue;
+-      if (inp.dataset.thr !== undefined) f.thresholds[+inp.dataset.thr].points = n;
+-      else f.points[inp.dataset.key] = n;
++      const f = next.factors.find((x) => x.id === inp.dataset.factor); if (!f) continue;
++      const n = Number(inp.value); if (!Number.isFinite(n)) continue;
++      if (inp.dataset.thr !== undefined) f.thresholds[+inp.dataset.thr].points = n; else f.points[inp.dataset.key] = n;
+     }
+     return next;
+   }
+-  $("rerun").onclick = () => { rubric = readWeights(); run(); };
+-  $("resetW").onclick = () => { rubric = structuredClone(DEFAULT_RUBRIC); buildWeights(); run(); };
+ 
+-  /* ---- scan ---- */
++  /* ---- scan + render ---- */
+   function run() {
+     $("err").hidden = true;
+-    try {
+-      const feed = JSON.parse($("input").value).currentFeed;
+-      lastScan = scanFeed(feed, rubric, PROFILE, AS_OF);
+-      renderScan(lastScan);
+-    } catch (e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; }
++    try { lastScan = scanFeed(state.feed, state.rubric, PROFILE, state.asOf); }
++    catch (e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; return; }
++    renderAll();
+   }
+-  $("run").onclick = run;
++  function checkedCount() { return lastScan ? lastScan.items.filter((it) => state.review[it.id]?.checked).length : 0; }
+ 
+-  function renderScan(scan) {
+-    const tb = $("scanTable").querySelector("tbody");
+-    tb.innerHTML = "";
+-    scan.items.forEach((it, i) => {
+-      const tr = document.createElement("tr");
+-      tr.className = "band-" + it.scoring.band;
+-      const why = document.createElement("details");
+-      why.innerHTML = `<summary>breakdown</summary><ul class="breakdown">` +
+-        it.scoring.breakdown.map((b) => `<li><b>${b.factor} +${b.points}</b> — ${esc(b.rule)} <i>(${esc(b.note)})</i></li>`).join("") +
+-        (it.scoring.flags ?? []).map((f) => `<li class="flag">flag: ${esc(f)}</li>`).join("") +
+-        `</ul>`;
+-      const flags = (it.scoring.flags ?? []).map((f) => `<br><span class="flag">${esc(f)}</span>`).join("");
+-      tr.innerHTML = `<td class="score">${i + 1}</td><td>${esc(it.title)}</td><td><span class="chip">${esc(it.jurisdiction)}</span></td>` +
+-        `<td>${it.topic}</td><td>${esc((it.itemType ?? "—").toUpperCase())}</td><td>${esc(it.status)}</td>` +
+-        `<td class="score">${esc(it.effectiveDate ?? "—")}</td><td class="score">${esc(it.commentDeadline ?? "—")}</td>` +
+-        `<td class="score">${it.scoring.score}<br><small style="color:var(--text-secondary)">${it.scoring.band}</small>${flags}</td>`;
+-      tr.appendChild(document.createElement("td")).appendChild(why);
+-      tb.appendChild(tr);
++  function applyFilters() {
++    const f = state.filters, q = f.q.trim().toLowerCase();
++    return (lastScan?.items ?? []).filter((it) => {
++      if (f.band !== "all" && it.scoring.band !== f.band) return false;
++      if (f.juris !== "all" && it.jurisdiction !== f.juris) return false;
++      if (f.topic !== "all" && it.topic !== f.topic) return false;
++      const ck = !!state.review[it.id]?.checked;
++      if (f.rev === "checked" && !ck) return false;
++      if (f.rev === "unchecked" && ck) return false;
++      if (f.next90) {
++        const d = it.actionBy ? parseDate(it.actionBy) : null, n = d ? daysUntil(d, asOfDate()) : null;
++        if (n === null || n < 0 || n > 90) return false;
++      }
++      if (q && !(it.title + " " + (it.summary ?? "") + " " + (it.source ?? "")).toLowerCase().includes(q)) return false;
++      return true;
+     });
+-    $("dedupe").innerHTML = scan.duplicates.length
+-      ? "Deduped: " + scan.duplicates.map((d) => `<span class="chip dup">${esc(d.droppedId)} → ${esc(d.keptId)}${d.mergedFields.length ? " (+" + d.mergedFields.join("/") + ")" : ""}</span>`).join("")
+-      : "No duplicates in this feed.";
+-    const gaps = scan.coverageGaps ?? [];
+-    $("gaps").innerHTML = gaps.length
+-      ? "Coverage gaps: " + gaps.map((g) => `<span class="chip gap-${g.severity}">${g.severity} · ${g.kind} ${g.value}</span>`).join("")
+-      : "Coverage: no gaps — every profile jurisdiction/topic has feed items.";
+-    const ms = (m) => `<li><span class="score">${esc(m.date)}</span> · <span class="chip">${m.kind}</span> · score ${m.score} · ${esc(m.title)} <span class="chip">${esc(m.jurisdiction)}</span></li>`;
+-    $("timeline").innerHTML =
+-      `<div class="tl-label">Upcoming</div>` + (scan.timeline.upcoming.map(ms).join("") || '<li class="ok">No upcoming milestones.</li>') +
+-      (scan.timeline.past.length ? `<div class="tl-label">Past</div>` + scan.timeline.past.map(ms).join("") : "") +
+-      (scan.timeline.undated.length ? `<div class="tl-label">Undated (kept, not dropped)</div>` +
+-        scan.timeline.undated.map((u) => `<li>score ${u.score} · ${esc(u.title)} <span class="chip">${esc(u.jurisdiction)}</span></li>`).join("") : "");
+   }
+ 
+-  /* ---- diff ---- */
++  function renderAll() { renderStatus(); renderFilterOptions(); renderScanMeta(); renderTimeline(); renderCards(); renderFilterCount(); }
++
++  function renderStatus() {
++    const n = lastScan.items.length, hi = lastScan.items.filter((i) => i.scoring.band === "high").length;
++    $("statusLine").innerHTML =
++      `<span><b>${esc(n)}</b> developments</span><span><b>${esc(hi)}</b> high band</span>` +
++      `<span><b>${esc(checkedCount())}/${esc(n)}</b> checked</span><span>rubric <b>${esc(lastScan.rubricVersion)}</b></span>` +
++      `<span>as-of <b>${esc(state.asOf)}</b></span><span>storage: <b>${esc(store.backendName)}</b></span>`;
++  }
++  function renderFilterOptions() {
++    const opts = (sel, vals, allLabel, fkey) => {
++      sel.innerHTML = '<option value="all">' + esc(allLabel) + "</option>" +
++        vals.map((v) => '<option' + (state.filters[fkey] === v ? " selected" : "") + ">" + esc(v) + "</option>").join("");
++    };
++    const juris = [...new Set(lastScan.items.map((i) => i.jurisdiction))].sort();
++    const topics = [...new Set(lastScan.items.map((i) => i.topic))].sort();
++    opts($("fJuris"), juris, "All jurisdictions", "juris"); opts($("fTopic"), topics, "All topics", "topic");
++    $("q").value = state.filters.q; $("fBand").value = state.filters.band; $("fRev").value = state.filters.rev; $("f90").checked = state.filters.next90;
++  }
++  function renderFilterCount() {
++    $("filterCount").textContent = lastFiltered.length + " of " + lastScan.items.length + " items shown — filters apply to cards and timeline.";
++  }
++  function renderScanMeta() {
++    const dup = lastScan.duplicates;
++    $("dedupe").innerHTML = "Dedupe transparency: " + (dup.length
++      ? dup.map((d) => { const merged = d.mergedFields.length ? " (merged: " + esc(d.mergedFields.join("/")) + ")" : "";
++        return `<span class="chip dup">dropped ${esc(d.droppedId || "(no id)")} → kept ${esc(d.keptId || "(no id)")}${esc(merged)} · ${esc(d.reason)}</span>`; }).join("")
++      : "no duplicates dropped in this feed.");
++    const gaps = lastScan.coverageGaps ?? [];
++    $("gaps").innerHTML = "Coverage: " + (gaps.length
++      ? gaps.map((g) => `<span class="chip gap-${g.severity}">${esc(g.severity)} · ${esc(g.kind)} ${esc(g.value)} — ${esc(g.note)}</span>`).join("")
++      : "no gaps — every profile jurisdiction/topic has feed items.");
++  }
++
++  /* ---- timeline (chronological lanes, month bands, as-of marker) ---- */
++  function renderTimeline() {
++    const host = $("timeline"); lastFiltered = applyFilters();
++    const dated = [];
++    for (const it of lastFiltered) {
++      if (it.effectiveDate) dated.push({ d: it.effectiveDate, kind: "effective", it });
++      if (it.commentDeadline) dated.push({ d: it.commentDeadline, kind: "comment", it });
++    }
++    const und = lastFiltered.filter((it) => !it.effectiveDate && !it.commentDeadline);
++    $("undated").innerHTML = und.length ? "Undated (kept, never dropped): " + und.map((u) => `<span class="chip">${esc(u.title)}</span>`).join("") : "";
++    if (!dated.length) { host.innerHTML = '<p class="ok">No dated milestones match the current filters.</p>'; return; }
++    const ts = dated.map((m) => m.d).sort();
++    const t0 = parseDate(ts[0]), t1 = parseDate(ts[ts.length - 1]);
++    const span = Math.max(t1 - t0, 86400000 * 30);
++    const pct = (iso) => Math.min(100, Math.max(0, ((parseDate(iso) - t0) / span) * 100));
++    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
++    const months = [];
++    for (let dt = new Date(Date.UTC(t0.getUTCFullYear(), t0.getUTCMonth(), 1)); dt <= t1; dt.setUTCMonth(dt.getUTCMonth() + 1))
++      months.push({ iso: dt.toISOString().slice(0, 10), y: dt.getUTCFullYear(), m: dt.getUTCMonth() });
++    const clamp = (p) => Math.min(98.5, Math.max(1.5, p));
++    let html = '<div class="tl-months">';
++    let prevPct = -100;
++    months.forEach((mo, ix) => {
++      const p = clamp(pct(mo.iso));
++      const last = ix === months.length - 1;
++      if (!last && p - prevPct < 4.2) return; // thin the axis: skip labels that would collide
++      prevPct = p;
++      const label = (ix === 0 || mo.m === 0) ? mo.y + " " + MON[mo.m] : MON[mo.m];
++      html += '<span style="left:' + p.toFixed(2) + '%">' + esc(label) + "</span>";
++    });
++    html += "</div>";
++    const lanes = new Map();
++    for (const m of dated) { if (!lanes.has(m.it.jurisdiction)) lanes.set(m.it.jurisdiction, []); lanes.get(m.it.jurisdiction).push(m); }
++    const nowPct = pct(state.asOf);
++    const nowBar = nowPct >= 0 && nowPct <= 100 ? '<div class="tl-now" style="left:' + nowPct.toFixed(2) + '%"></div>' : "";
++    const nowFirst = nowBar ? nowBar + '<i style="position:absolute;top:-16px;left:' + (nowPct + 0.6).toFixed(2) + '%;font-style:normal;font-family:var(--font-mono);font-size:12px;color:var(--bad);white-space:nowrap">as-of</i>' : "";
++    let first = true;
++    for (const [juris, ms] of [...lanes.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])))) {
++      const dots = ms.map((m) => {
++        const label = m.d + " " + (m.kind === "effective" ? "effective" : "comments close") + " · " + m.it.title;
++        const past = parseDate(m.d) < asOfDate() ? " past" : "";
++        const cls = "tl-dot kind-" + m.kind + " band-" + m.it.scoring.band + past;
++        return '<button class="' + cls + '" style="left:' + pct(m.d).toFixed(2) + '%" data-jump="' + esc(m.it.id) + '" title="' + esc(label) + '" aria-label="' + esc(label) + '"></button>';
++      }).join("");
++      html += '<div class="tl-lane"><div class="tl-juris">' + esc(juris) + '</div><div class="tl-track">' + (first ? nowFirst : nowBar) + dots + "</div></div>";
++      first = false;
++    }
++    host.innerHTML = html;
++  }
++
++  /* ---- item cards ---- */
++  function relDays(iso) { const n = daysUntil(parseDate(iso), asOfDate()); return n === null ? "" : n < 0 ? " (" + Math.abs(n) + "d ago)" : n === 0 ? " (today)" : " (in " + n + "d)"; }
++  function renderCards() {
++    const host = $("cards"); host.innerHTML = "";
++    lastFiltered.forEach((it, i) => {
++      const rv = state.review[it.id] ?? {};
++      const el = document.createElement("article");
++      el.className = `card band-${it.scoring.band}`; el.id = "card-" + it.id;
++      const mergedChip = it.mergedFrom?.length ? `<span class="chip dup">merged from ${esc(it.mergedFrom.join(", "))}</span>` : "";
++      const linkOk = typeof it.link === "string" && /^https?:\/\//.test(it.link);
++      const linkHtml = linkOk ? ` · <a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>` : "";
++      const ckAttr = rv.checked ? " checked" : "";
++      const ownerOpts = OWNERS.map((o) => '<option' + (rv.owner === o ? " selected" : "") + ">" + esc(o) + "</option>").join("");
++      const dates = [
++        it.effectiveDate ? "effective " + it.effectiveDate + relDays(it.effectiveDate) : null,
++        it.commentDeadline ? "comments close " + it.commentDeadline + relDays(it.commentDeadline) : null,
++        it.publishedDate ? "published " + it.publishedDate : null,
++      ].filter(Boolean).join(" · ");
++      const flags = (it.scoring.flags ?? []).map((f) => `<span class="flag">${esc(f)}</span>`).join(" ");
++      const bk = it.scoring.breakdown.map((b) => `<li><b>${esc(b.factor)} +${b.points}</b> — ${esc(b.rule)} <i>(${esc(b.note)})</i></li>`).join("") +
++        (it.scoring.flags ?? []).map((f) => `<li class="flag">flag: ${esc(f)}</li>`).join("");
++      el.innerHTML =
++        `<div class="card-head"><span class="card-rank">#${i + 1}</span><span class="card-title">${esc(it.title)}</span>` +
++        `<span class="card-score">score ${it.scoring.score}</span><span class="chip band-${it.scoring.band}">${it.scoring.band}</span></div>` +
++        `<div class="card-chips"><span class="chip">${esc(it.jurisdiction)}</span><span class="chip">${esc(it.topic)}</span>` +
++        `<span class="chip">${esc((it.itemType ?? "—").toUpperCase())}</span><span class="chip">${esc(it.status)}</span>` +
++        `<span class="chip">provenance: ${esc(it.scoring.provenance)}</span>` + mergedChip + `</div>` +
++        `<div class="card-dates">${esc(dates) || "no dates — kept on undated timeline"} ${flags}</div>` +
++        `<div class="cite">Source: ${esc(it.source ?? "—")}` + linkHtml +
++        `<button class="ghost small" data-src="${esc(it.id)}" aria-label="Open source panel for ${esc(it.title)}">View source</button></div>` +
++        '<div class="card-review">' +
++        '<input type="checkbox" id="ck-' + esc(it.id) + '" data-ck="' + esc(it.id) + '"' + ckAttr + ' />' +
++        `<label for="ck-${esc(it.id)}">Checked against source</label>` +
++        `<label for="ow-${esc(it.id)}">Owner</label><select id="ow-${esc(it.id)}" data-ow="${esc(it.id)}">` +
++        ownerOpts + `</select>` +
++        `<label for="nt-${esc(it.id)}">Note</label><input type="text" id="nt-${esc(it.id)}" data-nt="${esc(it.id)}" placeholder="reviewer note" value="${esc(rv.note ?? "")}" /></div>` +
++        '<ul class="bk">' + bk + "</ul>";
++      host.appendChild(el);
++    });
++    if (!lastFiltered.length) host.innerHTML = '<p class="ok">No items match the current filters.</p>';
++  }
++
++  /* card events (delegated) */
++  $("cards").addEventListener("change", (e) => {
++    const t = e.target, id = t.dataset.ck || t.dataset.ow || t.dataset.nt;
++    if (!id) return;
++    const it = lastScan.items.find((x) => x.id === id);
++    state.review[id] ??= {};
++    if (t.dataset.ck) { state.review[id].checked = t.checked; logAction(t.checked ? "mark-checked" : "unmark-checked", id, it?.title); }
++    if (t.dataset.ow) { state.review[id].owner = t.value; logAction("set-owner", id, t.value + " · " + (it?.title ?? "")); }
++    if (t.dataset.nt) { state.review[id].note = t.value; logAction("add-note", id, (it?.title ?? "") + ": " + t.value); }
++    save(); renderStatus();
++  });
++  $("cards").addEventListener("click", (e) => {
++    const src = e.target.closest("[data-src]");
++    if (src) { showSource(src.dataset.src); return; }
++  });
++  $("timeline").addEventListener("click", (e) => {
++    const dot = e.target.closest("[data-jump]");
++    if (!dot) return;
++    const card = document.getElementById("card-" + dot.dataset.jump);
++    if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1600); }
++  });
++
++  /* ---- source drawer (citation click-through) ---- */
++  function showSource(id) {
++    const it = lastScan.items.find((x) => x.id === id); if (!it) return;
++    $("drawerTitle").textContent = it.title;
++    const linkOk = typeof it.link === "string" && /^https?:\/\//.test(it.link);
++    $("drawerCite").innerHTML =
++      `${esc(it.source ?? "—")} · provenance <b>${esc(it.scoring.provenance)}</b> · published ${esc(it.publishedDate ?? "—")}<br>` +
++      (linkOk ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>` : `no valid link — inert text: ${esc(String(it.link ?? "—"))}`);
++    let quote = esc(it.summary ?? "(no summary in feed)");
++    const via = it.scoring.breakdown.find((b) => b.factor === "topic" && /via "(.+)"/.test(b.note));
++    if (via) { const kw = /via "(.+)"/.exec(via.note)[1].toLowerCase();
++      const idx = String(it.summary ?? "").toLowerCase().indexOf(kw);
++      if (idx >= 0) quote = esc(it.summary.slice(0, idx)) + "<mark>" + esc(it.summary.slice(idx, idx + kw.length)) + "</mark>" + esc(it.summary.slice(idx + kw.length)); }
++    $("drawerQuote").innerHTML = quote + `<br><span class="src">[passage viewer is approximate — seeded excerpt from the feed item, not the source text]</span>`;
++    $("drawer").dataset.itemId = id;
++    $("scrim").hidden = false; $("drawer").hidden = false; $("drawerClose").focus();
++  }
++  function closeDrawer() { $("scrim").hidden = true; $("drawer").hidden = true; }
++  $("drawerClose").onclick = closeDrawer; $("scrim").onclick = closeDrawer;
++  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
++  $("drawerCopy").onclick = async () => {
++    const it = lastScan.items.find((x) => x.id === $("drawer").dataset.itemId); if (!it) return;
++    const text = it.title + " — " + (it.summary ?? "") + " (" + (it.source ?? "no source") + (it.link ? ", " + it.link : "") + ") [fictional example data]";
++    try { await navigator.clipboard.writeText(text); toast("Quote + citation copied"); }
++    catch { toast("Clipboard unavailable — select the quote manually"); }
++  };
++
++  /* ---- paste box (guided input) ---- */
++  function parsePaste(text) {
++    const trimmed = text.trim();
++    if (!trimmed) throw new Error("paste feed items first — one JSON item per line, an array, or a {\"currentFeed\": […]} document");
++    let items = null, asOf = null, parsed;
++    try { parsed = JSON.parse(trimmed); }
++    catch {
++      // line mode: one JSON object per line, errors carry the 1-based line number
++      const out = [], errs = [];
++      trimmed.split("\n").forEach((ln, i) => {
++        const s = ln.trim(); if (!s) return;
++        try { out.push(JSON.parse(s)); } catch (le) { errs.push("line " + (i + 1) + ": " + le.message); }
++      });
++      if (errs.length) throw new Error(errs.join("\n"));
++      if (!out.length) throw new Error("no JSON items found");
++      items = out;
++    }
++    if (items === null) {
++      if (Array.isArray(parsed)) items = parsed;
++      else if (parsed && Array.isArray(parsed.currentFeed)) { items = parsed.currentFeed; asOf = parsed.asOf ?? null; }
++      else if (parsed && typeof parsed === "object" && parsed.title) items = [parsed];
++      else throw new Error('parsed, but found no items — expected a JSON array, a single item, or {"currentFeed": […]}');
++    }
++    items.forEach((it, i) => { if (!it || typeof it !== "object" || !it.title) throw new Error('item ' + (i + 1) + ': missing required "title"'); });
++    return { items, asOf };
++  }
++  $("addBtn").onclick = () => {
++    try { const { items, asOf } = parsePaste($("pasteBox").value);
++      state.feed.push(...items); if (asOf) { state.asOf = asOf; $("asOf").value = asOf; }
++      logAction("feed-add", null, items.length + " item(s): " + items.map((i) => i.title).join("; ").slice(0, 140));
++      save(); run(); toast("Added " + items.length + " item(s)");
++    } catch (e) { err(e); }
++  };
++  $("replaceBtn").onclick = () => {
++    try { const { items, asOf } = parsePaste($("pasteBox").value);
++      state.feed = items; if (asOf) { state.asOf = asOf; $("asOf").value = asOf; }
++      logAction("feed-replace", null, "feed replaced with " + items.length + " item(s)"); save(); run(); toast("Feed replaced (" + items.length + " items)");
++    } catch (e) { err(e); }
++  };
++  $("exampleBtn").onclick = () => {
++    state.feed = structuredClone(EXAMPLE.currentFeed); state.rubric = structuredClone(DEFAULT_RUBRIC); state.asOf = EXAMPLE.asOf;
++    state.review = {}; $("asOf").value = state.asOf; buildWeights(); $("rubricDiff").textContent = "";
++    logAction("feed-example", null, "worked example reloaded (review state cleared)"); save(); run(); toast("Worked example reloaded");
++  };
++  $("clearBtn").onclick = () => {
++    state.feed = []; logAction("feed-clear", null, "feed cleared"); save(); run(); toast("Feed cleared — paste items to rebuild");
++  };
++  $("asOf").addEventListener("change", () => {
++    if (!$("asOf").value) return;
++    state.asOf = $("asOf").value; logAction("set-asof", null, state.asOf); save(); run();
++  });
++
++  /* ---- advanced JSON ---- */
++  $("advToggle").onclick = () => {
++    const open = $("adv").hidden;
++    $("adv").hidden = !open; $("advToggle").setAttribute("aria-expanded", String(open));
++    $("advToggle").textContent = open ? "Advanced: full feed JSON ▴" : "Advanced: full feed JSON ▾";
++    if (open) $("input").value = JSON.stringify({ asOf: state.asOf, currentFeed: state.feed }, null, 2);
++  };
++  $("run").onclick = () => {
++    try {
++      const v = JSON.parse($("input").value);
++      if (!Array.isArray(v.currentFeed)) throw new Error("expected {\"asOf\": \"…\", \"currentFeed\": […]}");
++      state.feed = v.currentFeed; state.asOf = v.asOf ?? state.asOf; $("asOf").value = state.asOf;
++      logAction("run-json", null, state.feed.length + " items, as-of " + state.asOf); save(); run(); toast("Scan re-run from JSON");
++    } catch (e) { err(e); }
++  };
++
++  /* ---- weights apply/reset + rubric diff (surfaces core diffRubrics) ---- */
++  $("rerun").onclick = () => {
++    state.rubric = readWeights();
++    const d = diffRubrics(DEFAULT_RUBRIC, state.rubric);
++    $("rubricDiff").innerHTML = d.length
++      ? "Rubric vs defaults: " + d.map((c) => `<code>${esc(c.path)}</code> ${esc(JSON.stringify(c.from))} → <b>${esc(JSON.stringify(c.to))}</b>`).join(" · ")
++      : "Rubric matches defaults.";
++    logAction("apply-weights", null, d.length + " rubric change(s) vs defaults"); save(); run();
++  };
++  $("resetW").onclick = () => {
++    state.rubric = structuredClone(DEFAULT_RUBRIC); buildWeights(); $("rubricDiff").textContent = "Rubric matches defaults.";
++    logAction("reset-weights", null, "rubric reset to defaults"); save(); run();
++  };
++
++  /* ---- filters ---- */
++  for (const [id, key] of [["q", "q"], ["fBand", "band"], ["fJuris", "juris"], ["fTopic", "topic"], ["fRev", "rev"]])
++    $(id).addEventListener(id === "q" ? "input" : "change", () => { state.filters[key] = $(id).value; save(); renderTimeline(); renderCards(); renderFilterCount(); renderStatus(); });
++  $("f90").addEventListener("change", () => { state.filters.next90 = $("f90").checked; save(); renderTimeline(); renderCards(); renderFilterCount(); });
++
++  /* ---- snapshot diff ---- */
+   $("diffBtn").onclick = () => {
+-    let feed;
+-    try { feed = JSON.parse($("input").value).currentFeed; } catch (e) { return err(e); }
+-    const d = diffFeeds(EXAMPLE.previousFeed, feed);
++    const d = diffFeeds(EXAMPLE.previousFeed, state.feed);
+     const lines = [];
+-    for (const a of d.added) lines.push(`<li>＋ <b>${esc(a.id)}</b> — new in this snapshot</li>`);
+-    for (const r of d.removed) lines.push(`<li>− <b>${esc(r.id)}</b> — no longer in the feed</li>`);
+-    for (const c of d.changed) lines.push(`<li>↻ <b>${esc(c.id)}</b> ${c.field}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`);
++    for (const a of d.added) lines.push(`<li>＋ <b>${esc(a.id)}</b> — ${esc(a.title)} (new in this snapshot)</li>`);
++    for (const r of d.removed) lines.push(`<li>− <b>${esc(r.id)}</b> — ${esc(r.title)} (no longer in the feed)</li>`);
++    for (const c of d.changed) lines.push(`<li>↻ <b>${esc(c.id)}</b> ${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`);
+     $("diff").innerHTML = lines.join("") || '<li class="ok">No changes between snapshots.</li>';
++    logAction("diff-snapshot", null, "+" + d.added.length + " / −" + d.removed.length + " / ↻" + d.changed.length);
+   };
+ 
+-  /* ---- exports ---- */
+-  $("csvBtn").onclick = () => {
+-    if (!lastScan) return err(new Error("run the scan first"));
+-    download("regulatory-horizon-scan.csv", toCsv(lastScan), "text/csv");
++  /* ---- audit log ---- */
++  function renderLog() {
++    const es = store.entries("log");
++    $("logCount").textContent = es.length + " entr" + (es.length === 1 ? "y" : "ies") + " — append-only; survives reload (backend: " + store.backendName + ").";
++    const tb = $("logTable").querySelector("tbody"); tb.innerHTML = "";
++    for (const e of es.slice(-200).reverse()) {
++      const tr = document.createElement("tr");
++      const t = new Date(e.t);
++      tr.innerHTML = `<td>${esc(t.toLocaleString())}</td><td><b>${esc(e.action)}</b></td><td>${esc(e.item ?? "—")}</td><td>${esc(e.detail ?? "—")}</td>`;
++      tb.appendChild(tr);
++    }
++  }
++  $("logExport").onclick = () => {
++    const jsonl = store.exportJsonl("log");
++    if (!jsonl) return toast("Log is empty");
++    download("horizon-scan-audit-" + state.asOf + ".jsonl", jsonl, "application/jsonl");
++    logAction("export-log", null, store.entries("log").length + " entries exported");
+   };
+-  $("mdBtn").onclick = () => {
+-    if (!lastScan) return err(new Error("run the scan first"));
+-    download("regulatory-horizon-scan-digest.md", toMarkdown(lastScan), "text/markdown");
++  $("logClear").onclick = () => {
++    if (!confirm("Clear the audit log? This cannot be undone.")) return;
++    store.remove("log"); renderLog(); toast("Audit log cleared");
+   };
++
++  /* ---- exports ---- */
++  $("csvBtn").onclick = () => { if (lastScan) { download("regulatory-horizon-scan-" + state.asOf + ".csv", toCsv(lastScan), "text/csv"); logAction("export-csv", null, lastScan.items.length + " rows"); } };
++  $("mdBtn").onclick = () => { if (lastScan) { download("regulatory-horizon-scan-digest-" + state.asOf + ".md", toMarkdown(lastScan), "text/markdown"); logAction("export-md", null, "digest"); } };
+   function download(name, text, type) {
+     const blob = new Blob([text], { type });
+-    const a = document.createElement("a");
+-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
++    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
++    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+   }
++  function err(e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; }
+ 
+-  function err(e) { $("err").hidden = false; $("err").textContent = "Error: " + e.message; }
+-  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+-
+-  buildWeights();
+-  $("run").click(); // prefilled worked example renders on load
++  /* ---- boot: restore persisted state, then run ---- */
++  $("asOf").value = state.asOf;
++  const saved = store.get("state");
++  let restored = false;
++  if (saved && Array.isArray(saved.feed) && saved.rubric) {
++    state = { asOf: saved.asOf ?? EXAMPLE.asOf, feed: saved.feed, rubric: saved.rubric,
++      review: saved.review ?? {}, filters: { ...DEFAULT_FILTERS, ...(saved.filters ?? {}) } };
++    restored = true;
++  }
++  buildWeights(); run(); renderLog();
++  logAction(restored ? "session-restored" : "session-start", null, (restored ? state.feed.length + " items, " + store.entries("log").length + " prior log entries" : state.feed.length + " items (worked example)"));
++  if (restored) toast("Restored working state — " + checkedCount() + " checked, " + store.entries("log").length + " log entries");
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/regulatory-horizon-scan/demo/tokens.css b/open-artifacts/regulatory-horizon-scan/demo/tokens.css
+index 24ee35d..068cdd1 100644
+--- a/open-artifacts/regulatory-horizon-scan/demo/tokens.css
++++ b/open-artifacts/regulatory-horizon-scan/demo/tokens.css
+@@ -4,7 +4,14 @@
+    ========================================================================= */
+ 
+ /* ---------- Webfonts ---------- */
+-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
++/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
++@font-face {
++  font-family: "Manrope";
++  src: url("fonts/Manrope-Variable.woff2") format("woff2");
++  font-weight: 400 700;
++  font-style: normal;
++  font-display: swap;
++}
+ 
+ /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+ @font-face {
+@@ -37,7 +44,7 @@
+ 
+   /* ----- Type stacks ----- */
+   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
++  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+ 
+   /* ----- Layout constants ----- */
+   --max-width: 1100px;
+@@ -127,7 +134,7 @@ a {
+ /* Eyebrow — preceded by 24px hairline */
+ .t-eyebrow {
+   font-family: var(--font-mono);
+-  font-size: 11px;
++  font-size: 12px;
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: var(--text-secondary);
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/digest.md b/open-artifacts/regulatory-horizon-scan/examples/digest.md
+index a3f0595..67f1159 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/digest.md
++++ b/open-artifacts/regulatory-horizon-scan/examples/digest.md
+@@ -18,16 +18,7 @@
+ - commentWindow +0 (no comment deadline)
+ - status +15 (status="final")
+ 
+-### 2. Texas Biometric Retention Schedule — score 93
+-
+-`tx-biometric-retention` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
+-- jurisdiction +30 (US state rule, but US-FED in profile (federal overlay applies nationwide))
+-- topic +25 (core topic)
+-- proximity +15 (effective in 145d (<= 180d threshold))
+-- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
+-- status +8 (status="proposed")
+-
+-### 3. FCC AI Voice Disclosure in Outreach Calls — score 85
++### 2. FCC AI Voice Disclosure in Outreach Calls — score 85
+ 
+ `us-fcc-ai-disclosure` · US-FED · ai · status final · effective 2027-02-15 · comments close — · provenance primary
+ - jurisdiction +30 (exact profile jurisdiction match)
+@@ -36,6 +27,15 @@
+ - commentWindow +0 (no comment deadline)
+ - status +15 (status="final")
+ 
++### 3. Texas Biometric Retention Schedule — score 78
++
++`tx-biometric-retention` · US-TX · privacy · status proposed · NPRM · effective 2027-04-01 · comments close 2026-11-25 · provenance primary
++- jurisdiction +15 (US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state))
++- topic +25 (core topic)
++- proximity +15 (effective in 145d (<= 180d threshold))
++- commentWindow +15 (comment window open, closes in 18d (<= 30d threshold))
++- status +8 (status="proposed")
++
+ ## Medium band (2 items)
+ 
+ ### 4. SEC ANPR: Artificial Intelligence Model Risk — score 78 (band capped)
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/report.md b/open-artifacts/regulatory-horizon-scan/examples/report.md
+index f19c576..defe419 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/report.md
++++ b/open-artifacts/regulatory-horizon-scan/examples/report.md
+@@ -7,9 +7,9 @@ Company profile: **Northwind Robotics, Inc. (fictional)** · jurisdictions US-FE
+ | # | Rule | Juris | Topic | Type | Status | Effective | Comments close | Score | Band |
+ |---|---|---|---|---|---|---|---|---|---|
+ | 1 | CCPA Amendment: Children's Data Opt-In | US-CA | privacy | rule | final | 2027-01-01 | — | **95** | high |
+-| 2 | Texas Biometric Retention Schedule | US-TX | privacy | NPRM | proposed | 2027-04-01 | 2026-11-25 | **93** | high |
+-| 3 | FCC AI Voice Disclosure in Outreach Calls | US-FED | ai | rule | final | 2027-02-15 | — | **85** | high |
+-| 4 | SEC ANPR: Artificial Intelligence Model Risk | US-FED | ai | ANPR | proposed | — | 2026-12-01 | **78** | medium (capped) |
++| 2 | FCC AI Voice Disclosure in Outreach Calls | US-FED | ai | rule | final | 2027-02-15 | — | **85** | high |
++| 3 | SEC ANPR: Artificial Intelligence Model Risk | US-FED | ai | ANPR | proposed | — | 2026-12-01 | **78** | medium (capped) |
++| 4 | Texas Biometric Retention Schedule | US-TX | privacy | NPRM | proposed | 2027-04-01 | 2026-11-25 | **78** | high |
+ | 5 | NY Wage Transparency for Remote Roles | US-NY | employment | rule | effective | 2026-09-17 | — | **62** | medium |
+ | 6 | EU Umbrella Data Regulation 2026 | EU | other | rule | proposed | 2028-03-01 | — | **8** | low |
+ 
+@@ -30,11 +30,11 @@ Deduped 1 duplicate entry: `ca-ccpa-amend-dup` → merged into `ca-ccpa-amend` (
+ 
+ ## Timeline (upcoming milestones, then past and undated)
+ 
+-- 2026-11-25 · comment-deadline · score 93 · Texas Biometric Retention Schedule (US-TX)
++- 2026-11-25 · comment-deadline · score 78 · Texas Biometric Retention Schedule (US-TX)
+ - 2026-12-01 · comment-deadline · score 78 · SEC ANPR: Artificial Intelligence Model Risk (US-FED)
+ - 2027-01-01 · effective · score 95 · CCPA Amendment: Children's Data Opt-In (US-CA)
+ - 2027-02-15 · effective · score 85 · FCC AI Voice Disclosure in Outreach Calls (US-FED)
+-- 2027-04-01 · effective · score 93 · Texas Biometric Retention Schedule (US-TX)
++- 2027-04-01 · effective · score 78 · Texas Biometric Retention Schedule (US-TX)
+ - 2028-03-01 · effective · score 8 · EU Umbrella Data Regulation 2026 (EU)
+ 
+ _Past:_
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/scan.csv b/open-artifacts/regulatory-horizon-scan/examples/scan.csv
+index 8839888..1ac05d5 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/scan.csv
++++ b/open-artifacts/regulatory-horizon-scan/examples/scan.csv
+@@ -1,7 +1,7 @@
+ rank,id,title,jurisdiction,topic,status,effectiveDate,score,band,scoringRules,link
+ 1,ca-ccpa-amend,CCPA Amendment: Children's Data Opt-In,US-CA,privacy,final,2027-01-01,95,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:25 (effective in 55d (<= 90d threshold)) | commentWindow:0 (no comment deadline) | status:15 (status=""final"")",https://example.gov/ca-ccpa-amend
+-2,tx-biometric-retention,Texas Biometric Retention Schedule,US-TX,privacy,proposed,2027-04-01,93,high,"jurisdiction:30 (US state rule, but US-FED in profile (federal overlay applies nationwide)) | topic:25 (core topic) | proximity:15 (effective in 145d (<= 180d threshold)) | commentWindow:15 (comment window open, closes in 18d (<= 30d threshold)) | status:8 (status=""proposed"")",https://example.gov/tx-biometric
+-3,us-fcc-ai-disclosure,FCC AI Voice Disclosure in Outreach Calls,US-FED,ai,final,2027-02-15,85,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:15 (effective in 100d (<= 180d threshold)) | commentWindow:0 (no comment deadline) | status:15 (status=""final"")",https://example.gov/fcc-ai-voice
+-4,us-sec-ai-anpr,SEC ANPR: Artificial Intelligence Model Risk,US-FED,ai,proposed,,78,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:0 (no parseable effective date) | commentWindow:15 (comment window open, closes in 24d (<= 30d threshold)) | status:8 (status=""proposed"") | flag: itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high",https://example.gov/sec-ai-anpr
++2,us-fcc-ai-disclosure,FCC AI Voice Disclosure in Outreach Calls,US-FED,ai,final,2027-02-15,85,high,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:15 (effective in 100d (<= 180d threshold)) | commentWindow:0 (no comment deadline) | status:15 (status=""final"")",https://example.gov/fcc-ai-voice
++3,us-sec-ai-anpr,SEC ANPR: Artificial Intelligence Model Risk,US-FED,ai,proposed,,78,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:25 (core topic) | proximity:0 (no parseable effective date) | commentWindow:15 (comment window open, closes in 24d (<= 30d threshold)) | status:8 (status=""proposed"") | flag: itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high",https://example.gov/sec-ai-anpr
++4,tx-biometric-retention,Texas Biometric Retention Schedule,US-TX,privacy,proposed,2027-04-01,78,high,"jurisdiction:15 (US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)) | topic:25 (core topic) | proximity:15 (effective in 145d (<= 180d threshold)) | commentWindow:15 (comment window open, closes in 18d (<= 30d threshold)) | status:8 (status=""proposed"")",https://example.gov/tx-biometric
+ 5,ny-pay-transparency,NY Wage Transparency for Remote Roles,US-NY,employment,effective,2026-09-17,62,medium,"jurisdiction:30 (exact profile jurisdiction match) | topic:12 (related topic) | proximity:0 (already effective) | commentWindow:0 (no comment deadline) | status:20 (status=""effective"")",https://example.gov/ny-pay-transparency
+ 6,eu-umbrella-2026,EU Umbrella Data Regulation 2026,EU,other,proposed,2028-03-01,8,low,"jurisdiction:0 (no profile jurisdiction match) | topic:0 (topic outside profile) | proximity:0 (effective in 480d (beyond all thresholds)) | commentWindow:0 (no comment deadline) | status:8 (status=""proposed"")",https://example.eu/umbrella-2026
+diff --git a/open-artifacts/regulatory-horizon-scan/examples/scan.json b/open-artifacts/regulatory-horizon-scan/examples/scan.json
+index 8603585..b4640a7 100644
+--- a/open-artifacts/regulatory-horizon-scan/examples/scan.json
++++ b/open-artifacts/regulatory-horizon-scan/examples/scan.json
+@@ -61,61 +61,6 @@
+         "itemType": "rule"
+       }
+     },
+-    {
+-      "id": "tx-biometric-retention",
+-      "title": "Texas Biometric Retention Schedule",
+-      "jurisdiction": "US-TX",
+-      "status": "proposed",
+-      "itemType": "NPRM",
+-      "effectiveDate": "2027-04-01",
+-      "commentDeadline": "2026-11-25",
+-      "publishedDate": "2026-10-30",
+-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
+-      "source": "Texas register feed (fictional)",
+-      "provenance": "primary",
+-      "link": "https://example.gov/tx-biometric",
+-      "topic": "privacy",
+-      "actionBy": "2026-11-25",
+-      "scoring": {
+-        "score": 93,
+-        "band": "high",
+-        "breakdown": [
+-          {
+-            "factor": "jurisdiction",
+-            "rule": "US state rule, but US-FED in profile (federal overlay applies nationwide)",
+-            "points": 30,
+-            "note": "US-TX"
+-          },
+-          {
+-            "factor": "topic",
+-            "rule": "core topic",
+-            "points": 25,
+-            "note": "topic=privacy via \"biometric\""
+-          },
+-          {
+-            "factor": "proximity",
+-            "rule": "effective in 145d (<= 180d threshold)",
+-            "points": 15,
+-            "note": "2027-04-01 (+145d)"
+-          },
+-          {
+-            "factor": "commentWindow",
+-            "rule": "comment window open, closes in 18d (<= 30d threshold)",
+-            "points": 15,
+-            "note": "2026-11-25 (+18d)"
+-          },
+-          {
+-            "factor": "status",
+-            "rule": "status=\"proposed\"",
+-            "points": 8,
+-            "note": "proposed"
+-          }
+-        ],
+-        "flags": [],
+-        "provenance": "primary",
+-        "itemType": "nprm"
+-      }
+-    },
+     {
+       "id": "us-fcc-ai-disclosure",
+       "title": "FCC AI Voice Disclosure in Outreach Calls",
+@@ -228,6 +173,61 @@
+         "itemType": "anpr"
+       }
+     },
++    {
++      "id": "tx-biometric-retention",
++      "title": "Texas Biometric Retention Schedule",
++      "jurisdiction": "US-TX",
++      "status": "proposed",
++      "itemType": "NPRM",
++      "effectiveDate": "2027-04-01",
++      "commentDeadline": "2026-11-25",
++      "publishedDate": "2026-10-30",
++      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
++      "source": "Texas register feed (fictional)",
++      "provenance": "primary",
++      "link": "https://example.gov/tx-biometric",
++      "topic": "privacy",
++      "actionBy": "2026-11-25",
++      "scoring": {
++        "score": 78,
++        "band": "high",
++        "breakdown": [
++          {
++            "factor": "jurisdiction",
++            "rule": "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)",
++            "points": 15,
++            "note": "US-TX"
++          },
++          {
++            "factor": "topic",
++            "rule": "core topic",
++            "points": 25,
++            "note": "topic=privacy via \"biometric\""
++          },
++          {
++            "factor": "proximity",
++            "rule": "effective in 145d (<= 180d threshold)",
++            "points": 15,
++            "note": "2027-04-01 (+145d)"
++          },
++          {
++            "factor": "commentWindow",
++            "rule": "comment window open, closes in 18d (<= 30d threshold)",
++            "points": 15,
++            "note": "2026-11-25 (+18d)"
++          },
++          {
++            "factor": "status",
++            "rule": "status=\"proposed\"",
++            "points": 8,
++            "note": "proposed"
++          }
++        ],
++        "flags": [],
++        "provenance": "primary",
++        "itemType": "nprm"
++      }
++    },
+     {
+       "id": "ny-pay-transparency",
+       "jurisdiction": "US-NY",
+@@ -355,7 +355,7 @@
+         "itemId": "tx-biometric-retention",
+         "title": "Texas Biometric Retention Schedule",
+         "jurisdiction": "US-TX",
+-        "score": 93,
++        "score": 78,
+         "band": "high"
+       },
+       {
+@@ -391,7 +391,7 @@
+         "itemId": "tx-biometric-retention",
+         "title": "Texas Biometric Retention Schedule",
+         "jurisdiction": "US-TX",
+-        "score": 93,
++        "score": 78,
+         "band": "high"
+       },
+       {
+diff --git a/open-artifacts/regulatory-horizon-scan/spec.md b/open-artifacts/regulatory-horizon-scan/spec.md
+index cb1cabe..c2b415b 100644
+--- a/open-artifacts/regulatory-horizon-scan/spec.md
++++ b/open-artifacts/regulatory-horizon-scan/spec.md
+@@ -106,15 +106,17 @@ its output is data the rubric can be re-run against.
+ - **Transparent, versioned scoring rubric** — Anthropic's impact ranking is
+   opaque; here every point of every score carries a factor name, a rule, and a
+   reason string (`scoreItem().breakdown`), and rubric versions are diffable.
+-- **Deterministic provenance + stage discipline** — the counterpart states
+-  source tiers and ANPR/RFI caution as LLM prose; here they are code:
+-  non-primary sources are band-capped with a trace-to-primary flag, and
+-  ANPR/RFI items are capped below "high". Comment deadlines score, appear as
+-  timeline milestones, and land in the digest's bottom line.
++- **Deterministic provenance + stage discipline** — source tiers and
++  ANPR/RFI caution are enforced by tested code, not prose: non-primary
++  sources are band-capped with a trace-to-primary flag, and ANPR/RFI items
++  are capped below "high". Comment deadlines score, appear as timeline
++  milestones, and land in the digest's bottom line.
+ - **Coverage check (Step 0)** — profile jurisdictions/topics with zero feed
+   items are surfaced with severity before any ranking happens.
+-- **Diff view when a rule changes** — the closed artifact shows a snapshot;
+-  this core diffs two snapshots (and two rubrics) field-by-field.
++- **Field-level diff when a rule changes** — this core diffs two feed
++  snapshots item by item across the 10 tracked fields, and diffs rubric
++  versions (weights, thresholds, taxonomy) too, so rescoring changes are
++  visible alongside rule changes.
+ - **No hidden clock** — scans are reproducible against a supplied `asOf`.
+ - **Dependency-free core** — runs in browser and Node, exports CSV + a
+   Markdown digest, no platform lock-in.

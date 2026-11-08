@@ -1,0 +1,849 @@
+diff --git a/open-artifacts/obligations-checker/README.md b/open-artifacts/obligations-checker/README.md
+index 18f1030..1cdcc61 100644
+--- a/open-artifacts/obligations-checker/README.md
++++ b/open-artifacts/obligations-checker/README.md
+@@ -11,7 +11,7 @@ diffs, iCalendar alerts, CSV export.
+ - Demo: open `demo/index.html` (prefilled with the fictional worked
+   example; imports `tokens.css` + `../core/core.js`, which the site
+   build inlines for the deployed single-file page).
+-- Tests: `node --test core/core.test.js` — 30 tests.
++- Tests: `node --test core/core.test.js` — 35 tests.
+ - Example: `node examples/run.js` → regenerates `examples/output.json`,
+   `register.md`, `register.csv`, `register.ics`, and `diff.md` from
+   `examples/input.json` (8 obligations: 2 breach risk — one a recurring
+@@ -54,7 +54,7 @@ obligations in the contract's own words, and links outputs to sources.
+ Ours, verifiably:
+ 
+ - Reproducible and auditable: statuses are pure functions of
+-  (obligations, satisfaction, asOf) — 30 green `node:test` tests,
++  (obligations, satisfaction, asOf) — 35 green `node:test` tests,
+   deterministic at any as-of date, diffable in git.
+ - The quote-level audit trail is data, not prose: every row carries the
+   verbatim `sourceQuote` through JSON, CSV, and the Markdown Sources
+diff --git a/open-artifacts/obligations-checker/core/core.js b/open-artifacts/obligations-checker/core/core.js
+index 9906566..159ee9e 100644
+--- a/open-artifacts/obligations-checker/core/core.js
++++ b/open-artifacts/obligations-checker/core/core.js
+@@ -56,18 +56,27 @@ export function buildRegister(input) {
+   if (!VALID_ISO.test(asOf)) throw new Error(`asOf must be ISO date, got "${asOf}"`);
+   const dueSoonDays = input.settings?.dueSoonDays ?? 14;
+ 
+-  // latest satisfaction record wins (by satisfiedOn then array order)
++  // latest satisfaction record wins (by satisfiedOn then array order);
++  // records dated after asOf are not facts known as of asOf — they are
++  // excluded from the status machine and flagged future_dated instead
++  // (a year typo must never turn overdue into satisfied).
+   const satisfied = new Map();
++  const futureDated = new Map();
+   for (const s of input.satisfaction ?? []) {
+-    const prev = satisfied.get(s.obligationId);
++    const target = VALID_ISO.test(s.satisfiedOn) && s.satisfiedOn > asOf ? futureDated : satisfied;
++    const prev = target.get(s.obligationId);
+     if (!prev || !VALID_ISO.test(prev.satisfiedOn) || (VALID_ISO.test(s.satisfiedOn) && s.satisfiedOn >= prev.satisfiedOn)) {
+-      satisfied.set(s.obligationId, s);
++      target.set(s.obligationId, s);
+     }
+   }
+ 
+   const rows = input.obligations.map((o) => {
+     const flags = [];
+     const record = satisfied.get(o.id) ?? null;
++    const future = futureDated.get(o.id);
++    if (future) {
++      flags.push(`future_dated: satisfaction ${future.satisfiedOn} is after asOf ${asOf} — excluded from the register; verify the recorded date`);
++    }
+     let status;
+     let nextDue = null;
+     let cyclesMissed = null;
+@@ -76,17 +85,24 @@ export function buildRegister(input) {
+       status = 'unscheduled';
+       flags.push(`invalid recurrence (${JSON.stringify(o.recurrence)}) — compliance unverified, never guessed`);
+     } else if (o.recurrence) {
+-      // Each cycle is its own duty: the latest satisfaction record covers at
+-      // most the most recent past cycle (when it falls in that cycle's window);
+-      // every earlier unmet cycle is a miss.
++      // Each cycle is its own duty: the latest satisfaction record covers
++      // the cycle whose window contains satisfiedOn — the window of a cycle
++      // due D is (previous due date, D], so paying on D itself discharges
++      // that cycle on time; every other unmet cycle is a miss.
+       const { past, next } = cycleDates(o.recurrence, asOf);
+       nextDue = next;
+       const missed = [...past];
+-      const lastPast = past[past.length - 1];
+-      if (record && lastPast && (!VALID_ISO.test(record.satisfiedOn) || record.satisfiedOn >= (past[past.length - 2] ?? ''))) {
+-        missed.pop(); // the record covers the most recent past cycle
+-        if (VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > lastPast) {
+-          flags.push(`satisfied ${days(lastPast, record.satisfiedOn)} days late for cycle due ${lastPast}`);
++      if (record && past.length) {
++        let covers;
++        if (VALID_ISO.test(record.satisfiedOn)) {
++          covers = past.findIndex((d) => record.satisfiedOn <= d); // first due date at/after the record
++          if (covers === -1) covers = past.length - 1; // after the last past due date: covers that cycle, late
++        } else {
++          covers = past.length - 1;
++        }
++        missed.splice(covers, 1);
++        if (VALID_ISO.test(record.satisfiedOn) && record.satisfiedOn > past[covers]) {
++          flags.push(`satisfied ${days(past[covers], record.satisfiedOn)} days late for cycle due ${past[covers]}`);
+         } else if (!VALID_ISO.test(record.satisfiedOn)) {
+           flags.push(`satisfaction date "${record.satisfiedOn}" not valid ISO — lateness unverified`);
+         }
+diff --git a/open-artifacts/obligations-checker/core/core.test.js b/open-artifacts/obligations-checker/core/core.test.js
+index f26392e..3fabac8 100644
+--- a/open-artifacts/obligations-checker/core/core.test.js
++++ b/open-artifacts/obligations-checker/core/core.test.js
+@@ -254,6 +254,80 @@ test('recurring obligation with the latest cycle satisfied and none missed is sa
+   assert.equal(o.nextDue, '2026-11-30');
+ });
+ 
++// --- I7: recurrence boundary + future-dated records (inspection B05 fixes) ---
++
++test('satisfaction on exactly a cycle due date discharges that cycle on time (not the next one)', () => {
++  // repro from the inspection report: a payment on 2026-06-30 — the 06-30 due
++  // date itself — was listed as a missed cycle while the later 09-30 cycle
++  // was silently credited (paid-on-due-date false breach flag)
++  const r = buildRegister({
++    asOf: '2026-11-08',
++    obligations: [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' } })],
++    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2026-06-30' }],
++  });
++  const o = r.obligations[0];
++  assert.equal(o.status, 'overdue'); // the 03-31 and 09-30 cycles are genuinely unmet
++  assert.equal(o.cyclesMissed, 2);
++  const breach = o.flags.find((f) => f.startsWith('breach risk'));
++  assert.ok(breach);
++  assert.match(breach, /due 2026-03-31, 2026-09-30 with no satisfaction record/); // 06-30 discharged, not missed
++  assert.ok(!o.flags.some((f) => /late/.test(f)), `unexpected lateness flag: ${o.flags}`); // paid on time
++});
++
++test('satisfaction on the first cycle due date discharges that cycle; later misses still count', () => {
++  const r = reg(
++    [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-05-15' } })],
++    [{ obligationId: 'OBL-1', satisfiedOn: '2026-05-15' }],
++  );
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 1);
++  const breach = o.flags.find((f) => f.startsWith('breach risk'));
++  assert.ok(breach);
++  assert.match(breach, /due 2026-08-15 with no satisfaction record/);
++  assert.ok(!o.flags.some((f) => /late/.test(f)));
++});
++
++test('future-dated satisfaction record is excluded and flagged — never flips a dated obligation to satisfied', () => {
++  // repro from the inspection report: due 2026-10-30, record 2027-01-01 (a
++  // one-digit year typo) turned overdue into satisfied with no warning
++  const r = buildRegister({
++    asOf: '2026-11-08',
++    obligations: [ob({ dueDate: '2026-10-30' })],
++    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2027-01-01' }],
++  });
++  const o = r.obligations[0];
++  assert.equal(o.status, 'overdue');
++  assert.equal(o.breachRisk, true);
++  assert.equal(o.satisfaction, null);
++  assert.ok(o.flags.some((f) => f.includes('future_dated') && f.includes('2027-01-01')), `flags: ${o.flags}`);
++});
++
++test('future-dated satisfaction record is excluded for recurring obligations — lateness never computed across asOf', () => {
++  const r = buildRegister({
++    asOf: '2026-11-08',
++    obligations: [ob({ dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' } })],
++    satisfaction: [{ obligationId: 'OBL-1', satisfiedOn: '2027-12-31' }],
++  });
++  const o = r.obligations[0];
++  assert.equal(o.cyclesMissed, 3);
++  assert.equal(o.status, 'overdue');
++  assert.equal(o.satisfaction, null);
++  assert.ok(!o.flags.some((f) => /late|457/.test(f)), `lateness computed across asOf: ${o.flags}`);
++  assert.ok(o.flags.some((f) => f.includes('future_dated') && f.includes('2027-12-31')));
++});
++
++test('a future-dated record does not mask an earlier valid satisfaction (latest eligible record wins)', () => {
++  const r = reg([ob({ dueDate: '2026-10-15' })], [
++    { obligationId: 'OBL-1', satisfiedOn: '2026-10-14' },
++    { obligationId: 'OBL-1', satisfiedOn: '2027-10-14' }, // year typo: still excluded
++  ]);
++  const o = r.obligations[0];
++  assert.equal(o.status, 'satisfied');
++  assert.equal(o.satisfaction.satisfiedOn, '2026-10-14');
++  assert.ok(o.flags.some((f) => f.includes('future_dated')));
++  assert.ok(!o.flags.some((f) => /late/.test(f)));
++});
++
+ test('invalid recurrence cadence or anchor → unscheduled, never guessed', () => {
+   const r = reg([ob({ dueDate: null, recurrence: { cadence: 'biweekly', anchor: '2026-01-15' } })]);
+   assert.equal(r.obligations[0].status, 'unscheduled');
+diff --git a/open-artifacts/obligations-checker/demo/fonts/Manrope-Variable.woff2 b/open-artifacts/obligations-checker/demo/fonts/Manrope-Variable.woff2
+new file mode 100644
+index 0000000..662b813
+Binary files /dev/null and b/open-artifacts/obligations-checker/demo/fonts/Manrope-Variable.woff2 differ
+diff --git a/open-artifacts/obligations-checker/demo/index.html b/open-artifacts/obligations-checker/demo/index.html
+index eb735e9..cda59f4 100644
+--- a/open-artifacts/obligations-checker/demo/index.html
++++ b/open-artifacts/obligations-checker/demo/index.html
+@@ -4,58 +4,262 @@
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Obligations checker — open artifact</title>
++<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'/%3E%3Crect x='2' y='7' width='12' height='2' fill='%23ffd400'/%3E%3C/svg%3E" />
+ <link rel="stylesheet" href="tokens.css" />
+ <style>
+   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
++  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
+   h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
+   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
+   .lede { color: var(--text-secondary); max-width: 64ch; line-height: 1.6; margin: 0 0 8px; }
+   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
+   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 24px; }
+   .card { background: #fff; padding: 16px; }
+-  .card .k { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
++  .card .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+   .card .v { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
+   .card.alert .v { background: linear-gradient(transparent 60%, var(--accent) 60%); display: inline; }
+-  textarea { width: 100%; box-sizing: border-box; min-height: 280px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; }
+-  button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 10px 18px; cursor: pointer; margin-top: 12px; }
++  textarea, input, select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 8px; }
++  textarea { width: 100%; box-sizing: border-box; }
++  button { font-family: var(--font-mono); font-size: 13px; border: 1px solid var(--text); background: var(--text); color: var(--bg); padding: 8px 14px; cursor: pointer; }
+   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
+-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+-  th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+-  td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+-  tr:hover td { background: var(--hover); }
+-  .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
+-  .chip.overdue { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
++  button.ghost { background: transparent; color: var(--text); }
++  button.ghost:hover { background: var(--hover); }
++  button[aria-pressed="true"] { background: var(--accent); color: var(--text); border-color: var(--text); }
++  .chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
++  .chip.overdue { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+   .chip.unscheduled, .chip.conditional { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
+-  .clause { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
++  .clause { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
++  button.clause-btn { font-family: var(--font-mono); font-size: 12px; border: none; background: none; color: var(--text); padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+   .notes { color: var(--text-secondary); font-size: 12px; }
+-  .quote { color: var(--text-secondary); font-size: 11px; font-style: italic; }
+-  .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
++  .quote { color: var(--text-secondary); font-size: 12px; font-style: italic; }
++  .err { border: 2px solid var(--bad); background: var(--flag-tint); font-family: var(--font-mono); font-size: 12px; padding: 12px; margin-top: 12px; display: none; color: var(--bad); }
++  .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin: 24px 0 0; font-size: 12px; }
++  .toolbar label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
++  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
++  .chips button { padding: 3px 10px; }
++  .obl { border: var(--hairline); border-left: 4px solid var(--border); background: #fff; padding: 14px 16px; margin-bottom: 10px; }
++  .obl.overdue { border-left-color: var(--bad); }
++  .obl.due-soon { border-left-color: var(--warn); }
++  .obl.satisfied { border-left-color: var(--ok); }
++  .obl .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 6px; }
++  .obl .text { margin: 2px 0 6px; }
++  .satisfy-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 10px; padding: 10px; border: var(--hairline); background: var(--hover); }
++  .satisfy-form label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 3px; }
++  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 10px 0; }
++  .form-grid label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: 3px; }
++  .form-grid input, .form-grid select { width: 100%; box-sizing: border-box; }
++  details.shell { border: var(--hairline); background: #fff; padding: 12px 16px; margin-bottom: 12px; }
++  details.shell summary { font-family: var(--font-mono); font-size: 13px; cursor: pointer; letter-spacing: 0.04em; }
++  .exports { display: flex; flex-wrap: wrap; gap: 8px; }
++  .audit-table { font-size: 12px; font-family: var(--font-mono); border-collapse: collapse; width: 100%; }
++  .audit-table td { border-bottom: var(--hairline); padding: 6px 8px; vertical-align: top; }
++  .audit-table td:first-child { white-space: nowrap; color: var(--text-secondary); }
++  #drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(440px, 100vw); background: #fff; border-left: 2px solid var(--text); box-shadow: -8px 0 24px rgba(0,0,0,0.12); padding: 20px; overflow-y: auto; z-index: 40; display: none; }
++  #drawer.open { display: block; }
++  #drawer .src-p { margin: 0 0 14px; padding: 6px; font-size: 13px; line-height: 1.55; scroll-margin-top: 16px; }
++  #drawer .src-p.hl { background: var(--accent); }
++  #drawer .src-h { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; display: flex; justify-content: space-between; gap: 8px; }
++  #toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: var(--text); color: var(--bg); font-family: var(--font-mono); font-size: 12px; padding: 10px 16px; opacity: 0; transition: var(--t-base); z-index: 50; pointer-events: none; max-width: 90vw; }
++  #toast.on { opacity: 1; transform: translate(-50%, 0); }
++  footer { margin-top: 64px; border-top: var(--hairline); padding-top: 16px; color: var(--text-secondary); font-size: 12px; }
++  .diff-table { border-collapse: collapse; width: 100%; font-size: 13px; }
++  .diff-table th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
++  .diff-table td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+ </style>
+ </head>
+ <body>
+ <div class="wrap">
+   <h1>Obligations checker</h1>
+   <div class="rule"></div>
+-  <p class="lede">Contract obligations in, compliance register out: per-obligation status tracking against satisfaction records, with breach-risk flags the moment a due date passes unmet. Deterministic — same inputs, same register, every time.</p>
++  <p class="lede">Contract obligations in, compliance register out. Deterministic and auditable: statuses are pure functions of the obligations, the satisfaction records, and the as-of date — same inputs, same register, every time. Record satisfactions, compare the register across dates, export to calendar, CSV, Word, or spreadsheet.</p>
+ 
+-  <h2>Register input (JSON)</h2>
+-  <textarea id="input" spellcheck="false"></textarea>
+-  <button id="run">Build register</button>
+-  <button id="ics" title="One VEVENT + reminder per open dated obligation">Download .ics</button>
+-  <div class="err" id="err"></div>
++  <div class="toolbar">
++    <div><label for="asof">As-of date</label><input type="date" id="asof" /></div>
++    <div><label for="partyfilter">Filter by party</label><select id="partyfilter"><option value="">All parties</option></select></div>
++    <div><label for="duesoon">Due-soon window (days)</label><input type="number" id="duesoon" min="1" max="120" style="width:5em" /></div>
++    <button id="srcbtn" class="ghost" aria-label="Open source document panel">Source document</button>
++    <button id="reset" class="ghost" aria-label="Reset working state to the seeded example">Reset</button>
++  </div>
++
++  <h2>Input</h2>
++  <details class="shell" open>
++    <summary>Paste contract / add an obligation</summary>
++    <form id="pasteform">
++      <label for="paste">Paste the contract text (becomes the source document — obligations are added below; extraction is not guessed)</label>
++      <textarea id="paste" rows="4" style="min-height:80px" placeholder="Paste contract text here…"></textarea>
++      <button type="submit">Use as source document</button>
++    </form>
++    <form id="addform" style="margin-top:16px">
++      <div class="form-grid">
++        <div><label for="f-clause">Clause</label><input id="f-clause" placeholder="§ 9.1" /></div>
++        <div><label for="f-party">Party *</label><input id="f-party" required placeholder="Customer / Supplier" /></div>
++        <div><label for="f-owner">Owner</label><input id="f-owner" placeholder="Finance (Customer)" /></div>
++        <div><label for="f-verb">Verb</label><input id="f-verb" value="pay" /></div>
++        <div><label for="f-date">Due date</label><input id="f-date" type="date" /></div>
++        <div><label for="f-amount">Amount (USD)</label><input id="f-amount" type="number" min="0" step="any" /></div>
++        <div><label for="f-cond">Condition (if no due date)</label><input id="f-cond" placeholder="within 30 days of written notice" /></div>
++        <div><label for="f-cad">Recurrence</label><select id="f-cad"><option value="">— none —</option><option>monthly</option><option>quarterly</option><option>annual</option></select></div>
++        <div><label for="f-anchor">Recurrence anchor</label><input id="f-anchor" type="date" /></div>
++      </div>
++      <label for="f-text">Obligation text *</label>
++      <textarea id="f-text" rows="2" required style="min-height:44px" placeholder="pay the annual maintenance fee of $12,000"></textarea>
++      <button type="submit">Add obligation</button>
++      <div class="err" id="adderr" role="alert"></div>
++    </form>
++  </details>
++  <details class="shell">
++    <summary>Advanced — register JSON</summary>
++    <label for="input">Edit the raw register input (asOf, settings, obligations, satisfaction)</label>
++    <textarea id="input" spellcheck="false" style="min-height:260px"></textarea>
++    <button id="run">Apply JSON and rebuild</button>
++    <div class="err" id="err" role="alert"></div>
++  </details>
+ 
+   <h2>Summary</h2>
+-  <div id="summary"></div>
++  <div id="summary" aria-live="polite"></div>
++
+   <h2>Register</h2>
+-  <div id="board"></div>
++  <div class="chips" id="chips" role="group" aria-label="Filter obligations by status"></div>
++  <div id="board" aria-live="polite"></div>
++
++  <h2>Compare across dates</h2>
++  <form id="diffform" class="toolbar" style="margin-top:0">
++    <div><label for="diff-from">From as-of</label><input type="date" id="diff-from" /></div>
++    <div><label for="diff-to">To as-of</label><input type="date" id="diff-to" /></div>
++    <button type="submit">Compare registers</button>
++  </form>
++  <div id="diffout" aria-live="polite" style="margin-top:16px"></div>
++
++  <h2>Exports</h2>
++  <div class="exports">
++    <button id="x-csv" aria-label="Download register as CSV">CSV</button>
++    <button id="x-ics" aria-label="Download open dated obligations as iCalendar">.ics calendar</button>
++    <button id="x-md" aria-label="Download register as Markdown">Markdown</button>
++    <button id="x-docx" aria-label="Download register memo as Word document">Word .docx</button>
++    <button id="x-xlsx" aria-label="Download register as Excel spreadsheet">Excel .xlsx</button>
++    <button id="x-log" class="ghost" aria-label="Download audit log as NDJSON">Audit log (NDJSON)</button>
++  </div>
++
++  <h2>Audit log</h2>
++  <details class="shell" open id="auditbox">
++    <summary>Append-only action log — survives reload</summary>
++    <div id="auditrows"></div>
++  </details>
++
++  <footer>Fictional demonstration data · deterministic offline computation · nothing leaves this page · not legal advice.</footer>
+ </div>
+ 
++<aside id="drawer" role="region" aria-label="Source document">
++  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
++    <strong style="font-family:var(--font-mono);font-size:13px">Source document</strong>
++    <button id="dclose" class="ghost" aria-label="Close source document panel">Close ✕</button>
++  </div>
++  <div id="srcbody"></div>
++</aside>
++<div id="toast" role="status" aria-live="polite"></div>
++
+ <script type="module">
+-import { buildRegister, toCSV, toICS } from '../core/core.js';
++import { buildRegister, toCSV, toICS, renderRegister, diffRegisters } from '../core/core.js';
++
++/* ---------- vendored from open-artifacts/_shared/persist.js (browser half; Node fs helpers dropped) ---------- */
++function memoryBackend(name) {
++  const map = new Map();
++  return { backendName: name,
++    get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
++    set(k, v) { map.set(k, { kind: 'value', value: JSON.parse(JSON.stringify(v ?? null)) }); },
++    remove(k) { map.delete(k); },
++    append(k, entry) { if (!map.has(k) || map.get(k).kind !== 'log') map.set(k, { kind: 'log', items: [] }); map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null))); },
++    entries(k) { const v = map.get(k); return v && v.kind === 'log' ? v.items.slice() : []; },
++    exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join('\n') + (this.entries(k).length ? '\n' : ''); } };
++}
++function probeLocalStorage() {
++  try { const ls = globalThis.localStorage; if (!ls) return null;
++    const pk = '__persist_probe__'; ls.setItem(pk, '1'); const ok = ls.getItem(pk) === '1'; ls.removeItem(pk); return ok ? ls : null;
++  } catch { return null; }
++}
++function localBackend(namespace) {
++  const ls = probeLocalStorage(); if (!ls) return memoryBackend('memory-fallback');
++  const key = (k) => `${namespace}:${k}`;
++  let degraded = false; const mem = memoryBackend('memory');
++  const read = (k) => { try { const raw = ls.getItem(key(k)); return raw == null ? null : raw; } catch { return null; } };
++  return { backendName: 'local',
++    get(k) { if (degraded) return mem.get(k); const raw = read(k); if (raw == null) return null; try { return JSON.parse(raw); } catch { return null; } },
++    set(k, v) { if (degraded) return mem.set(k, v); try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); } },
++    remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
++    append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
++    entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
++    exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join('\n') + (es.length ? '\n' : ''); } };
++}
++function createStorage(namespace) { return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory'); }
++
++/* ---------- vendored from open-artifacts/_shared/docio.js (write path only: writeDocx/writeXlsx + zip STORE writer) ---------- */
++const XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
++const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
++const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })();
++function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
++const encodeXml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
++function buildZip(files) {
++  const enc = new TextEncoder(); const parts = [], cd = []; let offset = 0;
++  for (const [name, content] of files) {
++    const data = typeof content === 'string' ? enc.encode(content) : content;
++    const nb = enc.encode(name), crc = crc32(data), lho = offset;
++    const lh = new Uint8Array(30), v = new DataView(lh.buffer);
++    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(12, 0x21, true);
++    v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true); v.setUint16(26, nb.length, true);
++    parts.push(lh, nb, data); offset += 30 + nb.length + data.length;
++    const c = new Uint8Array(46), u = new DataView(c.buffer);
++    u.setUint32(0, 0x02014b50, true); u.setUint16(4, 20, true); u.setUint16(6, 20, true); u.setUint16(14, 0x21, true);
++    u.setUint32(16, crc, true); u.setUint32(20, data.length, true); u.setUint32(24, data.length, true);
++    u.setUint16(28, nb.length, true); u.setUint32(42, lho, true); cd.push(c, nb);
++  }
++  const cdSize = cd.reduce((n, p) => n + p.length, 0);
++  const eocd = new Uint8Array(22), e = new DataView(eocd.buffer);
++  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
++  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
++  const all = [...parts, ...cd, eocd]; const out = new Uint8Array(offset + cdSize + 22); let o = 0;
++  for (const p of all) { out.set(p, o); o += p.length; } return out;
++}
++function writeDocx(paragraphs) {
++  const body = (paragraphs ?? []).map((p) => {
++    const text = typeof p === 'string' ? p : p && p.text != null ? String(p.text) : '';
++    return '<w:p><w:r><w:t xml:space="preserve">' + encodeXml(text) + '</w:t></w:r></w:p>';
++  }).join('');
++  const doc = XMLDECL + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body +
++    '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>';
++  return new Blob([buildZip([
++    ['[Content_Types].xml', XMLDECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
++    ['_rels/.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
++    ['word/document.xml', doc],
++  ])]);
++}
++function writeXlsx(rows, opts) {
++  const sheetName = (opts && typeof opts === 'object' && opts.name) || 'Sheet1';
++  const colName = (i) => { let s = ''; for (let n = i + 1; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
++  const body = (rows ?? []).map((row, ri) => (row ?? []).map((v, ci) => {
++    const ref = ' r="' + colName(ci) + (ri + 1) + '"';
++    if (typeof v === 'number' && Number.isFinite(v)) return '<c' + ref + '><v>' + v + '</v></c>';
++    return '<c' + ref + ' t="inlineStr"><is><t xml:space="preserve">' + encodeXml(v == null ? '' : String(v)) + '</t></is></c>';
++  }).join('')).map((cells, ri) => '<row r="' + (ri + 1) + '">' + cells + '</row>').join('');
++  const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
++  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
++  return new Blob([buildZip([
++    ['[Content_Types].xml', XMLDECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
++    ['_rels/.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="' + REL + '/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
++    ['xl/workbook.xml', XMLDECL + '<workbook xmlns="' + SS + '" xmlns:r="' + REL + '"><sheets><sheet name="' + encodeXml(sheetName) + '" sheetId="1" r:id="rId1"/></sheets></workbook>'],
++    ['xl/_rels/workbook.xml.rels', XMLDECL + '<Relationships xmlns="' + RELS_NS + '"><Relationship Id="rId1" Type="' + REL + '/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
++    ['xl/worksheets/sheet1.xml', XMLDECL + '<worksheet xmlns="' + SS + '"><sheetData>' + body + '</sheetData></worksheet>'],
++  ])]);
++}
++
++/* ---------- app ---------- */
++const store = createStorage('obligations-checker');
++const today = new Date().toISOString().slice(0, 10);
++const $ = (id) => document.getElementById(id);
++const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
++const usd = (n) => (n != null && Number.isFinite(+n) ? '$' + (+n).toLocaleString('en-US') : '');
+ 
+-const DEFAULT_INPUT = {
+-  asOf: new Date().toISOString().slice(0, 10),
++const DEFAULT_INPUT = () => ({
++  asOf: today,
+   settings: { dueSoonDays: 14 },
+   obligations: [
+     { id: 'OBL-1', clause: '§ 4.1', party: 'Customer', verb: 'pay', text: 'pay the Phase 2 milestone fee of $48,000', dueDate: '2026-10-30', amount: 48000 },
+@@ -67,20 +271,80 @@ const DEFAULT_INPUT = {
+   satisfaction: [
+     { obligationId: 'OBL-6', satisfiedOn: '2026-10-03', evidence: 'email thread 2026-10-03 (fictional)' },
+   ],
++});
++
++const SOURCE = {
++  title: 'Master Services Agreement — Vantis Retail Group, Inc. (Customer) × Harborline Software Inc. (Supplier) — fictional excerpt',
++  paras: [
++    { id: 'OBL-1', clause: '§ 4.1', text: 'Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables, and in no event later than October 30, 2026.' },
++    { id: 'OBL-2', clause: '§ 5.2', text: 'Supplier shall deliver to Customer a report of its most recent platform security audit no later than November 12, 2026.' },
++    { id: 'OBL-3', clause: '§ 5.4', text: 'Supplier shall notify Customer of any actual or reasonably suspected security incident affecting the Services within seventy-two (72) hours of discovery of such incident.' },
++    { id: 'OBL-6', clause: '§ 8.2', text: 'Supplier shall deliver a statement of API usage for each calendar quarter no later than thirty (30) days after the end of that quarter; the Q3 2026 statement is due September 30, 2026.' },
++    { id: 'OBL-8', clause: '§ 4.4', text: 'Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.' },
++  ],
+ };
+ 
+-const $ = (id) => document.getElementById(id);
+-$('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
+-function esc(s) { return String(s).replace(/</g, '&lt;'); }
++let working = { input: DEFAULT_INPUT(), pasted: null };
++let reg = null;
++let filterStatus = 'all';
++let filterParty = '';
++let openSatisfy = null; // obligation id with its inline record form open
+ 
+-$('run').addEventListener('click', () => {
+-  const errEl = $('err'); errEl.style.display = 'none';
+-  let reg;
+-  try { reg = buildRegister(JSON.parse($('input').value)); }
+-  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
++const CAD = { monthly: 1, quarterly: 3, annual: 12 };
++function addM(iso, n) { const [y, m, d] = iso.split('-').map(Number); const t = y * 12 + (m - 1) + n; const ny = Math.floor(t / 12), nm = (t % 12) + 1; const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate(); return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`; }
++function nextCycles(rec, asOf, n) { const step = CAD[rec.cadence]; let k = 0; while (addM(rec.anchor, k * step) < asOf) k++; const out = []; for (let i = 0; i < n; i++) out.push(addM(rec.anchor, (k + i) * step)); return out; }
++function shift(iso, days) { return new Date(Date.parse(iso + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10); }
++
++function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2800); }
++function audit(action, detail) { store.append('audit', { ts: new Date().toISOString(), actor: 'you', action, detail: detail ?? null }); renderAudit(); }
++function persist() { store.set('working', working); }
++function download(name, data, type) { const b = typeof data === 'string' ? new Blob([data], { type }) : data; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast(`Downloaded ${name}`); }
++
++function jsonErrMsg(e, txt) { const m = /position (\d+)/.exec(e.message); if (!m) return e.message; const line = txt.slice(0, +m[1]).split('\n').length; return `line ${line}: ${e.message}`; }
++
++/* ---------- source drawer ---------- */
++let drawerOpener = null;
++function renderSource() {
++  const el = $('srcbody');
++  if (working.pasted != null) {
++    el.innerHTML = `<p class="notes" style="margin-bottom:12px">Pasted document (anchors available only for the seeded example):</p>` +
++      `<p class="src-p">${esc(working.pasted).replace(/\n{2,}/g, '</p><p class="src-p">').replace(/\n/g, '<br>')}</p>`;
++  } else {
++    el.innerHTML = `<p class="notes" style="margin-bottom:14px">${esc(SOURCE.title)}</p>` + SOURCE.paras.map((p) =>
++      `<div><div class="src-h"><span>${esc(p.clause)}</span><button class="ghost clause-btn" data-copy="${esc(p.id)}" aria-label="Copy quote from ${esc(p.clause)}" style="font-size:12px">copy quote</button></div><p class="src-p" id="src-${esc(p.id)}" tabindex="-1">${esc(p.text)}</p></div>`).join('');
++  }
++}
++function openSource(id) {
++  if (working.pasted == null && !id) { toast('No clause anchor — showing the whole document'); }
++  const d = $('drawer'); if (!d.classList.contains('open')) { drawerOpener = document.activeElement; d.classList.add('open'); $('dclose').focus(); }
++  d.querySelectorAll('.src-p.hl').forEach((p) => p.classList.remove('hl'));
++  if (id) {
++    const p = $('src-' + id);
++    if (p) { p.classList.add('hl'); p.scrollIntoView({ block: 'center' }); p.focus({ preventScroll: true }); }
++    else toast(`No source anchor for ${id} — paste the contract to add one`);
++  } else d.scrollTop = 0;
++}
++function closeSource() { $('drawer').classList.remove('open'); if (drawerOpener?.focus) drawerOpener.focus(); }
++$('srcbtn').addEventListener('click', () => openSource(null));
++$('dclose').addEventListener('click', closeSource);
++document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('drawer').classList.contains('open')) closeSource(); });
++$('srcbody').addEventListener('click', (e) => {
++  const b = e.target.closest('[data-copy]'); if (!b) return;
++  const p = SOURCE.paras.find((x) => x.id === b.dataset.copy);
++  if (p) { navigator.clipboard?.writeText(p.text).then(() => toast(`Copied quote — ${p.clause}`)); }
++});
++
++/* ---------- rendering ---------- */
++const STATUSES = ['overdue', 'due-soon', 'pending', 'satisfied', 'conditional', 'unscheduled'];
++function renderChips() {
++  $('chips').innerHTML = ['all', ...STATUSES].map((s) => `<button class="ghost" data-st="${s}" aria-pressed="${filterStatus === s}">${s === 'all' ? 'All' : s}</button>`).join('');
++}
++$('chips').addEventListener('click', (e) => { const b = e.target.closest('[data-st]'); if (!b) return; filterStatus = b.dataset.st; renderChips(); renderBoard(); });
++
++function renderSummary() {
+   const s = reg.summary;
+   const partyCards = Object.entries(s.byParty).map(([p, b]) => `
+-      <div class="card"><div class="k">${esc(p)} · open / overdue / exposure</div><div class="v">${b.open} / ${b.overdue} / $${b.exposure.toLocaleString('en-US')}</div></div>`).join('');
++    <div class="card"><div class="k">${esc(p)} · open / overdue / exposure</div><div class="v">${b.open} / ${b.overdue} / ${usd(b.exposure)}</div></div>`).join('');
+   $('summary').innerHTML = `
+     <div class="cards">
+       <div class="card"><div class="k">Obligations</div><div class="v">${s.total}</div></div>
+@@ -91,32 +355,196 @@ $('run').addEventListener('click', () => {
+     </div>
+     <h2>By party</h2>
+     <div class="cards">${partyCards}</div>`;
++  const sel = $('partyfilter'); const cur = filterParty;
++  sel.innerHTML = `<option value="">All parties</option>` + Object.keys(s.byParty).sort().map((p) => `<option${p === cur ? ' selected' : ''}>${esc(p)}</option>`).join('');
++}
++
++function dueCell(o) {
++  if (o.dueDate) return esc(o.dueDate);
++  if (o.recurrence) {
++    const proj = nextCycles(o.recurrence, reg.asOf, 3);
++    return `${esc(o.nextDue)}${o.cyclesMissed ? ` <span class="chip overdue">+${o.cyclesMissed} missed</span>` : ''}<br><span class="notes">next cycles: ${proj.join(' · ')}</span>`;
++  }
++  return '—';
++}
++
++function renderBoard() {
+   const order = { overdue: 0, 'due-soon': 1, unscheduled: 2, conditional: 3, pending: 4, satisfied: 5 };
+-  const rows = [...reg.obligations].sort((a, b) => order[a.status] - order[b.status] || a.id.localeCompare(b.id))
+-    .map((o) => {
+-      const due = o.dueDate ?? (o.recurrence ? `${o.nextDue}${o.cyclesMissed ? ` (+${o.cyclesMissed} missed)` : ''}` : null) ?? '—';
+-      return `
+-    <tr>
+-      <td><strong>${esc(o.id)}</strong> <span class="clause">${esc(o.clause ?? '')}</span><br /><span class="notes">${esc(o.party)}${o.owner ? ` · ${esc(o.owner)}` : ''} · ${esc(o.verb)}${o.amount != null ? ' · $' + o.amount.toLocaleString('en-US') : ''}</span></td>
+-      <td>${esc(o.text)}${o.sourceQuote ? `<br /><span class="quote">“${esc(o.sourceQuote)}”</span>` : ''}</td>
+-      <td>${due}${o.condition ? `<br /><span class="notes">if: ${esc(o.condition)}</span>` : ''}</td>
+-      <td><span class="chip ${o.status}">${o.status}</span>${o.breachRisk ? ' <span class="chip overdue">breach risk</span>' : ''}</td>
+-      <td>${o.satisfaction ? `${o.satisfaction.satisfiedOn}<br /><span class="notes">${esc(o.satisfaction.evidence ?? '')}</span>` : '—'}</td>
+-      <td>${o.flags.length ? `<span class="notes">${o.flags.map(esc).join('<br>')}</span>` : '—'}</td>
+-    </tr>`;}).join('');
+-  $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Obligation</th><th>Due</th><th>Status</th><th>Satisfaction</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
+-  window.__csv = toCSV(reg);
+-  window.__ics = toICS(reg);
++  let rows = [...reg.obligations].sort((a, b) => order[a.status] - order[b.status] || a.id.localeCompare(b.id));
++  if (filterStatus !== 'all') rows = rows.filter((r) => r.status === filterStatus);
++  if (filterParty) rows = rows.filter((r) => r.party === filterParty);
++  const hist = (id) => working.input.satisfaction.filter((x) => x.obligationId === id);
++  $('board').innerHTML = rows.length === 0 ? '<p class="notes">No obligations match the current filters.</p>' : rows.map((o) => {
++    const h = hist(o.id);
++    const satisfyForm = openSatisfy === o.id ? `
++      <form class="satisfy-form" data-satisfy="${esc(o.id)}">
++        <div><label for="sat-date-${esc(o.id)}">Satisfied on *</label><input type="date" id="sat-date-${esc(o.id)}" value="${reg.asOf}" required /></div>
++        <div><label for="sat-amt-${esc(o.id)}">Amount paid</label><input type="number" id="sat-amt-${esc(o.id)}" min="0" step="any" placeholder="${o.amount ?? ''}" /></div>
++        <div style="flex:1;min-width:180px"><label for="sat-ev-${esc(o.id)}">Evidence</label><input id="sat-ev-${esc(o.id)}" style="width:100%;box-sizing:border-box" placeholder="wire ref, email thread…" /></div>
++        <button type="submit">Save record</button>
++        <button type="button" class="ghost" data-cancel="1">Cancel</button>
++      </form>` : '';
++    return `
++    <article class="obl ${o.status}" data-obl="${esc(o.id)}">
++      <div class="head">
++        <strong>${esc(o.id)}</strong>
++        ${o.clause ? `<button class="clause-btn" data-src="${esc(o.id)}" aria-label="Show ${esc(o.clause)} in the source document">${esc(o.clause)}</button>` : ''}
++        <span class="chip ${o.status}">${o.status}</span>
++        ${o.breachRisk ? '<span class="chip overdue">breach risk</span>' : ''}
++        ${h.length > 1 ? `<span class="notes">${h.length} records</span>` : ''}
++      </div>
++      <div class="notes">${esc(o.party)}${o.owner ? ` · ${esc(o.owner)}` : ''} · ${esc(o.verb)}${o.amount != null ? ' · ' + usd(o.amount) : ''}</div>
++      <p class="text">${esc(o.text)}${o.sourceQuote ? ` <button class="clause-btn" data-src="${esc(o.id)}" aria-label="Show the source quote for ${esc(o.id)}">“…${esc(o.sourceQuote.slice(0, 40))}…”</button>` : ''}</p>
++      ${o.condition ? `<p class="notes">if: ${esc(o.condition)}</p>` : ''}
++      <p class="notes">due: ${dueCell(o)}</p>
++      ${o.satisfaction ? `<p class="notes">satisfied ${esc(o.satisfaction.satisfiedOn)}${o.satisfaction.evidence ? ` — ${esc(o.satisfaction.evidence)}` : ''}</p>` : ''}
++      ${o.flags.length ? `<p class="notes" style="color:var(--bad)">${o.flags.map(esc).join('<br>')}</p>` : ''}
++      <button class="ghost" data-record="${esc(o.id)}" style="margin-top:8px;padding:4px 10px;font-size:12px">${openSatisfy === o.id ? 'Close' : 'Record satisfaction'}</button>
++      ${satisfyForm}
++    </article>`;
++  }).join('');
++}
++
++$('board').addEventListener('click', (e) => {
++  const src = e.target.closest('[data-src]');
++  if (src) { openSource(src.dataset.src); return; }
++  const rec = e.target.closest('[data-record]');
++  if (rec) { const id = rec.dataset.record; openSatisfy = openSatisfy === id ? null : id; renderBoard(); if (openSatisfy) { const f = document.querySelector(`[data-satisfy="${CSS.escape(id)}"] input[type=date]`); f?.focus(); } }
++});
++$('board').addEventListener('submit', (e) => {
++  const f = e.target.closest('[data-satisfy]'); if (!f) return; e.preventDefault();
++  const id = f.dataset.satisfy;
++  const on = f.querySelector('input[type=date]').value;
++  const amt = f.querySelector('input[type=number]').value;
++  const ev = f.querySelector('input[id^="sat-ev-"]').value;
++  if (!on) return;
++  const evidence = [ev || 'recorded in demo', amt ? `paid ${usd(+amt)}` : null].filter(Boolean).join(' · ');
++  working.input.satisfaction.push({ obligationId: id, satisfiedOn: on, evidence });
++  audit('record_satisfaction', { obligationId: id, satisfiedOn: on, amount: amt ? +amt : null });
++  openSatisfy = null; rebuild();
++  toast(`Satisfaction recorded for ${id}${on > reg.asOf ? ' — dated after as-of; core will flag it future_dated' : ''}`);
+ });
+-$('ics').addEventListener('click', () => {
+-  if (!window.__ics) return;
+-  const a = document.createElement('a');
+-  a.href = URL.createObjectURL(new Blob([window.__ics], { type: 'text/calendar' }));
+-  a.download = 'obligations.ics';
+-  a.click();
+-  URL.revokeObjectURL(a.href);
++$('board').addEventListener('click', (e) => { const c = e.target.closest('[data-cancel]'); if (c) { openSatisfy = null; renderBoard(); } });
++
++function renderAudit() {
++  const rows = store.entries('audit');
++  $('auditbox').querySelector('summary').textContent = `Append-only action log — survives reload (${rows.length} entr${rows.length === 1 ? 'y' : 'ies'})`;
++  $('auditrows').innerHTML = rows.length === 0 ? '<p class="notes">No actions yet.</p>' :
++    `<table class="audit-table"><tbody>` + rows.slice(-12).reverse().map((r) =>
++      `<tr><td>${esc(r.ts.replace('T', ' ').slice(0, 19))}</td><td>${esc(r.action)}</td><td class="notes">${esc(JSON.stringify(r.detail))}</td></tr>`).join('') + `</tbody></table>` +
++    (rows.length > 12 ? `<p class="notes">… ${rows.length - 12} older entr${rows.length - 13 === 0 ? 'y' : 'ies'} — export for the full log</p>` : '');
++}
++
++/* ---------- rebuild pipeline ---------- */
++function rebuild() {
++  persist();
++  try { reg = buildRegister(working.input); }
++  catch (e) { toast('Register error: ' + e.message); return; }
++  $('asof').value = reg.asOf;
++  $('duesoon').value = working.input.settings?.dueSoonDays ?? 14;
++  $('diff-from').value = $('diff-from').value || shift(reg.asOf, -30);
++  $('diff-to').value = reg.asOf;
++  renderSummary(); renderBoard();
++}
++
++$('asof').addEventListener('change', (e) => { working.input.asOf = e.target.value; audit('set_asof', { asOf: e.target.value }); rebuild(); });
++$('duesoon').addEventListener('change', (e) => { working.input.settings = { ...(working.input.settings ?? {}), dueSoonDays: Math.max(1, +e.target.value || 14) }; rebuild(); });
++$('partyfilter').addEventListener('change', (e) => { filterParty = e.target.value; renderBoard(); });
++
++$('pasteform').addEventListener('submit', (e) => {
++  e.preventDefault();
++  const t = $('paste').value.trim();
++  if (!t) { toast('Paste some contract text first'); return; }
++  working.pasted = t; renderSource(); openSource(null);
++  audit('set_source_document', { chars: t.length });
++  toast('Pasted text is now the source document (obligations still need to be added — extraction is never guessed)');
++});
++
++$('addform').addEventListener('submit', (e) => {
++  e.preventDefault();
++  const errEl = $('adderr'); errEl.style.display = 'none';
++  const val = (id) => $(id).value.trim();
++  const o = { clause: val('f-clause') || null, party: val('f-party'), owner: val('f-owner') || null, verb: val('f-verb') || 'perform', text: val('f-text') };
++  const date = val('f-date'), cond = val('f-cond'), cad = val('f-cad'), anchor = val('f-anchor');
++  if (!o.party || !o.text) { errEl.textContent = 'Party and obligation text are required.'; errEl.style.display = 'block'; return; }
++  if (cad && !anchor) { errEl.textContent = 'A recurrence needs an anchor date (first cycle).'; errEl.style.display = 'block'; return; }
++  if (!cad && !date && !cond) { errEl.textContent = 'Give a due date, a condition, or a recurrence — undated/unconditional obligations cannot be tracked.'; errEl.style.display = 'block'; return; }
++  if (date) o.dueDate = date; else o.dueDate = null;
++  if (cond) o.condition = cond;
++  if (val('f-amount')) o.amount = +val('f-amount');
++  if (cad) o.recurrence = { cadence: cad, anchor };
++  const nums = working.input.obligations.map((x) => +(x.id.match(/\d+$/)?.[0] ?? 0));
++  o.id = `OBL-${Math.max(0, ...nums) + 1}`;
++  working.input.obligations.push(o);
++  audit('add_obligation', { id: o.id, party: o.party, dueDate: o.dueDate ?? null, recurrence: o.recurrence ?? null });
++  $('addform').reset(); $('f-verb').value = 'pay';
++  rebuild(); toast(`Added ${o.id}`);
+ });
+-$('run').click();
++
++document.querySelectorAll('details.shell')[1]?.addEventListener('toggle', (e) => { if (e.target.open) $('input').value = JSON.stringify(working.input, null, 2); });
++$('run').addEventListener('click', () => {
++  const errEl = $('err'); errEl.style.display = 'none';
++  const txt = $('input').value;
++  let parsed;
++  try { parsed = JSON.parse(txt); }
++  catch (e) { errEl.textContent = 'Input error — ' + jsonErrMsg(e, txt); errEl.style.display = 'block'; return; }
++  try { buildRegister(parsed); } catch (e) { errEl.textContent = 'Input error — ' + e.message; errEl.style.display = 'block'; return; }
++  working.input = parsed;
++  audit('apply_json', { obligations: parsed.obligations?.length ?? 0 });
++  rebuild(); toast('Register rebuilt from JSON');
++});
++
++$('diffform').addEventListener('submit', (e) => {
++  e.preventDefault();
++  const from = $('diff-from').value, to = $('diff-to').value;
++  if (!from || !to) { toast('Pick both dates'); return; }
++  let a, b;
++  try { a = buildRegister({ ...working.input, asOf: from }); b = buildRegister({ ...working.input, asOf: to }); }
++  catch (err) { toast('Diff error: ' + err.message); return; }
++  const d = diffRegisters(a, b);
++  audit('diff_registers', { from, to, transitions: d.transitions.length });
++  const tRows = d.transitions.map((t) => `<tr><td>${esc(t.id)}</td><td>${esc(t.party)}</td><td>${esc(t.from)} → <strong>${esc(t.to)}</strong></td></tr>`).join('');
++  const list = (arr, sign) => arr.map((x) => `<li>${sign === '+' ? 'added' : 'removed'}: ${esc(x)}</li>`).join('');
++  const flags = d.newFlags.map((n) => n.flags.map((f) => `<li>${esc(n.id)}: ${esc(f)}</li>`).join('')).join('');
++  $('diffout').innerHTML = (!tRows && !d.added.length && !d.removed.length && !flags)
++    ? `<p class="notes">No differences between ${esc(from)} and ${esc(to)} — statuses, ids, and flags all identical.</p>`
++    : `<p class="notes">${d.transitions.length} transition(s) · ${d.added.length} added · ${d.removed.length} removed · ${d.newFlags.length} id(s) with new flags</p>` +
++      (tRows ? `<table class="diff-table"><thead><tr><th scope="col">Id</th><th scope="col">Party</th><th scope="col">Status</th></tr></thead><tbody>${tRows}</tbody></table>` : '') +
++      ((d.added.length || d.removed.length) ? `<ul class="notes" style="margin:10px 0 0 18px">${list(d.added, '+')}${list(d.removed, '-')}</ul>` : '') +
++      (flags ? `<ul class="notes" style="margin:10px 0 0 18px;color:var(--bad)">${flags}</ul>` : '');
++});
++
++/* ---------- exports ---------- */
++function xlsxRows() {
++  const head = ['id', 'clause', 'party', 'owner', 'verb', 'text', 'dueDate', 'nextDue', 'amount', 'status', 'breachRisk', 'satisfiedOn', 'evidence', 'flags'];
++  return [head, ...reg.obligations.map((r) => [r.id, r.clause ?? '', r.party, r.owner ?? '', r.verb, r.text, r.dueDate ?? '', r.nextDue ?? '', typeof r.amount === 'number' ? r.amount : '', r.status, r.breachRisk ? 'yes' : 'no', r.satisfaction?.satisfiedOn ?? '', r.satisfaction?.evidence ?? '', r.flags.join('; ')])];
++}
++$('x-csv').addEventListener('click', () => download(`obligations-register-${reg.asOf}.csv`, toCSV(reg), 'text/csv'));
++$('x-ics').addEventListener('click', () => download(`obligations-deadlines-${reg.asOf}.ics`, toICS(reg), 'text/calendar'));
++$('x-md').addEventListener('click', () => download(`obligations-register-${reg.asOf}.md`, renderRegister(reg), 'text/markdown'));
++$('x-docx').addEventListener('click', () => download(`obligations-register-${reg.asOf}.docx`, writeDocx(renderRegister(reg).split('\n'))));
++$('x-xlsx').addEventListener('click', () => download(`obligations-register-${reg.asOf}.xlsx`, writeXlsx(xlsxRows(), { name: 'Register' })));
++$('x-log').addEventListener('click', () => download(`obligations-audit-${today}.ndjson`, store.exportJsonl('audit'), 'application/x-ndjson'));
++
++$('reset').addEventListener('click', () => {
++  working = { input: DEFAULT_INPUT(), pasted: null };
++  filterStatus = 'all'; filterParty = ''; openSatisfy = null;
++  audit('reset', { to: 'seeded example' });
++  renderChips(); renderSource(); rebuild();
++  toast('Working state reset to the seeded example (audit log is append-only and kept)');
++});
++
++/* ---------- boot: restore or seed ---------- */
++const saved = store.get('working');
++if (saved && saved?.input?.obligations) {
++  working = saved;
++  rebuild();
++  toast(`Restored working state — ${store.entries('audit').length} audit entries preserved`);
++} else {
++  rebuild();
++  audit('seed', { obligations: working.input.obligations.length });
++}
++renderChips(); renderSource(); renderAudit();
+ </script>
+ </body>
+ </html>
+diff --git a/open-artifacts/obligations-checker/demo/tokens.css b/open-artifacts/obligations-checker/demo/tokens.css
+index 24ee35d..068cdd1 100644
+--- a/open-artifacts/obligations-checker/demo/tokens.css
++++ b/open-artifacts/obligations-checker/demo/tokens.css
+@@ -4,7 +4,14 @@
+    ========================================================================= */
+ 
+ /* ---------- Webfonts ---------- */
+-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
++/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
++@font-face {
++  font-family: "Manrope";
++  src: url("fonts/Manrope-Variable.woff2") format("woff2");
++  font-weight: 400 700;
++  font-style: normal;
++  font-display: swap;
++}
+ 
+ /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+ @font-face {
+@@ -37,7 +44,7 @@
+ 
+   /* ----- Type stacks ----- */
+   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
+-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
++  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+ 
+   /* ----- Layout constants ----- */
+   --max-width: 1100px;
+@@ -127,7 +134,7 @@ a {
+ /* Eyebrow — preceded by 24px hairline */
+ .t-eyebrow {
+   font-family: var(--font-mono);
+-  font-size: 11px;
++  font-size: 12px;
+   letter-spacing: 0.12em;
+   text-transform: uppercase;
+   color: var(--text-secondary);
+diff --git a/open-artifacts/obligations-checker/spec.md b/open-artifacts/obligations-checker/spec.md
+index 3ffe414..fefedfb 100644
+--- a/open-artifacts/obligations-checker/spec.md
++++ b/open-artifacts/obligations-checker/spec.md
+@@ -24,7 +24,10 @@ and diff exports.
+ Never guesses: invalid dates (including invalid recurrence cadence or
+ anchor) → `unscheduled` with an "unverified, never guessed" flag;
+ satisfaction records for unknown ids are ignored (no phantom
+-obligations).
++obligations); satisfaction records dated after `asOf` are excluded
++from the status machine and flagged `future_dated` — the register is
++a function of facts known as of `asOf`, so a date typo can never turn
++overdue into satisfied.
+ 
+ ## Input contract (JSON)
+ 
+@@ -55,9 +58,11 @@ practice; recurrence takes precedence in the status machine.
+ - Cycle due dates = anchor + k·cadence months, day clamped to the
+   target month's last day (Jan 31 monthly → Feb 28; Feb 29 annual →
+   Feb 28 in non-leap years).
+-- Each cycle is its own duty. The latest satisfaction record covers at
+-  most the most recent past cycle (when it falls in that cycle's
+-  window); every earlier unmet cycle counts as a miss.
++- Each cycle is its own duty. The latest satisfaction record covers
++  the cycle whose window contains `satisfiedOn` — the window of a
++  cycle due D is (previous due date, D], so a record dated exactly D
++  discharges that cycle on time (never the next one); every other
++  unmet cycle counts as a miss.
+ - Misses > 0 → `overdue` + breach-risk flag listing the missed dates;
+   otherwise the next cycle date drives due-soon/pending/satisfied.
+ 

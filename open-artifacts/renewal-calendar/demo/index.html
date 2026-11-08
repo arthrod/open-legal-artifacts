@@ -34,6 +34,8 @@
   .tl-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-mono); }
   .tl-quote { font-size: 12px; border-left: 3px solid var(--border); padding-left: 10px; margin-top: 8px; color: var(--text-secondary); }
   .ambflag { margin-top: 8px; font-size: 12px; background: var(--flag-tint); padding: 6px 10px; color: var(--bad); border-color: var(--bad);}
+  .unres-pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); border: 1px dashed var(--text-secondary); padding: 0 5px; margin-right: 4px; white-space: nowrap; }
+  .legend { font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; max-width: 78ch; }
   .unresolved li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
@@ -60,6 +62,7 @@
   <section>
     <h2>Portfolio state</h2>
     <div class="stats" id="stats"></div>
+    <p class="legend" id="legend"></p>
     <div class="row">
       <button id="icsBtn">Download .ics (RFC 5545)</button>
     </div>
@@ -90,30 +93,40 @@
 <script type="module">
   import { buildCalendar, toICS } from "../core/core.js";
   import EXAMPLE from "./example.js";
+  import { makeLabelFn, TOOL_LABELS, LEGEND_TEXT } from "../core/display-labels.js";
+
+  const L = makeLabelFn(TOOL_LABELS["renewal-calendar"]);
+  const leadPhrase = (e) => {
+    if (e.leadTimeSource === "clause override") return `lead time set by clause override: ${e.leadTimeDays}d`;
+    const m = /^rules\.byClauseType\[(.+)\]$/.exec(e.leadTimeSource);
+    if (m) return `lead time from rules (${m[1]}: ${e.leadTimeDays}d)`;
+    return `lead time from default rules (${e.leadTimeDays}d)`;
+  };
 
   const cal = buildCalendar(EXAMPLE, EXAMPLE.rules, EXAMPLE.confirmations);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  document.getElementById("legend").textContent = LEGEND_TEXT;
   document.getElementById("stats").innerHTML =
-    `<div class="stat"><b>${cal.summary.confirmed}</b><span>confirmed</span></div>` +
-    `<div class="stat"><b>${cal.summary.ambiguous}</b><span>ambiguous ⚠</span></div>` +
-    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unresolved → review</span></div>` +
+    `<div class="stat"><b>${cal.summary.confirmed}</b><span>${esc(L("confirmed").label)}</span></div>` +
+    `<div class="stat"><b>${cal.summary.ambiguous}</b><span>${esc(L("ambiguous").label)}</span></div>` +
+    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unverified — needs review</span></div>` +
     `<div class="stat"><b>${cal.events.filter((e) => e.urgency.tier === "overdue").length}</b><span>overdue</span></div>` +
     `<div class="stat"><b>${cal.summary.coverageGaps}</b><span>coverage gaps</span></div>`;
 
   document.getElementById("timeline").innerHTML = cal.events.map((e) =>
     `<div class="tl-item ${e.status === "ambiguous" ? "amb" : ""}">` +
-    `<div style="margin-bottom:6px"><span class="tier ${e.urgency.tier === "overdue" ? "overdue" : ""}">${esc(e.urgency.tier)}${e.urgency.daysUntil < 0 ? ` ${Math.abs(e.urgency.daysUntil)}d late` : ` ${e.urgency.daysUntil}d`}</span>${e.escalation ? `<span class="tier">→ ${esc(e.escalation.owner)}</span>` : ""}${e.recurrence ? `<span class="tier">cycle ${e.recurrence.cycle}/2 · ${e.recurrence.termMonths}mo</span>` : ""}</div>` +
-    `<div class="tl-date">give notice by <b>${esc(e.noticeDeadline)}</b> → event ${esc(e.date)} (${e.leadTimeDays}d lead, ${esc(e.leadTimeSource)})</div>` +
+    `<div style="margin-bottom:6px"><span class="tier ${e.urgency.tier === "overdue" ? "overdue" : ""}" data-key="${esc(e.urgency.tier)}">${esc(L(e.urgency.tier).label)}${e.urgency.daysUntil < 0 ? ` ${Math.abs(e.urgency.daysUntil)}d late` : ` ${e.urgency.daysUntil}d`}</span>${e.escalation ? `<span class="tier">→ ${esc(e.escalation.owner)}</span>` : ""}${e.recurrence ? `<span class="tier">cycle ${e.recurrence.cycle}/2 · ${e.recurrence.termMonths}mo</span>` : ""}</div>` +
+    `<div class="tl-date">give notice by <b>${esc(e.noticeDeadline)}</b> → event ${esc(e.date)} (<span data-key="${esc(e.leadTimeSource)}">${esc(leadPhrase(e))}</span>)</div>` +
     `<div class="tl-name">${esc(e.contractName)} · ${esc(e.clauseType)}${e.counterparty ? ` · ${esc(e.counterparty)}` : ""}</div>` +
     (e.quote ? `<div class="tl-quote">"${esc(e.quote)}"</div>` : "") +
     `<div class="tl-meta">${esc(e.reason)}</div>` +
-    (e.ambiguityFlag ? `<div class="ambflag">⚠ ${esc(e.ambiguityFlag.type)} — ${esc(e.ambiguityFlag.note)}</div>` : "") +
-    (e.confirmation ? `<div class="tl-meta">✓ confirmed ${esc(e.confirmation.date)} by ${esc(e.confirmation.confirmedBy ?? "counsel")}${e.confirmation.on ? ` on ${esc(e.confirmation.on)}` : ""} (resolved ${esc(e.confirmation.resolvedFlag)})</div>` : "") +
+    (e.ambiguityFlag ? `<div class="ambflag">⚠ <span data-key="${esc(e.ambiguityFlag.type)}">${esc(L(e.ambiguityFlag.type).label)}</span> — ${esc(e.ambiguityFlag.note)}</div>` : "") +
+    (e.confirmation ? `<div class="tl-meta">✓ confirmed ${esc(e.confirmation.date)} by ${esc(e.confirmation.confirmedBy ?? "counsel")}${e.confirmation.on ? ` on ${esc(e.confirmation.on)}` : ""} (resolved: <span data-key="${esc(e.confirmation.resolvedFlag)}">${esc(L(e.confirmation.resolvedFlag).label)}</span>)</div>` : "") +
     `</div>`).join("");
 
   document.getElementById("unresolved").innerHTML = cal.unresolved.length
-    ? cal.unresolved.map((u) => `<li><b>${esc(u.contractName)}</b> <code>${esc(u.clauseType)}</code> — <code>${esc(u.expression)}</code><br />${esc(u.reason)}</li>`).join("")
+    ? cal.unresolved.map((u) => `<li><span class="unres-pill" data-key="unresolved" title="${esc(L("unresolved").label)}">UNVERIFIED</span><b>${esc(u.contractName)}</b> <code>${esc(u.clauseType)}</code> — <code>${esc(u.expression)}</code><br />${esc(u.reason)}</li>`).join("")
     : `<li>none</li>`;
 
   document.getElementById("coverage").innerHTML = cal.coverage.length

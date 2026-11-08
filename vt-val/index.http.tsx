@@ -5,6 +5,15 @@
 //   /course/*                              → prompting-for-attorneys static course files
 //   /open-artifacts/<n>/demo/index.html    → gh-pages-compatible alias
 import { readFile } from "https://esm.town/v/std/utils/index.ts";
+import { notFoundHtml } from "./notfound.ts";
+
+/** HTML 404 — the on-brand not-found page with proper content-type. */
+function html404(p: string): Response {
+  return new Response(notFoundHtml(p), {
+    status: 404,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
 
 const ARTIFACTS = [
   // open reimplementations (single-file bundles in site/)
@@ -65,7 +74,7 @@ async function page(path: string): Promise<Response> {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   } catch {
-    return new Response("Not found", { status: 404 });
+    return html404(path);
   }
 }
 
@@ -91,7 +100,7 @@ export default async function (req: Request): Promise<Response> {
         headers: { "content-type": COURSE_TYPES[ext] ?? "application/octet-stream" },
       });
     } catch {
-      return new Response("Not found", { status: 404 });
+      return html404(p);
     }
   }
 
@@ -109,5 +118,5 @@ export default async function (req: Request): Promise<Response> {
     return new Response(null, { status: 302, headers: { Location: `/a/${bare}` } });
   }
 
-  return new Response("Open Legal Artifacts — not found", { status: 404 });
+  return html404(p);
 };
