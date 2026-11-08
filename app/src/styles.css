@@ -36,6 +36,11 @@
   --tile-stripe: 4px;
   --radius: 0;
 
+  /* sticky header + sticky index toolbar (Z-Scale Rule: named layers only —
+     toolbar sits one layer under the header, which keeps 10) */
+  --header-h: 3.4rem; /* JS-maintained via ResizeObserver; this is the fallback */
+  --z-sticky-tools: 9;
+
   /* semantic status colors (demo pills only — never structural) */
   --ok: #15803d;
   --warn: #b45309;
@@ -76,6 +81,26 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Keyboard focus ring — always --text, never accent (closes the global
+   :focus-visible gap; demo textareas keep their own field focus style). */
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 main {
@@ -376,6 +401,139 @@ pre {
 .backlink:hover,
 .tile-title a:hover {
   border-bottom-color: var(--accent);
+}
+
+/* ---------- Index toolbar: search + practice-area filters ---------- */
+
+.index-tools {
+  position: sticky;
+  top: var(--header-h);
+  z-index: var(--z-sticky-tools);
+  background: var(--bg); /* solid — the translucent+blur surface is the header's alone */
+  border-bottom: var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.4rem;
+  padding: 0.8rem 0;
+  margin-bottom: 1.4rem;
+}
+
+.index-tools input[type="search"] {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--text); /* ≥3:1 against the field (Contrast Split Rule) */
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+  width: min(320px, 100%);
+}
+
+.index-tools input[type="search"]::placeholder {
+  color: var(--text-secondary);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1.1rem;
+}
+
+.filter-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent; /* active = accent underline, never fill */
+  border-radius: var(--radius);
+  padding: 0.4rem 0.05rem;
+  margin: 0;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.filter-btn:hover {
+  color: var(--text);
+}
+
+.filter-btn[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Provenance glyph + word (replaces the chip) */
+.prov {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Result count line (filtered/searched states) */
+.result-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0 0 1rem;
+}
+
+/* Reader-question groups (at-rest view) */
+.q-group {
+  margin-bottom: 2rem;
+}
+
+.group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: var(--hairline);
+  padding-top: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.group-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.group-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.group-caption {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 1rem;
+}
+
+/* Empty state (no matches) */
+.empty-state {
+  border: var(--hairline);
+  padding: 1.6rem 1.4rem;
+}
+
+.empty-state p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.empty-state button {
+  margin-top: 0.6rem;
 }
 
 /* ---------- External catalog rows ---------- */
@@ -730,6 +888,14 @@ td.unverified {
 @media (max-width: 768px) {
   main {
     padding: 0 var(--pad-x-mobile) 3rem;
+  }
+
+  .index-tools {
+    gap: 0.5rem 0.9rem;
+  }
+
+  .index-tools input[type="search"] {
+    width: 100%;
   }
 
   .site-header .inner {

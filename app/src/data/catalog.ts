@@ -25,6 +25,8 @@ export interface OpenEntry {
   title: string;
   tagline: string;
   category: string;
+  practiceArea: string;
+  readerQuestion: string;
   anthropicCounterpart: string | null;
   status: string;
   hasDemo: boolean;
@@ -40,12 +42,36 @@ export interface ExternalEntry {
   links: Link[];
 }
 
+export interface PracticeArea {
+  id: string;
+  label: string;
+  filterLabel: string;
+  caption: string;
+}
+
+export interface ReaderQuestion {
+  id: string;
+  label: string;
+  caption: string;
+}
+
+export interface Taxonomies {
+  practiceAreas: PracticeArea[];
+  readerQuestions: ReaderQuestion[];
+}
+
 export interface Catalog {
   generatedAt: string;
   counts: { originals: number; open: number; external: number; originalIdeas: number };
   originals: OriginalEntry[];
   open: OpenEntry[];
   external: ExternalEntry[];
+  taxonomies: Taxonomies;
 }
 
 export const catalog = raw as Catalog;
+
+// Typed taxonomy defs — the single source of labels for the index toolbar
+// and the at-rest reader-question grouping.
+export const PRACTICE_AREAS: PracticeArea[] = catalog.taxonomies.practiceAreas;
+export const READER_QUESTIONS: ReaderQuestion[] = catalog.taxonomies.readerQuestions;

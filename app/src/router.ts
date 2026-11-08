@@ -26,10 +26,19 @@ export function el(html: string): HTMLElement {
 }
 
 export function currentPath(): string {
-  const h = window.location.hash;
-  if (!h || h === "#" || h === "#/") return "/";
-  return h.replace(/^#/, "").replace(/\/+$/, "") || "/";
+  const p = window.location.hash.split("?")[0];
+  if (!p || p === "#" || p === "#/") return "/";
+  return p.replace(/^#/, "").replace(/\/+$/, "") || "/";
 }
+
+/** Query params of the current hash route (e.g. `#/?area=x&q=y`). */
+export function currentQuery(): URLSearchParams {
+  const h = window.location.hash;
+  const i = h.indexOf("?");
+  return new URLSearchParams(i >= 0 ? h.slice(i + 1) : "");
+}
+
+let lastRenderedPath: string | null = null;
 
 export function render(): void {
   const app = document.getElementById("app");
@@ -45,7 +54,12 @@ export function render(): void {
     page = factory ? factory() : notFound();
   }
   app.replaceChildren(page);
-  window.scrollTo(0, 0);
+  // Reset scroll on route change — but never when only the index query
+  // (filter/search) changed, so typing doesn't scroll-jump.
+  if (lastRenderedPath !== "/" || path !== "/") {
+    window.scrollTo(0, 0);
+  }
+  lastRenderedPath = path;
 }
 
 function notFound(): HTMLElement {
