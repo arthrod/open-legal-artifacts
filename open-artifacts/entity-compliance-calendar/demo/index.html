@@ -16,23 +16,23 @@
   .stats { display: flex; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { padding: 14px 22px; border-right: var(--hairline); }
   .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
-  .stat span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .stat span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
-  th { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     text-align: left; border-bottom: 2px solid var(--text); padding: 8px; }
   td { border-bottom: var(--hairline); padding: 8px; vertical-align: top; font-family: var(--font-mono); }
   td.ent b { font-family: var(--font-body); font-size: 13px; }
-  td .sub { color: var(--text-secondary); font-size: 10px; }
+  td .sub { color: var(--text-secondary); font-size: 11px; }
   tr:hover td { background: var(--hover); }
-  .pill { display: inline-block; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  .pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.05em; padding: 2px 7px; border: 1px solid var(--text); }
   .pill.delinquent { background: var(--text); color: var(--bg); }
-  .pill.due-soon { background: var(--accent); }
+  .pill.due-soon { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
   .pill.scheduled { background: #fff; }
   .pill.satisfied { background: #fff; color: var(--text-secondary); border-color: var(--border); }
   .pill.na { background: var(--hover); color: var(--text-secondary); border-color: var(--border); }
   .delinq li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
-  .delinq .days { font-family: var(--font-mono); background: var(--accent); padding: 0 4px; }
+  .delinq .days { font-family: var(--font-mono); background: var(--flag-tint); padding: 0 4px; color: var(--warn); border-color: var(--warn);}
   .row { display: flex; gap: 12px; flex-wrap: wrap; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; }

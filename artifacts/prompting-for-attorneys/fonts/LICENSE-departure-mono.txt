@@ -1,0 +1,8 @@
+Departure Mono — Regular (woff2)
+License: SIL Open Font License 1.1
+Author: Helena Zhang
+Source: https://github.com/rektdeckard/departure-mono (see LICENSE there for the full OFL 1.1 text)
+
+Copied from this repository's design/fonts/ bundle. Manrope and JetBrains Mono
+are loaded from the Google Fonts CDN under their respective licenses
+(OFL 1.1) and are not bundled here.

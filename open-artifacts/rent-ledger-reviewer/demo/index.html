@@ -22,16 +22,16 @@
   @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
   .balances { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; }
   .balances div { padding: 12px 14px; border-right: var(--hairline); }
-  .balances div:last-child { border-right: none; background: var(--accent); }
+  .balances div:last-child { border-right: none; background: var(--flag-tint); }
   .balances .n { font-family: var(--font-mono); font-size: 18px; font-weight: 500; }
-  .balances .l { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); }
+  .balances .l { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
   td.amt { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
   tr.flag td { background: #fffbe6; }
-  .gate { border: var(--hairline); border-left: var(--rule-yellow-h) solid var(--accent); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
-  .err { color: #8a1f1f; font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
+  .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
   .scroll { overflow-x: auto; }
   code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
 </style>

@@ -1,11 +1,11 @@
 /* ============================================================
-   ARTHUR SOUZA RODRIGUES — Colors & Type
-   The full token system. Load AFTER fonts.css.
+   Colors & Type — aligned with the Open Legal Artifacts catalog tokens.
+   Load AFTER fonts.css.
 
    Design DNA: warm off-white paper, single near-black ink, ONE
-   highlighter-yellow accent used as a MARK (background fill), hairline
-   borders, monospace uppercase labels. No rounded corners. No soft
-   shadows — the only shadow is a hard offset block in the accent on hover.
+   highlighter-yellow accent used structurally (marks, hover, rules —
+   never as text color, never as a status fill), hairline borders,
+   monospace uppercase labels. No rounded corners. No shadows.
    ============================================================ */
 
 :root{
@@ -15,6 +15,7 @@
   --muted:     #6B6B6B;   /* secondary text — passes AA on --bg (~5.3:1) */
   --faint:     #E8E8E5;   /* hairlines / dividers — the canonical border tint */
   --surface:   #FFFFFF;   /* raised cards sit slightly brighter than paper */
+  --hover:     #F0F0EE;   /* catalog hover state — quiet tile fill */
 
   /* ---------- THE ACCENT (a highlighter, not a button color) ---------- */
   --mark:        #FFD400; /* highlighter yellow — a BACKGROUND/MARK fill */
@@ -40,21 +41,21 @@
   --on-dark-dim:   #8C8C88; /* footer body */
   --on-dark-line:  #222222; /* hairlines on --ink */
 
-  /* ---------- TYPE FAMILIES ---------- */
-  --ff:    "Libre Franklin", system-ui, -apple-system, sans-serif;     /* body + display */
-  --mono:  "Roboto Mono", "Departure Mono", "Space Mono", ui-monospace, monospace; /* labels, code, wordmark */
-  --serif: "Newsreader", Georgia, "Times New Roman", serif;            /* optional editorial display */
-  --brand-font:   var(--mono);  /* wordmark face (Match-mono — the project mono) */
+  /* ---------- TYPE FAMILIES (catalog stack) ---------- */
+  --ff:    "Manrope", system-ui, -apple-system, sans-serif;            /* body + display */
+  --mono:  "Departure Mono", "JetBrains Mono", ui-monospace, monospace; /* labels, code, wordmark */
+  --serif: Georgia, "Times New Roman", serif;                          /* unused legacy fallback */
+  --brand-font:   var(--mono);  /* wordmark face (Departure Mono — the project mono) */
 
   /* ---------- WEIGHTS (canonical) ---------- */
-  --brand-weight:   700;
-  --display-weight: 700;  /* headlines run BOLD — Libre Franklin at full weight */
-  --mono-weight:    600;  /* mono labels set semibold */
+  --brand-weight:   400;  /* Departure Mono ships Regular only — never synthesize bold */
+  --display-weight: 700;  /* Manrope bold for headlines */
+  --mono-weight:    400;  /* mono labels set regular, like the catalog */
 
-  /* ---------- TYPE SCALE (fluid) ---------- */
-  --fs-display: clamp(36px, 6vw, 68px);   /* project / page H1 */
-  --fs-h1:      clamp(34px, 5.4vw, 60px); /* hero H1 */
-  --fs-h2:      clamp(26px, 3.4vw, 40px); /* section / contact H2 */
+  /* ---------- TYPE SCALE (fluid — catalog scale, DESIGN.md H1/H2) ---------- */
+  --fs-display: clamp(28.8px, 4.5vw, 41.6px); /* lesson H1 = catalog H2 scale */
+  --fs-h1:      clamp(35.2px, 6vw, 54.4px);   /* hero H1 = catalog H1 scale */
+  --fs-h2:      clamp(26px, 3.4vw, 40px);     /* section H2 */
   --fs-h3:      clamp(24px, 2.6vw, 32px); /* feature card title */
   --fs-title:   21px;                     /* offer / card title */
   --fs-lede:    clamp(17px, 1.7vw, 21px); /* intro paragraph */
@@ -73,10 +74,6 @@
   --border-ink:   1px solid var(--ink);    /* the structural border — cards, panels */
   --border-faint: 1px solid var(--faint);  /* dividers, hairlines, soft cards */
   --radius: 0px;                            /* THE SYSTEM IS SQUARE. corners are sharp. */
-
-  /* ---------- THE ONE SHADOW (hard offset block, on hover) ---------- */
-  --lift: 7px 7px 0 var(--mark);   /* card hover */
-  --lift-sm: 6px 6px 0 var(--mark);/* nav-card hover */
 
   /* ---------- MOTION ---------- */
   --ease: cubic-bezier(.2,.7,.2,1); /* shared easing curve */

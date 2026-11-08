@@ -1,16 +1,18 @@
-/* header */
+/* header + catalog back-bar */
+.ola-backlink{display:block;background:var(--ink);color:var(--bg);font-family:var(--mono);font-weight:var(--mono-weight);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid var(--on-dark-line)}
+.ola-backlink:hover{color:var(--bg)}
 .hdr{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--faint)}
-.hdr .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:60px}
+.hdr .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:60px;padding-top:8px;padding-bottom:8px}
 .brand{display:flex;align-items:baseline;gap:14px;min-width:0}
-.brand .wm{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.06em;white-space:nowrap}
-.brand .wm i{font-style:normal;color:var(--muted);opacity:.7}
+.brand .wm{font-family:var(--mono);font-weight:var(--brand-weight);font-size:15px;letter-spacing:.04em;white-space:nowrap}
+.brand .wm i{font-style:normal;color:var(--muted)}
 .brand .sub{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hright{display:flex;align-items:center;gap:14px}
 .prog{display:flex;gap:3px}
 .prog b{display:block;width:14px;height:8px;border:1px solid var(--ink);background:transparent}
-.prog b.on{background:var(--mark)}
-.prog b.cur{background:var(--ink)}
+.prog b.on{background:var(--ink)}
+.prog b.cur{background:var(--ink);outline:1px solid var(--ink);outline-offset:2px}
 .sizes{display:flex;border:1px solid var(--ink)}
-.sizes button{padding:4px 9px;font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.04em;transition:background var(--t-fast)}
+.sizes button{padding:4px 9px;font-family:var(--mono);font-weight:var(--mono-weight);font-size:12px;letter-spacing:.04em;transition:background var(--t-fast)}
 .sizes button+button{border-left:1px solid var(--ink)}
 .sizes button.on{background:var(--ink);color:var(--on-dark)}

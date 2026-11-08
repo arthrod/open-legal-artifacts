@@ -22,21 +22,21 @@
   .card:hover { background: var(--hover); }
   .card.critical { box-shadow: inset 4px 0 0 var(--text); }
   .card .nm { font-weight: 600; font-size: 13px; }
-  .card .meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+  .card .meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
   .card .dl { font-family: var(--font-mono); font-size: 11px; margin-top: 4px; }
-  .dl.soon { background: var(--accent); display: inline-block; padding: 0 4px; }
+  .dl.soon { background: var(--flag-tint); display: inline-block; padding: 0 4px; color: var(--warn); border-color: var(--warn);}
   .dl.overdue { background: var(--text); color: var(--bg); display: inline-block; padding: 0 4px; }
   .changelog li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
-  .changelog .ts { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); }
-  .sev { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); margin-left: 6px; }
+  .changelog .ts { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+  .sev { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); margin-left: 6px; }
   .sev.critical { background: var(--text); color: var(--bg); }
-  .sev.major { background: var(--accent); }
+  .sev.major { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .from { text-decoration: line-through; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
-  .to { font-family: var(--font-mono); font-size: 12px; background: var(--accent); padding: 0 3px; }
+  .to { font-family: var(--font-mono); font-size: 12px; background: var(--flag-tint); padding: 0 3px; color: var(--warn); border-color: var(--warn);}
   .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .counts div { padding: 12px 20px; border-right: var(--hairline); }
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); }
+  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; }

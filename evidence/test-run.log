@@ -38,3 +38,9 @@ tabular-review (tsx): ℹ tests 11 ℹ pass 11 ℹ fail 0
 client-intake: # tests 18 # pass 18 # fail 0 
 contracts-playbook: # tests 17 # pass 17 # fail 0 
 pii-ptbr-lgpd: # tests 23 # pass 23 # fail 0 
+
+# Post-remediation full run — 2026-11-08T01:05:25Z
+JS TOTAL: pass=418 fail=0
+client-intake: # pass 18 # fail 0 
+contracts-playbook: # pass 17 # fail 0 
+pii-ptbr-lgpd: # pass 23 # fail 0 

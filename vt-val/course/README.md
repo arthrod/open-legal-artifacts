@@ -1,6 +1,6 @@
 # Prompting for Attorneys
 
-Part of [open-legal-artifacts](../../README.md). A ten-lesson interactive course
+Part of [open-legal-artifacts](/README.md). A ten-lesson interactive course
 on prompting techniques for lawyers. Static site, no build step, no dependencies.
 
 ## Run it

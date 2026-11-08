@@ -27,6 +27,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;

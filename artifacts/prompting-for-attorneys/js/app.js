@@ -29,7 +29,8 @@ function home() {
   app.innerHTML = `
 <section class="hero">
 <p class="eyebrow mono rise"><span class="sq"></span>/ A short course · ten lessons</p>
-<h1 class="h1 rise d1">Prompting for attorneys — <span class="mark">ten techniques</span> that change the answer.</h1>
+<h1 class="h1 rise d1">Prompting for attorneys — ten techniques that change the answer.</h1>
+<div class="rule rise d1" aria-hidden="true"></div>
 <p class="lede rise d2">Each lesson puts a weak prompt and a strong one side by side, marks exactly what was added and why, checks that it landed, and lets you run the prompt yourself. About an hour, in any order.</p>
 <div class="hero-meta rise d3"><span><span class="mono">${pad(n)} / ${pad(L.length)}</span> complete</span><span><span class="mono">${L.reduce((a,l)=>a+l.minutes,0)} min</span> total</span><span><span class="mono">EN</span> · examples from U.S., English and Brazilian law</span></div>
 <p class="rise d4" style="margin-top:32px"><a class="btn" href="#/${first.slug}">${n ? 'Continue' : 'Start'} with lesson ${pad(L.indexOf(first)+1)} →</a></p>
@@ -39,8 +40,9 @@ function home() {
 <span class="num">${pad(i+1)}</span>
 <span><span class="t">${esc(l.title)}</span><span class="o" style="display:block">${esc(l.one)}</span></span>
 <span class="go"><span class="st">${done(l.slug) ? 'Done' : l.minutes + ' min'}</span><span class="arrow">→</span></span></a>`).join('')}</div>
-<div class="sechead"><span class="mono"><span class="sq"></span>/ After the course</span></div>
-<section class="cta"><div><h2>Let's get rid of that problem nobody wants to solve.</h2><p>Teams whose work now touches product, data and AI — fractional general counsel, legal-AI advisory and implementation.</p></div><a class="btn ondark" href="https://arthur.law">Contact →</a></section>`;
+<div class="sechead"><span class="mono"><span class="sq"></span>/ The whole course</span><span class="mono">${pad(n)} / ${pad(L.length)} complete</span></div>
+<ol class="proof">${L.map((l,i) => `<li class="${done(l.slug)?'done':''}"><a href="#/${l.slug}"><span class="n mono">${pad(i+1)}</span><span class="t">${esc(l.title)}</span><span class="st mono">${done(l.slug) ? 'Done' : l.minutes + ' min'}</span></a></li>`).join('')}</ol>
+<p class="prooflinks">Ten lessons, each with a weak prompt, a strong one, the reason for every change, a check, and a way to run it yourself. <a href="../../">Run the tools →</a> · <a href="https://github.com/arthrod/open-legal-artifacts" target="_blank" rel="noopener">Read the source ↗</a></p>`;
 }
 
 function lesson(slug) {

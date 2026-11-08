@@ -25,6 +25,16 @@
   --border: #e8e8e5; /* hairline */
   --hover: #f0f0ee; /* tile hover state */
 
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --ok: #1b6b2f;
+  --warn: #8a6d00;
+  --bad: #b3261e;
+  --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
@@ -149,18 +159,26 @@ a {
   button.ghost { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; color: var(--text); padding: 8px 14px; cursor: pointer; }
   button.ghost:hover { background: var(--hover); }
   .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  /* Sticky review action bar — named layer per the Z-Scale Rule (header 10, back-bar 99; this sits below both). */
+  #s-review .actions { position: sticky; bottom: 0; z-index: var(--z-actions, 9); background: var(--bg); border-top: var(--hairline); margin: 18px -20px 0; padding: 12px 20px; }
   .err { border: 2px solid var(--text); background: var(--accent); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin-top: 12px; display: none; }
-  .q { background: #fff; border: var(--hairline); padding: 16px; margin-bottom: 10px; }
+  .q { background: #fff; border: var(--hairline); padding: 16px; margin-bottom: 10px; scroll-margin-top: 72px; }
+  .blkhead { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin: 24px 0 10px; }
+  #r-list .blkhead:first-child { margin-top: 0; }
+  .rsum { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 13px; line-height: 1.7; margin: 0 0 12px; }
+  .rsum a { text-decoration: underline; text-underline-offset: 3px; }
+  .rsum a:hover { color: var(--text-secondary); }
   .q .head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
   .q .id { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-  .tag { font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--text); padding: 1px 7px; white-space: nowrap; }
-  .tag.edited { background: var(--accent); border-color: var(--accent); }
+  .tag { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; white-space: nowrap; }
+  .tag.edited { background: var(--text); border-color: var(--text); color: var(--bg); } /* attention takes ink, not accent */
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chip { font-family: var(--font-mono); font-size: 11.5px; border: var(--hairline); background: #fff; padding: 4px 9px; cursor: pointer; }
   .chip.on { border-color: var(--text); background: var(--text); color: var(--bg); }
-  .banner { border: var(--hairline); border-left: var(--hairline); background: #fff; padding: 10px 14px; font-size: 13px; margin: 12px 0; }
+  .chip:disabled { opacity: 0.5; cursor: default; }
+  .banner { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 13px; margin: 12px 0; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 7px 10px; }
+  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 7px 10px; }
   td { border-bottom: var(--hairline); padding: 7px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
   .ref { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.04em; margin: 6px 0 18px; }
@@ -224,6 +242,7 @@ a {
   <section id="s-review" hidden>
     <h2>3 · Review — accept or rewrite each answer</h2>
     <div class="card">
+      <div class="rsum" id="r-summary"></div>
       <p class="notes" style="margin-bottom:12px">Every answer starts as the suggested draft. Edit anything; the tag flips from <span class="tag">draft accepted</span> to <span class="tag edited">rewritten</span>.</p>
       <div id="r-list"></div>
       <div class="actions">
@@ -239,6 +258,7 @@ a {
     <h2>4 · Confirm — nothing is saved until you confirm</h2>
     <div class="card">
       <div class="banner">This mirrors the live app's confirm-before-record gate: the intake below is a preview only. It becomes a record when you submit it.</div>
+      <div class="rsum" id="c-rsum"></div>
       <h3>Matter summary (firm-facing)</h3>
       <div class="summarybox" id="c-summary" style="margin:8px 0 4px"></div>
       <p class="notes" id="c-meta"></p>
@@ -422,35 +442,79 @@ $('btn-review').addEventListener('click', () => {
 });
 
 // ------------------------------------------------------------ step 3
-function renderReview() {
-  const p = state.proposal;
-  $('r-list').innerHTML = p.questions.map((q) => {
-    const val = state.answers[q.id] ?? '';
-    const edited = val !== q.draft;
-    const chips = (q.type === 'choice' && Array.isArray(q.options))
-      ? `<div class="chips">${q.options.map((o) => {
-          const oid = typeof o === 'object' ? o.id : o;
-          return `<button class="chip ${val === oid ? 'on' : ''}" data-q="${q.id}" data-val="${esc(oid)}">${esc(typeof o === 'object' ? o.label : o)}</button>`;
-        }).join('')}</div>`
-      : '';
-    const input = q.type === 'date'
-      ? `<input type="date" data-in="${q.id}" value="${esc(val)}" />`
-      : `<input type="text" data-in="${q.id}" value="${esc(val)}" autocomplete="off" />`;
-    return `
-    <div class="q">
+// The review list groups the proposal into four fixed blocks (block model from
+// the Wave 5 plan): an area that omits a field (e.g. `other_parties`) simply
+// renders a shorter block. Block order is editorial, not per-area.
+const REVIEW_BLOCKS = [
+  { label: 'Identity & contact', fields: ['full_name', 'contact_method', 'contact_detail'] },
+  { label: 'The matter', fields: ['opposing_parties', 'other_parties', 'jurisdiction', 'documents'] },
+  { label: 'Dates & deadlines', fields: ['key_dates', 'urgency'] },
+  { label: 'Outcome & next steps', fields: ['desired_outcome', 'budget', 'matter_detail'] },
+];
+
+/** Questions whose current answer differs from the suggested draft. */
+function rewrittenQuestions(p) {
+  return p.questions.filter((q) => (state.answers[q.id] ?? '') !== q.draft);
+}
+
+/** One-line rewrite summary — the same line sits atop step 3 and step 4. */
+function summaryLineHTML(p) {
+  const rw = rewrittenQuestions(p);
+  if (!rw.length) return '<span class="tag">All drafts accepted</span>';
+  return `<span class="tag edited">${rw.length} rewritten</span> — review these: ` +
+    rw.map((q) => `<a href="#q-${q.id}">${esc(q.label)}</a>`).join(' · ');
+}
+
+function questionHTML(q) {
+  const val = state.answers[q.id] ?? '';
+  const edited = val !== q.draft;
+  let control;
+  if (q.type === 'choice') {
+    // Precedence: the chip row is the SINGLE writer for a choice answer — no
+    // duplicate text input rendering the same value. Free-text entry exists
+    // only for text/date questions.
+    const opts = (q.options ?? []).map((o) => (typeof o === 'object' ? o : { id: o, label: o }));
+    const chips = opts.map((o) =>
+      `<button class="chip ${val === o.id ? 'on' : ''}" data-q="${q.id}" data-val="${esc(o.id)}">${esc(o.label)}</button>`);
+    // If a draft ever matched no chip (impossible with the current catalog),
+    // fall back to showing the draft as a disabled chip — never a second control.
+    if (val && !opts.some((o) => o.id === val)) {
+      chips.push(`<button class="chip" disabled>${esc(val)}</button>`);
+    }
+    control = `<div class="chips" style="margin-top:10px">${chips.join('')}</div>` +
+      '<p class="notes" style="margin:6px 0 0">Pick one — the chips are the single control for this answer.</p>';
+  } else if (q.type === 'date') {
+    control = `<input type="date" data-in="${q.id}" value="${esc(val)}" />`;
+  } else {
+    control = `<input type="text" data-in="${q.id}" value="${esc(val)}" autocomplete="off" />`;
+  }
+  const tag = edited
+    ? `<span class="tag edited">rewritten</span> <button class="ghost" data-reset="${q.id}" style="padding:2px 8px">reset to draft</button>`
+    : '<span class="tag">draft accepted</span>';
+  return `
+    <div class="q" id="q-${q.id}">
       <div class="head">
         <h3 style="margin:0">${esc(q.label)}${q.required ? ' *' : ''}</h3>
-        <span>${edited ? `<span class="tag edited">rewritten</span> <button class="ghost" data-reset="${q.id}" style="padding:2px 8px">reset to draft</button>` : '<span class="tag">draft accepted</span>'}</span>
+        <span>${tag}</span>
       </div>
       ${q.help ? `<p class="notes">${esc(q.help)}</p>` : ''}
-      ${input}
-      ${chips}
+      ${control}
     </div>`;
+}
+
+function renderReview() {
+  const p = state.proposal;
+  $('r-summary').innerHTML = summaryLineHTML(p);
+  const byId = Object.fromEntries(p.questions.map((q) => [q.id, q]));
+  $('r-list').innerHTML = REVIEW_BLOCKS.map((b) => {
+    const qs = b.fields.map((id) => byId[id]).filter(Boolean);
+    if (!qs.length) return '';
+    return `<div class="blkhead">${esc(b.label)} · ${qs.length}</div>${qs.map(questionHTML).join('')}`;
   }).join('');
 
   document.querySelectorAll('[data-in]').forEach((el) =>
     el.addEventListener('input', () => { state.answers[el.dataset.in] = el.value; renderReview(); }));
-  document.querySelectorAll('[data-q]').forEach((el) =>
+  document.querySelectorAll('#r-list [data-q]').forEach((el) =>
     el.addEventListener('click', () => { state.answers[el.dataset.q] = el.dataset.val; renderReview(); }));
   document.querySelectorAll('[data-reset]').forEach((el) =>
     el.addEventListener('click', () => {
@@ -479,6 +543,7 @@ function currentFirm() {
 
 function renderConfirm() {
   const firm = currentFirm();
+  $('c-rsum').innerHTML = summaryLineHTML(state.proposal);
   $('c-summary').textContent = firm.summary;
   $('c-meta').textContent = `Jurisdiction: ${firm.jurisdiction || 'unknown'} · Contact: ${firm.contact_method || 'unspecified'} — ${firm.contact_detail || 'unspecified'} · Urgency: ${firm.urgency.label}${firm.urgency.escalate ? ' (escalate to an attorney)' : ''}`;
   $('c-parties').innerHTML = partyTable(firm.conflict_parties);
@@ -562,7 +627,8 @@ $('btn-again').addEventListener('click', () => {
 
 // ---------------------------------------- prefilled worked example on load
 // A complete landlord-tenant intake (Mara Ellison, fictional): every suggested
-// draft accepted except the identity/contact answers, then confirmed — so the
+// draft accepted except five answers the client rewrote in review (name,
+// contact method + details, key dates, matter detail), then confirmed — so the
 // full reviewed firm summary renders immediately.
 function loadWorkedExample() {
   state.persona = 'client';
@@ -572,8 +638,9 @@ function loadWorkedExample() {
   state.proposal = proposeQuestions(state.area, { contactName: state.name });
   state.answers = Object.fromEntries(state.proposal.questions.map((q) => [q.id, q.draft]));
   Object.assign(state.answers, {
-    full_name: 'Mara Ellison',
-    contact_method: 'Phone call',
+    // five deliberate rewrites — the review summary must boot showing them
+    full_name: 'Mara T. Ellison',
+    contact_method: 'Text message',
     contact_detail: '555-0143',
     key_dates: 'Court date 2026-11-18 for the eviction hearing',
     matter_detail: 'My landlord filed an eviction after I withheld part of one rent payment over ignored repairs.',
@@ -600,6 +667,5 @@ renderStart();
 renderRail();
 loadWorkedExample();
 </script>
-<style>:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}textarea:focus,input:focus,select:focus{outline:2px solid var(--text,#0a0a0a)!important;outline-offset:2px!important}button.primary,.primary{background:var(--text,#0a0a0a)!important;color:var(--bg,#fafaf8)!important;border-color:var(--text,#0a0a0a)!important}h1{font-family:var(--font-body,'Manrope',system-ui,sans-serif)!important;font-size:26px!important;font-weight:700!important;letter-spacing:-.01em!important}</style>
 <script>window.addEventListener("load",function(){try{/* flow app: renders on boot, no auto-run */}catch(e){}});</script></body>
 </html>

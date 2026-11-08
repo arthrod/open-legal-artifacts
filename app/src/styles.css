@@ -303,12 +303,18 @@ pre {
   border: var(--hairline);
 }
 
-/* a trailing orphan tile would leave empty grey grid cells — span it instead */
-.cards > .tile:last-child:nth-child(3n+1) {
+/* a trailing orphan tile would leave empty grey grid cells — span it instead
+   (auto-fill grids only; the fixed 2×2 originals grid never orphans) */
+.cards:not(.cards-2col) > .tile:last-child:nth-child(3n+1) {
   grid-column: 1 / -1;
 }
-.cards > .tile:last-child:nth-child(3n+2) {
+.cards:not(.cards-2col) > .tile:last-child:nth-child(3n+2) {
   grid-column: span 2;
+}
+
+/* Originals: fixed 2×2 — four equal-density tiles instead of 3+1 full-span */
+.cards-2col {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .tile {
@@ -339,7 +345,7 @@ pre {
 
 .tile-meta {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -347,7 +353,7 @@ pre {
 
 .chip {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -371,14 +377,14 @@ pre {
   font-size: 14px;
   line-height: 1.55;
   color: var(--text-secondary);
-  flex: 1;
 }
 
 .tile-links {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1.2rem;
-  margin-top: 0.5rem;
+  margin-top: auto; /* pin link rows to the tile bottom — one baseline per row */
+  padding-top: 0.5rem;
 }
 
 .tile-links a,
@@ -623,7 +629,7 @@ pre {
 
 .meta-box h3 {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -661,7 +667,7 @@ pre {
 .demo label {
   display: block;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -683,7 +689,7 @@ select {
 
 textarea:focus,
 select:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--text); /* ink field focus — accent is structural only */
   outline-offset: -1px;
   border-color: var(--text);
 }
@@ -694,8 +700,8 @@ button {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text);
-  background: var(--accent);
+  color: var(--bg); /* Signage Black primary (DESIGN.md button-primary) */
+  background: var(--text);
   border: none;
   border-radius: var(--radius);
   padding: 0.55rem 1.2rem;
@@ -704,12 +710,14 @@ button {
 }
 
 button:hover {
-  background: #e6bf00;
+  background: var(--accent);
+  color: var(--text);
 }
 
 button.secondary {
   background: var(--bg);
   border: 1px solid var(--text);
+  color: var(--text);
 }
 
 .demo .actions {
@@ -728,7 +736,7 @@ button.secondary {
 .pill {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 2px 8px;
@@ -780,7 +788,7 @@ td {
 th {
   background: var(--hover);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -846,8 +854,8 @@ td.unverified {
 .note {
   font-size: 12px;
   color: var(--text-secondary);
-  border-left: 2px solid var(--accent);
-  padding: 0.25rem 0 0.25rem 0.9rem;
+  border: var(--hairline); /* was a 2px accent side-stripe — hairline box instead */
+  padding: 0.6rem 0.9rem;
   margin-top: 1.5rem;
   max-width: 65ch;
 }

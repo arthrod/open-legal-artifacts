@@ -13,7 +13,6 @@
   .rule { height:2px; width:56px; background:var(--accent); border:0; margin:0 0 32px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.14em; color:var(--text-secondary); margin:40px 0 12px; font-family:var(--font-mono); font-weight:400; }
   textarea { width:100%; box-sizing:border-box; min-height:240px; font-family:var(--font-mono); font-size:12px; line-height:1.6; border:1px solid var(--border); border-radius:0; background:#fff; padding:14px; color:var(--text); resize:vertical; }
-  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
   .row { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; align-items:center; }
   button { font-family:var(--font-mono); font-size:13px; background:var(--text); color:var(--bg); border:0; border-radius:0; padding:10px 20px; cursor:pointer; }
   button:hover { background:#333; }
@@ -26,12 +25,12 @@
   .entry { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; }
   .entry:last-child { border-bottom:0; }
   .meta { font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); }
-  .tag { font-family:var(--font-mono); font-size:10.5px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
-  .tag.urgent { background:var(--accent); }
+  .tag { font-family:var(--font-mono); font-size: 11px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
+  .tag.urgent { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
   .tag.important { border:1px solid var(--border); }
   .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
-  .pill b { font-weight:400; background:var(--accent); padding:0 4px; margin-left:6px; }
+  .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
 </style>
 </head>
 <body>

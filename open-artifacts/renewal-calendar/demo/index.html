@@ -16,19 +16,19 @@
   .stats { display: flex; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { padding: 14px 22px; border-right: var(--hairline); }
   .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
-  .stat span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .stat span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   .tl { border-left: 2px solid var(--border); margin-left: 8px; padding-left: 24px; }
   .tl-item { position: relative; padding: 12px 0 20px; border-bottom: var(--hairline); }
   .tl-item::before { content: ""; position: absolute; left: -31px; top: 18px; width: 12px; height: 12px;
     background: var(--bg); border: 2px solid var(--text); }
-  .tl-item.amb::before { background: var(--accent); }
+  .tl-item.amb::before { background: var(--flag-tint); }
   .tl-date { font-family: var(--font-mono); font-size: 12px; }
   .tl-date b { font-size: 15px; }
-  .tl-item.amb .tl-date b { background: var(--accent); padding: 0 4px; }
+  .tl-item.amb .tl-date b { background: var(--flag-tint); padding: 0 4px; }
   .tl-name { font-weight: 600; margin-top: 4px; }
   .tl-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-mono); }
   .tl-quote { font-size: 12px; border-left: 3px solid var(--border); padding-left: 10px; margin-top: 8px; color: var(--text-secondary); }
-  .ambflag { margin-top: 8px; font-size: 12px; background: var(--accent); padding: 6px 10px; }
+  .ambflag { margin-top: 8px; font-size: 12px; background: var(--flag-tint); padding: 6px 10px; color: var(--bad); border-color: var(--bad);}
   .unresolved li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);

@@ -129,7 +129,7 @@ export function indexPage(): HTMLElement {
       <span class="section-meta">${originals.length}</span>
     </div>
     <p class="section-sub">Running in production today — live demos, source in this repo.</p>
-    <div class="cards"></div>
+    <div class="cards cards-2col"></div>
   </section>`);
   const origCards = orig.querySelector(".cards")!;
   for (const a of originals) {
