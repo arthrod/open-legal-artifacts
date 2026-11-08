@@ -38,3 +38,8 @@ tabular-review (tsx): pass=35 fail=0
 open-artifacts JS TOTAL: pass=873 fail=0
 _shared: # pass 19 # fail 0 
 app smoke: ALL PASS
+
+# Live-AI wave — 2026-11-08T23:06:35Z
+API tests: ℹ tests 33 ℹ pass 33 ℹ fail 0 
+TS cores: 130 pass
+Bundle sizes >80,000 bytes: 0

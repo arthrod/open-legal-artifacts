@@ -1,0 +1,17 @@
+# Inspector (Completion Skeptic) — run 68101867 participant 2
+
+No archived receipts exist for the live-AI wave's runtime claims (curl outputs, playwright run, rendered font checks) — and my session has no shell, no browser tool, and the val-town toolset returned no hits, so those claims are also beyond my independent reach. Following the round-3 precedent, I have no write tool; the full interrogation lives in this reply for the coordinator to archive.
+
+**BLOCKED — PARTIAL**
+
+**Contradictions:** 1 material — coordinator: "live-verified by curl: ask-legal returned a grounded sourced answer, triage classified housing-eviction at 0.99" vs. workspace: zero archived receipt anywhere (greps across `evidence/`, `deploy/`, `.zwork/`, `.impeccable/` for `curl|0.99|housing-eviction|vt tail|playwright` — only unrelated hits in `_to_verify/` vendor bundles). Per §3 this contradiction requires an adversarial pass before DONE.
+
+| Axis | Disagreement retracted? | Evidence | Gap |
+|---|---|---|---|
+| Actually completed | partly | `.git/logs/HEAD`: commits 41363ed + cd1bd81 + gh-pages mirror 0ca03b5 exist with matching messages; `vt-val/api/` (17 files) implements exactly what's claimed — gpt-5-nano via `std/openai`, `max_completion_tokens` fallback chain (`api/openai.ts:40-51`), shared 10/min/IP limiter (`api/http.ts:11`), zero-grounding→escalate-without-model (`api/ask-legal.ts:66`), fail-closed 502s; exactly **33** API test cases counted statically (7+8+6+3+9); live `/` and `/a/ask-legal` fetched current; Google-Fonts CDN wiring at source (`course/css/fonts.css:10`, `deploy/build-site.mjs:117`); `evidence/test-run.log` shows 873 JS + 19 shared + smoke | Live API runtime behavior, playwright run, rendered computed-style Manrope, "33 tests green", "46 TS", ≤80KB bundles: no receipts, unverifiable from this session (fetch_content refuses non-200/non-HTML; `/api/ask-legal` and a known-404 path both refuse identically — inconclusive) |
+| Only partially completed | yes | Verified: code/tests/commits/deploy/source-wiring above. Unproven at "verified" level: every *runtime* claim of the wave | Missing: archived curl transcripts, playwright log, vt-tail output for the param fix; `browser-verify.log` predates the wave |
+| User's true intent achieved | partly | "ensure this project is perfect, working… vt gives a free openai endpoint, so for the things that need ai, lets use it" ↔ the AI architecture (free std/openai, fail-closed fallbacks, demos degrade gracefully on gh-pages) matches the instruction's intent; site verifiably live and current | The instruction's core — AI *actually working* live — is asserted, not evidenced; also no independent reviewer report for this wave in the bundle → phase unverified per Step 3 |
+
+**Most important gap:** the run's headline claim — LIVE AI on VT — has code and tests on disk but zero archived runtime evidence, and no reviewer examined this wave. The coordinator must produce the curl transcripts (ask-legal/triage/prop-support with bodies), the playwright receipt, and the test-run log, or re-run them; an adversarial pass attacks that contradiction specifically.
+
+**Defects list:** (1) missing curl receipts; (2) missing playwright receipt; (3) API tests' green run not appended to `evidence/test-run.log` (which stops at the Track A+B section); (4) "46 TS" figure appears in no log I can find; (5) rendered-font and ≤80KB claims unreceipted. Severity note: if the receipts land, this flips to DONE — the code-level substance is real and I verified it.

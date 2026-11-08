@@ -1,0 +1,16 @@
+# Live-AI receipts — 2026-11-08T23:06:27Z
+
+## curl /api/ask-legal
+{"answered":true,"answer":"For an individual contractor, use the Consultant NDA (Form L-104) with the IP assignment rider attached. Independent-contractor status must be confirmed by People Legal before signature.","sourceId":"kb-002","confidence":{"level":"medium","reasons":["grounded in kb-001, kb-002 (deterministic selection)","The guidance covers an individual consultant, which is the closest match to a contractor."]},"escalate":false,"route":null,"provisional":true,"label":"Provisional guidance — confirm with Legal.","suggestedEntry":null,"mode":"live-ai"}
+## curl /api/triage
+{"status":"classified","primaryIssue":"housing-eviction","primaryLabel":"Eviction / loss of housing","confidence":0.99,"multiIssue":false,"matchedKeywords":[],"resolvedBy":"live-ai","referrals":[{"issue":"housing-eviction","label":"Eviction / loss of housing","confidence":0.99,"legalAidCategory":"legal-aid-housing","serviceDescription":"Eviction defense and housing stability help through your local legal aid housing unit.","whereToGo":"Your nearest legal aid office or court self-help center; bring any court papers you received.","guidance":[{"point":"Bring every notice, summons, or letter you have received to your first appointment; deadlines printed on court papers are time-sensitive.","source":{"name":"LawHelp.org — legal aid finder","url":"https://www.lawhelp.org"}},{"point":"Court self-help centers can explain what each paper means at no cost; intake staff can point you to the nearest one.","source":{"name":"LawHelp.org — legal aid finder","url":"https://www.lawhelp.org"}}]}],"otherCandidates":[],"disclaimer":"This tool provides referral information only. It does not provide legal advice, does not evaluate the merits of any claim, and is not a substitute for a licensed attorney.","urgency":"routine","dates":[],"aiReason":"The person says their landlord is evicting them.","mode":"live-ai"}
+## curl /api/prop-support
+{"verdict":"partial","reason":"The quote requires secrecy for three years, but it does not establish that all NDA obligations last three years.","mode":"live-ai"}
+
+## playwright
+# Playwright receipt — 2026-11-08T23:06:43.981Z
+/ bodyFont=Manrope, system-ui, 
+/a/ask-legal bodyFont=Manrope, system-ui, 
+/a/cite-check bodyFont=Manrope, system-ui, 
+/course/ bodyFont=Manrope, system-ui, 
+failedRequests=none
