@@ -36,6 +36,8 @@ tests, self-hostable, audit, exports — with real must-fix holes.
   pages slimmed ≤78KB (rhs 109.7→71.5KB via corpus compaction + classic-
   script core inlining). All 37 deployed files ≤80,000B.
 
+**Re-adjudication (report E, same harsh-against-ours rubric):** pair-level THEIRS 10/10 still; dimension-level 48:2 theirs; ours flipped trust (cite-check) and info-design (intake-benchmark); verified on-disk advantages: reload-persistence 10/10, real exports 9/10, payload 92-128KB vs their 2.1-4.2MB. Claim status: **remediated + re-adjudicated** — not claimed as a pair-level win.
+
 **Verification:** full suite `evidence/test-run.log` (1,001/0); puppeteer
 smokes per rewritten demo (0 pageerrors); 3 code-review verdicts (backend
 10/10 SHIP after 1 fix; frontend SHIP after XSS + budget fixes; _shared
