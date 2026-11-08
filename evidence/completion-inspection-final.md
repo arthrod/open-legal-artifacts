@@ -1,0 +1,19 @@
+# Inspector (Completion Skeptic) — run dc77f578 participant 8
+
+DONE OVER OBJECTION — all three round-3 contradictions are independently resolved; objections below are residual, none material enough to hold the DONE.
+
+**Contradictions from round 3: 3 raised → 3 retracted under evidence. Details inline (no write tool available to me — read-only inspection, same as round 3; the coordinator may archive this reply into `evidence/`).**
+
+1. **Course deploy (was: stale funnel live).** RETRACTED. Live `…web.val.run/course/index.html?cb=20261107a` serves the re-skinned catalog: ten-lesson content, **0 hits** for the old funnel ("After the course / Let's get rid of that problem nobody wants to solve… Contact →"). Live `/course/css/fonts.css` serves the new sheet (Manrope + JetBrains Mono via Google Fonts @import) — not the old skin. Live `/course/css/tokens.css` serves the full catalog token sheet; live `/course/css/compare.css` byte-matches `vt-val/course/css/compare.css` including the 11px fix — so `vt-val/course` == origin. Footer `Part of Open Legal Artifacts — every legal AI artifact, open and better` verified at `vt-val/course/index.html:28`, same file whose new body text is live (reader strips footers, so this one is same-file-bound, not directly extracted). `../../` links: 0 in `vt-val/course`.
+2. **`:root`-nested focus rules (were: dead tab-rings).** RETRACTED at source. `design/tokens.css:131` now sits under `/* ----- Focus (top-level) ----- */` after `.t-eyebrow` rules, well past the closed `:root`; identical line 131 in **all 39** `tokens.css` (36 `open-artifacts/*/demo/` + 3 `artifacts/*/demo/`). Shipped pages verified: `vt-val/site/cite-check.html` — `:root` closes at line 70, focus rules top-level at 137–139, `@media (min-width: 768px)` present across site pages.
+3. **bp-mobile / 10px sup / ink stripe.** RETRACTED. `var(--bp-mobile)`: **0 matches** repo-wide (only `.md` docs/evidence mention it); 768px literals present in demo sources (`cite-check/demo/index.html:11`, `limitations-radar:11,22`, …) and shipped pages. `compare.css:15` = `font-size:11px` in both copies **and live**. `discovery-response-log/demo/index.html:29` now `border-left: var(--hairline)` — 3px ink stripe gone.
+
+| Axis | Disagreement retracted? | Evidence | Gap |
+|---|---|---|---|
+| Actually completed | yes | Live fetches above; greps over `tmp/open-legal-artifacts`; `evidence/test-run.log` post-remediation run 2026-11-08T01:05Z: 418+58=476 pass / 0 fail (+46 tsx same log, matching the "476+46" claim); `.git/HEAD` → `refs/heads/main`; round-3 + round-6 reports archived in `evidence/` | Live `/a/*.html` inline `<style>` not byte-checkable — `fetch_content` article-extracts HTML (class names, `:focus-visible`, media queries stripped); `/a/cite-check` and `/a/docket-watch-wall` confirmed live and current-shape, CSS tier inferred |
+| Only partially completed | yes | Task-by-task above; no silent drops this round | none found |
+| User's true intent achieved | yes | The production course now shows what the user voted for (catalog voice, funnel dead) — verified on the origin this time, not `file://` | none material |
+
+**Objections recorded (why OVER OBJECTION):** (a) live `/a/` page CSS rests on same-origin binding — one val serves `/course/*` and `/site/*`, and the `/course/` half is byte-verified as the current push, so the `/site/` half is the same generation; a raw-HTML fetch would close this fully. (b) `vt-val/course/fonts/` ships only the LICENSE — the referenced `DepartureMono-Regular.woff2` is absent, so live wordmark/labels render the JetBrains Mono fallback; declared by the coordinator ("binary fonts stripped"), cosmetic only.
+
+**Most important gap:** none blocking; the strongest residual is (a), a tooling-limited inference on live `/a/` CSS.
