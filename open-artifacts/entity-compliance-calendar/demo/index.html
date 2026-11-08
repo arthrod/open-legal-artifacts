@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Entity compliance calendar — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -164,15 +166,15 @@ textarea { max-width: 100%; }
   .stats { display: flex; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { padding: 14px 22px; border-right: var(--hairline); }
   .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
-  .stat span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .stat span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
     text-align: left; border-bottom: 2px solid var(--text); padding: 8px; }
   td { border-bottom: var(--hairline); padding: 8px; vertical-align: top; font-family: var(--font-mono); }
   td.ent b { font-family: var(--font-body); font-size: 13px; }
-  td .sub { color: var(--text-secondary); font-size: 11px; }
+  td .sub { color: var(--text-secondary); font-size: 12px; }
   tr:hover td { background: var(--hover); }
-  .pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+  .pill { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase;
     letter-spacing: 0.05em; padding: 2px 7px; border: 1px solid var(--text); }
   .pill.delinquent { background: var(--text); color: var(--bg); }
   .pill.due-soon { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
@@ -181,7 +183,7 @@ textarea { max-width: 100%; }
   .pill.na { background: var(--hover); color: var(--text-secondary); border-color: var(--border); }
   .pill.unknown { background: var(--flag-tint); color: var(--text-secondary); border-color: var(--border); border-style: dashed; }
   .flag li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
-  .flag code { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .flag code { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
   .delinq li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .delinq .days { font-family: var(--font-mono); background: var(--flag-tint); padding: 0 4px; color: var(--warn); border-color: var(--warn);}
   .row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -193,7 +195,7 @@ textarea { max-width: 100%; }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
   <header>
     <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
@@ -229,9 +231,9 @@ textarea { max-width: 100%; }
   <section>
     <h2>Entities × obligations matrix</h2>
     <div class="row" style="margin-bottom:16px" id="winBtns">
-      <span style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);align-self:center">Filing window:</span>
+      <span style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);align-self:center">Filing window:</span>
     </div>
-    <div style="overflow-x:auto"><table id="matrix">
+    <div style="overflow-x:auto"><table id="matrix" aria-live="polite">
       <thead><tr><th>Entity</th><th>Obligation</th><th>Next due</th><th>Period</th><th>Rule</th><th>Status</th></tr></thead>
       <tbody></tbody>
     </table></div>
@@ -325,7 +327,7 @@ textarea { max-width: 100%; }
   rep.windows.forEach((w) => mkBtn(`≤${w.days}d (${w.count})`, w.days));
   const countSpan = document.createElement("span");
   countSpan.id = "matrixCount";
-  countSpan.style.cssText = "font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);align-self:center;margin-left:4px";
+  countSpan.style.cssText = "font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);align-self:center;margin-left:4px";
   winBtns.appendChild(countSpan);
   countSpan.textContent = `${renderMatrix()} of ${m.counts.cells} cells`;
 

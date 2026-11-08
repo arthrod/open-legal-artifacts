@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Patent claim comparison — open legal artifacts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -171,16 +173,16 @@ textarea { max-width: 100%; }
   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
   .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
   table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
-  th { font-family:var(--font-mono); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
+  th { font-family:var(--font-mono); font-weight:400; font-size:12px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
   td { border-bottom:1px solid var(--border); padding:9px 10px; vertical-align:top; }
-  .rel { font-family:var(--font-mono); font-size:11px; white-space:nowrap; }
+  .rel { font-family:var(--font-mono); font-size:12px; white-space:nowrap; }
   .rel.matched { background: var(--flag-tint); padding:1px 5px; }
   .note { color:var(--text-secondary); font-size:12px; }
   .claimhdr { font-family:var(--font-mono); font-size:12px; margin:22px 0 6px; }
   .dep { border-left: var(--hairline); padding-left:10px; }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
   <h1>Patent claim comparison</h1>
   <p class="tagline">Clause-splitting claim parser · limitation-by-limitation alignment · span anchors · "no teaching found" rows are explicit, never inferred. Fictional data.</p>
@@ -188,8 +190,8 @@ textarea { max-width: 100%; }
 
   <h2>Claim sets</h2>
   <div class="cols">
-    <textarea id="setA" spellcheck="false"></textarea>
-    <textarea id="setB" spellcheck="false"></textarea>
+    <textarea id="setA" aria-label="Claim set A (draft claims)" spellcheck="false"></textarea>
+    <textarea id="setB" aria-label="Claim set B (published claims)" spellcheck="false"></textarea>
   </div>
   <div class="row">
     <button id="run">Compare sets</button>
@@ -198,7 +200,7 @@ textarea { max-width: 100%; }
   </div>
 
   <div class="pills" id="totals"></div>
-  <div id="chart"></div>
+  <div id="chart" aria-live="polite"></div>
 
   <p class="muted">Deterministic core · <code>open-artifacts/patent-claim-comparison/core/core.js</code> · first-pass charting, attorney review required · not legal advice.</p>
 </div>

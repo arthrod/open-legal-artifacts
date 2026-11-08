@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cite check — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'/%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'/%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'/%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -154,140 +156,1275 @@ textarea { max-width: 100%; }
 
 </style>
 <style>
-  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
-  .wrap { max-width: var(--max-width); margin: 0 auto; padding: 48px var(--pad-x-mobile) 96px; }
-  @media (min-width: 768px) { .wrap { padding: 72px var(--pad-x-desktop) 120px; } }
-  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
-  h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
-  .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
-  p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
-  section { margin-top: 48px; }
-  h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
-  .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
-  .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
-  .counts div:last-child { border-right: none; }
-  .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
-  table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
-  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
-  tr.flag td { background: var(--flag-tint); border-bottom: 1.5px solid var(--text); }
-  .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
-  .pill.exact, .pill.normalized { background: transparent; color: var(--ok); border: var(--hairline); }
-  .pill.fuzzy { background: transparent; color: var(--warn); border: 1.5px solid var(--warn); }
-  .pill.mismatch, .pill.not_found { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .ev { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
-  .ev blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
-  .ev .q { font-family: var(--font-mono); font-size: 12px; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-  button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
-    background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: var(--accent); color: var(--text); }
-  button.ghost { background: transparent; color: var(--text); }
-  .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
-  .scroll { overflow-x: auto; }
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);margin:0}
+.wrap{max-width:var(--max-width);margin:0 auto;padding:48px var(--pad-x-mobile) 96px}
+@media(min-width:768px){.wrap{padding:72px var(--pad-x-desktop) 120px}}
+.kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
+h1{font-size:clamp(26px,4vw,38px);font-weight:700;line-height:1.05;letter-spacing:-.02em;margin:12px 0 0}
+.rule{width:var(--rule-yellow-w);height:var(--rule-yellow-h);background:var(--accent);margin:20px 0 24px}
+p.lede{max-width:64ch;color:var(--text-secondary);font-size:15px;line-height:1.65}
+section{margin-top:48px}
+h2{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px}
+h2::before{content:"";display:block;width:24px;height:1px;background:var(--border);margin-bottom:12px}
+.counts{display:flex;border:var(--hairline);background:#fff;margin-bottom:8px;flex-wrap:wrap}
+.counts div{padding:12px 20px;border-right:var(--hairline);flex:1;min-width:100px}
+.counts div:last-child{border-right:none}
+.counts b{font-family:var(--font-mono);font-size:20px;font-weight:500;display:block}
+.counts span{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary)}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:640px;border-collapse:collapse;background:#fff;border:var(--hairline);font-size:12.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:var(--hairline);vertical-align:top}
+th{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary)}
+.mono,td.mono{font-family:var(--font-mono);font-size:12px;white-space:nowrap}
+tr.flag td{background:var(--flag-tint)}
+tr.sel td{border-bottom:1.5px solid var(--text);background:var(--hover)}
+tr.attention td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.pill{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;padding:1px 6px;border:1px solid var(--text);white-space:nowrap}
+.pill.exact,.pill.normalized{color:var(--ok);border:var(--hairline)}
+.pill.fuzzy{color:var(--warn);border:1.5px solid var(--warn)}
+.pill.mismatch,.pill.not_found{background:var(--text);color:var(--bg);border-color:var(--text)}
+.pill.st-verified{color:var(--ok);border:var(--hairline)}
+.pill.st-flagged{color:var(--bad);border:1.5px solid var(--bad)}
+.pill.st-corrected{color:var(--warn);border:var(--hairline)}
+.legend{font-size:12px;color:var(--text-secondary);margin-top:8px;max-width:78ch}
+code{font-family:var(--font-mono);font-size:12px;background:var(--hover);padding:1px 4px}
+.bench-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.chips{border:none;padding:0;margin:0;display:flex;gap:6px;flex-wrap:wrap}
+.chips legend{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary);float:left;margin-right:8px;line-height:26px}
+.chips label{font-family:var(--font-mono);font-size:12px;border:var(--hairline);background:#fff;padding:4px 10px;cursor:pointer}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+.chips input:checked+span{background:var(--text);color:var(--bg);padding:4px 10px;margin:-4px -10px}
+.chips input:focus-visible+span{outline:2px solid var(--text)}
+.progress{font-family:var(--font-mono);font-size:12.5px}
+.bench{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:900px){.bench{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.pane{border:var(--hairline);background:#fff;padding:16px;min-width:0}
+.pane h3{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 4px}
+.pane .sub{font-size:12px;color:var(--text-secondary);margin:0 0 12px}
+.q{border:var(--hairline);padding:12px 14px;margin-bottom:12px}
+.q.sel{box-shadow:inset 3px 0 0 var(--accent);background:var(--hover)}
+.q header{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.q blockquote{margin:8px 0 0;padding:6px 12px;border-left:2px solid var(--border);font-size:12.5px;color:var(--text-secondary)}
+.q .prop{font-size:12px;color:var(--text-secondary);margin-top:6px}
+.anchor-btn{font-family:var(--font-mono);font-size:12px;background:none;border:none;border-bottom:1px dashed var(--text);padding:0 0 1px;cursor:pointer;color:var(--text)}
+.q .meta{font-size:12px;margin-top:6px;line-height:1.7}
+.decide{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.decide button{font-family:var(--font-mono);font-size:12px;padding:5px 10px;border:1px solid var(--text);background:transparent;color:var(--text);cursor:pointer;border-radius:0}
+.decide button[aria-pressed="true"]{background:var(--text);color:var(--bg)}
+.decide button:hover{background:var(--accent);color:var(--text)}
+.note{display:flex;gap:6px;margin-top:8px;align-items:center}
+.note label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);white-space:nowrap}
+.note input{flex:1;min-width:80px;font-family:var(--font-body);font-size:12.5px;padding:4px 6px;border:var(--hairline);background:var(--bg);color:var(--text)}
+.src-tools{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.src-tools label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}
+select{font-family:var(--font-mono);font-size:12px;padding:4px;border:var(--hairline);background:var(--bg);color:var(--text);max-width:100%}
+.srcview{max-height:68vh;overflow:auto;border-top:var(--hairline);padding-top:8px}
+.seg{margin-bottom:14px}
+.seg h4{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;color:var(--text-secondary);font-weight:400;margin:0 0 4px}
+.seg p{font-size:13px;line-height:1.65;margin:0;white-space:pre-wrap}
+.seg mark{background:var(--accent);padding:0 1px}
+mark#hl{outline:2px solid var(--text)}
+button{font-family:var(--font-mono);font-size:13px;padding:10px 18px;border:1px solid var(--text);background:var(--text);color:var(--bg);cursor:pointer;border-radius:var(--radius)}
+button:hover{background:var(--accent);color:var(--text)}
+button.ghost{background:transparent;color:var(--text)}
+button.icon{font-size:12px;border:var(--hairline);background:#fff;color:var(--text);padding:4px 8px}
+button.icon:hover{background:var(--hover)}
+.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+textarea{width:100%;font-family:var(--font-mono);font-size:12px;line-height:1.6;padding:10px;border:var(--hairline);background:#fff;color:var(--text);min-height:120px}
+.hint{font-size:12px;color:var(--text-secondary);margin:6px 0 10px;max-width:80ch}
+.audit-list{font-family:var(--font-mono);font-size:12px;line-height:1.7;max-height:300px;overflow:auto;border:var(--hairline);background:#fff;padding:10px 12px}
+.audit-list div{border-bottom:1px solid var(--border);padding:2px 0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.toast{position:fixed;left:16px;bottom:16px;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:12.5px;padding:10px 14px;max-width:70ch;z-index:9}
+.disclaimer{margin-top:64px;padding-top:16px;border-top:var(--hairline);font-size:12px;color:var(--text-secondary)}
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
-  <header>
-    <div class="kicker">open-legal-artifacts · deterministic core</div>
-    <h1>Cite check</h1>
-    <div class="rule"></div>
-    <p class="lede">Every quotation in a legal document verified against its cited source — <b>no LLM in the
-      loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets,
-      and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open
-      reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 10 quotes —
-      including one paraphrase that drifts, one silently altered digit caught by the number guard, one
-      omission without an ellipsis, one correct quote cited to the wrong page, and one source not in the record.</p>
-  </header>
+<header>
+  <div class="kicker">open-legal-artifacts · deterministic core</div>
+  <h1>Cite check</h1>
+  <div class="rule"></div>
+  <p class="lede">Every quotation in a legal document verified against its cited source — <b>no LLM in the loop</b>: exact / normalized / fuzzy / not_found classification, verbatim anchors with char offsets, and pinpoint validation (p. / § / ¶) against the segment where the quote actually lives. Open reimplementation of Anthropic's closed artifact.</p>
+  <p class="lede" style="font-size:13px">Worked example (fictional): appellant's opening brief with 10 quotes — including one paraphrase that drifts, one silently altered digit caught by the number guard, one omission without an ellipsis, one correct quote cited to the wrong page, and one source not in the record.</p>
+</header>
 
-  <section>
-    <h2>Summary</h2>
-    <div class="counts" id="counts"></div>
-    <p class="lede" id="coverage" style="font-size:12px;margin:8px 0 0"></p>
-    <div class="scroll"><table id="results"></table></div>
-    <div class="row">
-      <button id="mdBtn">Export report.md</button>
-      <button id="jsonBtn" class="ghost">Export output.json</button>
+<section>
+  <h2>Summary</h2>
+  <div class="counts" id="counts"></div>
+  <p class="lede" id="coverage" style="font-size:12px;margin:8px 0 0"></p>
+  <div class="scroll"><table id="results"></table></div>
+  <p class="legend">Legend — <code>exact</code>: byte-identical in the cited source · <code>normalized</code>: matches modulo case/punctuation/whitespace · <code>fuzzy</code>: substantial token overlap, not verbatim · <code>not_found</code>: no located anchor · diff marks: <code>del</code> in source but dropped by the brief, <code>ins</code> added by the brief, <code>sub:"brief"→"source"</code>. Click any row to open it in the workbench below.</p>
+  <div class="row" role="group" aria-label="Export this report">
+    <button id="mdBtn">Export report.md</button>
+    <button id="csvBtn" class="ghost">Export findings.csv</button>
+    <button id="jsonBtn" class="ghost">Export output.json</button>
+  </div>
+</section>
+
+<section id="bench" aria-label="Review workbench">
+  <h2>Review workbench — brief vs. source</h2>
+  <div class="bench-tools">
+    <fieldset class="chips" id="filters">
+      <legend>Filter</legend>
+      <label><input type="radio" name="filter" value="all" checked><span>All</span></label>
+      <label><input type="radio" name="filter" value="attention"><span>Needs attention</span></label>
+      <label><input type="radio" name="filter" value="undecided"><span>Undecided</span></label>
+      <label><input type="radio" name="filter" value="flagged"><span>Flagged</span></label>
+    </fieldset>
+    <span class="progress" id="progress" aria-live="polite"></span>
+  </div>
+  <div class="bench">
+    <div class="pane" id="briefPane" aria-label="Brief quotations">
+      <h3>Brief — quotations under review</h3>
+      <p class="sub" id="briefSub"></p>
+      <div id="queue"></div>
     </div>
-  </section>
+    <div class="pane" id="sourcePane" aria-label="Cited source text">
+      <h3>Source — full text with anchors</h3>
+      <div class="src-tools">
+        <label for="srcSel">Source document</label>
+        <select id="srcSel"></select>
+        <button class="icon" id="copyQuote" aria-label="Copy the located quote verbatim">⧉ copy quote</button>
+      </div>
+      <div class="srcview" id="srcview" tabindex="0" aria-label="Source text; located quotes are highlighted"></div>
+    </div>
+  </div>
+</section>
 
-  <section>
-    <h2>Evidence — located quotes &amp; flags</h2>
-    <div id="evidence"></div>
-  </section>
+<section aria-label="Run your own document">
+  <h2>Run your own document</h2>
+  <p class="hint">Paste a document below. Mark each quotation as <code>“quoted text”[1]</code> and give its footnote as <code>[1] Source name, pinpoint</code> — the source is matched by name against the loaded sources (footnotes matching no source are reported, never guessed).</p>
+  <label class="kicker" for="docPaste" style="display:block;margin-bottom:6px">Document text (paste here)</label>
+  <textarea id="docPaste" placeholder="The record shows “Mr. Beltran signed the delivery receipt at 4:20 p.m.”[1]&#10;&#10;[1] Deposition of Sandra Okafor (Jan. 14, 2026), p. 12"></textarea>
+  <div class="row">
+    <button id="runGuided">Extract quotes &amp; check</button>
+    <button id="loadExample" class="ghost">Reload worked example</button>
+  </div>
+  <details style="margin-top:16px">
+    <summary style="font-family:var(--font-mono);font-size:12px;cursor:pointer">Advanced — full input JSON</summary>
+    <label class="kicker" for="jsonIn" style="display:block;margin:10px 0 6px">Input JSON (document, sources, quotes)</label>
+    <textarea id="jsonIn" style="min-height:180px" spellcheck="false"></textarea>
+    <div class="row"><button id="runJson">Run JSON check</button></div>
+  </details>
+</section>
 
-  <footer class="disclaimer">
-    Deterministic core — an optional LLM only judges proposition support for located quotes (schema in spec.md);
-    classification and anchoring are pure code. All example data fictional. Not legal advice.
-    <code>anthropic counterpart: Cite check (closed)</code>
-  </footer>
+<section aria-label="Audit log">
+  <h2>Audit log</h2>
+  <p class="hint">Append-only and persisted in this browser — decisions, sign-off, and every check you run survive a reload.</p>
+  <div id="auditOut"></div>
+  <div class="row">
+    <button id="auditBtn" class="ghost">Export audit.jsonl</button>
+    <button id="resetBtn" class="ghost">Reset demo state</button>
+  </div>
+</section>
+
+<footer class="disclaimer">
+  Deterministic core — an optional LLM only judges proposition support for located quotes (schema in spec.md); classification and anchoring are pure code. All example data fictional. Not legal advice.
+  <code>anthropic counterpart: Cite check (closed)</code>
+</footer>
 </div>
+<p class="sr-only" id="live" role="status" aria-live="polite"></p>
 
 <script type="module">
-  import { runCiteCheck, renderReport, formatDiffOps } from "data:text/javascript;base64,LyoqCiAqIGNpdGUtY2hlY2sgY29yZSDigJQgZGV0ZXJtaW5pc3RpYyBxdW90ZSB2ZXJpZmljYXRpb24gYWdhaW5zdCBzb3VyY2UgZG9jdW1lbnRzLgogKiBOTyBMTE06IGV2ZXJ5IGNsYXNzaWZpY2F0aW9uIGlzIHJlcHJvZHVjaWJsZSBmcm9tIHRoZSBpbnB1dHMgYWxvbmUuCiAqCiAqIFBsYWluLUphdmFTY3JpcHQgcG9ydCBvZiBjb3JlL2NpdGVjaGVjay50cyArIHBpbnBvaW50LnRzICsgdGV4dHV0aWwudHMgKwogKiBkaWZmLnRzICsgZXh0cmFjdC50cyAodGhlIFR5cGVTY3JpcHQgc291cmNlcyBzdGF5IGF1dGhvcml0YXRpdmUgZm9yIHRlc3RzKS4KICogRXhwb3J0cyB0aGUgc2FtZSBlbmdpbmUgZnVuY3Rpb25zOyBicm93c2VyICsgTm9kZSBjb21wYXRpYmxlLCBkZXBlbmRlbmN5LWZyZWUuCiAqIGNvcmUvcHJvcG9zaXRpb25zLnRzIGlzIFRTLW9ubHkgKGEgaGFybmVzcyBhcm91bmQgdGhlIGVuZ2luZSwgbm90IHBhcnQgb2YgaXQpLgogKgogKiBDbGFzc2lmaWNhdGlvbiBsYWRkZXIgKGZpcnN0IG1hdGNoIHdpbnMpOgogKiAgIGV4YWN0ICAgICAgIOKAlCBxdW90ZSBhcHBlYXJzIHZlcmJhdGltICh3aGl0ZXNwYWNlLXRyaW1tZWQpIGluIHRoZSBzb3VyY2UKICogICBub3JtYWxpemVkICDigJQgbmVhci12ZXJiYXRpbTogc2FtZSB0b2tlbnMgbW9kdWxvIGNhc2UvcHVuY3R1YXRpb24gKHNjb3JlIOKJpSAwLjk1KQogKiAgIGZ1enp5ICAgICAgIOKAlCBiZXN0IHdpbmRvdyBzaW1pbGFyaXR5IOKJpSBmdXp6eVRocmVzaG9sZCAoZGVmYXVsdCAwLjcpIGFuZCBjb3ZlcmFnZSDiiaUgMC42CiAqICAgbm90X2ZvdW5kICAg4oCUIGV2ZXJ5dGhpbmcgYmVsb3cgdGhlIGZ1enp5IHRocmVzaG9sZAogKgogKiBHdWFyZHMgKGRldGVybWluaXN0aWMsIG5ldmVyIHNpbGVudCk6CiAqICAgbnVtYmVyIGd1YXJkICAg4oCUIGFuIGFsdGVyZWQgbnVtZXJpYyB0b2tlbiBjYXBzIHRoZSBjbGFzcyBhdCBmdXp6eSBhbmQgaXMgbm90ZWQKICogICBvbWlzc2lvbiBjaGVjayDigJQgdG9rZW5zIGRyb3BwZWQgZnJvbSB0aGUgbG9jYXRlZCBzcGFuIGFyZSBub3RlZDsgYW4gZXhwbGljaXQKICogICAgICAgICAgICAgICAgICAgIGVsbGlwc2lzIGluIHRoZSBxdW90ZSBtYXJrcyB0aGUgb21pc3Npb24gYXMgYWNjZXB0ZWQKICoKICogRXZlcnkgbG9jYXRlZCBxdW90ZSBjYXJyaWVzIGEgdmVyYmF0aW0gYW5jaG9yIChzb3VyY2UgaWQsIHNlZ21lbnQsIGNoYXIKICogb2Zmc2V0cyksIGEgbWFjaGluZS1jaGVja2FibGUgdG9rZW4gZGlmZiAoTENTIG9wcyksIGFuZCBwaW5wb2ludCB2YWxpZGF0aW9uLgogKiBAbW9kdWxlIGNvcmUKICovCgovKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KICogdGV4dHV0aWwgKHBvcnQgb2YgY29yZS90ZXh0dXRpbC50cykKICogPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ICovCgovKiogVG9rZW4gd2l0aCBjaGFyIHNwYW4gaW4gdGhlIE9SSUdJTkFMIHN0cmluZy4KICogQHR5cGVkZWYge3sgbm9ybTogc3RyaW5nLCBzdGFydDogbnVtYmVyLCBlbmQ6IG51bWJlciB9fSBUb2sgKi8KCi8qKgogKiBTcGxpdCBvbiBydW5zIG9mIG5vbiBbQS1aYS16MC05Ll0gY2hhcmFjdGVyczsgdHJpbSBsZWFkaW5nL3RyYWlsaW5nIGRvdHMKICogZnJvbSBlYWNoIHRva2VuIHNvICJwLiIgLT4gInAiIHdoaWxlICI1LjIiIHN0YXlzICI1LjIiLgogKiBAcGFyYW0ge3N0cmluZ30gdGV4dCBAcmV0dXJucyB7VG9rW119ICovCmV4cG9ydCBmdW5jdGlvbiB0b2tlbml6ZVdpdGhTcGFucyh0ZXh0KSB7CiAgY29uc3QgdG9rcyA9IFtdOwogIGNvbnN0IHJlID0gL1teQS1aYS16MC05Ll0rL2c7CiAgbGV0IGxhc3QgPSAwOwogIGxldCBtOwogIGNvbnN0IHB1c2ggPSAoc3RhcnQsIGVuZCkgPT4gewogICAgbGV0IGxzID0gc3RhcnQ7CiAgICBsZXQgbGUgPSBlbmQ7CiAgICB3aGlsZSAobHMgPCBsZSAmJiB0ZXh0W2xzXSA9PT0gIi4iKSBscysrOwogICAgd2hpbGUgKGxlID4gbHMgJiYgdGV4dFtsZSAtIDFdID09PSAiLiIpIGxlLS07CiAgICBpZiAobGUgPiBscykgdG9rcy5wdXNoKHsgbm9ybTogdGV4dC5zbGljZShscywgbGUpLnRvTG93ZXJDYXNlKCksIHN0YXJ0OiBscywgZW5kOiBsZSB9KTsKICB9OwogIHdoaWxlICgobSA9IHJlLmV4ZWModGV4dCkpICE9PSBudWxsKSB7CiAgICBwdXNoKGxhc3QsIG0uaW5kZXgpOwogICAgbGFzdCA9IG0uaW5kZXggKyBtWzBdLmxlbmd0aDsKICB9CiAgcHVzaChsYXN0LCB0ZXh0Lmxlbmd0aCk7CiAgcmV0dXJuIHRva3M7Cn0KCi8qKiBAcGFyYW0ge3N0cmluZ30gdGV4dCBAcmV0dXJucyB7c3RyaW5nW119ICovCmV4cG9ydCBmdW5jdGlvbiB0b2tlbnModGV4dCkgewogIHJldHVybiB0b2tlbml6ZVdpdGhTcGFucyh0ZXh0KS5tYXAoKHQpID0+IHQubm9ybSk7Cn0KCmZ1bmN0aW9uIG11bHRpc2V0KHhzKSB7CiAgY29uc3QgbSA9IG5ldyBNYXAoKTsKICBmb3IgKGNvbnN0IHggb2YgeHMpIG0uc2V0KHgsIChtLmdldCh4KSA/PyAwKSArIDEpOwogIHJldHVybiBtOwp9CgovKioKICogU2xpZGUgd2luZG93cyBvZiB+cXVvdGUgbGVuZ3RoICjCsSBwYWRkaW5nKSBvdmVyIHRoZSBzb3VyY2UgYW5kIHJldHVybiB0aGUKICogYmVzdC1zY29yaW5nIHdpbmRvdy4gUHVyZWx5IGRldGVybWluaXN0aWM7IE8oc291cmNlVG9rZW5zICogd2luZG93U2l6ZXMpLgogKiBAcGFyYW0ge3N0cmluZ30gc291cmNlIEBwYXJhbSB7c3RyaW5nfSBxdW90ZSBAcGFyYW0ge251bWJlcn0gW3BhZF0KICogQHJldHVybnMge3sgc2NvcmU6IG51bWJlciwgY292ZXJhZ2U6IG51bWJlciwgc3RhcnQ6IG51bWJlciwgZW5kOiBudW1iZXIsIHZlcmJhdGltOiBzdHJpbmcgfSB8IG51bGx9CiAqLwpleHBvcnQgZnVuY3Rpb24gYmVzdFdpbmRvdyhzb3VyY2UsIHF1b3RlLCBwYWQgPSA2KSB7CiAgY29uc3QgUyA9IHRva2VuaXplV2l0aFNwYW5zKHNvdXJjZSk7CiAgY29uc3QgcSA9IHRva2VucyhxdW90ZSk7CiAgaWYgKFMubGVuZ3RoID09PSAwIHx8IHEubGVuZ3RoID09PSAwKSByZXR1cm4gbnVsbDsKICBjb25zdCBxU2V0ID0gbXVsdGlzZXQocSk7CiAgbGV0IGJlc3QgPSBudWxsOwogIGZvciAobGV0IHNpemUgPSBNYXRoLm1heCgxLCBxLmxlbmd0aCAtIDIpOyBzaXplIDw9IHEubGVuZ3RoICsgcGFkOyBzaXplKyspIHsKICAgIGZvciAobGV0IHN0ID0gMDsgc3QgKyBzaXplIDw9IFMubGVuZ3RoOyBzdCsrKSB7CiAgICAgIGxldCBpbnRlciA9IDA7CiAgICAgIGNvbnN0IHdTZXQgPSBtdWx0aXNldChTLnNsaWNlKHN0LCBzdCArIHNpemUpLm1hcCgodCkgPT4gdC5ub3JtKSk7CiAgICAgIGZvciAoY29uc3QgW3RvaywgY10gb2YgcVNldCkgaW50ZXIgKz0gTWF0aC5taW4oYywgd1NldC5nZXQodG9rKSA/PyAwKTsKICAgICAgY29uc3QgdW5pb24gPSBxLmxlbmd0aCArIHNpemUgLSBpbnRlcjsKICAgICAgY29uc3Qgc2NvcmUgPSB1bmlvbiA9PT0gMCA/IDEgOiBpbnRlciAvIHVuaW9uOwogICAgICBjb25zdCBjb3ZlcmFnZSA9IGludGVyIC8gcS5sZW5ndGg7CiAgICAgIGlmIChiZXN0ID09PSBudWxsIHx8IHNjb3JlID4gYmVzdC5zY29yZSB8fCAoc2NvcmUgPT09IGJlc3Quc2NvcmUgJiYgY292ZXJhZ2UgPiBiZXN0LmNvdmVyYWdlKSkgewogICAgICAgIGJlc3QgPSB7CiAgICAgICAgICBzY29yZSwKICAgICAgICAgIGNvdmVyYWdlLAogICAgICAgICAgc3RhcnQ6IFNbc3RdLnN0YXJ0LAogICAgICAgICAgZW5kOiBTW3N0ICsgc2l6ZSAtIDFdLmVuZCwKICAgICAgICAgIHZlcmJhdGltOiBzb3VyY2Uuc2xpY2UoU1tzdF0uc3RhcnQsIFNbc3QgKyBzaXplIC0gMV0uZW5kKSwKICAgICAgICB9OwogICAgICB9CiAgICB9CiAgfQogIHJldHVybiBiZXN0Owp9CgovKiogV2hpdGVzcGFjZS10b2xlcmFudCB2ZXJiYXRpbSBjb250YWlubWVudCBjaGVjayBvbiB0aGUgcmF3IHN0cmluZ3MuCiAqIEBwYXJhbSB7c3RyaW5nfSBzb3VyY2UgQHBhcmFtIHtzdHJpbmd9IHF1b3RlIEByZXR1cm5zIHtib29sZWFufSAqLwpleHBvcnQgZnVuY3Rpb24gcmF3Q29udGFpbnMoc291cmNlLCBxdW90ZSkgewogIGNvbnN0IHEgPSBxdW90ZS50cmltKCk7CiAgcmV0dXJuIHEubGVuZ3RoID4gMCAmJiBzb3VyY2UuaW5jbHVkZXMocSk7Cn0KCi8qKiBKYWNjYXJkIHNpbWlsYXJpdHkgYmV0d2VlbiB0b2tlbiBtdWx0aXNldHMgb2YgdHdvIHRleHRzLgogKiBAcGFyYW0ge3N0cmluZ30gYSBAcGFyYW0ge3N0cmluZ30gYiBAcmV0dXJucyB7bnVtYmVyfSAqLwpleHBvcnQgZnVuY3Rpb24gc2ltaWxhcml0eShhLCBiKSB7CiAgY29uc3QgdGEgPSB0b2tlbnMoYSk7CiAgY29uc3QgdGIgPSB0b2tlbnMoYik7CiAgaWYgKHRhLmxlbmd0aCA9PT0gMCAmJiB0Yi5sZW5ndGggPT09IDApIHJldHVybiAxOwogIGlmICh0YS5sZW5ndGggPT09IDAgfHwgdGIubGVuZ3RoID09PSAwKSByZXR1cm4gMDsKICBjb25zdCBtYSA9IG11bHRpc2V0KHRhKTsKICBjb25zdCBtYiA9IG11bHRpc2V0KHRiKTsKICBsZXQgaW50ZXIgPSAwOwogIGZvciAoY29uc3QgW3QsIGNdIG9mIG1hKSBpbnRlciArPSBNYXRoLm1pbihjLCBtYi5nZXQodCkgPz8gMCk7CiAgcmV0dXJuIGludGVyIC8gKHRhLmxlbmd0aCArIHRiLmxlbmd0aCAtIGludGVyKTsKfQoKLyoqIE51bWVyaWMgdG9rZW46IGRpZ2l0cyB3aXRoIGFuIG9wdGlvbmFsIGludGVyaW9yIGRlY2ltYWwgcG9pbnQgKCI5MCIsICI1LjIiKS4KICogQHBhcmFtIHtzdHJpbmd9IHQgQHJldHVybnMge2Jvb2xlYW59ICovCmV4cG9ydCBmdW5jdGlvbiBpc051bWVyaWNUb2tlbih0KSB7CiAgcmV0dXJuIC9eXGQrKD86XC5cZCspPyQvLnRlc3QodCk7Cn0KCi8qKgogKiBEZXRlcm1pbmlzdGljIG51bWJlciBndWFyZDogbXVsdGlzZXQtZGlmZiB0aGUgbnVtZXJpYyB0b2tlbnMgb2YgcXVvdGUgdnMuCiAqIHRoZSBsb2NhdGVkIHNvdXJjZSBzcGFuLiBBbnkgZGlmZmVyZW5jZSBpcyBwb3RlbnRpYWwgbWF0ZXJpYWwgYWx0ZXJhdGlvbgogKiAoIjkwIiAtPiAiMTIwIikgYW5kIG11c3QgbmV2ZXIgcGFzcyBhcyBuZWFyLXZlcmJhdGltLgogKiBAcGFyYW0ge3N0cmluZ1tdfSBxdW90ZSBAcGFyYW0ge3N0cmluZ1tdfSBzb3VyY2UKICogQHJldHVybnMge3sgcGFpcmVkOiBBcnJheTx7IHF1b3RlOiBzdHJpbmcsIHNvdXJjZTogc3RyaW5nIH0+LCBxdW90ZU9ubHk6IHN0cmluZ1tdLCBzb3VyY2VPbmx5OiBzdHJpbmdbXSB9fSAqLwpleHBvcnQgZnVuY3Rpb24gbnVtZXJpY01pc21hdGNoZXMocXVvdGUsIHNvdXJjZSkgewogIGNvbnN0IHFOdW1zID0gcXVvdGUuZmlsdGVyKGlzTnVtZXJpY1Rva2VuKTsKICBjb25zdCBzTnVtcyA9IHNvdXJjZS5maWx0ZXIoaXNOdW1lcmljVG9rZW4pOwogIGNvbnN0IHFDb3VudHMgPSBtdWx0aXNldChxTnVtcyk7CiAgY29uc3Qgc0NvdW50cyA9IG11bHRpc2V0KHNOdW1zKTsKICBjb25zdCBxRGlmZiA9IFtdOwogIGNvbnN0IHNEaWZmID0gW107CiAgZm9yIChjb25zdCBbdCwgY10gb2YgcUNvdW50cykgewogICAgY29uc3QgZXh0cmEgPSBjIC0gKHNDb3VudHMuZ2V0KHQpID8/IDApOwogICAgZm9yIChsZXQgayA9IDA7IGsgPCBleHRyYTsgaysrKSBxRGlmZi5wdXNoKHQpOwogIH0KICBmb3IgKGNvbnN0IFt0LCBjXSBvZiBzQ291bnRzKSB7CiAgICBjb25zdCBleHRyYSA9IGMgLSAocUNvdW50cy5nZXQodCkgPz8gMCk7CiAgICBmb3IgKGxldCBrID0gMDsgayA8IGV4dHJhOyBrKyspIHNEaWZmLnB1c2godCk7CiAgfQogIGNvbnN0IHBhaXJlZENvdW50ID0gTWF0aC5taW4ocURpZmYubGVuZ3RoLCBzRGlmZi5sZW5ndGgpOwogIGNvbnN0IHBhaXJlZCA9IFtdOwogIGZvciAobGV0IGsgPSAwOyBrIDwgcGFpcmVkQ291bnQ7IGsrKykgcGFpcmVkLnB1c2goeyBxdW90ZTogcURpZmZba10sIHNvdXJjZTogc0RpZmZba10gfSk7CiAgcmV0dXJuIHsgcGFpcmVkLCBxdW90ZU9ubHk6IHFEaWZmLnNsaWNlKHBhaXJlZENvdW50KSwgc291cmNlT25seTogc0RpZmYuc2xpY2UocGFpcmVkQ291bnQpIH07Cn0KCi8qID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogKiBkaWZmIChwb3J0IG9mIGNvcmUvZGlmZi50cykKICogPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ICovCgovKioKICogVG9rZW4tbGV2ZWwgTENTIHdhbGsgKGRldGVybWluaXN0aWMgdGllLWJyZWFrOiBza2lwIHF1b3RlIGZpcnN0KS4KICogQHBhcmFtIHtUb2tbXX0gcXVvdGUgQHBhcmFtIHtUb2tbXX0gc291cmNlCiAqIEByZXR1cm5zIHtBcnJheTx7IHR5cGU6ICJlcXVhbCIsIHE6IG51bWJlciwgczogbnVtYmVyIH0gfCB7IHR5cGU6ICJkZWwiLCBzOiBudW1iZXIgfSB8IHsgdHlwZTogImlucyIsIHE6IG51bWJlciB9Pn0gKi8KZnVuY3Rpb24gbGNzV2FsayhxdW90ZSwgc291cmNlKSB7CiAgY29uc3QgbiA9IHF1b3RlLmxlbmd0aDsKICBjb25zdCBtID0gc291cmNlLmxlbmd0aDsKICBjb25zdCBkcCA9IEFycmF5LmZyb20oeyBsZW5ndGg6IG4gKyAxIH0sICgpID0+IG5ldyBVaW50MzJBcnJheShtICsgMSkpOwogIGZvciAobGV0IGkgPSBuIC0gMTsgaSA+PSAwOyBpLS0pIHsKICAgIGZvciAobGV0IGogPSBtIC0gMTsgaiA+PSAwOyBqLS0pIHsKICAgICAgZHBbaV1bal0gPSBxdW90ZVtpXS5ub3JtID09PSBzb3VyY2Vbal0ubm9ybSA/IGRwW2kgKyAxXVtqICsgMV0gKyAxIDogTWF0aC5tYXgoZHBbaSArIDFdW2pdLCBkcFtpXVtqICsgMV0pOwogICAgfQogIH0KICBjb25zdCBzdGVwcyA9IFtdOwogIGxldCBpID0gMDsKICBsZXQgaiA9IDA7CiAgd2hpbGUgKGkgPCBuICYmIGogPCBtKSB7CiAgICBpZiAocXVvdGVbaV0ubm9ybSA9PT0gc291cmNlW2pdLm5vcm0pIHsKICAgICAgc3RlcHMucHVzaCh7IHR5cGU6ICJlcXVhbCIsIHE6IGksIHM6IGogfSk7CiAgICAgIGkrKzsKICAgICAgaisrOwogICAgfSBlbHNlIGlmIChkcFtpICsgMV1bal0gPj0gZHBbaV1baiArIDFdKSB7CiAgICAgIC8vIHNraXBwaW5nIHF1b3RlW2ldIHByZXNlcnZlcyB0aGUgTENTIChxdW90ZS1vbmx5IHRva2VuIOKGkiBpbnNlcnQpCiAgICAgIHN0ZXBzLnB1c2goeyB0eXBlOiAiaW5zIiwgcTogaSB9KTsKICAgICAgaSsrOwogICAgfSBlbHNlIHsKICAgICAgLy8gc2tpcHBpbmcgc291cmNlW2pdIHByZXNlcnZlcyB0aGUgTENTIChzb3VyY2Utb25seSB0b2tlbiDihpIgZGVsZXRlKQogICAgICBzdGVwcy5wdXNoKHsgdHlwZTogImRlbCIsIHM6IGogfSk7CiAgICAgIGorKzsKICAgIH0KICB9CiAgd2hpbGUgKGogPCBtKSBzdGVwcy5wdXNoKHsgdHlwZTogImRlbCIsIHM6IGorKyB9KTsKICB3aGlsZSAoaSA8IG4pIHN0ZXBzLnB1c2goeyB0eXBlOiAiaW5zIiwgcTogaSsrIH0pOwogIHJldHVybiBzdGVwczsKfQoKLyoqIExDUyBhbGlnbm1lbnQgcGFpcnMgKHF1b3RlIGluZGV4IOKGlCBzb3VyY2UgaW5kZXgpLCBpbiBvcmRlci4KICogQHBhcmFtIHtUb2tbXX0gcXVvdGUgQHBhcmFtIHtUb2tbXX0gc291cmNlCiAqIEByZXR1cm5zIHtBcnJheTx7IHE6IG51bWJlciwgczogbnVtYmVyIH0+fSAqLwpleHBvcnQgZnVuY3Rpb24gYWxpZ25Ub2tlbnMocXVvdGUsIHNvdXJjZSkgewogIHJldHVybiBsY3NXYWxrKHF1b3RlLCBzb3VyY2UpCiAgICAuZmlsdGVyKChzdCkgPT4gc3QudHlwZSA9PT0gImVxdWFsIikKICAgIC5tYXAoKHN0KSA9PiAoeyBxOiBzdC5xLCBzOiBzdC5zIH0pKTsKfQoKLyoqIEdyb3VwZWQgZGlmZiBvcHM7IGNvbnNlY3V0aXZlIGRlbCtpbnMgcnVucyBtZXJnZSBpbnRvIGEgc2luZ2xlIHJlcGxhY2UuCiAqIEBwYXJhbSB7VG9rW119IHF1b3RlIEBwYXJhbSB7VG9rW119IHNvdXJjZSAqLwpleHBvcnQgZnVuY3Rpb24gZGlmZlRva2VucyhxdW90ZSwgc291cmNlKSB7CiAgY29uc3Qgc3RlcHMgPSBsY3NXYWxrKHF1b3RlLCBzb3VyY2UpOwogIGNvbnN0IG9wcyA9IFtdOwogIGxldCBlcXVhbFJ1biA9IFtdOwogIGxldCBkZWxSdW4gPSBbXTsKICBsZXQgaW5zUnVuID0gW107CgogIGNvbnN0IGZsdXNoRXF1YWwgPSAoKSA9PiB7CiAgICBpZiAoZXF1YWxSdW4ubGVuZ3RoID4gMCkgewogICAgICBvcHMucHVzaCh7IG9wOiAiZXF1YWwiLCBzb3VyY2U6IGVxdWFsUnVuIH0pOwogICAgICBlcXVhbFJ1biA9IFtdOwogICAgfQogIH07CiAgY29uc3QgZmx1c2hDaGFuZ2UgPSAoKSA9PiB7CiAgICBpZiAoZGVsUnVuLmxlbmd0aCA9PT0gMCAmJiBpbnNSdW4ubGVuZ3RoID09PSAwKSByZXR1cm47CiAgICBmbHVzaEVxdWFsKCk7CiAgICBpZiAoZGVsUnVuLmxlbmd0aCA+IDAgJiYgaW5zUnVuLmxlbmd0aCA+IDApIHsKICAgICAgb3BzLnB1c2goewogICAgICAgIG9wOiAicmVwbGFjZSIsCiAgICAgICAgcXVvdGU6IGluc1J1bi5tYXAoKHQpID0+IHQubm9ybSksCiAgICAgICAgc291cmNlOiBkZWxSdW4ubWFwKCh0KSA9PiB0Lm5vcm0pLAogICAgICAgIHNvdXJjZVNwYW46IHsgc3RhcnQ6IGRlbFJ1blswXS5zdGFydCwgZW5kOiBkZWxSdW5bZGVsUnVuLmxlbmd0aCAtIDFdLmVuZCB9LAogICAgICB9KTsKICAgIH0gZWxzZSBpZiAoZGVsUnVuLmxlbmd0aCA+IDApIHsKICAgICAgb3BzLnB1c2goewogICAgICAgIG9wOiAiZGVsZXRlIiwKICAgICAgICBzb3VyY2U6IGRlbFJ1bi5tYXAoKHQpID0+IHQubm9ybSksCiAgICAgICAgc291cmNlU3BhbjogeyBzdGFydDogZGVsUnVuWzBdLnN0YXJ0LCBlbmQ6IGRlbFJ1bltkZWxSdW4ubGVuZ3RoIC0gMV0uZW5kIH0sCiAgICAgIH0pOwogICAgfSBlbHNlIHsKICAgICAgb3BzLnB1c2goeyBvcDogImluc2VydCIsIHF1b3RlOiBpbnNSdW4ubWFwKCh0KSA9PiB0Lm5vcm0pIH0pOwogICAgfQogICAgZGVsUnVuID0gW107CiAgICBpbnNSdW4gPSBbXTsKICB9OwoKICBmb3IgKGNvbnN0IHN0IG9mIHN0ZXBzKSB7CiAgICBpZiAoc3QudHlwZSA9PT0gImVxdWFsIikgewogICAgICBmbHVzaENoYW5nZSgpOwogICAgICBlcXVhbFJ1bi5wdXNoKHNvdXJjZVtzdC5zXS5ub3JtKTsKICAgIH0gZWxzZSBpZiAoc3QudHlwZSA9PT0gImRlbCIpIHsKICAgICAgZGVsUnVuLnB1c2goc291cmNlW3N0LnNdKTsKICAgIH0gZWxzZSB7CiAgICAgIGluc1J1bi5wdXNoKHF1b3RlW3N0LnFdKTsKICAgIH0KICB9CiAgZmx1c2hDaGFuZ2UoKTsKICBmbHVzaEVxdWFsKCk7CiAgcmV0dXJuIG9wczsKfQoKLyoqIElubGluZSBtYXJrcyBmb3Igbm9uLWVxdWFsIG9wcywgZS5nLiBgZGVsOiJvbiB0aGUgZG9jdW1lbnQiIHN1YjoiMTIwIi0+IjkwImAuCiAqIEBwYXJhbSB7YW55W119IG9wcyBAcmV0dXJucyB7c3RyaW5nfSAqLwpleHBvcnQgZnVuY3Rpb24gZm9ybWF0RGlmZk9wcyhvcHMpIHsKICByZXR1cm4gb3BzCiAgICAuZmlsdGVyKChvKSA9PiBvLm9wICE9PSAiZXF1YWwiKQogICAgLm1hcCgobykgPT4gewogICAgICBzd2l0Y2ggKG8ub3ApIHsKICAgICAgICBjYXNlICJkZWxldGUiOgogICAgICAgICAgcmV0dXJuIGBkZWw6IiR7by5zb3VyY2Uuam9pbigiICIpfSJgOwogICAgICAgIGNhc2UgImluc2VydCI6CiAgICAgICAgICByZXR1cm4gYGluczoiJHtvLnF1b3RlLmpvaW4oIiAiKX0iYDsKICAgICAgICBjYXNlICJyZXBsYWNlIjoKICAgICAgICAgIHJldHVybiBgc3ViOiIke28ucXVvdGUuam9pbigiICIpfSItPiIke28uc291cmNlLmpvaW4oIiAiKX0iYDsKICAgICAgfQogICAgfSkKICAgIC5qb2luKCIgIik7Cn0KCi8qID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogKiBwaW5wb2ludCAocG9ydCBvZiBjb3JlL3BpbnBvaW50LnRzKQogKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0gKi8KCmNvbnN0IE5VTSA9ICJbMC05XSsoPzpcXC5bMC05XSspKiI7CmNvbnN0IFNFQ19SQU5HRSA9IG5ldyBSZWdFeHAoYF4oPzrCp8KnfHNlY3NcXC58c2VjdGlvbnM/KVxccyooJHtOVU19KVxccypbLeKAk+KAlF1cXHMqKCR7TlVNfSkkYCwgImkiKTsKY29uc3QgU0VDX1NJTkdMRSA9IG5ldyBSZWdFeHAoYF4oPzrCpyt8c2Vjcz9cXC58c2VjdGlvbnM/KVxccyooJHtOVU19KSRgLCAiaSIpOwpjb25zdCBBUlQgPSBuZXcgUmVnRXhwKGBeYXJ0KD86aWNsZSk/XFwuP1xccyooJHtOVU19KSRgLCAiaSIpOwpjb25zdCBDTCA9IG5ldyBSZWdFeHAoYF5jbCg/OmF1c2UpP1xcLj9cXHMqKCR7TlVNfSkkYCwgImkiKTsKCi8qKgogKiBQaW5wb2ludCBjaXRhdGlvbiBwYXJzaW5nOiAicC4gMTIiLCAicHAuIDEyLTEzIiwgIsKnIDUuMiIsICLCtiA4IiwgImF0IDEyMyIsCiAqIHBsdXMgdjIgZm9ybXM6IHRyYW5zY3JpcHQgcGFnZTpsaW5lICgiVHIuIDEyOjQiLCAiMTI6NC0xMjo4IiksIHJhbmdlcwogKiAoIsKnwqcgNS02IiwgIsK2wrYgNy04IiksICJpZC4gYXQgMTIzIiwgIm4uIDEyIiwgImFydC4gMyIsICJjbC4gOCIuCiAqIERldGVybWluaXN0aWMsIGRlcGVuZGVuY3ktZnJlZS4gVW5wYXJzZWFibGUgc3RyaW5ncyByZXR1cm4gbnVsbCAobmV2ZXIgZ3Vlc3NlZCkuCiAqIEBwYXJhbSB7c3RyaW5nfSByYXcKICogQHJldHVybnMge2FueX0gUGlucG9pbnQgfCBudWxsCiAqLwpleHBvcnQgZnVuY3Rpb24gcGFyc2VQaW5wb2ludChyYXcpIHsKICBjb25zdCBzID0gcmF3LnRyaW0oKTsKICBsZXQgbTsKICBpZiAoKG0gPSBzLm1hdGNoKC9eaWRcLlxzK2F0XHMrKFxkKykkL2kpKSkgcmV0dXJuIHsga2luZDogInBhZ2UiLCBmcm9tOiBOdW1iZXIobVsxXSkgfTsKICBpZiAoKG0gPSBzLm1hdGNoKC9eaWRcLlxzK2F0XHMrKFxkKyk6KFxkKykkL2kpKSkgcmV0dXJuIHsga2luZDogInBhZ2UtbGluZSIsIHBhZ2U6IE51bWJlcihtWzFdKSwgbGluZUZyb206IE51bWJlcihtWzJdKSB9OwogIGlmICgobSA9IHMubWF0Y2goL14oPzp0clwufHRyYW5zY3JpcHQpP1xzKihcZCspOihcZCspKD86XHMqWy3igJPigJRdXHMqKD86KFxkKyk6KT8oXGQrKSk/JC9pKSkpIHsKICAgIGNvbnN0IHBsID0geyBraW5kOiAicGFnZS1saW5lIiwgcGFnZTogTnVtYmVyKG1bMV0pLCBsaW5lRnJvbTogTnVtYmVyKG1bMl0pIH07CiAgICBpZiAobVs0XSAhPT0gdW5kZWZpbmVkKSB7CiAgICAgIHBsLmxpbmVUbyA9IE51bWJlcihtWzRdKTsKICAgICAgaWYgKG1bM10gIT09IHVuZGVmaW5lZCkgcGwucGFnZVRvID0gTnVtYmVyKG1bM10pOwogICAgfQogICAgcmV0dXJuIHBsOwogIH0KICBpZiAoKG0gPSBzLm1hdGNoKC9ecHA/XC5ccyooXGQrKSg/OlxzKlst4oCT4oCUdG9dK1xzKihcZCspKT8kL2kpKSkgewogICAgY29uc3QgcGFnZSA9IHsga2luZDogInBhZ2UiLCBmcm9tOiBOdW1iZXIobVsxXSkgfTsKICAgIGlmIChtWzJdICE9PSB1bmRlZmluZWQpIHBhZ2UudG8gPSBOdW1iZXIobVsyXSk7CiAgICByZXR1cm4gcGFnZTsKICB9CiAgaWYgKChtID0gcy5tYXRjaCgvXmF0XHMrKFxkKykkL2kpKSkgewogICAgcmV0dXJuIHsga2luZDogInBhZ2UiLCBmcm9tOiBOdW1iZXIobVsxXSkgfTsKICB9CiAgaWYgKChtID0gcy5tYXRjaChTRUNfUkFOR0UpKSkgewogICAgcmV0dXJuIHsga2luZDogInNlY3Rpb24iLCBsYWJlbDogbVsxXSwgdG86IG1bMl0gfTsKICB9CiAgaWYgKChtID0gcy5tYXRjaChTRUNfU0lOR0xFKSkpIHsKICAgIHJldHVybiB7IGtpbmQ6ICJzZWN0aW9uIiwgbGFiZWw6IG1bMV0gfTsKICB9CiAgaWYgKChtID0gcy5tYXRjaCgvXig/OsK2wrZ8cGFyYXNcLnxwYXJhZ3JhcGhzPylccyooXGQrKVxzKlst4oCT4oCUXVxzKihcZCspJC9pKSkpIHsKICAgIHJldHVybiB7IGtpbmQ6ICJwYXJhZ3JhcGgiLCBudW1iZXI6IE51bWJlcihtWzFdKSwgdG86IE51bWJlcihtWzJdKSB9OwogIH0KICBpZiAoKG0gPSBzLm1hdGNoKC9eKD86wrYrfHBhcmFzP1wufHBhcmFncmFwaHM/KVxzKihcZCspJC9pKSkpIHsKICAgIHJldHVybiB7IGtpbmQ6ICJwYXJhZ3JhcGgiLCBudW1iZXI6IE51bWJlcihtWzFdKSB9OwogIH0KICBpZiAoKG0gPSBzLm1hdGNoKC9eKD86blwufG5vdGUpXHMqKFxkKykkL2kpKSkgcmV0dXJuIHsga2luZDogImZvb3Rub3RlIiwgbnVtYmVyOiBOdW1iZXIobVsxXSkgfTsKICBpZiAoKG0gPSBzLm1hdGNoKEFSVCkpKSByZXR1cm4geyBraW5kOiAiYXJ0aWNsZSIsIGxhYmVsOiBtWzFdIH07CiAgaWYgKChtID0gcy5tYXRjaChDTCkpKSByZXR1cm4geyBraW5kOiAiY2xhdXNlIiwgbGFiZWw6IG1bMV0gfTsKICByZXR1cm4gbnVsbDsKfQoKLyoqIEBwYXJhbSB7YW55fSBwIEByZXR1cm5zIHtzdHJpbmd9ICovCmV4cG9ydCBmdW5jdGlvbiBmb3JtYXRQaW5wb2ludChwKSB7CiAgc3dpdGNoIChwLmtpbmQpIHsKICAgIGNhc2UgInBhZ2UiOgogICAgICByZXR1cm4gcC50byAhPT0gdW5kZWZpbmVkID8gYHBwLiAke3AuZnJvbX0tJHtwLnRvfWAgOiBgcC4gJHtwLmZyb219YDsKICAgIGNhc2UgInBhZ2UtbGluZSI6CiAgICAgIGlmIChwLnBhZ2VUbyAhPT0gdW5kZWZpbmVkKSByZXR1cm4gYFRyLiAke3AucGFnZX06JHtwLmxpbmVGcm9tfS0ke3AucGFnZVRvfToke3AubGluZVRvfWA7CiAgICAgIGlmIChwLmxpbmVUbyAhPT0gdW5kZWZpbmVkKSByZXR1cm4gYFRyLiAke3AucGFnZX06JHtwLmxpbmVGcm9tfS0ke3AubGluZVRvfWA7CiAgICAgIHJldHVybiBgVHIuICR7cC5wYWdlfToke3AubGluZUZyb219YDsKICAgIGNhc2UgInNlY3Rpb24iOgogICAgICByZXR1cm4gcC50byAhPT0gdW5kZWZpbmVkID8gYMKnwqcgJHtwLmxhYmVsfS0ke3AudG99YCA6IGDCpyAke3AubGFiZWx9YDsKICAgIGNhc2UgInBhcmFncmFwaCI6CiAgICAgIHJldHVybiBwLnRvICE9PSB1bmRlZmluZWQgPyBgwrbCtiAke3AubnVtYmVyfS0ke3AudG99YCA6IGDCtiAke3AubnVtYmVyfWA7CiAgICBjYXNlICJmb290bm90ZSI6CiAgICAgIHJldHVybiBgbi4gJHtwLm51bWJlcn1gOwogICAgY2FzZSAiYXJ0aWNsZSI6CiAgICAgIHJldHVybiBgYXJ0LiAke3AubGFiZWx9YDsKICAgIGNhc2UgImNsYXVzZSI6CiAgICAgIHJldHVybiBgY2wuICR7cC5sYWJlbH1gOwogIH0KfQoKLyogPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiAqIGV4dHJhY3QgKHBvcnQgb2YgY29yZS9leHRyYWN0LnRzKQogKiA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0gKi8KCmNvbnN0IEZPT1ROT1RFX1JFID0gL15cWyhcZCspXF1ccysoLispJC87CgovKioKICogRGV0ZXJtaW5pc3RpYyBleHRyYWN0b3I6IHB1bGwgcXVvdGVkIHBhc3NhZ2VzICsgZm9vdG5vdGUgcGlucG9pbnRzIGZyb20gdGhlCiAqIHJldmlld2VkIGRvY3VtZW50J3MgdGV4dCBhbmQgcmVzb2x2ZSBlYWNoIGZvb3Rub3RlIHRvIGEgc291cmNlIGJ5IG5hbWUvYWxpYXMuCiAqIFVucmVzb2x2YWJsZSBmb290bm90ZXMgYW5kIHVubWFya2VkIHF1b3RhdGlvbnMgYmVjb21lIHdhcm5pbmdzLCBuZXZlcgogKiBmYWJyaWNhdGVkIGVudHJpZXMuCiAqIEBwYXJhbSB7c3RyaW5nfSBkb2N1bWVudFRleHQgQHBhcmFtIHthbnlbXX0gc291cmNlcwogKiBAcmV0dXJucyB7eyBxdW90ZXM6IGFueVtdLCB3YXJuaW5nczogc3RyaW5nW10gfX0gKi8KZXhwb3J0IGZ1bmN0aW9uIGV4dHJhY3RRdW90ZXMoZG9jdW1lbnRUZXh0LCBzb3VyY2VzKSB7CiAgY29uc3Qgd2FybmluZ3MgPSBbXTsKICBjb25zdCBmb290bm90ZXMgPSBuZXcgTWFwKCk7CiAgY29uc3QgYm9keUxpbmVzID0gW107CiAgZm9yIChjb25zdCBsaW5lIG9mIGRvY3VtZW50VGV4dC5zcGxpdCgiXG4iKSkgewogICAgY29uc3QgbSA9IGxpbmUubWF0Y2goRk9PVE5PVEVfUkUpOwogICAgaWYgKG0pIGZvb3Rub3Rlcy5zZXQoTnVtYmVyKG1bMV0pLCBtWzJdLnRyaW0oKSk7CiAgICBlbHNlIGJvZHlMaW5lcy5wdXNoKGxpbmUpOwogIH0KICBjb25zdCBib2R5VGV4dCA9IGJvZHlMaW5lcy5qb2luKCJcbiIpOwoKICBjb25zdCByZXNvbHZlZCA9IG5ldyBNYXAoKTsKICBmb3IgKGNvbnN0IFtuLCBub3RlVGV4dF0gb2YgZm9vdG5vdGVzKSB7CiAgICBjb25zdCBsb3dlciA9IG5vdGVUZXh0LnRvTG93ZXJDYXNlKCk7CiAgICBsZXQgYmVzdCA9IG51bGw7CiAgICBmb3IgKGNvbnN0IHNyYyBvZiBzb3VyY2VzKSB7CiAgICAgIGZvciAoY29uc3QgbmFtZSBvZiBbc3JjLm5hbWUsIC4uLihzcmMuYWxpYXNlcyA/PyBbXSldKSB7CiAgICAgICAgY29uc3QgaWR4ID0gbG93ZXIuaW5kZXhPZihuYW1lLnRvTG93ZXJDYXNlKCkpOwogICAgICAgIGlmIChpZHggPj0gMCAmJiAoYmVzdCA9PT0gbnVsbCB8fCBuYW1lLmxlbmd0aCA+IGJlc3QubGVuKSkgewogICAgICAgICAgYmVzdCA9IHsgaWQ6IHNyYy5pZCwgbGVuOiBuYW1lLmxlbmd0aCwgZW5kOiBpZHggKyBuYW1lLmxlbmd0aCB9OwogICAgICAgIH0KICAgICAgfQogICAgfQogICAgaWYgKCFiZXN0KSB7CiAgICAgIHdhcm5pbmdzLnB1c2goYGZvb3Rub3RlICR7bn06IG5vIG1hdGNoaW5nIHNvdXJjZSBmb3IgIiR7bm90ZVRleHR9ImApOwogICAgICBjb250aW51ZTsKICAgIH0KICAgIGxldCByZXN0ID0gbm90ZVRleHQuc2xpY2UoYmVzdC5lbmQpLnRyaW0oKTsKICAgIGlmIChyZXN0LnN0YXJ0c1dpdGgoIiwiKSkgcmVzdCA9IHJlc3Quc2xpY2UoMSkudHJpbSgpOwogICAgaWYgKHJlc3QuZW5kc1dpdGgoIi4iKSkgcmVzdCA9IHJlc3Quc2xpY2UoMCwgLTEpOwogICAgaWYgKHJlc3QubGVuZ3RoID4gMCkgcmVzb2x2ZWQuc2V0KG4sIHsgc291cmNlSWQ6IGJlc3QuaWQsIHBpbnBvaW50OiByZXN0IH0pOwogICAgZWxzZSByZXNvbHZlZC5zZXQobiwgeyBzb3VyY2VJZDogYmVzdC5pZCB9KTsKICB9CgogIGNvbnN0IHF1b3RlcyA9IFtdOwogIGNvbnN0IFFVT1RFX1JFID0gL1si4oCcXShbXiLigJ3igJxcbl0rKVsi4oCdXVxzKlxbKFxkKylcXS9nOwogIGxldCBxbTsKICB3aGlsZSAoKHFtID0gUVVPVEVfUkUuZXhlYyhib2R5VGV4dCkpICE9PSBudWxsKSB7CiAgICBjb25zdCB0ZXh0ID0gcW1bMV0udHJpbSgpOwogICAgY29uc3QgbiA9IE51bWJlcihxbVsyXSk7CiAgICBjb25zdCByID0gcmVzb2x2ZWQuZ2V0KG4pOwogICAgaWYgKCFyKSB7CiAgICAgIHdhcm5pbmdzLnB1c2goYGZvb3Rub3RlICR7bn06IHF1b3RlZCBwYXNzYWdlIGhhcyBubyByZXNvbHZhYmxlIGZvb3Rub3RlYCk7CiAgICAgIGNvbnRpbnVlOwogICAgfQogICAgY29uc3QgZW50cnkgPSB7IGlkOiBgUSR7bn1gLCB0ZXh0LCBzb3VyY2VJZDogci5zb3VyY2VJZCB9OwogICAgaWYgKHIucGlucG9pbnQgIT09IHVuZGVmaW5lZCkgZW50cnkucGlucG9pbnQgPSByLnBpbnBvaW50OwogICAgcXVvdGVzLnB1c2goZW50cnkpOwogIH0KCiAgY29uc3QgVU5NQVJLRURfUkUgPSAvWyLigJxdKFteIuKAneKAnFxuXXsxNSx9KVsi4oCdXSg/IVxzKlxbXGQrXF0pL2c7CiAgbGV0IHVtOwogIHdoaWxlICgodW0gPSBVTk1BUktFRF9SRS5leGVjKGJvZHlUZXh0KSkgIT09IG51bGwpIHsKICAgIGNvbnN0IHQgPSB1bVsxXS50cmltKCk7CiAgICB3YXJuaW5ncy5wdXNoKGB1bm1hcmtlZCBxdW90YXRpb246ICIke3QubGVuZ3RoID4gNDAgPyB0LnNsaWNlKDAsIDQwKSArICLigKYiIDogdH0iYCk7CiAgfQoKICByZXR1cm4geyBxdW90ZXMsIHdhcm5pbmdzIH07Cn0KCi8qID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogKiBjaXRlY2hlY2sgKHBvcnQgb2YgY29yZS9jaXRlY2hlY2sudHMpCiAqID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PSAqLwoKZnVuY3Rpb24gYnVpbGREb2MoZG9jKSB7CiAgY29uc3Qgc2VnbWVudHMgPSBbXTsKICBsZXQgZnVsbCA9ICIiOwogIGNvbnN0IGFwcGVuZCA9ICh0ZXh0KSA9PiB7CiAgICBpZiAoZnVsbC5sZW5ndGggPiAwKSBmdWxsICs9ICJcbiI7CiAgICBjb25zdCBzdGFydCA9IGZ1bGwubGVuZ3RoOwogICAgZnVsbCArPSB0ZXh0OwogICAgcmV0dXJuIHN0YXJ0OwogIH07CiAgaWYgKGRvYy50ZXh0ICE9PSB1bmRlZmluZWQpIGFwcGVuZChkb2MudGV4dCk7CiAgY29uc3QgcGFnZUxpc3QgPSAoZG9jLnBhZ2VzID8/IFtdKS5tYXAoKHApID0+ICh7IGtpbmQ6ICJwYWdlIiwgbGFiZWw6IFN0cmluZyhwLm51bWJlciksIHRleHQ6IHAudGV4dCB9KSk7CiAgY29uc3Qgc2VjTGlzdCA9IChkb2Muc2VjdGlvbnMgPz8gW10pLm1hcCgocCkgPT4gKHsga2luZDogInNlY3Rpb24iLCBsYWJlbDogcC5sYWJlbCwgdGV4dDogcC50ZXh0IH0pKTsKICBjb25zdCBwYXJhTGlzdCA9IChkb2MucGFyYWdyYXBocyA/PyBbXSkubWFwKChwKSA9PiAoeyBraW5kOiAicGFyYWdyYXBoIiwgbGFiZWw6IFN0cmluZyhwLm51bWJlciksIHRleHQ6IHAudGV4dCB9KSk7CiAgZm9yIChjb25zdCBzZWcgb2YgWy4uLnBhZ2VMaXN0LCAuLi5zZWNMaXN0LCAuLi5wYXJhTGlzdF0pIHsKICAgIGNvbnN0IHN0YXJ0ID0gYXBwZW5kKHNlZy50ZXh0KTsKICAgIHNlZ21lbnRzLnB1c2goeyBraW5kOiBzZWcua2luZCwgbGFiZWw6IHNlZy5sYWJlbCwgc3RhcnQsIGVuZDogZnVsbC5sZW5ndGggfSk7CiAgfQogIHJldHVybiB7IGRvYywgZnVsbFRleHQ6IGZ1bGwsIHRva3M6IHRva2VuaXplV2l0aFNwYW5zKGZ1bGwpLCBzZWdtZW50cyB9Owp9CgpmdW5jdGlvbiBzZWdtZW50QXQoYnVpbHQsIGNoYXIpIHsKICBmb3IgKGNvbnN0IHNlZyBvZiBidWlsdC5zZWdtZW50cykgewogICAgaWYgKGNoYXIgPj0gc2VnLnN0YXJ0ICYmIGNoYXIgPCBzZWcuZW5kKSByZXR1cm4gc2VnOwogIH0KICByZXR1cm4gbnVsbDsKfQoKZnVuY3Rpb24gYW5jaG9yRnJvbVdpbmRvdyhidWlsdCwgdXNlV2luKSB7CiAgaWYgKCF1c2VXaW4pIHJldHVybiBudWxsOwogIGNvbnN0IHNlZyA9IHNlZ21lbnRBdChidWlsdCwgdXNlV2luLnN0YXJ0KTsKICByZXR1cm4gewogICAgc291cmNlSWQ6IGJ1aWx0LmRvYy5pZCwKICAgIHNvdXJjZU5hbWU6IGJ1aWx0LmRvYy5uYW1lLAogICAgc2VnbWVudEtpbmQ6IHNlZz8ua2luZCA/PyBudWxsLAogICAgc2VnbWVudExhYmVsOiBzZWc/LmxhYmVsID8/IG51bGwsCiAgICBjaGFyU3RhcnQ6IHVzZVdpbi5zdGFydCwKICAgIGNoYXJFbmQ6IHVzZVdpbi5lbmQsCiAgICB2ZXJiYXRpbTogdXNlV2luLnZlcmJhdGltLAogIH07Cn0KCi8qKgogKiBOZWFyLXZlcmJhdGltIGFuY2hvcjogTENTLWFsaWduIHRoZSBxdW90ZSBhZ2FpbnN0IHRoZSBzZWdtZW50IGNvbnRhaW5pbmcgdGhlCiAqIGJlc3Qgd2luZG93LCB0aGVuIGV4dGVuZCB0aGUgc3BhbiB0byB0aGUgZW5kIG9mIHRoYXQgc2VudGVuY2UsIHNvIGRyb3BwZWQKICogdGFpbCB0b2tlbnMgc3RheSBpbnNpZGUgdGhlIGFuY2hvciBhbmQgc3VyZmFjZSBpbiB0aGUgZGlmZi4KICovCmZ1bmN0aW9uIGFsaWduZWRBbmNob3IoYnVpbHQsIHF1b3RlVG9rcywgd2luKSB7CiAgaWYgKCF3aW4pIHJldHVybiB7IGFuY2hvcjogbnVsbCwgZGlmZjogbnVsbCB9OwogIGNvbnN0IHNlZyA9IHNlZ21lbnRBdChidWlsdCwgd2luLnN0YXJ0KTsKICBjb25zdCByZWdpb25FbmQgPSBzZWcgPyBzZWcuZW5kIDogYnVpbHQuZnVsbFRleHQubGVuZ3RoOwogIC8vIHJlZ2lvbiBzdGFydHMgYXQgdGhlIGJlc3Qgd2luZG93IChuZXZlciBiZWZvcmUgaXQpIHNvIGVhcmx5IGR1cGxpY2F0ZQogIC8vIHRva2VucyBmcm9tIGEgcHJlY2VkaW5nIHNlbnRlbmNlIGNhbm5vdCBjYXB0dXJlIHRoZSBhbGlnbm1lbnQKICBjb25zdCB3c0lkeCA9IGJ1aWx0LnRva3MuZmluZEluZGV4KCh0KSA9PiB0LnN0YXJ0ID49IHdpbi5zdGFydCk7CiAgY29uc3QgcmVnaW9uVG9rcyA9IHdzSWR4IDwgMCA/IFtdIDogYnVpbHQudG9rcy5maWx0ZXIoKHQsIGlkeCkgPT4gaWR4ID49IHdzSWR4ICYmIHQuZW5kIDw9IHJlZ2lvbkVuZCk7CiAgY29uc3QgcGFpcnMgPSBhbGlnblRva2VucyhxdW90ZVRva3MsIHJlZ2lvblRva3MpOwogIGlmIChwYWlycy5sZW5ndGggPT09IDApIHsKICAgIGNvbnN0IGZhbGxiYWNrID0gYW5jaG9yRnJvbVdpbmRvdyhidWlsdCwgd2luKTsKICAgIHJldHVybiB7IGFuY2hvcjogZmFsbGJhY2ssIGRpZmY6IGZhbGxiYWNrID8gZGlmZlRva2VucyhxdW90ZVRva3MsIHRva2VuaXplV2l0aFNwYW5zKGZhbGxiYWNrLnZlcmJhdGltKSkgOiBudWxsIH07CiAgfQogIGNvbnN0IGZpcnN0ID0gcmVnaW9uVG9rc1twYWlyc1swXS5zXTsKICBjb25zdCBsYXN0SWR4ID0gcGFpcnNbcGFpcnMubGVuZ3RoIC0gMV0uczsKICBsZXQgZW5kSWR4ID0gbGFzdElkeDsKICBmb3IgKGxldCBqID0gbGFzdElkeCArIDE7IGogPCByZWdpb25Ub2tzLmxlbmd0aCAmJiBqIDw9IGxhc3RJZHggKyAzMDsgaisrKSB7CiAgICBjb25zdCBnYXAgPSBidWlsdC5mdWxsVGV4dC5zbGljZShyZWdpb25Ub2tzW2ogLSAxXS5lbmQsIHJlZ2lvblRva3Nbal0uc3RhcnQpOwogICAgaWYgKC9bLiE/XG5dLy50ZXN0KGdhcCkpIGJyZWFrOyAvLyBzZW50ZW5jZSAob3IgbGluZSkgYWxyZWFkeSBlbmRlZAogICAgZW5kSWR4ID0gajsKICB9CiAgY29uc3QgZW5kVG9rID0gcmVnaW9uVG9rc1tlbmRJZHhdOwogIGNvbnN0IGFuY2hvclNlZyA9IHNlZ21lbnRBdChidWlsdCwgZmlyc3Quc3RhcnQpOwogIGNvbnN0IGFuY2hvciA9IHsKICAgIHNvdXJjZUlkOiBidWlsdC5kb2MuaWQsCiAgICBzb3VyY2VOYW1lOiBidWlsdC5kb2MubmFtZSwKICAgIHNlZ21lbnRLaW5kOiBhbmNob3JTZWc/LmtpbmQgPz8gbnVsbCwKICAgIHNlZ21lbnRMYWJlbDogYW5jaG9yU2VnPy5sYWJlbCA/PyBudWxsLAogICAgY2hhclN0YXJ0OiBmaXJzdC5zdGFydCwKICAgIGNoYXJFbmQ6IGVuZFRvay5lbmQsCiAgICB2ZXJiYXRpbTogYnVpbHQuZnVsbFRleHQuc2xpY2UoZmlyc3Quc3RhcnQsIGVuZFRvay5lbmQpLAogIH07CiAgcmV0dXJuIHsgYW5jaG9yLCBkaWZmOiBkaWZmVG9rZW5zKHF1b3RlVG9rcywgdG9rZW5pemVXaXRoU3BhbnMoYW5jaG9yLnZlcmJhdGltKSkgfTsKfQoKZnVuY3Rpb24gc2VnbWVudEtpbmRPZihwKSB7CiAgaWYgKHAua2luZCA9PT0gInBhZ2UiIHx8IHAua2luZCA9PT0gInBhZ2UtbGluZSIpIHJldHVybiAicGFnZSI7CiAgaWYgKHAua2luZCA9PT0gInNlY3Rpb24iKSByZXR1cm4gInNlY3Rpb24iOwogIGlmIChwLmtpbmQgPT09ICJwYXJhZ3JhcGgiKSByZXR1cm4gInBhcmFncmFwaCI7CiAgcmV0dXJuIG51bGw7IC8vIGZvb3Rub3RlIC8gYXJ0aWNsZSAvIGNsYXVzZSDigJQgbm90IG1vZGVsZWQKfQoKZnVuY3Rpb24gY2hlY2tQaW5wb2ludChxdW90ZSwgYW5jaG9yLCBidWlsdCkgewogIGlmIChxdW90ZS5waW5wb2ludCA9PT0gdW5kZWZpbmVkKSByZXR1cm4gbnVsbDsKICBjb25zdCBwYXJzZWQgPSBwYXJzZVBpbnBvaW50KHF1b3RlLnBpbnBvaW50KTsKICBpZiAocGFyc2VkID09PSBudWxsKSB7CiAgICByZXR1cm4geyByYXc6IHF1b3RlLnBpbnBvaW50LCBwYXJzZWQ6IG51bGwsIHN0YXR1czogInVucGFyc2VhYmxlIiwgZGV0YWlsOiAicGlucG9pbnQgc3ludGF4IG5vdCByZWNvZ25pemVkIiB9OwogIH0KICBjb25zdCBraW5kV29yZCA9IHNlZ21lbnRLaW5kT2YocGFyc2VkKTsKICBpZiAoa2luZFdvcmQgPT09IG51bGwpIHsKICAgIHJldHVybiB7CiAgICAgIHJhdzogcXVvdGUucGlucG9pbnQsCiAgICAgIHBhcnNlZCwKICAgICAgc3RhdHVzOiAidW52ZXJpZmlhYmxlIiwKICAgICAgZGV0YWlsOiBgY29yZSBkb2VzIG5vdCBtb2RlbCAke3BhcnNlZC5raW5kfSBzZWdtZW50cywgc28gdGhlIHBpbnBvaW50IGNhbm5vdCBiZSB2YWxpZGF0ZWRgLAogICAgfTsKICB9CiAgaWYgKGFuY2hvciA9PT0gbnVsbCB8fCBhbmNob3Iuc2VnbWVudEtpbmQgPT09IG51bGwpIHsKICAgIGlmIChidWlsdCA9PT0gbnVsbCkgewogICAgICByZXR1cm4geyByYXc6IHF1b3RlLnBpbnBvaW50LCBwYXJzZWQsIHN0YXR1czogInVudmVyaWZpYWJsZSIsIGRldGFpbDogInNvdXJjZSBub3QgcHJvdmlkZWQsIHNvIHRoZSBwaW5wb2ludCBjYW5ub3QgYmUgdmFsaWRhdGVkIiB9OwogICAgfQogICAgaWYgKCFidWlsdC5zZWdtZW50cy5zb21lKChzKSA9PiBzLmtpbmQgPT09IGtpbmRXb3JkKSkgewogICAgICByZXR1cm4gewogICAgICAgIHJhdzogcXVvdGUucGlucG9pbnQsCiAgICAgICAgcGFyc2VkLAogICAgICAgIHN0YXR1czogInVudmVyaWZpYWJsZSIsCiAgICAgICAgZGV0YWlsOiBgc291cmNlIGRvZXMgbm90IGRlY2xhcmUgJHtraW5kV29yZH0gc2VnbWVudHMsIHNvIHRoZSBwaW5wb2ludCBjYW5ub3QgYmUgdmFsaWRhdGVkYCwKICAgICAgfTsKICAgIH0KICAgIGlmIChhbmNob3IgPT09IG51bGwpIHsKICAgICAgcmV0dXJuIHsgcmF3OiBxdW90ZS5waW5wb2ludCwgcGFyc2VkLCBzdGF0dXM6ICJ1bnZlcmlmaWFibGUiLCBkZXRhaWw6ICJxdW90ZSBub3QgbG9jYXRlZCBpbiB0aGUgc291cmNlLCBzbyB0aGUgcGlucG9pbnQgY2Fubm90IGJlIHZhbGlkYXRlZCIgfTsKICAgIH0KICAgIHJldHVybiB7CiAgICAgIHJhdzogcXVvdGUucGlucG9pbnQsCiAgICAgIHBhcnNlZCwKICAgICAgc3RhdHVzOiAidW52ZXJpZmlhYmxlIiwKICAgICAgZGV0YWlsOiBgdGhlIHF1b3RlIGlzIG5vdCBsb2NhdGVkIGluIGEgc2VnbWVudGVkIHBhcnQgb2YgdGhlIHNvdXJjZSwgc28gdGhlICR7a2luZFdvcmR9IHBpbnBvaW50IGNhbm5vdCBiZSB2YWxpZGF0ZWRgLAogICAgfTsKICB9CiAgaWYgKHBhcnNlZC5raW5kICE9PSBhbmNob3Iuc2VnbWVudEtpbmQgJiYgcGFyc2VkLmtpbmQgIT09ICJwYWdlLWxpbmUiKSB7CiAgICByZXR1cm4gewogICAgICByYXc6IHF1b3RlLnBpbnBvaW50LAogICAgICBwYXJzZWQsCiAgICAgIHN0YXR1czogInVudmVyaWZpYWJsZSIsCiAgICAgIGRldGFpbDogYHRoZSBxdW90ZSBpcyBsb2NhdGVkIGluIGEgJHthbmNob3Iuc2VnbWVudEtpbmR9IHNlZ21lbnQsIHNvIHRoZSAke2tpbmRXb3JkfSBwaW5wb2ludCBjYW5ub3QgYmUgdmFsaWRhdGVkYCwKICAgIH07CiAgfQogIGlmIChwYXJzZWQua2luZCA9PT0gInBhZ2UtbGluZSIpIHsKICAgIGlmIChhbmNob3Iuc2VnbWVudEtpbmQgIT09ICJwYWdlIiB8fCBidWlsdCA9PT0gbnVsbCkgewogICAgICByZXR1cm4gewogICAgICAgIHJhdzogcXVvdGUucGlucG9pbnQsCiAgICAgICAgcGFyc2VkLAogICAgICAgIHN0YXR1czogInVudmVyaWZpYWJsZSIsCiAgICAgICAgZGV0YWlsOiAidGhlIHF1b3RlIGlzIG5vdCBsb2NhdGVkIGluIGEgcGFnZSBzZWdtZW50LCBzbyB0aGUgcGFnZTpsaW5lIHBpbnBvaW50IGNhbm5vdCBiZSB2YWxpZGF0ZWQiLAogICAgICB9OwogICAgfQogICAgY29uc3QgYW5jaG9yUGFnZSA9IE51bWJlcihhbmNob3Iuc2VnbWVudExhYmVsKTsKICAgIGNvbnN0IHBhZ2VGcm9tID0gcGFyc2VkLnBhZ2U7CiAgICBjb25zdCBwYWdlVG8gPSBwYXJzZWQucGFnZVRvID8/IHBhcnNlZC5wYWdlOwogICAgaWYgKGFuY2hvclBhZ2UgPCBwYWdlRnJvbSB8fCBhbmNob3JQYWdlID4gcGFnZVRvKSB7CiAgICAgIHJldHVybiB7CiAgICAgICAgcmF3OiBxdW90ZS5waW5wb2ludCwKICAgICAgICBwYXJzZWQsCiAgICAgICAgc3RhdHVzOiAibWlzbWF0Y2giLAogICAgICAgIGRldGFpbDogYHBpbnBvaW50IHNheXMgJHtmb3JtYXRQaW5wb2ludChwYXJzZWQpfSBidXQgdGhlIHF1b3RlIGlzIGxvY2F0ZWQgb24gcGFnZSAke2FuY2hvclBhZ2V9YCwKICAgICAgfTsKICAgIH0KICAgIGNvbnN0IHNlZyA9IHNlZ21lbnRBdChidWlsdCwgYW5jaG9yLmNoYXJTdGFydCk7CiAgICBpZiAoIXNlZykgewogICAgICByZXR1cm4geyByYXc6IHF1b3RlLnBpbnBvaW50LCBwYXJzZWQsIHN0YXR1czogInVudmVyaWZpYWJsZSIsIGRldGFpbDogInF1b3RlIG5vdCBsb2NhdGVkIGluIHRoZSBzb3VyY2UsIHNvIHRoZSBwaW5wb2ludCBjYW5ub3QgYmUgdmFsaWRhdGVkIiB9OwogICAgfQogICAgY29uc3QgcGFnZVRleHQgPSBidWlsdC5mdWxsVGV4dC5zbGljZShzZWcuc3RhcnQsIHNlZy5lbmQpOwogICAgY29uc3QgbGluZVRvID0gcGFyc2VkLmxpbmVUbyA/PyBwYXJzZWQubGluZUZyb207CiAgICBpZiAoIXBhZ2VUZXh0LmluY2x1ZGVzKCJcbiIpKSB7CiAgICAgIGlmIChwYXJzZWQubGluZUZyb20gPD0gMSAmJiBsaW5lVG8gPD0gMSkgewogICAgICAgIHJldHVybiB7IHJhdzogcXVvdGUucGlucG9pbnQsIHBhcnNlZCwgc3RhdHVzOiAib2siLCBkZXRhaWw6IGBxdW90ZSBpcyBsb2NhdGVkIG9uIHBhZ2UgJHthbmNob3JQYWdlfSAoc2luZ2xlIGxpbmUpYCB9OwogICAgICB9CiAgICAgIHJldHVybiB7CiAgICAgICAgcmF3OiBxdW90ZS5waW5wb2ludCwKICAgICAgICBwYXJzZWQsCiAgICAgICAgc3RhdHVzOiAidW52ZXJpZmlhYmxlIiwKICAgICAgICBkZXRhaWw6IGBwYWdlICR7YW5jaG9yUGFnZX0gaXMgbm90IGxpbmUtc2VnbWVudGVkLCBzbyBsaW5lICR7cGFyc2VkLmxpbmVGcm9tfSBjYW5ub3QgYmUgdmFsaWRhdGVkYCwKICAgICAgfTsKICAgIH0KICAgIGNvbnN0IGxpbmUgPSBwYWdlVGV4dC5zbGljZSgwLCBhbmNob3IuY2hhclN0YXJ0IC0gc2VnLnN0YXJ0KS5zcGxpdCgiXG4iKS5sZW5ndGg7CiAgICBjb25zdCBvayA9IGxpbmUgPj0gcGFyc2VkLmxpbmVGcm9tICYmIGxpbmUgPD0gbGluZVRvOwogICAgcmV0dXJuIHsKICAgICAgcmF3OiBxdW90ZS5waW5wb2ludCwKICAgICAgcGFyc2VkLAogICAgICBzdGF0dXM6IG9rID8gIm9rIiA6ICJtaXNtYXRjaCIsCiAgICAgIGRldGFpbDogb2sKICAgICAgICA/IGBxdW90ZSBpcyBsb2NhdGVkIG9uIHBhZ2UgJHthbmNob3JQYWdlfSBsaW5lICR7bGluZX1gCiAgICAgICAgOiBgcGlucG9pbnQgc2F5cyAke2Zvcm1hdFBpbnBvaW50KHBhcnNlZCl9IGJ1dCB0aGUgcXVvdGUgaXMgbG9jYXRlZCBvbiBwYWdlICR7YW5jaG9yUGFnZX0gbGluZSAke2xpbmV9YCwKICAgIH07CiAgfQogIGlmIChwYXJzZWQua2luZCA9PT0gInBhZ2UiICYmIGFuY2hvci5zZWdtZW50S2luZCA9PT0gInBhZ2UiKSB7CiAgICBjb25zdCBjaXRlZEZyb20gPSBwYXJzZWQuZnJvbTsKICAgIGNvbnN0IGNpdGVkVG8gPSBwYXJzZWQudG8gPz8gcGFyc2VkLmZyb207CiAgICBjb25zdCBhbmNob3JQYWdlID0gTnVtYmVyKGFuY2hvci5zZWdtZW50TGFiZWwpOwogICAgY29uc3Qgb2sgPSBhbmNob3JQYWdlID49IGNpdGVkRnJvbSAmJiBhbmNob3JQYWdlIDw9IGNpdGVkVG87CiAgICByZXR1cm4gewogICAgICByYXc6IHF1b3RlLnBpbnBvaW50LAogICAgICBwYXJzZWQsCiAgICAgIHN0YXR1czogb2sgPyAib2siIDogIm1pc21hdGNoIiwKICAgICAgZGV0YWlsOiBvawogICAgICAgID8gYHF1b3RlIGlzIGxvY2F0ZWQgb24gJHthbmNob3Iuc2VnbWVudExhYmVsfWAKICAgICAgICA6IGBwaW5wb2ludCBzYXlzICR7Zm9ybWF0UGlucG9pbnQocGFyc2VkKX0gYnV0IHRoZSBxdW90ZSBpcyBsb2NhdGVkIG9uICR7YW5jaG9yLnNlZ21lbnRMYWJlbH1gLAogICAgfTsKICB9CiAgaWYgKHBhcnNlZC5raW5kID09PSAic2VjdGlvbiIgJiYgYW5jaG9yLnNlZ21lbnRLaW5kID09PSAic2VjdGlvbiIpIHsKICAgIGxldCBvazsKICAgIGlmIChwYXJzZWQudG8gPT09IHVuZGVmaW5lZCkgewogICAgICBvayA9IGFuY2hvci5zZWdtZW50TGFiZWwgPT09IHBhcnNlZC5sYWJlbDsKICAgIH0gZWxzZSB7CiAgICAgIGNvbnN0IGZyb21OdW0gPSBOdW1iZXIocGFyc2VkLmxhYmVsKTsKICAgICAgY29uc3QgdG9OdW0gPSBOdW1iZXIocGFyc2VkLnRvKTsKICAgICAgY29uc3QgYU51bSA9IE51bWJlcihhbmNob3Iuc2VnbWVudExhYmVsKTsKICAgICAgb2sgPSAhTnVtYmVyLmlzTmFOKGZyb21OdW0pICYmICFOdW1iZXIuaXNOYU4odG9OdW0pICYmICFOdW1iZXIuaXNOYU4oYU51bSkgJiYgYU51bSA+PSBmcm9tTnVtICYmIGFOdW0gPD0gdG9OdW07CiAgICB9CiAgICByZXR1cm4gewogICAgICByYXc6IHF1b3RlLnBpbnBvaW50LAogICAgICBwYXJzZWQsCiAgICAgIHN0YXR1czogb2sgPyAib2siIDogIm1pc21hdGNoIiwKICAgICAgZGV0YWlsOiBvawogICAgICAgID8gYHF1b3RlIGlzIGxvY2F0ZWQgaW4gwqcgJHthbmNob3Iuc2VnbWVudExhYmVsfWAKICAgICAgICA6IGBwaW5wb2ludCBzYXlzICR7Zm9ybWF0UGlucG9pbnQocGFyc2VkKX0gYnV0IHRoZSBxdW90ZSBpcyBsb2NhdGVkIGluIMKnICR7YW5jaG9yLnNlZ21lbnRMYWJlbH1gLAogICAgfTsKICB9CiAgLy8gcGFyYWdyYXBoCiAgY29uc3QgYW5jaG9yTnVtID0gTnVtYmVyKGFuY2hvci5zZWdtZW50TGFiZWwpOwogIGNvbnN0IG9rID0gcGFyc2VkLnRvICE9PSB1bmRlZmluZWQgPyBhbmNob3JOdW0gPj0gcGFyc2VkLm51bWJlciAmJiBhbmNob3JOdW0gPD0gcGFyc2VkLnRvIDogYW5jaG9yTnVtID09PSBwYXJzZWQubnVtYmVyOwogIHJldHVybiB7CiAgICByYXc6IHF1b3RlLnBpbnBvaW50LAogICAgcGFyc2VkLAogICAgc3RhdHVzOiBvayA/ICJvayIgOiAibWlzbWF0Y2giLAogICAgZGV0YWlsOiBvawogICAgICA/IGBxdW90ZSBpcyBsb2NhdGVkIGluIMK2ICR7YW5jaG9yLnNlZ21lbnRMYWJlbH1gCiAgICAgIDogYHBpbnBvaW50IHNheXMgJHtmb3JtYXRQaW5wb2ludChwYXJzZWQpfSBidXQgdGhlIHF1b3RlIGlzIGxvY2F0ZWQgaW4gwrYgJHthbmNob3Iuc2VnbWVudExhYmVsfWAsCiAgfTsKfQoKLyoqCiAqIFJ1biB0aGUgZGV0ZXJtaW5pc3RpYyBjaXRlIGNoZWNrIG92ZXIgdGhlIGlucHV0J3MgcXVvdGVzIChvciBvdmVyIHF1b3RlcwogKiBleHRyYWN0ZWQgZnJvbSBkb2N1bWVudC50ZXh0IHdoZW4gbm9uZSBhcmUgc3VwcGxpZWQpLgogKiBAcGFyYW0ge3sgZG9jdW1lbnQ6IHsgbmFtZTogc3RyaW5nLCB0ZXh0Pzogc3RyaW5nIH0sIHNvdXJjZXM6IGFueVtdLCBxdW90ZXM/OiBhbnlbXSwgZnV6enlUaHJlc2hvbGQ/OiBudW1iZXIgfX0gaW5wdXQKICogQHJldHVybnMge2FueX0gQ2l0ZUNoZWNrUmVwb3J0CiAqLwpleHBvcnQgZnVuY3Rpb24gcnVuQ2l0ZUNoZWNrKGlucHV0KSB7CiAgY29uc3QgZnV6enlUaHJlc2hvbGQgPSBpbnB1dC5mdXp6eVRocmVzaG9sZCA/PyAwLjc7CiAgY29uc3QgYnlJZCA9IG5ldyBNYXAoKTsKICBmb3IgKGNvbnN0IGRvYyBvZiBpbnB1dC5zb3VyY2VzKSBieUlkLnNldChkb2MuaWQsIGJ1aWxkRG9jKGRvYykpOwoKICBsZXQgcXVvdGVMaXN0OwogIGxldCBleHRyYWN0aW9uV2FybmluZ3M7CiAgaWYgKGlucHV0LnF1b3RlcyAhPT0gdW5kZWZpbmVkKSB7CiAgICBxdW90ZUxpc3QgPSBpbnB1dC5xdW90ZXM7CiAgfSBlbHNlIGlmIChpbnB1dC5kb2N1bWVudC50ZXh0ICE9PSB1bmRlZmluZWQpIHsKICAgIGNvbnN0IGV4dHJhY3RlZCA9IGV4dHJhY3RRdW90ZXMoaW5wdXQuZG9jdW1lbnQudGV4dCwgaW5wdXQuc291cmNlcyk7CiAgICBxdW90ZUxpc3QgPSBleHRyYWN0ZWQucXVvdGVzOwogICAgZXh0cmFjdGlvbldhcm5pbmdzID0gZXh0cmFjdGVkLndhcm5pbmdzOwogIH0gZWxzZSB7CiAgICBxdW90ZUxpc3QgPSBbXTsKICB9CgogIGNvbnN0IHJlc3VsdHMgPSBxdW90ZUxpc3QubWFwKChxdW90ZSkgPT4gewogICAgY29uc3Qgbm90ZXMgPSBbXTsKICAgIGNvbnN0IGJ1aWx0ID0gYnlJZC5nZXQocXVvdGUuc291cmNlSWQpOwogICAgY29uc3QgYmFzZSA9IHsKICAgICAgaWQ6IHF1b3RlLmlkLAogICAgICAuLi4ocXVvdGUucHJvcG9zaXRpb24gIT09IHVuZGVmaW5lZCA/IHsgcHJvcG9zaXRpb246IHF1b3RlLnByb3Bvc2l0aW9uIH0gOiB7fSksCiAgICB9OwogICAgaWYgKCFidWlsdCkgewogICAgICByZXR1cm4gewogICAgICAgIC4uLmJhc2UsCiAgICAgICAgY2xhc3NpZmljYXRpb246ICJub3RfZm91bmQiLAogICAgICAgIHNpbWlsYXJpdHk6IDAsCiAgICAgICAgY292ZXJhZ2U6IDAsCiAgICAgICAgYW5jaG9yOiBudWxsLAogICAgICAgIHBpbnBvaW50OiBjaGVja1BpbnBvaW50KHF1b3RlLCBudWxsLCBudWxsKSwKICAgICAgICBiZXN0Q2FuZGlkYXRlOiBudWxsLAogICAgICAgIGRpZmY6IG51bGwsCiAgICAgICAgbm90ZXM6IFtgc291cmNlICIke3F1b3RlLnNvdXJjZUlkfSIgbm90IHByb3ZpZGVkYF0sCiAgICAgIH07CiAgICB9CgogICAgY29uc3QgcXVvdGVUb2tzID0gdG9rZW5pemVXaXRoU3BhbnMocXVvdGUudGV4dCk7CiAgICBjb25zdCB3aW4gPSBiZXN0V2luZG93KGJ1aWx0LmZ1bGxUZXh0LCBxdW90ZS50ZXh0KTsKICAgIGNvbnN0IHNpbWlsYXJpdHkgPSB3aW4/LnNjb3JlID8/IDA7CiAgICBjb25zdCBjb3ZlcmFnZSA9IHdpbj8uY292ZXJhZ2UgPz8gMDsKCiAgICBsZXQgY2xhc3NpZmljYXRpb247CiAgICBsZXQgYW5jaG9yID0gbnVsbDsKICAgIGxldCBkaWZmID0gbnVsbDsKCiAgICBpZiAocmF3Q29udGFpbnMoYnVpbHQuZnVsbFRleHQsIHF1b3RlLnRleHQpKSB7CiAgICAgIGNsYXNzaWZpY2F0aW9uID0gImV4YWN0IjsKICAgICAgYW5jaG9yID0gYW5jaG9yRnJvbVdpbmRvdyhidWlsdCwgd2luID8/IGxvY2F0ZVJhdyhidWlsdC5mdWxsVGV4dCwgcXVvdGUudGV4dCkpOwogICAgICBpZiAoYW5jaG9yKSBkaWZmID0gZGlmZlRva2VucyhxdW90ZVRva3MsIHRva2VuaXplV2l0aFNwYW5zKGFuY2hvci52ZXJiYXRpbSkpOwogICAgfSBlbHNlIGlmIChzaW1pbGFyaXR5ID49IDAuOTUgJiYgY292ZXJhZ2UgPj0gMC45NSkgewogICAgICBjbGFzc2lmaWNhdGlvbiA9ICJub3JtYWxpemVkIjsKICAgICAgbm90ZXMucHVzaCgibWF0Y2hlcyBtb2R1bG8gY2FzZS9wdW5jdHVhdGlvbi93aGl0ZXNwYWNlIik7CiAgICAgIGNvbnN0IGFsaWduZWQgPSBhbGlnbmVkQW5jaG9yKGJ1aWx0LCBxdW90ZVRva3MsIHdpbik7CiAgICAgIGFuY2hvciA9IGFsaWduZWQuYW5jaG9yOwogICAgICBkaWZmID0gYWxpZ25lZC5kaWZmOwogICAgICAvLyBvbWlzc2lvbiBkZXRlY3Rpb246IHB1cmUgZGVsZXRpb25zIGZyb20gdGhlIGxvY2F0ZWQgc3BhbgogICAgICBjb25zdCBoYXNFbGxpcHNpcyA9IC9cLlwuXC584oCmLy50ZXN0KHF1b3RlLnRleHQpOwogICAgICBpZiAoYW5jaG9yICYmIGRpZmYpIHsKICAgICAgICBmb3IgKGNvbnN0IG9wIG9mIGRpZmYpIHsKICAgICAgICAgIGlmIChvcC5vcCAhPT0gImRlbGV0ZSIpIGNvbnRpbnVlOwogICAgICAgICAgLy8gZGlmZiBzcGFucyBhcmUgcmVsYXRpdmUgdG8gYW5jaG9yLnZlcmJhdGltICh0aGUgZGlmZmVkIHN0cmluZykKICAgICAgICAgIGNvbnN0IG9taXR0ZWQgPSBhbmNob3IudmVyYmF0aW0uc2xpY2Uob3Auc291cmNlU3Bhbi5zdGFydCwgb3Auc291cmNlU3Bhbi5lbmQpOwogICAgICAgICAgbm90ZXMucHVzaChoYXNFbGxpcHNpcyA/IGBvbWl0cyAiJHtvbWl0dGVkfSIg4oCUIGV4cGxpY2l0IGVsbGlwc2lzLCBhY2NlcHRlZGAgOiBgb21pdHMgIiR7b21pdHRlZH0iIHdpdGhvdXQgYW4gZWxsaXBzaXNgKTsKICAgICAgICB9CiAgICAgICAgLy8gbnVtYmVyIGd1YXJkOiBhbHRlcmVkIGRpZ2l0cyBuZXZlciBwYXNzIGFzIG5lYXItdmVyYmF0aW0KICAgICAgICBjb25zdCBtaXNtID0gbnVtZXJpY01pc21hdGNoZXMoCiAgICAgICAgICBxdW90ZVRva3MubWFwKCh0KSA9PiB0Lm5vcm0pLAogICAgICAgICAgdG9rZW5pemVXaXRoU3BhbnMoYW5jaG9yLnZlcmJhdGltKS5tYXAoKHQpID0+IHQubm9ybSksCiAgICAgICAgKTsKICAgICAgICBmb3IgKGNvbnN0IHAgb2YgbWlzbS5wYWlyZWQpIG5vdGVzLnB1c2goYHF1b3RlICIke3AucXVvdGV9IiB2cyBzb3VyY2UgIiR7cC5zb3VyY2V9ImApOwogICAgICAgIGZvciAoY29uc3QgcSBvZiBtaXNtLnF1b3RlT25seSkgbm90ZXMucHVzaChgcXVvdGUgIiR7cX0iIG5vdCBmb3VuZCBpbiB0aGUgbG9jYXRlZCBzb3VyY2UgdGV4dGApOwogICAgICAgIGZvciAoY29uc3QgcyBvZiBtaXNtLnNvdXJjZU9ubHkpIG5vdGVzLnB1c2goYHNvdXJjZSAiJHtzfSIgYXBwZWFycyBpbiB0aGUgbG9jYXRlZCB0ZXh0IGJ1dCBub3QgaW4gdGhlIHF1b3RlYCk7CiAgICAgICAgaWYgKG1pc20ucGFpcmVkLmxlbmd0aCArIG1pc20ucXVvdGVPbmx5Lmxlbmd0aCA+IDApIHsKICAgICAgICAgIGNsYXNzaWZpY2F0aW9uID0gImZ1enp5IjsKICAgICAgICAgIG5vdGVzLnB1c2goIm51bWJlciBhbHRlcmF0aW9uIGNhcHMgdGhlIGNsYXNzaWZpY2F0aW9uIGF0IGZ1enp5IOKAlCByZXF1aXJlcyBodW1hbiByZXZpZXciKTsKICAgICAgICB9CiAgICAgIH0KICAgIH0gZWxzZSBpZiAoc2ltaWxhcml0eSA+PSBmdXp6eVRocmVzaG9sZCAmJiBjb3ZlcmFnZSA+PSAwLjYpIHsKICAgICAgY2xhc3NpZmljYXRpb24gPSAiZnV6enkiOwogICAgICBub3Rlcy5wdXNoKCJzdWJzdGFudGlhbCBvdmVybGFwIGJ1dCBub3QgdmVyYmF0aW0g4oCUIHJlcXVpcmVzIGh1bWFuIHJldmlldyIpOwogICAgICBhbmNob3IgPSBhbmNob3JGcm9tV2luZG93KGJ1aWx0LCB3aW4pOwogICAgICBpZiAoYW5jaG9yKSBkaWZmID0gZGlmZlRva2VucyhxdW90ZVRva3MsIHRva2VuaXplV2l0aFNwYW5zKGFuY2hvci52ZXJiYXRpbSkpOwogICAgfSBlbHNlIHsKICAgICAgY2xhc3NpZmljYXRpb24gPSAibm90X2ZvdW5kIjsKICAgICAgYW5jaG9yID0gYW5jaG9yRnJvbVdpbmRvdyhidWlsdCwgd2luKTsgLy8ga2VwdCBhcyBiZXN0Q2FuZGlkYXRlIGV2aWRlbmNlIGJlbG93CiAgICAgIGlmICh3aW4pIG5vdGVzLnB1c2goYGJlc3QgY2FuZGlkYXRlIHNpbWlsYXJpdHkgJHtzaW1pbGFyaXR5LnRvRml4ZWQoMil9IGJlbG93IHRocmVzaG9sZCAke2Z1enp5VGhyZXNob2xkfWApOwogICAgfQoKICAgIGNvbnN0IGJlc3RDYW5kaWRhdGUgPSBjbGFzc2lmaWNhdGlvbiA9PT0gIm5vdF9mb3VuZCIgPyBhbmNob3IgOiBudWxsOwogICAgaWYgKGNsYXNzaWZpY2F0aW9uID09PSAibm90X2ZvdW5kIikgYW5jaG9yID0gbnVsbDsKCiAgICBjb25zdCBwaW5wb2ludCA9IGNoZWNrUGlucG9pbnQocXVvdGUsIGFuY2hvciwgYnVpbHQpOwogICAgaWYgKHBpbnBvaW50Py5zdGF0dXMgPT09ICJtaXNtYXRjaCIpIG5vdGVzLnB1c2goYFBJTlBPSU5UIElTU1VFOiAke3BpbnBvaW50LmRldGFpbH1gKTsKICAgIGlmIChxdW90ZS5wcm9wb3NpdGlvbiAhPT0gdW5kZWZpbmVkICYmIGNsYXNzaWZpY2F0aW9uICE9PSAibm90X2ZvdW5kIikgewogICAgICBub3Rlcy5wdXNoKCJwcm9wb3NpdGlvbiBzdXBwb3J0IGlzIGFuIExMTS9odW1hbiBqdWRnbWVudCDigJQgbm90IGV2YWx1YXRlZCBieSB0aGlzIGNvcmUiKTsKICAgIH0KCiAgICByZXR1cm4geyAuLi5iYXNlLCBjbGFzc2lmaWNhdGlvbiwgc2ltaWxhcml0eSwgY292ZXJhZ2UsIGFuY2hvciwgYmVzdENhbmRpZGF0ZSwgcGlucG9pbnQsIGRpZmYsIG5vdGVzIH07CiAgfSk7CgogIGNvbnN0IGNvdW50ID0gKGMpID0+IHJlc3VsdHMuZmlsdGVyKChyKSA9PiByLmNsYXNzaWZpY2F0aW9uID09PSBjKS5sZW5ndGg7CiAgY29uc3Qgc3VtbWFyeSA9IHsKICAgIHRvdGFsOiByZXN1bHRzLmxlbmd0aCwKICAgIGV4YWN0OiBjb3VudCgiZXhhY3QiKSwKICAgIG5vcm1hbGl6ZWQ6IGNvdW50KCJub3JtYWxpemVkIiksCiAgICBmdXp6eTogY291bnQoImZ1enp5IiksCiAgICBub3RfZm91bmQ6IGNvdW50KCJub3RfZm91bmQiKSwKICAgIGNoZWNrZWQ6IHJlc3VsdHMubGVuZ3RoIC0gY291bnQoIm5vdF9mb3VuZCIpLAogICAgY291bGROb3RDaGVjazogY291bnQoIm5vdF9mb3VuZCIpLAogICAgdW5wYXJzZWFibGVQaW5wb2ludHM6IHJlc3VsdHMuZmlsdGVyKChyKSA9PiByLnBpbnBvaW50Py5zdGF0dXMgPT09ICJ1bnBhcnNlYWJsZSIpLmxlbmd0aCwKICAgIHBpbnBvaW50SXNzdWVzOiByZXN1bHRzLmZpbHRlcigocikgPT4gci5waW5wb2ludD8uc3RhdHVzID09PSAibWlzbWF0Y2giKS5sZW5ndGgsCiAgfTsKICBjb25zdCByZXBvcnQgPSB7IGRvY3VtZW50TmFtZTogaW5wdXQuZG9jdW1lbnQubmFtZSwgc3VtbWFyeSwgcmVzdWx0cyB9OwogIGlmIChleHRyYWN0aW9uV2FybmluZ3MgIT09IHVuZGVmaW5lZCkgcmVwb3J0LmV4dHJhY3Rpb25XYXJuaW5ncyA9IGV4dHJhY3Rpb25XYXJuaW5nczsKICByZXR1cm4gcmVwb3J0Owp9CgovKiogQW5jaG9yIGZvciBhbiBleGFjdGx5LWNvbnRhaW5lZCBxdW90ZSAod2luZG93IHNlYXJjaCBhbHNvIGZpbmRzIHRoZXNlOyBrZXB0IHByZWNpc2UpLiAqLwpmdW5jdGlvbiBsb2NhdGVSYXcoc291cmNlLCBxdW90ZSkgewogIGNvbnN0IGlkeCA9IHNvdXJjZS5pbmRleE9mKHF1b3RlLnRyaW0oKSk7CiAgaWYgKGlkeCA8IDApIHJldHVybiBudWxsOwogIHJldHVybiB7IHNjb3JlOiAxLCBjb3ZlcmFnZTogMSwgc3RhcnQ6IGlkeCwgZW5kOiBpZHggKyBxdW90ZS50cmltKCkubGVuZ3RoLCB2ZXJiYXRpbTogc291cmNlLnNsaWNlKGlkeCwgaWR4ICsgcXVvdGUudHJpbSgpLmxlbmd0aCkgfTsKfQoKLyoqIE1hcmtkb3duIHJlcG9ydCDigJQgZGV0ZXJtaW5pc3RpYyByZW5kZXJpbmcgb2YgYSBDaXRlQ2hlY2tSZXBvcnQuCiAqIEBwYXJhbSB7YW55fSByZXBvcnQgQHJldHVybnMge3N0cmluZ30gKi8KZXhwb3J0IGZ1bmN0aW9uIHJlbmRlclJlcG9ydChyZXBvcnQpIHsKICBjb25zdCBzID0gcmVwb3J0LnN1bW1hcnk7CiAgY29uc3QgbGluZXMgPSBbXTsKICBsaW5lcy5wdXNoKGAjIENpdGUgY2hlY2sg4oCUICR7cmVwb3J0LmRvY3VtZW50TmFtZX1gKTsKICBsaW5lcy5wdXNoKCIiKTsKICBsaW5lcy5wdXNoKAogICAgYCoqQ2hlY2tlZCAke3MuY2hlY2tlZH0gb2YgJHtzLnRvdGFsfSBxdW90ZXM6KiogJHtzLmV4YWN0fSBleGFjdCDCtyAke3Mubm9ybWFsaXplZH0gbm9ybWFsaXplZCDCtyAke3MuZnV6enl9IGZ1enp5IMK3IGAgKwogICAgICBgJHtzLmNvdWxkTm90Q2hlY2t9IG5vdCBjaGVja2VkIChuZXZlciByZXBvcnRlZCBhcyAiY29uZmlybWVkIikgwrcgJHtzLnVucGFyc2VhYmxlUGlucG9pbnRzfSB1bnBhcnNlYWJsZSBwaW5wb2ludChzKSDCtyBgICsKICAgICAgYCR7cy5waW5wb2ludElzc3Vlc30gcGlucG9pbnQgaXNzdWUocylgLAogICk7CiAgaWYgKHJlcG9ydC5leHRyYWN0aW9uV2FybmluZ3MgIT09IHVuZGVmaW5lZCAmJiByZXBvcnQuZXh0cmFjdGlvbldhcm5pbmdzLmxlbmd0aCA+IDApIHsKICAgIGxpbmVzLnB1c2goIiIpOwogICAgZm9yIChjb25zdCB3IG9mIHJlcG9ydC5leHRyYWN0aW9uV2FybmluZ3MpIGxpbmVzLnB1c2goYC0gZXh0cmFjdGlvbjogJHt3fWApOwogIH0KICBsaW5lcy5wdXNoKCIiKTsKICBsaW5lcy5wdXNoKCJ8IFF1b3RlIHwgVmVyZGljdCB8IFNpbWlsYXJpdHkgfCBBbmNob3IgfCBQaW5wb2ludCB8Iik7CiAgbGluZXMucHVzaCgifC0tLXwtLS18LS0tfC0tLXwtLS18Iik7CiAgZm9yIChjb25zdCByIG9mIHJlcG9ydC5yZXN1bHRzKSB7CiAgICBjb25zdCBhbmNob3IgPSByLmFuY2hvcgogICAgICA/IGAke3IuYW5jaG9yLnNvdXJjZU5hbWV9JHtyLmFuY2hvci5zZWdtZW50TGFiZWwgIT09IG51bGwgPyBgLCAke3IuYW5jaG9yLnNlZ21lbnRLaW5kfSAke3IuYW5jaG9yLnNlZ21lbnRMYWJlbH1gIDogIiJ9IChjaGFycyAke3IuYW5jaG9yLmNoYXJTdGFydH3igJMke3IuYW5jaG9yLmNoYXJFbmR9KWAKICAgICAgOiAi4oCUIjsKICAgIGNvbnN0IHBpbiA9IHIucGlucG9pbnQgPyBgJHtyLnBpbnBvaW50LnJhd306ICR7ci5waW5wb2ludC5zdGF0dXN9YCA6ICLigJQiOwogICAgbGluZXMucHVzaChgfCAke3IuaWR9IHwgJHtyLmNsYXNzaWZpY2F0aW9ufSB8ICR7ci5zaW1pbGFyaXR5LnRvRml4ZWQoMil9IHwgJHthbmNob3J9IHwgJHtwaW59IHxgKTsKICB9CiAgbGluZXMucHVzaCgiIik7CiAgZm9yIChjb25zdCByIG9mIHJlcG9ydC5yZXN1bHRzKSB7CiAgICBsaW5lcy5wdXNoKGAjIyAke3IuaWR9IOKAlCAke3IuY2xhc3NpZmljYXRpb259YCk7CiAgICBsaW5lcy5wdXNoKCIiKTsKICAgIGlmIChyLmFuY2hvcikgewogICAgICBsaW5lcy5wdXNoKGA+ICR7ci5hbmNob3IudmVyYmF0aW0ucmVwbGFjZSgvXG4vZywgIiAiKX1gKTsKICAgICAgbGluZXMucHVzaCgiIik7CiAgICAgIGxpbmVzLnB1c2goYEFuY2hvcmVkIGF0ICR7ci5hbmNob3Iuc291cmNlTmFtZX0gY2hhcnMgJHtyLmFuY2hvci5jaGFyU3RhcnR94oCTJHtyLmFuY2hvci5jaGFyRW5kfS5gKTsKICAgIH0gZWxzZSB7CiAgICAgIGxpbmVzLnB1c2goIk5vIGxvY2F0aW5nIGFuY2hvciBpbiB0aGUgcHJvdmlkZWQgc291cmNlcy4iKTsKICAgIH0KICAgIGNvbnN0IG1hcmtzID0gci5kaWZmID8gZm9ybWF0RGlmZk9wcyhyLmRpZmYpIDogIiI7CiAgICBpZiAobWFya3MpIGxpbmVzLnB1c2goYFRva2VuIGRpZmY6ICR7bWFya3N9YCk7CiAgICBpZiAoci5waW5wb2ludCkgbGluZXMucHVzaChgUGlucG9pbnQ6ICR7ci5waW5wb2ludC5yYXd9IOKAlCAke3IucGlucG9pbnQuc3RhdHVzfSAoJHtyLnBpbnBvaW50LmRldGFpbH0pLmApOwogICAgZm9yIChjb25zdCBuIG9mIHIubm90ZXMpIGxpbmVzLnB1c2goYC0gJHtufWApOwogICAgbGluZXMucHVzaCgiIik7CiAgfQogIHJldHVybiBsaW5lcy5qb2luKCJcbiIpOwp9Cg==";
-  import EXAMPLE from "data:text/javascript;base64,LyoqIEV4YW1wbGUgZGF0YSBmb3IgdGhlIHN0YW5kYWxvbmUgZGVtbyDigJQgc2FtZSBhcyBleGFtcGxlcy9pbnB1dC5qc29uIChmaWN0aW9uYWwpLiAqLwpleHBvcnQgZGVmYXVsdCB7CiAgImRvY3VtZW50IjogeyAibmFtZSI6ICJBcHBlbGxhbnQncyBPcGVuaW5nIEJyaWVmIOKAlCBIYWxjeW9uIER5bmFtaWNzLCBJbmMuIHYuIE1lcmlkaWFuIEZyZWlnaHQgU3lzdGVtcywgTExDIChOby4gMjYtMTE4NywgZmljdGlvbmFsKSIgfSwKICAiZnV6enlUaHJlc2hvbGQiOiAwLjcsCiAgInNvdXJjZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJuYW1lIjogIkRlcG9zaXRpb24gb2YgU2FuZHJhIE9rYWZvciAoSmFuLiAxNCwgMjAyNikiLAogICAgICAicGFnZXMiOiBbCiAgICAgICAgeyAibnVtYmVyIjogMTEsICJ0ZXh0IjogIlEuIFdoYXQgaGFwcGVuZWQgYXQgdGhlIGxvYWRpbmcgZG9jaz8gQS4gVGhlIHRyYWlsZXIgYXJyaXZlZCBhdCB0aGUgZG9jayBhcm91bmQgNCBwLm0uIGFuZCB0aGUgc2VhbCB3YXMgYWxyZWFkeSBicm9rZW4gd2hlbiBvdXIgdGVhbSBpbnNwZWN0ZWQgaXQgYXQgNDoxMCBwLm0uIiB9LAogICAgICAgIHsgIm51bWJlciI6IDEyLCAidGV4dCI6ICJRLiBXaG8gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0PyBBLiBNci4gQmVsdHJhbiBzaWduZWQgdGhlIGRlbGl2ZXJ5IHJlY2VpcHQgYXQgNDoyMCBwLm0uIHdpdGhvdXQgbm90aW5nIGFueSBleGNlcHRpb24gb24gdGhlIGRvY3VtZW50LiIgfSwKICAgICAgICB7ICJudW1iZXIiOiAxNSwgInRleHQiOiAiUS4gV2FzIHRoZSBjYXJnbyBldmVyIHdlaWdoZWQ/IEEuIFdlIHdlaWdoZWQgdGhlIHBhbGxldHMgdGhlIG5leHQgbW9ybmluZyBhbmQgZm91bmQgYSBzaG9ydGZhbGwgb2YgMzQwIGtpbG9ncmFtcyBhZ2FpbnN0IHRoZSBtYW5pZmVzdC4gVGhlIG1hbmlmZXN0IGl0c2VsZiBsaXN0ZWQgMTIsNDgwIGtpbG9ncmFtcyBvZiBmcmVpZ2h0IG9uIHRoZSBvdXRib3VuZCBsZWcsIGFuZCB0aGUgcmV3ZWlnaCBhdCB0aGUgTWlsbGJyb29rIHRlcm1pbmFsIHNob3dlZCBvbmx5IDEyLDE0MCBraWxvZ3JhbXMsIGEgZGlmZmVyZW5jZSB0aGUgaW50YWtlIHRlYW0gZG9jdW1lbnRlZCBpbiB0aGUgb3ZlcmZsb3cgbG9nIGFuZCByZXBvcnRlZCB0byB0aGUgZGlzcGF0Y2ggb2ZmaWNlIHRoYXQgc2FtZSBhZnRlcm5vb24uIiB9CiAgICAgIF0KICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJtc2EiLAogICAgICAibmFtZSI6ICJNYXN0ZXIgU2VydmljZXMgQWdyZWVtZW50IChIYWxjeW9u4oCTTWVyaWRpYW4sIDIwMjQpIiwKICAgICAgInNlY3Rpb25zIjogWwogICAgICAgIHsgImxhYmVsIjogIjUuMiIsICJ0ZXh0IjogIkN1c3RvbWVyIG1heSB0ZXJtaW5hdGUgdGhpcyBBZ3JlZW1lbnQgZm9yIGNvbnZlbmllbmNlIHVwb24gbmluZXR5ICg5MCkgZGF5cyBwcmlvciB3cml0dGVuIG5vdGljZS4iIH0sCiAgICAgICAgeyAibGFiZWwiOiAiOS4xIiwgInRleHQiOiAiTmVpdGhlciBwYXJ0eSBzaGFsbCBiZSBsaWFibGUgZm9yIGluZGlyZWN0IG9yIGNvbnNlcXVlbnRpYWwgZGFtYWdlcywgaW5jbHVkaW5nIGxvc3QgcHJvZml0cy4iIH0KICAgICAgXQogICAgfSwKICAgIHsKICAgICAgImlkIjogIm5haXItZGVjbCIsCiAgICAgICJuYW1lIjogIkRlY2xhcmF0aW9uIG9mIFByaXlhIE5haXIgKEZlYi4gMiwgMjAyNikiLAogICAgICAicGFyYWdyYXBocyI6IFsKICAgICAgICB7ICJudW1iZXIiOiA3LCAidGV4dCI6ICJPbiB0aGUgYWZ0ZXJub29uIG9mIE1hcmNoIDMsIDIwMjUsIEkgcGhvdG9ncmFwaGVkIHRoZSBwYWxsZXRzIGJlZm9yZSB0aGV5IHdlcmUgcmVtb3ZlZCBmcm9tIHRoZSBkb2NrIGFyZWEuIiB9LAogICAgICAgIHsgIm51bWJlciI6IDgsICJ0ZXh0IjogIlRoZSBwaG90b2dyYXBocyBzaG93IHdhdGVyIHN0YWluaW5nIG9uIGZvdXIgb2YgdGhlIGVsZXZlbiBwYWxsZXRzIGRlbGl2ZXJlZCB1bmRlciB0aGlzIHNoaXBtZW50LiIgfQogICAgICBdCiAgICB9CiAgXSwKICAicXVvdGVzIjogWwogICAgewogICAgICAiaWQiOiAiUTEgKGJyaWVmIHAuIDYpIiwKICAgICAgInRleHQiOiAiTXIuIEJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiB3aXRob3V0IG5vdGluZyBhbnkgZXhjZXB0aW9uIG9uIHRoZSBkb2N1bWVudC4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTIiLAogICAgICAicHJvcG9zaXRpb24iOiAiVGhlIGRlbGl2ZXJ5IHdhcyBhY2NlcHRlZCB3aXRob3V0IGV4Y2VwdGlvbiwgZGVmZWF0aW5nIHRoZSBub3RpY2UgZGVmZW5zZS4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTIgKGJyaWVmIHAuIDcpIiwKICAgICAgInRleHQiOiAibXIuIGJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiDigJQgd2l0aG91dCBub3RpbmcgYW55IGV4Y2VwdGlvbiIsCiAgICAgICJzb3VyY2VJZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJwaW5wb2ludCI6ICJwLiAxMiIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJTYW1lIHJlY2VpcHQgZmFjdHMsIHF1b3Rpbmcgd2l0aCBhbHRlcmVkIHB1bmN0dWF0aW9uLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRMyAoYnJpZWYgcC4gOSkiLAogICAgICAidGV4dCI6ICJNci4gQmVsdHJhbiBzaWduZWQgdGhlIGRlbGl2ZXJ5IHJlY2VpcHQgd2l0aG91dCBub3RpbmcgYW55IGV4Y2VwdGlvbiBvbiB0aGUgZG9jdW1lbnQgYXQgdGhlIGxvYWRpbmcgZG9jayIsCiAgICAgICJzb3VyY2VJZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJwaW5wb2ludCI6ICJwLiAxMiIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJSZWNlaXB0IHNpZ25lZCB3aXRob3V0IGV4Y2VwdGlvbiAocGFyYXBocmFzZWQgaW4gdGhlIGJyaWVmKS4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTQgKGJyaWVmIHAuIDExKSIsCiAgICAgICJ0ZXh0IjogIlRoZSB0cmFpbGVyIHdhcyB1bmxvYWRlZCBieSBhIG5pZ2h0IGNyZXcgd2hpbGUgdGhlIGRyaXZlciB3YWl0ZWQgb3V0c2lkZSB0aGUgZ2F0ZS4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTIiLAogICAgICAicHJvcG9zaXRpb24iOiAiVW5zdXBlcnZpc2VkIHVubG9hZGluZyDigJQgbm90aGluZyBpbiB0aGUgY2l0ZWQgZGVwb3NpdGlvbiBzdXBwb3J0cyB0aGlzLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRNSAoYnJpZWYgcC4gMTMpIiwKICAgICAgInRleHQiOiAiTXIuIEJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiB3aXRob3V0IG5vdGluZyBhbnkgZXhjZXB0aW9uIG9uIHRoZSBkb2N1bWVudC4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTUiLAogICAgICAicHJvcG9zaXRpb24iOiAiQ29ycmVjdCBxdW90ZSwgd3JvbmcgcGFnZSBjaXRlLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRNiAoYnJpZWYgcC4gMTQpIiwKICAgICAgInRleHQiOiAiQ3VzdG9tZXIgbWF5IHRlcm1pbmF0ZSB0aGlzIEFncmVlbWVudCBmb3IgY29udmVuaWVuY2UgdXBvbiBuaW5ldHkgKDkwKSBkYXlzIHByaW9yIHdyaXR0ZW4gbm90aWNlLiIsCiAgICAgICJzb3VyY2VJZCI6ICJtc2EiLAogICAgICAicGlucG9pbnQiOiAiwqcgNS4yIiwKICAgICAgInByb3Bvc2l0aW9uIjogIlRoZSA5MC1kYXkgdGVybWluYXRpb24gcmlnaHQgd2FzIHByZXNlcnZlZC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTcgKGJyaWVmIHAuIDE1KSIsCiAgICAgICJ0ZXh0IjogIk5laXRoZXIgcGFydHkgc2hhbGwgYmUgbGlhYmxlIGZvciBpbmRpcmVjdCBvciBjb25zZXF1ZW50aWFsIGRhbWFnZXMsIGluY2x1ZGluZyBsb3N0IHByb2ZpdHMuIiwKICAgICAgInNvdXJjZUlkIjogIm1zYSIsCiAgICAgICJwaW5wb2ludCI6ICLCpyA1LjIiLAogICAgICAicHJvcG9zaXRpb24iOiAiQ29ycmVjdCBjbGF1c2UgdGV4dCBjaXRlZCB0byB0aGUgd3Jvbmcgc2VjdGlvbi4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTggKGJyaWVmIHAuIDE2KSIsCiAgICAgICJ0ZXh0IjogIlRoZSBwaG90b2dyYXBocyBzaG93IHdhdGVyIHN0YWluaW5nIG9uIGZvdXIgb2YgdGhlIGVsZXZlbiBwYWxsZXRzIGRlbGl2ZXJlZCB1bmRlciB0aGlzIHNoaXBtZW50LiIsCiAgICAgICJzb3VyY2VJZCI6ICJuYWlyLWRlY2wiLAogICAgICAicGlucG9pbnQiOiAiwrYgOCIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJEYW1hZ2Ugd2FzIHZpc2libGUgb24gYXJyaXZhbC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTkgKGJyaWVmIHAuIDE3KSIsCiAgICAgICJ0ZXh0IjogIk1lcmlkaWFuJ3MgbG9naXN0aWNzIG1hbmFnZXIgYWRtaXR0ZWQgaW4gd3JpdGluZyB0aGF0IHRoZSBsb2FkIGxlZnQgdGhlIHRlcm1pbmFsIHNob3J0LiIsCiAgICAgICJzb3VyY2VJZCI6ICJ3ZWJlci1lbWFpbHMiLAogICAgICAicGlucG9pbnQiOiAicC4gMyIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJTb3VyY2Ugbm90IGluIHRoZSByZWNvcmQgZXhjZXJwdC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTEwIChicmllZiBwLiAxOCkiLAogICAgICAidGV4dCI6ICJUaGUgbWFuaWZlc3QgaXRzZWxmIGxpc3RlZCAxMiw1ODAga2lsb2dyYW1zIG9mIGZyZWlnaHQgb24gdGhlIG91dGJvdW5kIGxlZywgYW5kIHRoZSByZXdlaWdoIGF0IHRoZSBNaWxsYnJvb2sgdGVybWluYWwgc2hvd2VkIG9ubHkgMTIsMTQwIGtpbG9ncmFtcywgYSBkaWZmZXJlbmNlIHRoZSBpbnRha2UgdGVhbSBkb2N1bWVudGVkIGluIHRoZSBvdmVyZmxvdyBsb2cgYW5kIHJlcG9ydGVkIHRvIHRoZSBkaXNwYXRjaCBvZmZpY2UgdGhhdCBzYW1lIGFmdGVybm9vbi4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTUiLAogICAgICAicHJvcG9zaXRpb24iOiAiVGhlIGJyaWVmJ3MgbWFuaWZlc3QgZmlndXJlIOKAlCBjYXVnaHQgYnkgdGhlIG51bWJlciBndWFyZCAoYWx0ZXJlZCBkaWdpdCkuIgogICAgfQogIF0KfTsK";
+// core/core.js inlined VERBATIM (export keywords stripped) — the deploy bundler data-URI-encodes module imports (+33% base64), which alone blew the 80KB single-file cap. Keep in sync with ../core/core.js.
+/**
+ * cite-check core — deterministic quote verification against source documents.
+ * NO LLM: every classification is reproducible from the inputs alone.
+ *
+ * Plain-JavaScript port of core/citecheck.ts + pinpoint.ts + textutil.ts +
+ * diff.ts + extract.ts (the TypeScript sources stay authoritative for tests).
+ * Exports the same engine functions; browser + Node compatible, dependency-free.
+ * core/propositions.ts is TS-only (a harness around the engine, not part of it).
+ *
+ * Classification ladder (first match wins):
+ *   exact       — quote appears verbatim (whitespace-trimmed) in the source
+ *   normalized  — near-verbatim: same tokens modulo case/punctuation (score ≥ 0.95)
+ *   fuzzy       — best window similarity ≥ fuzzyThreshold (default 0.7) and coverage ≥ 0.6
+ *   not_found   — everything below the fuzzy threshold
+ *
+ * Guards (deterministic, never silent):
+ *   number guard   — an altered numeric token caps the class at fuzzy and is noted
+ *   insert guard   — tokens present in the quote but absent from the located span
+ *                    are noted and cap the class at fuzzy (a quote must not add words)
+ *   negation guard — an inserted or dropped negator ("not", "never", …) flips
+ *                    meaning: divergence is noted and caps the class at fuzzy
+ *   omission check — tokens dropped from the located span are noted; an explicit
+ *                    ellipsis in the quote marks the omission as accepted
+ *
+ * Every located quote carries a verbatim anchor (source id, segment, char
+ * offsets), a machine-checkable token diff (LCS ops), and pinpoint validation.
+ * @module core
+ */
 
-  const report = runCiteCheck(EXAMPLE);
-  const s = report.summary;
-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* ============================================================
+ * textutil (port of core/textutil.ts)
+ * ============================================================ */
 
-  document.getElementById("counts").innerHTML =
-    `<div><b>${s.total}</b><span>quotes checked</span></div>` +
-    `<div><b>${s.checked} of ${s.total}</b><span>located</span></div>` +
-    `<div><b>${s.exact}</b><span>exact</span></div>` +
-    `<div><b>${s.normalized}</b><span>normalized</span></div>` +
-    `<div><b>${s.fuzzy}</b><span>fuzzy</span></div>` +
-    `<div><b>${s.not_found}</b><span>not found</span></div>` +
-    `<div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+/** Token with char span in the ORIGINAL string.
+ * @typedef {{ norm: string, start: number, end: number }} Tok */
 
-  document.getElementById("coverage").textContent =
-    `Checked ${s.checked} of ${s.total} quotes — ${s.couldNotCheck} could not be checked and are never reported as "confirmed"; ${s.unparseablePinpoints} unparseable pinpoint(s).`;
-
-  let firstFlagDone = false;
-  document.getElementById("results").innerHTML =
-    `<tr><th>Quote</th><th>Verdict</th><th>Similarity</th><th>Anchor</th><th>Pinpoint</th></tr>` +
-    report.results
-      .map((r) => {
-        const anchor = r.anchor
-          ? `${esc(r.anchor.sourceName)}${r.anchor.segmentLabel !== null ? `, ${esc(r.anchor.segmentKind)} ${esc(r.anchor.segmentLabel)}` : ""} <code>${r.anchor.charStart}–${r.anchor.charEnd}</code>`
-          : r.bestCandidate
-            ? `closest: ${esc(r.bestCandidate.sourceName)} <code>${r.bestCandidate.charStart}–${r.bestCandidate.charEnd}</code>`
-            : "—";
-        const pin = r.pinpoint ? `<span class="pill ${r.pinpoint.status === "mismatch" ? "mismatch" : r.pinpoint.status === "ok" ? "exact" : ""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}` : "—";
-        const adverse = r.classification === "not_found" || r.pinpoint?.status === "mismatch";
-        const cls = adverse && !firstFlagDone ? (firstFlagDone = true, "flag") : "";
-        return `<tr class="${cls}"><td class="mono"><code>${esc(r.id)}</code></td>` +
-          `<td><span class="pill ${r.classification}">${r.classification}</span></td>` +
-          `<td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td></tr>`;
-      })
-      .join("");
-
-  document.getElementById("evidence").innerHTML = report.results
-    .map((r) => {
-      const a = r.anchor ?? r.bestCandidate;
-      return `<div class="ev"><b><code>${esc(r.id)}</code></b> <span class="pill ${r.classification}">${r.classification}</span>` +
-        ` ${a ? `— anchored at <b>${esc(a.sourceName)}</b>${a.segmentLabel !== null ? ` (${esc(a.segmentKind)} ${esc(a.segmentLabel)})` : ""} chars ${a.charStart}–${a.charEnd}` : "— no locating anchor in the provided sources"}` +
-        (a ? `<blockquote>${esc(a.verbatim.replace(/\n/g, " "))}</blockquote>` : "") +
-        (r.pinpoint ? `<div style="margin-top:6px">Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}</div>` : "") +
-        (r.diff && formatDiffOps(r.diff) ? `<div style="margin-top:4px">Token diff: <code>${esc(formatDiffOps(r.diff))}</code></div>` : "") +
-        r.notes.map((n) => `<div style="margin-top:4px;color:var(--text-secondary)">· ${esc(n)}</div>`).join("") +
-        `</div>`;
-    })
-    .join("");
-
-  function download(name, content, type) {
-    const blob = new Blob([content], { type });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+/**
+ * Split on runs of non [A-Za-z0-9.] characters; trim leading/trailing dots
+ * from each token so "p." -> "p" while "5.2" stays "5.2".
+ * @param {string} text @returns {Tok[]} */
+function tokenizeWithSpans(text) {
+  const toks = [];
+  const re = /[^A-Za-z0-9.]+/g;
+  let last = 0;
+  let m;
+  const push = (start, end) => {
+    let ls = start;
+    let le = end;
+    while (ls < le && text[ls] === ".") ls++;
+    while (le > ls && text[le - 1] === ".") le--;
+    if (le > ls) toks.push({ norm: text.slice(ls, le).toLowerCase(), start: ls, end: le });
+  };
+  while ((m = re.exec(text)) !== null) {
+    push(last, m.index);
+    last = m.index + m[0].length;
   }
-  document.getElementById("mdBtn").onclick = () => download("cite-check-report.md", renderReport(report), "text/markdown");
-  document.getElementById("jsonBtn").onclick = () => download("cite-check-output.json", JSON.stringify(report, null, 2) + "\n", "application/json");
+  push(last, text.length);
+  return toks;
+}
+
+/** @param {string} text @returns {string[]} */
+function tokens(text) {
+  return tokenizeWithSpans(text).map((t) => t.norm);
+}
+
+function multiset(xs) {
+  const m = new Map();
+  for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
+  return m;
+}
+
+/**
+ * Slide windows of ~quote length (± padding) over the source and return the
+ * best-scoring window. Purely deterministic; O(sourceTokens * windowSizes).
+ * @param {string} source @param {string} quote @param {number} [pad]
+ * @returns {{ score: number, coverage: number, start: number, end: number, verbatim: string } | null}
+ */
+function bestWindow(source, quote, pad = 6) {
+  const S = tokenizeWithSpans(source);
+  const q = tokens(quote);
+  if (S.length === 0 || q.length === 0) return null;
+  const qSet = multiset(q);
+  let best = null;
+  for (let size = Math.max(1, q.length - 2); size <= q.length + pad; size++) {
+    for (let st = 0; st + size <= S.length; st++) {
+      let inter = 0;
+      const wSet = multiset(S.slice(st, st + size).map((t) => t.norm));
+      for (const [tok, c] of qSet) inter += Math.min(c, wSet.get(tok) ?? 0);
+      const union = q.length + size - inter;
+      const score = union === 0 ? 1 : inter / union;
+      const coverage = inter / q.length;
+      if (best === null || score > best.score || (score === best.score && coverage > best.coverage)) {
+        best = {
+          score,
+          coverage,
+          start: S[st].start,
+          end: S[st + size - 1].end,
+          verbatim: source.slice(S[st].start, S[st + size - 1].end),
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/** Whitespace-tolerant verbatim containment check on the raw strings.
+ * @param {string} source @param {string} quote @returns {boolean} */
+function rawContains(source, quote) {
+  const q = quote.trim();
+  return q.length > 0 && source.includes(q);
+}
+
+/** Jaccard similarity between token multisets of two texts.
+ * @param {string} a @param {string} b @returns {number} */
+function similarity(a, b) {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (ta.length === 0 && tb.length === 0) return 1;
+  if (ta.length === 0 || tb.length === 0) return 0;
+  const ma = multiset(ta);
+  const mb = multiset(tb);
+  let inter = 0;
+  for (const [t, c] of ma) inter += Math.min(c, mb.get(t) ?? 0);
+  return inter / (ta.length + tb.length - inter);
+}
+
+/** Numeric token: digits with an optional interior decimal point ("90", "5.2").
+ * @param {string} t @returns {boolean} */
+function isNumericToken(t) {
+  return /^\d+(?:\.\d+)?$/.test(t);
+}
+
+/**
+ * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
+ * the located source span. Any difference is potential material alteration
+ * ("90" -> "120") and must never pass as near-verbatim.
+ * @param {string[]} quote @param {string[]} source
+ * @returns {{ paired: Array<{ quote: string, source: string }>, quoteOnly: string[], sourceOnly: string[] }} */
+function numericMismatches(quote, source) {
+  const qNums = quote.filter(isNumericToken);
+  const sNums = source.filter(isNumericToken);
+  const qCounts = multiset(qNums);
+  const sCounts = multiset(sNums);
+  const qDiff = [];
+  const sDiff = [];
+  for (const [t, c] of qCounts) {
+    const extra = c - (sCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) qDiff.push(t);
+  }
+  for (const [t, c] of sCounts) {
+    const extra = c - (qCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) sDiff.push(t);
+  }
+  const pairedCount = Math.min(qDiff.length, sDiff.length);
+  const paired = [];
+  for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
+  return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
+}
+
+/** Negation tokens: inserting or dropping one flips a quote's meaning.
+ * @type {Set<string>} */
+const NEGATORS = new Set(["not", "no", "never", "none", "neither", "nor", "nobody", "nothing", "nowhere", "cannot"]);
+
+/**
+ * Deterministic negation guard: multiset-diff the negation tokens of quote
+ * vs. the located source span (mirrors numericMismatches). Inserting "not"
+ * into a quote — or silently dropping it — flips meaning, so any divergence
+ * must never pass as near-verbatim.
+ * @param {string[]} quote @param {string[]} source
+ * @returns {{ quoteOnly: string[], sourceOnly: string[] }} */
+function negationDivergence(quote, source) {
+  const qNeg = multiset(quote.filter((t) => NEGATORS.has(t)));
+  const sNeg = multiset(source.filter((t) => NEGATORS.has(t)));
+  const quoteOnly = [];
+  const sourceOnly = [];
+  for (const [t, c] of qNeg) {
+    for (let k = 0; k < c - (sNeg.get(t) ?? 0); k++) quoteOnly.push(t);
+  }
+  for (const [t, c] of sNeg) {
+    for (let k = 0; k < c - (qNeg.get(t) ?? 0); k++) sourceOnly.push(t);
+  }
+  return { quoteOnly, sourceOnly };
+}
+
+/* ============================================================
+ * diff (port of core/diff.ts)
+ * ============================================================ */
+
+/**
+ * Token-level LCS walk (deterministic tie-break: skip quote first).
+ * @param {Tok[]} quote @param {Tok[]} source
+ * @returns {Array<{ type: "equal", q: number, s: number } | { type: "del", s: number } | { type: "ins", q: number }>} */
+function lcsWalk(quote, source) {
+  const n = quote.length;
+  const m = source.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = quote[i].norm === source[j].norm ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const steps = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (quote[i].norm === source[j].norm) {
+      steps.push({ type: "equal", q: i, s: j });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      // skipping quote[i] preserves the LCS (quote-only token → insert)
+      steps.push({ type: "ins", q: i });
+      i++;
+    } else {
+      // skipping source[j] preserves the LCS (source-only token → delete)
+      steps.push({ type: "del", s: j });
+      j++;
+    }
+  }
+  while (j < m) steps.push({ type: "del", s: j++ });
+  while (i < n) steps.push({ type: "ins", q: i++ });
+  return steps;
+}
+
+/** LCS alignment pairs (quote index ↔ source index), in order.
+ * @param {Tok[]} quote @param {Tok[]} source
+ * @returns {Array<{ q: number, s: number }>} */
+function alignTokens(quote, source) {
+  return lcsWalk(quote, source)
+    .filter((st) => st.type === "equal")
+    .map((st) => ({ q: st.q, s: st.s }));
+}
+
+/** Grouped diff ops; consecutive del+ins runs merge into a single replace.
+ * @param {Tok[]} quote @param {Tok[]} source */
+function diffTokens(quote, source) {
+  const steps = lcsWalk(quote, source);
+  const ops = [];
+  let equalRun = [];
+  let delRun = [];
+  let insRun = [];
+
+  const flushEqual = () => {
+    if (equalRun.length > 0) {
+      ops.push({ op: "equal", source: equalRun });
+      equalRun = [];
+    }
+  };
+  const flushChange = () => {
+    if (delRun.length === 0 && insRun.length === 0) return;
+    flushEqual();
+    if (delRun.length > 0 && insRun.length > 0) {
+      ops.push({
+        op: "replace",
+        quote: insRun.map((t) => t.norm),
+        source: delRun.map((t) => t.norm),
+        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
+      });
+    } else if (delRun.length > 0) {
+      ops.push({
+        op: "delete",
+        source: delRun.map((t) => t.norm),
+        sourceSpan: { start: delRun[0].start, end: delRun[delRun.length - 1].end },
+      });
+    } else {
+      ops.push({ op: "insert", quote: insRun.map((t) => t.norm) });
+    }
+    delRun = [];
+    insRun = [];
+  };
+
+  for (const st of steps) {
+    if (st.type === "equal") {
+      flushChange();
+      equalRun.push(source[st.s].norm);
+    } else if (st.type === "del") {
+      delRun.push(source[st.s]);
+    } else {
+      insRun.push(quote[st.q]);
+    }
+  }
+  flushChange();
+  flushEqual();
+  return ops;
+}
+
+/** Inline marks for non-equal ops, e.g. `del:"on the document" sub:"120"->"90"`.
+ * @param {any[]} ops @returns {string} */
+function formatDiffOps(ops) {
+  return ops
+    .filter((o) => o.op !== "equal")
+    .map((o) => {
+      switch (o.op) {
+        case "delete":
+          return `del:"${o.source.join(" ")}"`;
+        case "insert":
+          return `ins:"${o.quote.join(" ")}"`;
+        case "replace":
+          return `sub:"${o.quote.join(" ")}"->"${o.source.join(" ")}"`;
+      }
+    })
+    .join(" ");
+}
+
+/* ============================================================
+ * pinpoint (port of core/pinpoint.ts)
+ * ============================================================ */
+
+const NUM = "[0-9]+(?:\\.[0-9]+)*";
+const SEC_RANGE = new RegExp(`^(?:§§|secs\\.|sections?)\\s*(${NUM})\\s*[-–—]\\s*(${NUM})$`, "i");
+const SEC_SINGLE = new RegExp(`^(?:§+|secs?\\.|sections?)\\s*(${NUM})$`, "i");
+const ART = new RegExp(`^art(?:icle)?\\.?\\s*(${NUM})$`, "i");
+const CL = new RegExp(`^cl(?:ause)?\\.?\\s*(${NUM})$`, "i");
+
+/**
+ * Pinpoint citation parsing: "p. 12", "pp. 12-13", "§ 5.2", "¶ 8", "at 123",
+ * plus v2 forms: transcript page:line ("Tr. 12:4", "12:4-12:8"), ranges
+ * ("§§ 5-6", "¶¶ 7-8"), "id. at 123", "n. 12", "art. 3", "cl. 8".
+ * Deterministic, dependency-free. Unparseable strings return null (never guessed).
+ * @param {string} raw
+ * @returns {any} Pinpoint | null
+ */
+function parsePinpoint(raw) {
+  const s = raw.trim();
+  let m;
+  if ((m = s.match(/^id\.\s+at\s+(\d+)$/i))) return { kind: "page", from: Number(m[1]) };
+  if ((m = s.match(/^id\.\s+at\s+(\d+):(\d+)$/i))) return { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
+  if ((m = s.match(/^(?:tr\.|transcript)?\s*(\d+):(\d+)(?:\s*[-–—]\s*(?:(\d+):)?(\d+))?$/i))) {
+    const pl = { kind: "page-line", page: Number(m[1]), lineFrom: Number(m[2]) };
+    if (m[4] !== undefined) {
+      pl.lineTo = Number(m[4]);
+      if (m[3] !== undefined) pl.pageTo = Number(m[3]);
+    }
+    return pl;
+  }
+  if ((m = s.match(/^pp?\.\s*(\d+)(?:\s*[-–—to]+\s*(\d+))?$/i))) {
+    const page = { kind: "page", from: Number(m[1]) };
+    if (m[2] !== undefined) page.to = Number(m[2]);
+    return page;
+  }
+  if ((m = s.match(/^at\s+(\d+)$/i))) {
+    return { kind: "page", from: Number(m[1]) };
+  }
+  if ((m = s.match(SEC_RANGE))) {
+    return { kind: "section", label: m[1], to: m[2] };
+  }
+  if ((m = s.match(SEC_SINGLE))) {
+    return { kind: "section", label: m[1] };
+  }
+  if ((m = s.match(/^(?:¶¶|paras\.|paragraphs?)\s*(\d+)\s*[-–—]\s*(\d+)$/i))) {
+    return { kind: "paragraph", number: Number(m[1]), to: Number(m[2]) };
+  }
+  if ((m = s.match(/^(?:¶+|paras?\.|paragraphs?)\s*(\d+)$/i))) {
+    return { kind: "paragraph", number: Number(m[1]) };
+  }
+  if ((m = s.match(/^(?:n\.|note)\s*(\d+)$/i))) return { kind: "footnote", number: Number(m[1]) };
+  if ((m = s.match(ART))) return { kind: "article", label: m[1] };
+  if ((m = s.match(CL))) return { kind: "clause", label: m[1] };
+  return null;
+}
+
+/** @param {any} p @returns {string} */
+function formatPinpoint(p) {
+  switch (p.kind) {
+    case "page":
+      return p.to !== undefined ? `pp. ${p.from}-${p.to}` : `p. ${p.from}`;
+    case "page-line":
+      if (p.pageTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.pageTo}:${p.lineTo}`;
+      if (p.lineTo !== undefined) return `Tr. ${p.page}:${p.lineFrom}-${p.lineTo}`;
+      return `Tr. ${p.page}:${p.lineFrom}`;
+    case "section":
+      return p.to !== undefined ? `§§ ${p.label}-${p.to}` : `§ ${p.label}`;
+    case "paragraph":
+      return p.to !== undefined ? `¶¶ ${p.number}-${p.to}` : `¶ ${p.number}`;
+    case "footnote":
+      return `n. ${p.number}`;
+    case "article":
+      return `art. ${p.label}`;
+    case "clause":
+      return `cl. ${p.label}`;
+  }
+}
+
+/* ============================================================
+ * extract (port of core/extract.ts)
+ * ============================================================ */
+
+const FOOTNOTE_RE = /^\[(\d+)\]\s+(.+)$/;
+
+/**
+ * Deterministic extractor: pull quoted passages + footnote pinpoints from the
+ * reviewed document's text and resolve each footnote to a source by name/alias.
+ * Unresolvable footnotes and unmarked quotations become warnings, never
+ * fabricated entries.
+ * @param {string} documentText @param {any[]} sources
+ * @returns {{ quotes: any[], warnings: string[] }} */
+function extractQuotes(documentText, sources) {
+  const warnings = [];
+  const footnotes = new Map();
+  const bodyLines = [];
+  for (const line of documentText.split("\n")) {
+    const m = line.match(FOOTNOTE_RE);
+    if (m) footnotes.set(Number(m[1]), m[2].trim());
+    else bodyLines.push(line);
+  }
+  const bodyText = bodyLines.join("\n");
+
+  const resolved = new Map();
+  for (const [n, noteText] of footnotes) {
+    const lower = noteText.toLowerCase();
+    let best = null;
+    for (const src of sources) {
+      for (const name of [src.name, ...(src.aliases ?? [])]) {
+        const idx = lower.indexOf(name.toLowerCase());
+        if (idx >= 0 && (best === null || name.length > best.len)) {
+          best = { id: src.id, len: name.length, end: idx + name.length };
+        }
+      }
+    }
+    if (!best) {
+      warnings.push(`footnote ${n}: no matching source for "${noteText}"`);
+      continue;
+    }
+    let rest = noteText.slice(best.end).trim();
+    if (rest.startsWith(",")) rest = rest.slice(1).trim();
+    if (rest.endsWith(".")) rest = rest.slice(0, -1);
+    if (rest.length > 0) resolved.set(n, { sourceId: best.id, pinpoint: rest });
+    else resolved.set(n, { sourceId: best.id });
+  }
+
+  const quotes = [];
+  const QUOTE_RE = /["“]([^"”“\n]+)["”]\s*\[(\d+)\]/g;
+  let qm;
+  while ((qm = QUOTE_RE.exec(bodyText)) !== null) {
+    const text = qm[1].trim();
+    const n = Number(qm[2]);
+    const r = resolved.get(n);
+    if (!r) {
+      warnings.push(`footnote ${n}: quoted passage has no resolvable footnote`);
+      continue;
+    }
+    const entry = { id: `Q${n}`, text, sourceId: r.sourceId };
+    if (r.pinpoint !== undefined) entry.pinpoint = r.pinpoint;
+    quotes.push(entry);
+  }
+
+  const UNMARKED_RE = /["“]([^"”“\n]{15,})["”](?!\s*\[\d+\])/g;
+  let um;
+  while ((um = UNMARKED_RE.exec(bodyText)) !== null) {
+    const t = um[1].trim();
+    warnings.push(`unmarked quotation: "${t.length > 40 ? t.slice(0, 40) + "…" : t}"`);
+  }
+
+  return { quotes, warnings };
+}
+
+/* ============================================================
+ * citecheck (port of core/citecheck.ts)
+ * ============================================================ */
+
+function buildDoc(doc) {
+  const segments = [];
+  let full = "";
+  const append = (text) => {
+    if (full.length > 0) full += "\n";
+    const start = full.length;
+    full += text;
+    return start;
+  };
+  if (doc.text !== undefined) append(doc.text);
+  const pageList = (doc.pages ?? []).map((p) => ({ kind: "page", label: String(p.number), text: p.text }));
+  const secList = (doc.sections ?? []).map((p) => ({ kind: "section", label: p.label, text: p.text }));
+  const paraList = (doc.paragraphs ?? []).map((p) => ({ kind: "paragraph", label: String(p.number), text: p.text }));
+  for (const seg of [...pageList, ...secList, ...paraList]) {
+    const start = append(seg.text);
+    segments.push({ kind: seg.kind, label: seg.label, start, end: full.length });
+  }
+  return { doc, fullText: full, toks: tokenizeWithSpans(full), segments };
+}
+
+function segmentAt(built, char) {
+  for (const seg of built.segments) {
+    if (char >= seg.start && char < seg.end) return seg;
+  }
+  return null;
+}
+
+function anchorFromWindow(built, useWin) {
+  if (!useWin) return null;
+  const seg = segmentAt(built, useWin.start);
+  return {
+    sourceId: built.doc.id,
+    sourceName: built.doc.name,
+    segmentKind: seg?.kind ?? null,
+    segmentLabel: seg?.label ?? null,
+    charStart: useWin.start,
+    charEnd: useWin.end,
+    verbatim: useWin.verbatim,
+  };
+}
+
+/**
+ * Near-verbatim anchor: LCS-align the quote against the segment containing the
+ * best window, then extend the span to the end of that sentence, so dropped
+ * tail tokens stay inside the anchor and surface in the diff.
+ */
+function alignedAnchor(built, quoteToks, win) {
+  if (!win) return { anchor: null, diff: null };
+  const seg = segmentAt(built, win.start);
+  const regionEnd = seg ? seg.end : built.fullText.length;
+  // region starts at the best window (never before it) so early duplicate
+  // tokens from a preceding sentence cannot capture the alignment
+  const wsIdx = built.toks.findIndex((t) => t.start >= win.start);
+  const regionToks = wsIdx < 0 ? [] : built.toks.filter((t, idx) => idx >= wsIdx && t.end <= regionEnd);
+  const pairs = alignTokens(quoteToks, regionToks);
+  if (pairs.length === 0) {
+    const fallback = anchorFromWindow(built, win);
+    return { anchor: fallback, diff: fallback ? diffTokens(quoteToks, tokenizeWithSpans(fallback.verbatim)) : null };
+  }
+  const first = regionToks[pairs[0].s];
+  const lastIdx = pairs[pairs.length - 1].s;
+  let endIdx = lastIdx;
+  for (let j = lastIdx + 1; j < regionToks.length && j <= lastIdx + 30; j++) {
+    const gap = built.fullText.slice(regionToks[j - 1].end, regionToks[j].start);
+    if (/[.!?\n]/.test(gap)) break; // sentence (or line) already ended
+    endIdx = j;
+  }
+  const endTok = regionToks[endIdx];
+  const anchorSeg = segmentAt(built, first.start);
+  const anchor = {
+    sourceId: built.doc.id,
+    sourceName: built.doc.name,
+    segmentKind: anchorSeg?.kind ?? null,
+    segmentLabel: anchorSeg?.label ?? null,
+    charStart: first.start,
+    charEnd: endTok.end,
+    verbatim: built.fullText.slice(first.start, endTok.end),
+  };
+  return { anchor, diff: diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim)) };
+}
+
+function segmentKindOf(p) {
+  if (p.kind === "page" || p.kind === "page-line") return "page";
+  if (p.kind === "section") return "section";
+  if (p.kind === "paragraph") return "paragraph";
+  return null; // footnote / article / clause — not modeled
+}
+
+function checkPinpoint(quote, anchor, built) {
+  if (quote.pinpoint === undefined) return null;
+  const parsed = parsePinpoint(quote.pinpoint);
+  if (parsed === null) {
+    return { raw: quote.pinpoint, parsed: null, status: "unparseable", detail: "pinpoint syntax not recognized" };
+  }
+  const kindWord = segmentKindOf(parsed);
+  if (kindWord === null) {
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `core does not model ${parsed.kind} segments, so the pinpoint cannot be validated`,
+    };
+  }
+  if (anchor === null || anchor.segmentKind === null) {
+    if (built === null) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "source not provided, so the pinpoint cannot be validated" };
+    }
+    if (!built.segments.some((s) => s.kind === kindWord)) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: `source does not declare ${kindWord} segments, so the pinpoint cannot be validated`,
+      };
+    }
+    if (anchor === null) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
+    }
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `the quote is not located in a segmented part of the source, so the ${kindWord} pinpoint cannot be validated`,
+    };
+  }
+  if (parsed.kind !== anchor.segmentKind && parsed.kind !== "page-line") {
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: "unverifiable",
+      detail: `the quote is located in a ${anchor.segmentKind} segment, so the ${kindWord} pinpoint cannot be validated`,
+    };
+  }
+  if (parsed.kind === "page-line") {
+    if (anchor.segmentKind !== "page" || built === null) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: "the quote is not located in a page segment, so the page:line pinpoint cannot be validated",
+      };
+    }
+    const anchorPage = Number(anchor.segmentLabel);
+    const pageFrom = parsed.page;
+    const pageTo = parsed.pageTo ?? parsed.page;
+    if (anchorPage < pageFrom || anchorPage > pageTo) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "mismatch",
+        detail: `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage}`,
+      };
+    }
+    const seg = segmentAt(built, anchor.charStart);
+    if (!seg) {
+      return { raw: quote.pinpoint, parsed, status: "unverifiable", detail: "quote not located in the source, so the pinpoint cannot be validated" };
+    }
+    const pageText = built.fullText.slice(seg.start, seg.end);
+    const lineTo = parsed.lineTo ?? parsed.lineFrom;
+    if (!pageText.includes("\n")) {
+      return {
+        raw: quote.pinpoint,
+        parsed,
+        status: "unverifiable",
+        detail: `page ${anchorPage} is not line-segmented, so line ${parsed.lineFrom} cannot be validated`,
+      };
+    }
+    const line = pageText.slice(0, anchor.charStart - seg.start).split("\n").length;
+    const ok = line >= parsed.lineFrom && line <= lineTo;
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located on page ${anchorPage} line ${line}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on page ${anchorPage} line ${line}`,
+    };
+  }
+  if (parsed.kind === "page" && anchor.segmentKind === "page") {
+    const citedFrom = parsed.from;
+    const citedTo = parsed.to ?? parsed.from;
+    const anchorPage = Number(anchor.segmentLabel);
+    const ok = anchorPage >= citedFrom && anchorPage <= citedTo;
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located on ${anchor.segmentLabel}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located on ${anchor.segmentLabel}`,
+    };
+  }
+  if (parsed.kind === "section" && anchor.segmentKind === "section") {
+    let ok;
+    if (parsed.to === undefined) {
+      ok = anchor.segmentLabel === parsed.label;
+    } else {
+      const fromNum = Number(parsed.label);
+      const toNum = Number(parsed.to);
+      const aNum = Number(anchor.segmentLabel);
+      ok = !Number.isNaN(fromNum) && !Number.isNaN(toNum) && !Number.isNaN(aNum) && aNum >= fromNum && aNum <= toNum;
+    }
+    return {
+      raw: quote.pinpoint,
+      parsed,
+      status: ok ? "ok" : "mismatch",
+      detail: ok
+        ? `quote is located in § ${anchor.segmentLabel}`
+        : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in § ${anchor.segmentLabel}`,
+    };
+  }
+  // paragraph
+  const anchorNum = Number(anchor.segmentLabel);
+  const ok = parsed.to !== undefined ? anchorNum >= parsed.number && anchorNum <= parsed.to : anchorNum === parsed.number;
+  return {
+    raw: quote.pinpoint,
+    parsed,
+    status: ok ? "ok" : "mismatch",
+    detail: ok
+      ? `quote is located in ¶ ${anchor.segmentLabel}`
+      : `pinpoint says ${formatPinpoint(parsed)} but the quote is located in ¶ ${anchor.segmentLabel}`,
+  };
+}
+
+/**
+ * Run the deterministic cite check over the input's quotes (or over quotes
+ * extracted from document.text when none are supplied).
+ * @param {{ document: { name: string, text?: string }, sources: any[], quotes?: any[], fuzzyThreshold?: number }} input
+ * @returns {any} CiteCheckReport
+ */
+function runCiteCheck(input) {
+  const fuzzyThreshold = input.fuzzyThreshold ?? 0.7;
+  const byId = new Map();
+  for (const doc of input.sources) byId.set(doc.id, buildDoc(doc));
+
+  let quoteList;
+  let extractionWarnings;
+  if (input.quotes !== undefined) {
+    quoteList = input.quotes;
+  } else if (input.document.text !== undefined) {
+    const extracted = extractQuotes(input.document.text, input.sources);
+    quoteList = extracted.quotes;
+    extractionWarnings = extracted.warnings;
+  } else {
+    quoteList = [];
+  }
+
+  const results = quoteList.map((quote) => {
+    const notes = [];
+    const built = byId.get(quote.sourceId);
+    const base = {
+      id: quote.id,
+      ...(quote.proposition !== undefined ? { proposition: quote.proposition } : {}),
+    };
+    if (!built) {
+      return {
+        ...base,
+        classification: "not_found",
+        similarity: 0,
+        coverage: 0,
+        anchor: null,
+        pinpoint: checkPinpoint(quote, null, null),
+        bestCandidate: null,
+        diff: null,
+        notes: [`source "${quote.sourceId}" not provided`],
+      };
+    }
+
+    const quoteToks = tokenizeWithSpans(quote.text);
+    const win = bestWindow(built.fullText, quote.text);
+    const similarity = win?.score ?? 0;
+    const coverage = win?.coverage ?? 0;
+
+    let classification;
+    let anchor = null;
+    let diff = null;
+
+    if (rawContains(built.fullText, quote.text)) {
+      classification = "exact";
+      // the window search can tie on a case/punctuation-drifted look-alike;
+      // re-verify byte equality and fall back to the literal indexOf position
+      const exactWin = win !== null && win.verbatim === quote.text.trim() ? win : locateRaw(built.fullText, quote.text);
+      anchor = anchorFromWindow(built, exactWin);
+      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+    } else if (similarity >= 0.95 && coverage >= 0.95) {
+      classification = "normalized";
+      notes.push("matches modulo case/punctuation/whitespace");
+      const aligned = alignedAnchor(built, quoteToks, win);
+      anchor = aligned.anchor;
+      diff = aligned.diff;
+      // omission detection: pure deletions from the located span
+      const hasEllipsis = /\.\.\.|…/.test(quote.text);
+      if (anchor && diff) {
+        for (const op of diff) {
+          if (op.op !== "delete") continue;
+          // diff spans are relative to anchor.verbatim (the diffed string)
+          const omitted = anchor.verbatim.slice(op.sourceSpan.start, op.sourceSpan.end);
+          notes.push(hasEllipsis ? `omits "${omitted}" — explicit ellipsis, accepted` : `omits "${omitted}" without an ellipsis`);
+        }
+        // number guard: altered digits never pass as near-verbatim
+        const mism = numericMismatches(
+          quoteToks.map((t) => t.norm),
+          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
+        );
+        for (const p of mism.paired) notes.push(`quote "${p.quote}" vs source "${p.source}"`);
+        for (const q of mism.quoteOnly) notes.push(`quote "${q}" not found in the located source text`);
+        for (const s of mism.sourceOnly) notes.push(`source "${s}" appears in the located text but not in the quote`);
+        if (mism.paired.length + mism.quoteOnly.length > 0) {
+          classification = "fuzzy";
+          notes.push("number alteration caps the classification at fuzzy — requires human review");
+        }
+        // insert guard: tokens present in the quote but absent from the located span
+        let insertCapped = false;
+        for (const op of diff) {
+          if (op.op !== "insert") continue;
+          notes.push(`inserts "${op.quote.join(" ")}" — absent from the located source text`);
+          insertCapped = true;
+        }
+        if (insertCapped) {
+          classification = "fuzzy";
+          notes.push("inserted tokens cap the classification at fuzzy — requires human review");
+        }
+        // negation guard: an inserted or dropped negator flips meaning
+        const neg = negationDivergence(
+          quoteToks.map((t) => t.norm),
+          tokenizeWithSpans(anchor.verbatim).map((t) => t.norm),
+        );
+        for (const q of neg.quoteOnly) notes.push(`negation "${q}" in the quote has no counterpart in the located source text — meaning may be flipped`);
+        for (const s of neg.sourceOnly) notes.push(`negation "${s}" in the located source text has no counterpart in the quote — meaning may be flipped`);
+        if (neg.quoteOnly.length + neg.sourceOnly.length > 0) {
+          classification = "fuzzy";
+          notes.push("negation divergence caps the classification at fuzzy — requires human review");
+        }
+      }
+    } else if (similarity >= fuzzyThreshold && coverage >= 0.6) {
+      classification = "fuzzy";
+      notes.push("substantial overlap but not verbatim — requires human review");
+      anchor = anchorFromWindow(built, win);
+      if (anchor) diff = diffTokens(quoteToks, tokenizeWithSpans(anchor.verbatim));
+    } else {
+      classification = "not_found";
+      anchor = anchorFromWindow(built, win); // kept as bestCandidate evidence below
+      if (win) notes.push(`best candidate similarity ${similarity.toFixed(2)} below threshold ${fuzzyThreshold}`);
+    }
+
+    const bestCandidate = classification === "not_found" ? anchor : null;
+    if (classification === "not_found") anchor = null;
+
+    const pinpoint = checkPinpoint(quote, anchor, built);
+    if (pinpoint?.status === "mismatch") notes.push(`PINPOINT ISSUE: ${pinpoint.detail}`);
+    if (quote.proposition !== undefined && classification !== "not_found") {
+      notes.push("proposition support is an LLM/human judgment — not evaluated by this core");
+    }
+
+    return { ...base, classification, similarity, coverage, anchor, bestCandidate, pinpoint, diff, notes };
+  });
+
+  const count = (c) => results.filter((r) => r.classification === c).length;
+  const summary = {
+    total: results.length,
+    exact: count("exact"),
+    normalized: count("normalized"),
+    fuzzy: count("fuzzy"),
+    not_found: count("not_found"),
+    checked: results.length - count("not_found"),
+    couldNotCheck: count("not_found"),
+    unparseablePinpoints: results.filter((r) => r.pinpoint?.status === "unparseable").length,
+    pinpointIssues: results.filter((r) => r.pinpoint?.status === "mismatch").length,
+  };
+  const report = { documentName: input.document.name, summary, results };
+  if (extractionWarnings !== undefined) report.extractionWarnings = extractionWarnings;
+  return report;
+}
+
+/** Anchor for an exactly-contained quote (window search also finds these; kept precise). */
+function locateRaw(source, quote) {
+  const idx = source.indexOf(quote.trim());
+  if (idx < 0) return null;
+  return { score: 1, coverage: 1, start: idx, end: idx + quote.trim().length, verbatim: source.slice(idx, idx + quote.trim().length) };
+}
+
+/** Markdown report — deterministic rendering of a CiteCheckReport.
+ * @param {any} report @returns {string} */
+function renderReport(report) {
+  const s = report.summary;
+  const lines = [];
+  lines.push(`# Cite check — ${report.documentName}`);
+  lines.push("");
+  lines.push(
+    `**Checked ${s.checked} of ${s.total} quotes:** ${s.exact} exact · ${s.normalized} normalized · ${s.fuzzy} fuzzy · ` +
+      `${s.couldNotCheck} not checked (never reported as "confirmed") · ${s.unparseablePinpoints} unparseable pinpoint(s) · ` +
+      `${s.pinpointIssues} pinpoint issue(s)`,
+  );
+  if (report.extractionWarnings !== undefined && report.extractionWarnings.length > 0) {
+    lines.push("");
+    for (const w of report.extractionWarnings) lines.push(`- extraction: ${w}`);
+  }
+  lines.push("");
+  lines.push("| Quote | Verdict | Similarity | Anchor | Pinpoint |");
+  lines.push("|---|---|---|---|---|");
+  for (const r of report.results) {
+    const anchor = r.anchor
+      ? `${r.anchor.sourceName}${r.anchor.segmentLabel !== null ? `, ${r.anchor.segmentKind} ${r.anchor.segmentLabel}` : ""} (chars ${r.anchor.charStart}–${r.anchor.charEnd})`
+      : "—";
+    const pin = r.pinpoint ? `${r.pinpoint.raw}: ${r.pinpoint.status}` : "—";
+    lines.push(`| ${r.id} | ${r.classification} | ${r.similarity.toFixed(2)} | ${anchor} | ${pin} |`);
+  }
+  lines.push("");
+  for (const r of report.results) {
+    lines.push(`## ${r.id} — ${r.classification}`);
+    lines.push("");
+    if (r.anchor) {
+      lines.push(`> ${r.anchor.verbatim.replace(/\n/g, " ")}`);
+      lines.push("");
+      lines.push(`Anchored at ${r.anchor.sourceName} chars ${r.anchor.charStart}–${r.anchor.charEnd}.`);
+    } else {
+      lines.push("No locating anchor in the provided sources.");
+    }
+    const marks = r.diff ? formatDiffOps(r.diff) : "";
+    if (marks) lines.push(`Token diff: ${marks}`);
+    if (r.pinpoint) lines.push(`Pinpoint: ${r.pinpoint.raw} — ${r.pinpoint.status} (${r.pinpoint.detail}).`);
+    for (const n of r.notes) lines.push(`- ${n}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+import EXAMPLE from "data:text/javascript;base64,LyoqIEV4YW1wbGUgZGF0YSBmb3IgdGhlIHN0YW5kYWxvbmUgZGVtbyDigJQgc2FtZSBhcyBleGFtcGxlcy9pbnB1dC5qc29uIChmaWN0aW9uYWwpLiAqLwpleHBvcnQgZGVmYXVsdCB7CiAgImRvY3VtZW50IjogeyAibmFtZSI6ICJBcHBlbGxhbnQncyBPcGVuaW5nIEJyaWVmIOKAlCBIYWxjeW9uIER5bmFtaWNzLCBJbmMuIHYuIE1lcmlkaWFuIEZyZWlnaHQgU3lzdGVtcywgTExDIChOby4gMjYtMTE4NywgZmljdGlvbmFsKSIgfSwKICAiZnV6enlUaHJlc2hvbGQiOiAwLjcsCiAgInNvdXJjZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJuYW1lIjogIkRlcG9zaXRpb24gb2YgU2FuZHJhIE9rYWZvciAoSmFuLiAxNCwgMjAyNikiLAogICAgICAicGFnZXMiOiBbCiAgICAgICAgeyAibnVtYmVyIjogMTEsICJ0ZXh0IjogIlEuIFdoYXQgaGFwcGVuZWQgYXQgdGhlIGxvYWRpbmcgZG9jaz8gQS4gVGhlIHRyYWlsZXIgYXJyaXZlZCBhdCB0aGUgZG9jayBhcm91bmQgNCBwLm0uIGFuZCB0aGUgc2VhbCB3YXMgYWxyZWFkeSBicm9rZW4gd2hlbiBvdXIgdGVhbSBpbnNwZWN0ZWQgaXQgYXQgNDoxMCBwLm0uIiB9LAogICAgICAgIHsgIm51bWJlciI6IDEyLCAidGV4dCI6ICJRLiBXaG8gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0PyBBLiBNci4gQmVsdHJhbiBzaWduZWQgdGhlIGRlbGl2ZXJ5IHJlY2VpcHQgYXQgNDoyMCBwLm0uIHdpdGhvdXQgbm90aW5nIGFueSBleGNlcHRpb24gb24gdGhlIGRvY3VtZW50LiIgfSwKICAgICAgICB7ICJudW1iZXIiOiAxNSwgInRleHQiOiAiUS4gV2FzIHRoZSBjYXJnbyBldmVyIHdlaWdoZWQ/IEEuIFdlIHdlaWdoZWQgdGhlIHBhbGxldHMgdGhlIG5leHQgbW9ybmluZyBhbmQgZm91bmQgYSBzaG9ydGZhbGwgb2YgMzQwIGtpbG9ncmFtcyBhZ2FpbnN0IHRoZSBtYW5pZmVzdC4gVGhlIG1hbmlmZXN0IGl0c2VsZiBsaXN0ZWQgMTIsNDgwIGtpbG9ncmFtcyBvZiBmcmVpZ2h0IG9uIHRoZSBvdXRib3VuZCBsZWcsIGFuZCB0aGUgcmV3ZWlnaCBhdCB0aGUgTWlsbGJyb29rIHRlcm1pbmFsIHNob3dlZCBvbmx5IDEyLDE0MCBraWxvZ3JhbXMsIGEgZGlmZmVyZW5jZSB0aGUgaW50YWtlIHRlYW0gZG9jdW1lbnRlZCBpbiB0aGUgb3ZlcmZsb3cgbG9nIGFuZCByZXBvcnRlZCB0byB0aGUgZGlzcGF0Y2ggb2ZmaWNlIHRoYXQgc2FtZSBhZnRlcm5vb24uIiB9CiAgICAgIF0KICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJtc2EiLAogICAgICAibmFtZSI6ICJNYXN0ZXIgU2VydmljZXMgQWdyZWVtZW50IChIYWxjeW9u4oCTTWVyaWRpYW4sIDIwMjQpIiwKICAgICAgInNlY3Rpb25zIjogWwogICAgICAgIHsgImxhYmVsIjogIjUuMiIsICJ0ZXh0IjogIkN1c3RvbWVyIG1heSB0ZXJtaW5hdGUgdGhpcyBBZ3JlZW1lbnQgZm9yIGNvbnZlbmllbmNlIHVwb24gbmluZXR5ICg5MCkgZGF5cyBwcmlvciB3cml0dGVuIG5vdGljZS4iIH0sCiAgICAgICAgeyAibGFiZWwiOiAiOS4xIiwgInRleHQiOiAiTmVpdGhlciBwYXJ0eSBzaGFsbCBiZSBsaWFibGUgZm9yIGluZGlyZWN0IG9yIGNvbnNlcXVlbnRpYWwgZGFtYWdlcywgaW5jbHVkaW5nIGxvc3QgcHJvZml0cy4iIH0KICAgICAgXQogICAgfSwKICAgIHsKICAgICAgImlkIjogIm5haXItZGVjbCIsCiAgICAgICJuYW1lIjogIkRlY2xhcmF0aW9uIG9mIFByaXlhIE5haXIgKEZlYi4gMiwgMjAyNikiLAogICAgICAicGFyYWdyYXBocyI6IFsKICAgICAgICB7ICJudW1iZXIiOiA3LCAidGV4dCI6ICJPbiB0aGUgYWZ0ZXJub29uIG9mIE1hcmNoIDMsIDIwMjUsIEkgcGhvdG9ncmFwaGVkIHRoZSBwYWxsZXRzIGJlZm9yZSB0aGV5IHdlcmUgcmVtb3ZlZCBmcm9tIHRoZSBkb2NrIGFyZWEuIiB9LAogICAgICAgIHsgIm51bWJlciI6IDgsICJ0ZXh0IjogIlRoZSBwaG90b2dyYXBocyBzaG93IHdhdGVyIHN0YWluaW5nIG9uIGZvdXIgb2YgdGhlIGVsZXZlbiBwYWxsZXRzIGRlbGl2ZXJlZCB1bmRlciB0aGlzIHNoaXBtZW50LiIgfQogICAgICBdCiAgICB9CiAgXSwKICAicXVvdGVzIjogWwogICAgewogICAgICAiaWQiOiAiUTEgKGJyaWVmIHAuIDYpIiwKICAgICAgInRleHQiOiAiTXIuIEJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiB3aXRob3V0IG5vdGluZyBhbnkgZXhjZXB0aW9uIG9uIHRoZSBkb2N1bWVudC4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTIiLAogICAgICAicHJvcG9zaXRpb24iOiAiVGhlIGRlbGl2ZXJ5IHdhcyBhY2NlcHRlZCB3aXRob3V0IGV4Y2VwdGlvbiwgZGVmZWF0aW5nIHRoZSBub3RpY2UgZGVmZW5zZS4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTIgKGJyaWVmIHAuIDcpIiwKICAgICAgInRleHQiOiAibXIuIGJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiDigJQgd2l0aG91dCBub3RpbmcgYW55IGV4Y2VwdGlvbiIsCiAgICAgICJzb3VyY2VJZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJwaW5wb2ludCI6ICJwLiAxMiIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJTYW1lIHJlY2VpcHQgZmFjdHMsIHF1b3Rpbmcgd2l0aCBhbHRlcmVkIHB1bmN0dWF0aW9uLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRMyAoYnJpZWYgcC4gOSkiLAogICAgICAidGV4dCI6ICJNci4gQmVsdHJhbiBzaWduZWQgdGhlIGRlbGl2ZXJ5IHJlY2VpcHQgd2l0aG91dCBub3RpbmcgYW55IGV4Y2VwdGlvbiBvbiB0aGUgZG9jdW1lbnQgYXQgdGhlIGxvYWRpbmcgZG9jayIsCiAgICAgICJzb3VyY2VJZCI6ICJva2Fmb3ItZGVwbyIsCiAgICAgICJwaW5wb2ludCI6ICJwLiAxMiIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJSZWNlaXB0IHNpZ25lZCB3aXRob3V0IGV4Y2VwdGlvbiAocGFyYXBocmFzZWQgaW4gdGhlIGJyaWVmKS4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTQgKGJyaWVmIHAuIDExKSIsCiAgICAgICJ0ZXh0IjogIlRoZSB0cmFpbGVyIHdhcyB1bmxvYWRlZCBieSBhIG5pZ2h0IGNyZXcgd2hpbGUgdGhlIGRyaXZlciB3YWl0ZWQgb3V0c2lkZSB0aGUgZ2F0ZS4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTIiLAogICAgICAicHJvcG9zaXRpb24iOiAiVW5zdXBlcnZpc2VkIHVubG9hZGluZyDigJQgbm90aGluZyBpbiB0aGUgY2l0ZWQgZGVwb3NpdGlvbiBzdXBwb3J0cyB0aGlzLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRNSAoYnJpZWYgcC4gMTMpIiwKICAgICAgInRleHQiOiAiTXIuIEJlbHRyYW4gc2lnbmVkIHRoZSBkZWxpdmVyeSByZWNlaXB0IGF0IDQ6MjAgcC5tLiB3aXRob3V0IG5vdGluZyBhbnkgZXhjZXB0aW9uIG9uIHRoZSBkb2N1bWVudC4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTUiLAogICAgICAicHJvcG9zaXRpb24iOiAiQ29ycmVjdCBxdW90ZSwgd3JvbmcgcGFnZSBjaXRlLiIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJRNiAoYnJpZWYgcC4gMTQpIiwKICAgICAgInRleHQiOiAiQ3VzdG9tZXIgbWF5IHRlcm1pbmF0ZSB0aGlzIEFncmVlbWVudCBmb3IgY29udmVuaWVuY2UgdXBvbiBuaW5ldHkgKDkwKSBkYXlzIHByaW9yIHdyaXR0ZW4gbm90aWNlLiIsCiAgICAgICJzb3VyY2VJZCI6ICJtc2EiLAogICAgICAicGlucG9pbnQiOiAiwqcgNS4yIiwKICAgICAgInByb3Bvc2l0aW9uIjogIlRoZSA5MC1kYXkgdGVybWluYXRpb24gcmlnaHQgd2FzIHByZXNlcnZlZC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTcgKGJyaWVmIHAuIDE1KSIsCiAgICAgICJ0ZXh0IjogIk5laXRoZXIgcGFydHkgc2hhbGwgYmUgbGlhYmxlIGZvciBpbmRpcmVjdCBvciBjb25zZXF1ZW50aWFsIGRhbWFnZXMsIGluY2x1ZGluZyBsb3N0IHByb2ZpdHMuIiwKICAgICAgInNvdXJjZUlkIjogIm1zYSIsCiAgICAgICJwaW5wb2ludCI6ICLCpyA1LjIiLAogICAgICAicHJvcG9zaXRpb24iOiAiQ29ycmVjdCBjbGF1c2UgdGV4dCBjaXRlZCB0byB0aGUgd3Jvbmcgc2VjdGlvbi4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTggKGJyaWVmIHAuIDE2KSIsCiAgICAgICJ0ZXh0IjogIlRoZSBwaG90b2dyYXBocyBzaG93IHdhdGVyIHN0YWluaW5nIG9uIGZvdXIgb2YgdGhlIGVsZXZlbiBwYWxsZXRzIGRlbGl2ZXJlZCB1bmRlciB0aGlzIHNoaXBtZW50LiIsCiAgICAgICJzb3VyY2VJZCI6ICJuYWlyLWRlY2wiLAogICAgICAicGlucG9pbnQiOiAiwrYgOCIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJEYW1hZ2Ugd2FzIHZpc2libGUgb24gYXJyaXZhbC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTkgKGJyaWVmIHAuIDE3KSIsCiAgICAgICJ0ZXh0IjogIk1lcmlkaWFuJ3MgbG9naXN0aWNzIG1hbmFnZXIgYWRtaXR0ZWQgaW4gd3JpdGluZyB0aGF0IHRoZSBsb2FkIGxlZnQgdGhlIHRlcm1pbmFsIHNob3J0LiIsCiAgICAgICJzb3VyY2VJZCI6ICJ3ZWJlci1lbWFpbHMiLAogICAgICAicGlucG9pbnQiOiAicC4gMyIsCiAgICAgICJwcm9wb3NpdGlvbiI6ICJTb3VyY2Ugbm90IGluIHRoZSByZWNvcmQgZXhjZXJwdC4iCiAgICB9LAogICAgewogICAgICAiaWQiOiAiUTEwIChicmllZiBwLiAxOCkiLAogICAgICAidGV4dCI6ICJUaGUgbWFuaWZlc3QgaXRzZWxmIGxpc3RlZCAxMiw1ODAga2lsb2dyYW1zIG9mIGZyZWlnaHQgb24gdGhlIG91dGJvdW5kIGxlZywgYW5kIHRoZSByZXdlaWdoIGF0IHRoZSBNaWxsYnJvb2sgdGVybWluYWwgc2hvd2VkIG9ubHkgMTIsMTQwIGtpbG9ncmFtcywgYSBkaWZmZXJlbmNlIHRoZSBpbnRha2UgdGVhbSBkb2N1bWVudGVkIGluIHRoZSBvdmVyZmxvdyBsb2cgYW5kIHJlcG9ydGVkIHRvIHRoZSBkaXNwYXRjaCBvZmZpY2UgdGhhdCBzYW1lIGFmdGVybm9vbi4iLAogICAgICAic291cmNlSWQiOiAib2thZm9yLWRlcG8iLAogICAgICAicGlucG9pbnQiOiAicC4gMTUiLAogICAgICAicHJvcG9zaXRpb24iOiAiVGhlIGJyaWVmJ3MgbWFuaWZlc3QgZmlndXJlIOKAlCBjYXVnaHQgYnkgdGhlIG51bWJlciBndWFyZCAoYWx0ZXJlZCBkaWdpdCkuIgogICAgfQogIF0KfTsK";
+
+/* Vendored browser subset of open-artifacts/_shared/persist.js (createStorage):
+   localStorage wrapper with graceful fallback; append() keeps an append-only log. */
+function probeLocalStorage(){try{const ls=globalThis.localStorage;if(!ls)return null;ls.setItem('__p__','1');const ok=ls.getItem('__p__')==='1';ls.removeItem('__p__');return ok?ls:null}catch{return null}}
+function memoryBackend(){const m=new Map();return{get(k){const v=m.get(k);return v===undefined?null:v.value},set(k,v){m.set(k,{value:JSON.parse(JSON.stringify(v??null))})},remove(k){m.delete(k)},append(k,e){const a=this.entries(k);a.push(e);this.set(k,a)},entries(k){const v=m.get(k);return Array.isArray(v)?v.slice():[]},exportJsonl(k){const a=this.entries(k);return a.map(e=>JSON.stringify(e)).join('\n')+(a.length?'\n':'')}}}
+function localBackend(ns){
+const ls=probeLocalStorage();if(!ls)return memoryBackend();
+const key=(k)=>ns+':'+k;let degraded=false;const mem=memoryBackend();
+return{backendName:'local',
+get(k){if(degraded)return mem.get(k);try{const r=ls.getItem(key(k));return r==null?null:JSON.parse(r)}catch{return null}},
+set(k,v){if(degraded)return mem.set(k,v);try{ls.setItem(key(k),JSON.stringify(v??null))}catch{degraded=true;mem.set(k,v)}},
+remove(k){try{ls.removeItem(key(k))}catch{degraded=true}},
+append(k,e){const a=this.entries(k);a.push(e);this.set(k,a)},
+entries(k){const v=this.get(k);return Array.isArray(v)?v:[]},
+exportJsonl(k){const a=this.entries(k);return a.map(e=>JSON.stringify(e)).join('\n')+(a.length?'\n':'')}}}
+const createStorage=(ns)=>localBackend(ns);
+
+/* ===== demo state ===== */
+const store=createStorage('cc');
+const $=(id)=>document.getElementById(id);
+const esc=(v)=>String(v).replace(/[&<>"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DECISIONS=[["verified","Verify"],["flagged","Flag for attorney"],["corrected","Corrected"]];
+const KIND={page:"Page",section:"§",paragraph:"¶"};
+
+let input=store.get('input')??EXAMPLE;
+let decisions=store.get('decisions')??{};
+let signoff=store.get('signoff')??null;
+let selected=null,filter="all",srcModels=null;
+let bootNotice=null;
+let report;
+try{report=runCiteCheck(input)}
+catch(err){
+/* corrupt persisted state — clear it and boot fresh rather than dying */
+for(const k of ['input','decisions','signoff'])store.remove(k);
+input=EXAMPLE;decisions={};signoff=null;
+report=runCiteCheck(input);
+bootNotice=`Stored demo state was corrupt and has been reset — starting fresh. (${err.message})`;
+}
+
+const live=(m)=>{$('live').textContent=m};
+let toastTimer=null;
+function toast(msg){let t=document.querySelector('.toast');if(!t){t=document.createElement('p');t.className='toast';t.setAttribute('role','status');document.body.appendChild(t)}t.textContent=msg;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.remove(),4000)}
+
+function audit(action,detail,quoteId){store.append('audit',{ts:new Date().toISOString(),actor:"reviewer (demo)",action,...(quoteId?{quoteId}:{}),detail});renderAudit()}
+
+function runCheck(newInput,label){
+let r;try{r=runCiteCheck(newInput)}catch(err){toast("Check failed: "+err.message);live("Check failed: "+err.message);return false}
+report=r;input=newInput;srcModels=null;selected=null;renderAll();
+const m=`Checked ${report.summary.checked} of ${report.summary.total} quotes`+(label?` — ${label}`:"");live(m);return true}
+
+/* source model mirrors core buildDoc: doc.text, then pages, sections, paragraphs, joined by "\n" */
+function models(){if(srcModels)return srcModels;srcModels=new Map();
+for(const doc of input.sources??[]){const segs=[];let full="";
+const ap=(text,kind,label)=>{if(full.length>0)full+="\n";const s=full.length;full+=text;segs.push({kind,label,text,start:s,end:full.length})};
+if(doc.text!==undefined)ap(doc.text,null,null);
+for(const p of doc.pages??[])ap(p.text,"page",String(p.number));
+for(const p of doc.sections??[])ap(p.text,"section",p.label);
+for(const p of doc.paragraphs??[])ap(p.text,"paragraph",String(p.number));
+srcModels.set(doc.id,{id:doc.id,name:doc.name,segments:segs})}
+return srcModels}
+const attention=(r)=>r.classification==="fuzzy"||r.classification==="not_found"||r.pinpoint?.status==="mismatch";
+
+/* ===== render ===== */
+function renderCounts(){const s=report.summary;
+$('counts').innerHTML=`<div><b>${s.total}</b><span>quotes checked</span></div><div><b>${s.checked} of ${s.total}</b><span>located</span></div><div><b>${s.exact}</b><span>exact</span></div><div><b>${s.normalized}</b><span>normalized</span></div><div><b>${s.fuzzy}</b><span>fuzzy</span></div><div><b>${s.not_found}</b><span>not found</span></div><div><b>${s.pinpointIssues}</b><span>pinpoint issues</span></div>`;
+let c=`Checked ${s.checked} of ${s.total} quotes — ${s.couldNotCheck} could not be checked and are never reported as "confirmed"; ${s.unparseablePinpoints} unparseable pinpoint(s).`;
+if(report.extractionWarnings?.length)c+=" "+report.extractionWarnings.join("; ")+".";
+$('coverage').textContent=c}
+
+function renderTable(){
+$('results').innerHTML=`<tr><th scope="col">Quote</th><th scope="col">Verdict</th><th scope="col">Similarity</th><th scope="col">Anchor</th><th scope="col">Pinpoint</th><th scope="col">Review</th></tr>`+
+report.results.map((r)=>{const a=r.anchor??r.bestCandidate;
+const anchor=a?`<button class="anchor-btn">${esc(a.sourceName)}${a.segmentLabel!==null?`, ${KIND[a.segmentKind]??esc(a.segmentKind)} ${esc(a.segmentLabel)}`:""} <code>${a.charStart}–${a.charEnd}</code> ↗</button>`:"—";
+const pin=r.pinpoint?`<span class="pill ${r.pinpoint.status==="mismatch"?"mismatch":r.pinpoint.status==="ok"?"exact":""}">${esc(r.pinpoint.status)}</span> ${esc(r.pinpoint.raw)}`:"—";
+const d=decisions[r.id];
+return `<tr class="${selected===r.id?"sel":""} ${attention(r)?"attention":""} ${d?"flag":""}" data-q="${esc(r.id)}"><td class="mono"><code>${esc(r.id)}</code></td><td><span class="pill ${r.classification}">${r.classification}</span></td><td class="mono">${r.similarity.toFixed(2)}</td><td>${anchor}</td><td>${pin}</td><td>${d?`<span class="pill st-${d.d}">${d.d}</span>`:'<span class="pill">pending</span>'}</td></tr>`}).join("");
+for(const tr of $('results').querySelectorAll('tr[data-q]'))tr.addEventListener("click",()=>selectQuote(tr.dataset.q,true))}
+
+function renderQueue(){
+const rs=report.results.filter((r)=>{const d=decisions[r.id];
+if(filter==="attention")return attention(r);
+if(filter==="undecided")return !d;
+if(filter==="flagged")return d?.d==="flagged";
+return true});
+$('briefSub').textContent=`${rs.length} of ${report.results.length} quotations shown — filter: ${filter}`;
+$('queue').innerHTML=rs.map((r)=>{const a=r.anchor??r.bestCandidate;const d=decisions[r.id];
+return `<article class="q ${selected===r.id?"sel":""}" data-q="${esc(r.id)}"><header><code class="mono">${esc(r.id)}</code> <span class="pill ${r.classification}">${r.classification}</span> ${d?`<span class="pill st-${d.d}">${d.d}</span>`:'<span class="pill">pending</span>'}</header><blockquote>${esc(r.text)}</blockquote>`+
+(r.proposition?`<p class="prop">Proposition: ${esc(r.proposition)}</p>`:"")+
+`<div class="meta">Anchor: ${a?`<button class="anchor-btn" data-anchor="${esc(r.id)}">${esc(a.sourceName)}${a.segmentLabel!==null?`, ${KIND[a.segmentKind]??esc(a.segmentKind)} ${esc(a.segmentLabel)}`:""} <code>${a.charStart}–${a.charEnd}</code> ↗</button>`:"no locating anchor in the provided sources"}`+
+(r.pinpoint?`<br>Pinpoint <code>${esc(r.pinpoint.raw)}</code> → <b>${esc(r.pinpoint.status)}</b>: ${esc(r.pinpoint.detail)}`:"")+
+(r.diff&&formatDiffOps(r.diff)?`<br>Token diff: <code>${esc(formatDiffOps(r.diff))}</code>`:"")+
+r.notes.map((n)=>`<br>· ${esc(n)}`).join("")+`</div>`+
+`<div class="decide" role="group" aria-label="Decision for ${esc(r.id)}">${DECISIONS.map(([v,l])=>`<button data-d="${v}" data-q="${esc(r.id)}" aria-pressed="${d?.d===v?"true":"false"}">${l}</button>`).join("")}</div>`+
+`<div class="note"><label for="note-${esc(r.id)}">Note</label><input id="note-${esc(r.id)}" data-note="${esc(r.id)}" value="${esc(d?.note??"")}" placeholder="optional"></div></article>`}).join("")||`<p class="hint">No quotations match this filter.</p>`;
+for(const b of $('queue').querySelectorAll('button[data-d]'))b.addEventListener("click",(e)=>{e.stopPropagation();setDecision(b.dataset.q,b.dataset.d)});
+for(const b of $('queue').querySelectorAll('button[data-anchor]'))b.addEventListener("click",(e)=>{e.stopPropagation();selectQuote(b.dataset.anchor,false)});
+for(const i of $('queue').querySelectorAll('input[data-note]'))i.addEventListener("change",()=>setNote(i.dataset.note,i.value));
+for(const art of $('queue').querySelectorAll('article.q'))art.addEventListener("click",()=>selectQuote(art.dataset.q,false))}
+
+function renderSourcePane(){
+const ms=models(),sel=$('srcSel'),ids=[...ms.keys()];
+const cur=sel.dataset.src&&ms.has(sel.dataset.src)?sel.dataset.src:(ids[0]??null);
+sel.dataset.src=cur;
+sel.innerHTML=ids.map((id)=>`<option value="${esc(id)}" ${id===cur?"selected":""}>${esc(ms.get(id).name)}</option>`).join("");
+let html="";
+if(!cur)html=`<p class="hint">No sources loaded.</p>`;
+else{const m=ms.get(cur);
+const r=report.results.find((x)=>x.id===selected);
+const a=r&&(r.anchor?.sourceId===cur||r.bestCandidate?.sourceId===cur)?(r.anchor??r.bestCandidate):null;
+for(const seg of m.segments){let text=esc(seg.text);
+if(a&&a.charEnd>seg.start&&a.charStart<seg.end){
+const s=Math.max(a.charStart,seg.start)-seg.start,e=Math.min(a.charEnd,seg.end)-seg.start;
+const idAt=(a.charStart>=seg.start&&a.charEnd<=seg.end)?' id="hl"':"";
+text=esc(seg.text.slice(0,s))+`<mark${idAt}>${esc(seg.text.slice(s,e))}</mark>`+esc(seg.text.slice(e))}
+html+=`<div class="seg"><h4>${seg.kind?`${KIND[seg.kind]??esc(seg.kind)} ${esc(seg.label)}`:"Full text"}</h4><p>${text}</p></div>`}}
+$('srcview').innerHTML=html;
+const mark=$('hl');if(mark)mark.scrollIntoView({block:"center"})}
+
+function renderProgress(){
+const total=report.results.length,done=report.results.filter((r)=>decisions[r.id]).length,flagged=report.results.filter((r)=>decisions[r.id]?.d==="flagged").length;
+let h=`${done} of ${total} decided · ${flagged} flagged`;
+if(signoff)h+=` · <b>signed off</b> ${esc(signoff.at.slice(0,16).replace("T"," "))} UTC`;
+else if(done===total&&total>0)h+=` · <button class="icon" id="signBtn">Sign off review</button>`;
+$('progress').innerHTML=h;
+const b=$('signBtn');
+if(b)b.addEventListener("click",()=>{signoff={at:new Date().toISOString(),actor:"reviewer (demo)",decided:report.results.length};
+store.set('signoff',signoff);audit("sign-off",`review signed off over ${report.results.length} quotes`);
+toast("Review signed off — recorded in the audit log.");live("Review signed off.");renderProgress()})}
+
+function renderAudit(){const es=store.entries('audit');
+$('auditOut').innerHTML=es.length?`<div class="audit-list">${es.map((e)=>`<div>${esc(e.ts)} · ${esc(e.actor)} · ${esc(e.action)}${e.quoteId?` · ${esc(e.quoteId)}`:""} — ${esc(e.detail)}</div>`).join("")}</div>`:`<p class="hint">No entries yet — make a decision or run a check.</p>`}
+
+function renderAll(){renderCounts();renderTable();renderQueue();renderSourcePane();renderProgress()}
+
+/* ===== interactions ===== */
+function selectQuote(id,scrollBench){
+selected=id;
+const r=report.results.find((x)=>x.id===id);const a=r?.anchor??r?.bestCandidate;
+if(a)$('srcSel').dataset.src=a.sourceId;
+renderTable();renderQueue();renderSourcePane();
+const card=$('queue').querySelector(`article[data-q="${CSS.escape(id)}"]`);if(card)card.scrollIntoView({block:"nearest"});
+if(scrollBench)$('bench').scrollIntoView({behavior:"smooth",block:"start"});
+if(r)live(`Quote ${id} selected — ${r.classification}${a?`, anchor at chars ${a.charStart} to ${a.charEnd} in ${a.sourceName}`:", no anchor"}.`)}
+
+function setDecision(id,d){
+const from=decisions[id]?.d??"pending";
+decisions[id]={d,note:decisions[id]?.note??"",at:new Date().toISOString()};
+store.set('decisions',decisions);audit("decision",`${from} → ${d}`,id);
+if(from!==d){toast(`${id}: ${d}`);live(`Quote ${id} marked ${d}.`)}
+renderTable();renderQueue();renderProgress();
+const card=$('queue').querySelector(`article[data-q="${CSS.escape(id)}"]`);if(card)card.scrollIntoView({block:"nearest"})}
+
+function setNote(id,note){
+if(!decisions[id])decisions[id]={d:"flagged",note:"",at:new Date().toISOString()};
+decisions[id].note=note;store.set('decisions',decisions);
+audit("note",note?`note set: "${note.slice(0,80)}"`:"note cleared",id);
+live(note?`Note saved for ${id}.`:`Note cleared for ${id}.`)}
+
+$('srcSel').addEventListener("change",(e)=>{e.target.dataset.src=e.target.value;selected=null;renderSourcePane()});
+$('filters').addEventListener("change",(e)=>{filter=e.target.value;renderQueue()});
+$('copyQuote').addEventListener("click",async()=>{
+const r=report.results.find((x)=>x.id===selected);const a=r?.anchor??r?.bestCandidate;
+if(!a){toast("No located quote to copy — select a located quotation first.");return}
+try{await navigator.clipboard.writeText(a.verbatim);toast("Verbatim quote copied.");live("Quote copied to clipboard.")}catch{toast("Clipboard unavailable in this context.")}});
+
+/* guided input */
+$('runGuided').addEventListener("click",()=>{
+const text=$('docPaste').value;
+if(!text.trim()){toast("Paste a document first — the box is empty.");live("No document pasted.");return}
+if(runCheck({document:{name:"Pasted document (demo)",text},sources:input.sources??EXAMPLE.sources},"quotes extracted from pasted document")){
+audit("check",`ran cite check on pasted document (${report.results.length} quotes extracted)`);
+store.set('input',input);toast(`Extracted ${report.results.length} quotes — see the workbench.`)}});
+$('loadExample').addEventListener("click",()=>{runCheck(EXAMPLE,"worked example reloaded");store.remove('input');audit("check","reloaded the worked example");toast("Worked example reloaded.")});
+$('runJson').addEventListener("click",()=>{
+const txt=$('jsonIn').value;let obj;
+try{obj=JSON.parse(txt)}catch(err){
+const m=/position (\d+)/.exec(err.message);let line=0;
+if(m)line=txt.slice(0,+m[1]).split("\n").length;else{const l=/line (\d+)/.exec(err.message);if(l)line=+l[1]}
+const short=err.message.length>90?err.message.slice(0,90)+"…":err.message;
+const msg=line?`JSON error at line ${line}: ${short}`:`JSON error: ${short}`;toast(msg);live(msg);return}
+if(!Array.isArray(obj.sources)||(!Array.isArray(obj.quotes)&&obj.document?.text===undefined)){
+const msg='Input needs "sources" (array) plus either "quotes" (array) or "document.text".';toast(msg);live(msg);return}
+if(runCheck(obj,"custom JSON input")){audit("check",`ran cite check on custom JSON (${report.results.length} quotes)`);store.set('input',input);toast(`Custom check ran — ${report.results.length} quotes.`)}});
+
+/* exports */
+function download(name,content,type){const blob=content instanceof Blob?content:new Blob([content],{type});
+const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();
+setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+const stamp=()=>new Date().toISOString().slice(0,10);
+const dOf=(r)=>decisions[r.id]?.d??"pending";
+$('mdBtn').onclick=()=>{download(`cite-check-report-${stamp()}.md`,renderReport(report),"text/markdown");toast("report.md exported.");live("Markdown report exported.")};
+$('jsonBtn').onclick=()=>{download(`cite-check-output-${stamp()}.json`,JSON.stringify({...report,decisions,signoff},null,2)+"\n","application/json");toast("output.json exported.");live("JSON output exported.")};
+$('csvBtn').onclick=()=>{
+const rows=[["Quote","Classification","Similarity","Source","Segment","Chars","Pinpoint","Pinpoint status","Decision","Note"],
+...report.results.map((r)=>{const a=r.anchor??r.bestCandidate;
+return [r.id,r.classification,r.similarity.toFixed(2),a?.sourceName??"",a?`${a.segmentKind??"text"} ${a.segmentLabel??""}`:"",a?`${a.charStart}-${a.charEnd}`:"",r.pinpoint?.raw??"",r.pinpoint?.status??"",dOf(r),decisions[r.id]?.note??""]})];
+const csv=rows.map((row)=>row.map((v)=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\r\n")+"\r\n";
+download(`cite-check-findings-${stamp()}.csv`,csv,"text/csv");toast("findings.csv exported.");live("CSV findings exported.")};
+$('auditBtn').onclick=()=>{download(`cite-check-audit-${stamp()}.jsonl`,store.exportJsonl('audit'),"application/x-ndjson");toast("audit.jsonl exported.");live("Audit log exported.")};
+$('resetBtn').onclick=()=>{
+if(!confirm("Reset all decisions, sign-off, and the audit log stored in this browser?"))return;
+for(const k of ['decisions','audit','signoff','input'])store.remove(k);
+decisions={};signoff=null;runCheck(EXAMPLE,"state reset");renderAudit();toast("Demo state reset.");live("Demo state reset.")};;
+
+/* ===== boot: restore persisted working state ===== */
+$('jsonIn').value=JSON.stringify(input,null,2);
+renderAll();renderAudit();
+if(bootNotice){toast(bootNotice);live(bootNotice)}
+else if(Object.keys(decisions).length||store.entries('audit').length)toast("Restored your working state — decisions and audit log reloaded.");
 </script>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

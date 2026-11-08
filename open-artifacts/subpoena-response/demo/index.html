@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Subpoena Response Tracker — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -166,7 +168,7 @@ textarea { max-width: 100%; }
   button:hover { background: var(--accent); color: var(--text); }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
   .deadline { font-size: 26px; letter-spacing: -0.01em; margin: 6px 0; }
-  .status { font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; }
+  .status { font-family: var(--font-mono); font-size: 12px; padding: 2px 6px; }
   .status.on_track { background: var(--flag-tint); }
   .status.critical, .status.overdue { border: 1px solid var(--bad); color: var(--bad); background: transparent; }
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 6px; }
@@ -174,15 +176,15 @@ textarea { max-width: 100%; }
   .bar > div { height: 100%; background: var(--flag-tint); }
   ul { list-style: none; }
   ul li { border-top: var(--hairline); padding: 6px 0; font-size: 14px; }
-  code { font-family: var(--font-mono); font-size: 11px; }
+  code { font-family: var(--font-mono); font-size: 12px; }
   .muted { color: var(--text-secondary); font-size: 13px; }
   .warn { border: var(--hairline); padding: 6px 10px; margin: 6px 0; font-size: 13px; }
   .stop { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin: 10px 0; }
-  .chip { font-family: var(--font-mono); font-size: 11px; border: var(--hairline); padding: 2px 6px; margin-right: 6px; }
+  .chip { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); padding: 2px 6px; margin-right: 6px; }
   .chip.strong { background: var(--flag-tint); }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <header><div class="wrap">
   <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
   <h1>subpoena-response</h1>
@@ -193,7 +195,7 @@ textarea { max-width: 100%; }
 <div class="wrap"><main>
   <section>
     <div class="sec">Subpoena facts JSON (editable)</div>
-    <textarea id="input" spellcheck="false"></textarea>
+    <textarea id="input" aria-label="Subpoena facts JSON" spellcheck="false"></textarea>
     <button id="run">Track response →</button>
     <div id="err" class="err"></div>
   </section>
