@@ -102,7 +102,7 @@
 <script type="module">
   import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs } from "../core/core.js";
   import EXAMPLE from "./example.js";
-  import { makeLabelFn, TOOL_LABELS } from "../core/display-labels.js";
+  import { makeLabelFn, TOOL_LABELS, fieldLabel } from "../core/display-labels.js";
 
   const L = makeLabelFn(TOOL_LABELS["matter-board"]);
 
@@ -121,9 +121,9 @@
 
     const items = [
       ...diff.changed.map((c) =>
-        `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
+        `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source.includes(".") ? fieldLabel(c.source.split(".")[1]) : c.source)}</span><br />` +
         `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.severity}" data-key="${esc(c.severity)}">${esc(L(c.severity).label)}</span><br />` +
-        `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
+        `${esc(fieldLabel(c.field))}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
       ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: <span data-key="${esc(m.stage ?? "")}">${esc(L(m.stage ?? "?").label)}</span>)</li>`),
       ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
     ];
@@ -139,8 +139,8 @@
           ? `<div class="dl ${fl ? fl.flag : ""}"${fl ? ` data-key="${esc(fl.flag)}"` : ""}>${fl ? `${esc(L(fl.flag).label)} · ` : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
         return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
           `<div class="nm">${esc(m.name)}</div>` +
-          `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
-          `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
+          `<div class="meta">${esc(m.client ?? "")} · Owner: ${esc(m.owner ?? "?")}</div>` +
+          `<div class="meta">Next: ${esc(m.nextStep ?? "—")}</div>${dl}</div>`;
       }).join("") + "</div>").join("");
   }
 

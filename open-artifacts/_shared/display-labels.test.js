@@ -4,8 +4,7 @@ import assert from "node:assert/strict";
 import {
   LEXICON, INK, LEGEND_TEXT,
   humanizeKey, makeLabelFn, mapToCanonical,
-  collapseBoilerplate, groupCounts, TOOL_LABELS,
-} from "./display-labels.js";
+  collapseBoilerplate, groupCounts, TOOL_LABELS, fieldLabel } from "./display-labels.js";
 
 /* ---------- humanizeKey ---------- */
 
@@ -182,4 +181,17 @@ test("exhaustive inventory: every known enum key has a non-empty label ≠ the r
       assert.notEqual(L.label, k, `${tool}/${k}: label equals the raw key`);
     }
   }
+});
+
+// ---------- FIELD_LABELS (round-7: matter-board raw field names) ----------
+test("FIELD_LABELS humanizes snapshot diff field names", () => {
+  assert.equal(fieldLabel("updatedAt"), "Last updated");
+  assert.equal(fieldLabel("nextStep"), "Next step");
+  assert.equal(fieldLabel("owner"), "Owner");
+  assert.equal(fieldLabel("stage"), "Stage");
+  assert.equal(fieldLabel("client"), "Client");
+});
+
+test("fieldLabel falls back to humanizeKey for unknown fields", () => {
+  assert.equal(fieldLabel("someNewField"), "Some new field");
 });

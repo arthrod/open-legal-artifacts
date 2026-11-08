@@ -285,3 +285,22 @@ export const TOOL_LABELS = Object.freeze({
     "closed-with-deadline": "closed matter still carries a deadline",
   }),
 });
+
+/* ---------- field-name labels (round-7: snapshot diff rows) ---------- */
+
+export const FIELD_LABELS = Object.freeze({
+  updatedAt: "Last updated",
+  createdAt: "Created",
+  nextStep: "Next step",
+  owner: "Owner",
+  stage: "Stage",
+  client: "Client",
+  name: "Name",
+  nextDeadline: "Next deadline",
+});
+
+export function fieldLabel(f) {
+  if (FIELD_LABELS[f]) return FIELD_LABELS[f];
+  const decameled = String(f ?? "").replace(/([a-z0-9])([A-Z])/g, "$1-$2");
+  return humanizeKey(decameled);
+}
