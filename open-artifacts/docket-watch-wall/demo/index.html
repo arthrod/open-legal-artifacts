@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docket watch wall — open legal artifacts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css">
 <style>
   body { margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); }
@@ -24,12 +25,12 @@
   .col-head { font-family:var(--font-mono); font-size:12px; padding:10px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
   .entry { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; }
   .entry:last-child { border-bottom:0; }
-  .meta { font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); }
-  .tag { font-family:var(--font-mono); font-size: 11px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
+  .meta { font-family:var(--font-mono); font-size:12px; color:var(--text-secondary); }
+  .tag { font-family:var(--font-mono); font-size: 12px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
   .tag.urgent { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
   .tag.important { border:1px solid var(--border); }
   .tag.deadline { border:1px dashed var(--warn); color: var(--warn); }
-  pre.ics { font-family:var(--font-mono); font-size:11px; line-height:1.5; border:1px solid var(--border); background:#fff; padding:12px 14px; overflow:auto; margin:8px 0 0; white-space:pre; }
+  pre.ics { font-family:var(--font-mono); font-size:12px; line-height:1.5; border:1px solid var(--border); background:#fff; padding:12px 14px; overflow:auto; margin:8px 0 0; white-space:pre; }
   .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
   .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
@@ -42,7 +43,7 @@
   <hr class="rule">
 
   <h2>Feed (JSON)</h2>
-  <textarea id="feed" spellcheck="false"></textarea>
+  <textarea id="feed" aria-label="Feed (JSON)" spellcheck="false"></textarea>
   <div class="row">
     <button id="run">Review wall</button>
     <button class="ghost" id="mark">Mark all seen (update store)</button>
@@ -51,7 +52,7 @@
   </div>
 
   <div class="stats" id="stats"></div>
-  <div class="cols" id="wall"></div>
+  <div class="cols" id="wall" aria-live="polite"></div>
   <pre class="ics" id="ical" style="display:none"></pre>
 
   <p class="muted">Deterministic core · <code>open-artifacts/docket-watch-wall/core/core.js</code> · no network calls · not legal advice.</p>

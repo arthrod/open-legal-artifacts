@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Sell-side Q&amp;A log — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
@@ -20,23 +21,23 @@
   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 110px; }
   .counts div:last-child { border-right: none; }
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
-  .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
+  .counts span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); }
   .readiness { border: var(--hairline); background: #fff; padding: 18px 20px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
   .readiness .score { font-family: var(--font-mono); font-size: 40px; font-weight: 500; }
-  .readiness .band { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; background: var(--flag-tint); padding: 2px 8px; color: var(--warn); border-color: var(--warn);}
-  .readiness .comp { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); line-height: 1.9; }
+  .readiness .band { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; background: var(--flag-tint); padding: 2px 8px; color: var(--warn); border-color: var(--warn);}
+  .readiness .comp { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); line-height: 1.9; }
   .bar { position: relative; background: var(--hover); height: 10px; width: 220px; }
   .bar i { position: absolute; inset: 0 auto 0 0; background: var(--text); }
   .conflict { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
-  .conflict .k { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
+  .conflict .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
   .conflict blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
-  .conflict blockquote b { color: var(--text); font-family: var(--font-mono); font-size: 11px; }
+  .conflict blockquote b { color: var(--text); font-family: var(--font-mono); font-size: 12px; }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
-  td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
+  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  td.mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
   tr.flag td { background: #fffbe6; }
-  .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
+  .pill { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
   .pill.open { background: var(--text); color: var(--bg); }
   .pill.draft, .pill.draft-pending { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
   .pill.overdue { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
@@ -59,7 +60,7 @@
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   .scroll { overflow-x: auto; }
   .q { color: var(--text-secondary); font-size: 12px; }
-  .cite { color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono); }
+  .cite { color: var(--text-secondary); font-size: 12px; font-family: var(--font-mono); }
 </style>
 </head>
 <body>
@@ -101,7 +102,7 @@
   <section>
     <h2>Q&amp;A log</h2>
     <div class="row" id="filterChips" style="margin: 0 0 12px"></div>
-    <div class="scroll"><table id="log"></table></div>
+    <div class="scroll"><table id="log" aria-live="polite"></table></div>
   </section>
 
   <footer class="disclaimer">
@@ -233,7 +234,7 @@
     gateEl.innerHTML =
       `<div class="q">Editing the pending draft for <code>${GATE_ID}</code> (Lantern Harbor Capital · financials). ` +
       `Send is disabled until every release blocker clears — try changing “declined 4%” to “declined 5%”, or clear the approver field.</div>` +
-      `<textarea id="gateText" rows="3">${esc(text)}</textarea>` +
+      `<textarea id="gateText" aria-label="Pending draft text — edit to test the release gate" rows="3">${esc(text)}</textarea>` +
       `<div class="row"><label class="q" for="gateApprover">Approver</label> <input id="gateApprover" placeholder="e.g. A. Reyes (GC)" value="${esc(approver)}"></div>` +
       `<div class="blockers" id="gateBlockers"></div>` +
       `<div class="row"><button id="gateSend" disabled>Approve &amp; send</button><span class="q">transition(item, { type: "approve" }) → { type: "send" }) — approval is recorded as the audit trail.</span></div>`;

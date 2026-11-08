@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Record Clearance Tracker — open legal artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="./tokens.css" />
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
@@ -16,7 +17,7 @@
   select { font-family: var(--font-mono); font-size: 13px; background: #fff; color: var(--text);
     border: var(--hairline); padding: 10px 12px; border-radius: var(--radius); cursor: pointer; }
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 32px; }
-  .tier { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; background: var(--hover); border: var(--hairline); border-radius: var(--radius); }
+  .tier { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; display: inline-block; background: var(--hover); border: var(--hairline); border-radius: var(--radius); }
   textarea { width: 100%; box-sizing: border-box; min-height: 300px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
     background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
@@ -26,7 +27,7 @@
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
   .item { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
   .item h3 { margin: 0 0 4px; font-size: 14.5px; }
-  .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; }
+  .badge { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; display: inline-block; }
   .badge.ready_to_file { background: var(--flag-tint); }
   .badge.blocked, .badge.data_needed { background: var(--text); color: var(--bg); }
   .badge.waiting { background: var(--border); }
@@ -43,7 +44,7 @@
   .ref { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
-  code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
 </head>
 <body>
@@ -75,13 +76,13 @@
   <div class="cols">
     <div>
       <div class="kicker">Client record (JSON)</div>
-      <textarea id="input" spellcheck="false"></textarea>
+      <textarea id="input" aria-label="Client record (JSON)" spellcheck="false"></textarea>
       <p><button id="run">Run tracker</button></p>
       <div class="err" id="err"></div>
     </div>
     <div>
       <div class="kicker">Clearance tracker</div>
-      <div id="out"><p class="lede">Press “Run tracker”.</p></div>
+      <div id="out" aria-live="polite"><p class="lede">Press “Run tracker”.</p></div>
     </div>
   </div>
 </div>

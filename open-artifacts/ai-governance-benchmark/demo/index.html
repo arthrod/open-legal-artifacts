@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Governance Benchmark — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css">
 <style>
   header { padding: 28px var(--pad-x-mobile); }
@@ -19,21 +20,21 @@
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { border: var(--hairline); padding: 8px 10px; text-align: left; vertical-align: top; }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
-  .band { font-family: var(--font-mono); font-size: 11px; }
+  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; background: var(--hover); }
+  .band { font-family: var(--font-mono); font-size: 12px; }
   .band.absent, .band.ad_hoc { background: var(--flag-tint); padding: 2px 6px; color: var(--warn); border-color: var(--warn);}
   .gap { border: var(--hairline); padding: 10px 14px; margin: 10px 0; background: #fff; font-size: 13px; }
-  .gap code { font-family: var(--font-mono); font-size: 11px; }
+  .gap code { font-family: var(--font-mono); font-size: 12px; }
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 8px; }
   .muted { color: var(--text-secondary); font-size: 13px; }
   /* Guided interview */
   .meta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
-  .meta-row label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .meta-row label { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
   .meta-row input, .meta-row select { border: var(--hairline); background: #fff; padding: 8px 10px; font-family: var(--font-mono); font-size: 13px; }
   .pillar-h { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 22px 0 6px; border-bottom: var(--hairline); padding-bottom: 4px; }
   .qcard { border: var(--hairline); background: #fff; padding: 12px 14px; margin: 8px 0; }
   .qcard .qtext { font-size: 14px; }
-  .qcard .qtext code { font-family: var(--font-mono); font-size: 11px; }
+  .qcard .qtext code { font-family: var(--font-mono); font-size: 12px; }
   .qcard .refs { margin-top: 4px; }
   .lvls { display: flex; gap: 8px; margin: 10px 0 8px; }
   .lvls button { margin: 0; padding: 6px 14px; background: var(--hover); color: var(--text); font-size: 12px; }
@@ -42,7 +43,7 @@
   .ev { width: 100%; border: var(--hairline); background: var(--bg); padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; }
   .action { display: flex; gap: 10px; align-items: baseline; border: var(--hairline); padding: 8px 12px; margin: 6px 0; background: #fff; font-size: 13px; }
   .action .rank { font-family: var(--font-mono); font-size: 12px; }
-  .action .prio { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+  .action .prio { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
   .action.hirisk { border-left: 4px solid var(--accent); }
   .dir-improved { color: var(--ok); font-family: var(--font-mono); font-size: 12px; }
   .dir-regressed { color: var(--bad); font-family: var(--font-mono); font-size: 12px; }
@@ -69,7 +70,7 @@
     <button id="run">Run benchmark →</button>
     <div id="err" class="err"></div>
     <div class="sec">Assessment JSON (built from the interview; edits live until the next interview change)</div>
-    <textarea id="input" spellcheck="false"></textarea>
+    <textarea id="input" aria-label="Assessment JSON" spellcheck="false"></textarea>
   </section>
   <section id="out" aria-live="polite"></section>
 </main></div>
@@ -111,8 +112,8 @@ function buildInterview() {
         <div class="qtext"><code>${escHtml(q.id)}</code> ${escHtml(q.text)}${q.highRisk ? ' <span class="muted">· high-risk ×1.5</span>' : ''}</div>
         <div class="refs muted">${escHtml(q.frameworkRefs.join('; '))} · ${escHtml(q.euAiActRefs.join('; '))}</div>
         <div class="lvls">${LEVEL_LABELS.map((label, i) =>
-          `<button type="button" data-level="${i}" title="${escHtml(label)}">${i}</button>`).join('')}</div>
-        <input class="ev" type="text" placeholder="Evidence (optional) — what you observed, verbatim where possible">
+          `<button type="button" data-level="${i}" title="${escHtml(label)}" aria-label="Level ${i}: ${escHtml(label)}">${i}</button>`).join('')}</div>
+        <input class="ev" type="text" aria-label="Evidence (optional)" placeholder="Evidence (optional) — what you observed, verbatim where possible">
       </div>`;
     }
   }

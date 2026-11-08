@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Litigation portfolio — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
@@ -20,18 +21,18 @@
   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 8px; }
   .card { background: #fff; padding: 16px; }
-  .card .k { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+  .card .k { font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
   .card .v { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
   .card.alert .v { color: var(--text); background: linear-gradient(transparent 60%, var(--accent) 60%); display: inline; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+  th { font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
-  .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
+  .chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
   .chip.expired, .chip.critical { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .chip.unverified { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
   .flags { color: var(--text-secondary); font-size: 12px; }
-  .cite { color: var(--text-secondary); font-size: 11px; }
+  .cite { color: var(--text-secondary); font-size: 12px; }
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
   .rule-road { font-size: 12px; color: var(--text-secondary); }
   details summary { cursor: pointer; font-family: var(--font-mono); font-size: 12px; }
@@ -39,7 +40,7 @@
   .filters.on { display: flex; }
   .filters label { display: inline-flex; gap: 6px; align-items: center; }
   .filters select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 4px 6px; }
-  .achip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text-secondary); color: var(--text-secondary); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
+  .achip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--text-secondary); color: var(--text-secondary); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
   .achip.critical { border-color: var(--bad); color: var(--bad); background: var(--flag-tint); }
   .achip.high { border-color: var(--bad); color: var(--bad); }
 </style>
@@ -52,7 +53,7 @@
   <p class="disclaimer">Limitation periods ship as US defaults with citations — they are configurable data, not legal advice. Verify every rule against current law in the governing jurisdiction.</p>
 
   <h2>Matter input (JSON)</h2>
-  <textarea id="input" spellcheck="false"></textarea>
+  <textarea id="input" aria-label="Matter input (JSON)" spellcheck="false"></textarea>
   <div class="actions">
     <button id="run">Evaluate portfolio</button>
     <button id="csv" class="ghost">Copy CSV</button>
@@ -72,7 +73,7 @@
 
   <h2>Dashboard</h2>
   <div id="summary"></div>
-  <div id="board"></div>
+  <div id="board" aria-live="polite"></div>
 
   <h2>How to read it</h2>
   <p class="lede" style="font-size:0.85rem">

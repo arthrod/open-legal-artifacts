@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Limitations Radar — open legal artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Ccircle cx='8' cy='8' r='5.5' fill='none' stroke='%23ffd400' stroke-width='1.5'/%3E%3Cpath d='M8 8 L11.5 4.5' stroke='%23fafaf8' stroke-width='1.5'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="./tokens.css" />
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
@@ -23,7 +24,7 @@
   .claim { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
   .claim.expired { background: var(--flag-tint); border-top-color: var(--text); }
   .claim h3 { margin: 0 0 4px; font-size: 14.5px; }
-  .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; border: 1.5px solid transparent; }
+  .badge { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; display: inline-block; border: 1.5px solid transparent; }
   .badge.deadline_upcoming { color: var(--warn); border-color: var(--warn); }
   .badge.data_needed { color: var(--warn); border-color: var(--warn); }
   .badge.filed_timely { color: var(--ok); border: var(--hairline); }
@@ -33,7 +34,7 @@
   .conflict { border: var(--hairline); padding: 8px 12px; font-size: 12.5px; margin-top: 8px; }
   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
-  code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
 </head>
 <body>
@@ -50,13 +51,13 @@
   <div class="cols">
     <div>
       <div class="kicker">Claims (JSON)</div>
-      <textarea id="input" spellcheck="false"></textarea>
+      <textarea id="input" aria-label="Claims (JSON)" spellcheck="false"></textarea>
       <p><button id="run">Run radar</button></p>
       <div class="err" id="err"></div>
     </div>
     <div>
       <div class="kicker">Deadlines</div>
-      <div id="out"><p class="lede">Press “Run radar”.</p></div>
+      <div id="out" aria-live="polite"><p class="lede">Press “Run radar”.</p></div>
     </div>
   </div>
 </div>

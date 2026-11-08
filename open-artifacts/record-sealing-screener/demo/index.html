@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Record Sealing Screener — open legal artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="./tokens.css" />
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
@@ -24,12 +25,12 @@
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
   .case { border: var(--hairline); background: #fff; padding: 18px 18px 14px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
   .case h3 { margin: 0 0 6px; font-size: 15px; }
-  .badge { font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; padding: 3px 8px; display: inline-block; }
+  .badge { font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; padding: 3px 8px; display: inline-block; }
   .badge.potentially_eligible { background: var(--flag-tint); }
   .badge.ineligible, .badge.insufficient_data { background: var(--text); color: var(--bg); }
   .badge.needs_more_time { background: var(--border); }
   .case ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
-  .case code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+  .case code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
   .summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 18px; }
@@ -54,20 +55,20 @@
       </p>
       <div id="json-pane">
         <div class="kicker">Case facts (JSON)</div>
-        <textarea id="input" spellcheck="false"></textarea>
+        <textarea id="input" aria-label="Case facts (JSON)" spellcheck="false"></textarea>
       </div>
       <div id="rap-pane" style="display:none">
         <div class="kicker">Rap sheet (documented paste format — see spec.md)</div>
-        <textarea id="rap" spellcheck="false"></textarea>
+        <textarea id="rap" aria-label="Rap sheet paste" spellcheck="false"></textarea>
         <div class="kicker" style="margin-top:12px">Screening date (as of)</div>
-        <input id="asof" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
+        <input id="asof" aria-label="Screening date (as of)" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
       </div>
       <p><button id="run">Run screen</button></p>
       <div class="err" id="err"></div>
     </div>
     <div>
       <div class="kicker">Determinations</div>
-      <div id="out"><p class="lede">Press “Run screen”.</p></div>
+      <div id="out" aria-live="polite"><p class="lede">Press “Run screen”.</p></div>
     </div>
   </div>
 </div>

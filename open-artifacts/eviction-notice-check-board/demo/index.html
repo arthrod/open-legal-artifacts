@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Eviction notice check board — open artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <link rel="stylesheet" href="tokens.css" />
 <style>
   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
@@ -14,7 +15,7 @@
   .disclaimer { color: var(--text-secondary); font-size: 0.8rem; border: var(--hairline); padding: 8px 12px; margin: 16px 0 32px; max-width: 72ch; }
   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
   .panel { border: var(--hairline); background: #fff; padding: 20px; }
-  label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin: 14px 0 4px; }
+  label { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin: 14px 0 4px; }
   select, input[type=number], input[type=date], input[type=text], textarea { font-family: var(--font-mono); font-size: 13px; border: var(--hairline); background: var(--bg); padding: 8px; width: 100%; box-sizing: border-box; }
   textarea { min-height: 110px; resize: vertical; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
@@ -28,15 +29,15 @@
   .verdict { font-family: var(--font-mono); font-size: 1.1rem; padding: 10px 14px; display: inline-block; border: 2px solid var(--text); margin-bottom: 16px; }
   .verdict.fail { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .verdict.unverified { border-style: dashed; }
-  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin: 0 0 14px; line-height: 1.6; }
+  .meta { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin: 0 0 14px; line-height: 1.6; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
+  th { font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
-  .st { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border: 1px solid var(--text); white-space: nowrap; }
+  .st { font-family: var(--font-mono); font-size: 12px; padding: 1px 7px; border: 1px solid var(--text); white-space: nowrap; }
   .st.fail { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .st.unverified { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
-  .cite { color: var(--text-secondary); font-size: 11px; }
+  .cite { color: var(--text-secondary); font-size: 12px; }
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
   .batch-section { margin-bottom: 32px; }
 </style>
@@ -85,7 +86,7 @@
     <button id="csvBtn">Download CSV</button>
     <button id="jsonBtn">Download JSON</button>
   </div>
-  <div id="board"></div>
+  <div id="board" aria-live="polite"></div>
 
   <h2>Batch check (paste a JSON array of notices)</h2>
   <div class="panel">
@@ -116,12 +117,12 @@ function fillContents() {
     const row = document.createElement('div');
     row.className = 'row';
     row.innerHTML = `
-      <select data-content="${c.id}">
+      <select data-content="${c.id}" aria-label="Status: ${c.label}">
         <option value="">unverified</option>
         <option value="true">present</option>
         <option value="false">absent</option>
       </select>
-      <input type="text" data-quote="${c.id}" placeholder="verbatim quote" />
+      <input type="text" data-quote="${c.id}" placeholder="verbatim quote" aria-label="Verbatim quote: ${c.label}" />
       <span style="font-size:12px;flex:1">${c.label} <span class="cite">(${c.cite})</span></span>`;
     $('contents').appendChild(row);
   }
