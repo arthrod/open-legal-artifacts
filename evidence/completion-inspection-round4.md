@@ -1,0 +1,17 @@
+# Inspector (Completion Skeptic) — run 7297b763 participant 5
+
+BLOCKED — PARTIAL
+
+No file-write tool exists in this environment, so the full report is inline below (not for want of trying: `write` and every file-creation tool_search came back empty).
+
+**Contradictions: 2**
+- **C1 (material) — "deploy-drift REFUTED; lexicon live; all changes live-verified" is contradicted by my own on-run fetch.** Live `/a/cite-check` still serves the **pre-Track-B build**: lede reads `exact / normalized / fuzzy / not_found classification` and **"9 quotes"**, while the repo build (`vt-val/site/cite-check.html:208–209`) reads `verbatim / near-verbatim / fuzzy / not-found` and **"10 quotes"**. The served page's rendered pills are therefore also the old build — Track B's headline "zero raw machine keys live" fails on its flagship page. Likely mechanism: cite-check.html was **80,626 B at commit 7bab52c — over an 80,000-B cap** (recorded in the Track-B report itself), so the val push of that file plausibly failed/skipped; two independent fetches hours apart agree (cache unlikely, not excluded). Per spec → **adversarial agent pass required before any DONE**; re-push and byte-verify each over-cap page.
+- **C2 (evidence) — cited test log doesn't cover the claim.** `evidence/test-run.log` (09:25:48Z) predates both commits and shows pre-Track-B numbers (`_shared: 64`, limitations 19, matter-board 23); the claimed 81/37/41 exist only as a table in the implementer-authored `trackb-labels-verification.md`. No TS/app-smoke log on disk.
+
+| Axis | Retracted? | Evidence | Gap |
+|---|---|---|---|
+| Actually completed | mostly yes | Plans A/B; commits 7bab52c→02d944a (refs+reflog verified); `nextStateOnSearch` (`index-filter.ts:38`, wired `index.ts:74` + smoke `smoke.ts:152–168`); branded SPA 404 (`router.ts:72–89`); `ola-navbar` decorator (`build-site.mjs:79–87`); `display-labels.js` (LEXICON/FIELD_LABELS/fieldLabel + tests); matter-board fix in source **and** built page (base64-inlined — my first grep was a false negative, retracted); live branded `/a/nope-404` verified by my fetch; mirror at `5989e00` | Live cite-check = old build (C1); 80,000-B-cap claim unverified; post-fix test log missing (C2) |
+| Only partially completed | yes (disclosed) | 13-task mapping: 11 verified to source/log/ref level; round-7 M9/L9 + prior items 5+8 explicitly deferred, not silent | "Delivered/live-verified" tier for search auto-clear and matter-board rendered DOM is **asserted only** (commit message; no persisted post-fix screenshots/notes — I found none) |
+| User's true intent achieved | partially | Verbatim request is a process loop ("diligently, run planner --> implementer (TDD) -> inspector loops"); all three stages produced real, checkable artifacts | "Diligently" is broken by the refuted-without-evidence deploy claim and the stale evidence log |
+
+**Most important gap:** the deployed val still serves the old cite-check — one re-push plus per-page byte verification (and a fresh archived test log) is what stands between this run and DONE-with-deferral. I could not reproduce the rendered-DOM interaction checks myself (no shell/playwright tool available to me); those claims remain implementer assertions until persisted.
