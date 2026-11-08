@@ -18,6 +18,7 @@ writeFileSync(join(here, 'portfolio.csv'), toCSV(out));
 
 console.log(
   `${out.summary.total} matters -> ${out.summary.solAlerts} SOL alerts, ` +
+  `${out.summary.anomalies.total} anomalies (critical ${out.summary.anomalies.bySeverity.critical}), ` +
   `${out.summary.solUnverified} unverified, bands ` +
   `L${out.summary.exposureByBand.low.matters}/M${out.summary.exposureByBand.medium.matters}/` +
   `H${out.summary.exposureByBand.high.matters} -> output.json, dashboard.md, portfolio.csv`,

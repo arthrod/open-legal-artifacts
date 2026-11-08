@@ -11,26 +11,42 @@ transparent, versioned rubric and returns:
 
 - per-pillar maturity (inventory, risk management, vendor management,
   incident response, training) on a 0–3 scale with named maturity bands;
-- a weighted overall score and band (weights are rules-as-data, editable);
+- a weighted overall score and band (weights are rules-as-data, editable,
+  with named sector presets);
 - a gap list — every question at or below the gap threshold — each carrying
-  the assessor's evidence, published-framework references, and a remediation
-  stub;
-- a Markdown benchmark report export.
+  the assessor's evidence, published-framework references (NIST AI RMF,
+  ISO/IEC 42001, plus illustrative EU AI Act arts. 5–15 refs tagged
+  `[verify]`), and a remediation stub;
+- a ranked action plan — gaps ordered by priority = pillar weight × (3 −
+  level) × (high-risk question ×1.5), ties in question-bank order;
+- fictional-cohort percentiles per pillar and overall (clearly labeled as
+  illustrative, never presented as market data);
+- a re-assessment diff — per-question improved/regressed flags plus pillar
+  and overall deltas;
+- a Markdown report and an RFC4180 CSV gap export.
 
 ## IO contract
 
 ```js
-import { scoreAssessment, exportReportMd } from './core/core.js';
+import {
+  scoreAssessment, exportReportMd, exportGapsCsv, compare, diffAssessments,
+} from './core/core.js';
 
 const result = scoreAssessment(assessment, config?);
 // assessment: { org: object, answers: [{ questionId, level: 0|1|2|3, evidence?: string }] }
-// config:     { pillarWeights?: {inventory: 0.2, ...} (must sum to 1),
+// config:     { preset?: 'general'|'financial_services'|'healthcare'|'public_sector',
+//               pillarWeights?: {inventory: 0.2, ...} (must sum to 1; wins over preset),
 //               gapThreshold?: number (default 1) }
-const md = exportReportMd(result);
+// result:     { pillars, overall, gaps, actions, unanswered, warnings, ... }
+const md = exportReportMd(result);   // includes Next actions + fictional-cohort sections
+const csv = exportGapsCsv(result);   // RFC4180, CRLF endings
+const bench = compare(result);       // { cohort, pillars: [{percentile}], overall: {percentile} }
+const d = diffAssessments(prevAssessment, currAssessment, config?);
+// d: { questions: [{delta, direction}], pillars, overall, summary }
 ```
 
 Errors (thrown, deterministic): unknown `questionId`; non-integer or
-out-of-range `level`; pillar weights that do not sum to 1.
+out-of-range `level`; unknown `preset`; pillar weights that do not sum to 1.
 
 ## Deterministic vs LLM-assisted
 
@@ -72,7 +88,13 @@ The LLM never scores — the scale answer must trace to the human's statement;
 
 Framework references are structural mappings to published documents
 (NIST AI RMF 1.0; ISO/IEC 42001:2023) — jurisdiction-agnostic guidance, not
-legal advice. Sector-specific obligations (e.g., EU AI Act, NYC Local Law
-144, Colorado AI Act) are deliberately **not** scored here; add them as new
-rules-as-data questions rather than editing logic. Disclaimer included in
-every report export.
+legal advice. `euAiActRefs` add an ILLUSTRATIVE mapping to EU AI Act
+arts. 5–15 as rules-as-data: every ref is tagged `[verify]` and must be
+checked against the official text before being relied on. Cohort
+percentiles (`COHORT_BASELINE`) come from a fictional reference cohort —
+swap the data block to re-version; the “fictional / illustrative” labeling
+is part of the output contract and must stay attached wherever percentiles
+appear. Sector-specific scoring obligations (e.g., NYC Local Law 144,
+Colorado AI Act) remain out of scope; add them as new rules-as-data
+questions rather than editing logic. Disclaimer included in every report
+export.

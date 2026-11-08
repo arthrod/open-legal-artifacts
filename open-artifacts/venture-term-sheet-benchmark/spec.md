@@ -11,15 +11,22 @@ flagged rather than guessed.
 Input a term sheet's terms as JSON (round + vintage + term map); compare
 each term against an editable market grid; output a per-term verdict:
 
-- `inside_market` — value within the grid entry (range or enum);
+- `inside_market` — value within the grid entry (range, enum, or flag);
 - `outside_market` — value outside it, with direction for ranges (above/
-  below) and the standard set for enums;
-- `unknown_value_type` — e.g. a non-numeric value against a numeric range —
-  never guessed;
+  below) and the standard set for enums/flags; outside rows carry a favor
+  direction (`investor`/`company`) — the side the off-market drift benefits;
+- `unknown_value_type` — e.g. a non-numeric value against a numeric range,
+  or an enum value matching no grid vocabulary anywhere (typo guard:
+  near-misses get a suggested correction) — never guessed;
 - `no_benchmark` — term has no grid entry this round; you add one, the tool
   doesn't invent one.
 
 Every verdict row cites its benchmark entry's `source: {name, asOf}`.
+Range entries may carry optional `p25/p50/p75` distribution bands —
+inside-range details then state the band ("above p75"); bands are
+EXAMPLE percentiles until you replace them. Each known term also has a
+`TERM_CATALOG` entry (one-line definition + public NVCA model-docs URL)
+rendered in the Markdown export and the demo.
 
 ### Sourcing discipline (the whole point)
 
@@ -27,15 +34,15 @@ Every verdict row cites its benchmark entry's `source: {name, asOf}`.
   redemption, pro-rata, pay-to-play) follow the public **NVCA Model Legal
   Documents** as a structure baseline — cited as such, not as market data.
 - **Numeric ranges** (liquidation multiple, board seats) ship as loudly
-  labeled `EXAMPLE DEFAULT — replace with your own dated market data`.
-  The tool never presents them as market truth; swap in your deal corpus or
-  a dated survey via `withGrid()`.
+  labeled `EXAMPLE DEFAULT — replace with your own dated market data`,
+  including any p25/p50/p75 bands. The tool never presents them as market
+  truth; swap in your deal corpus or a dated survey via `withGrid()`.
 - A term sheet whose vintage postdates the grid gets a staleness warning.
 
 ## IO contract
 
 ```js
-import { benchmarkTermSheet, exportMd, withGrid } from './core/core.js';
+import { benchmarkTermSheet, exportCsv, exportMd, withGrid } from './core/core.js';
 const result = benchmarkTermSheet({
   term_sheet: { round: 'series_a', vintage: 2026, company: '…',
                 terms: { liquidation_preference_multiple: 1.5, anti_dilution: 'full_ratchet', … } },
@@ -52,8 +59,8 @@ fields.
 
 | Part | Owner |
 |---|---|
-| Grid entries, sources, dates | rules-as-data (editable; `withGrid` merges per round) |
-| Verdicts, direction, staleness checks, MD export | deterministic code |
+| Grid entries, sources, dates, bands, favor | rules-as-data (editable; `withGrid` merges per entry) |
+| Verdicts, direction, favor, typo guard, staleness checks, MD/CSV export | deterministic code |
 | Parsing a PDF term sheet into the terms JSON | LLM-assisted (optional capture step) |
 
 ### LLM prompt schema (optional capture step)

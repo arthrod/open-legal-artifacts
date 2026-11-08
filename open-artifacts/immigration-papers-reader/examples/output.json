@@ -56,22 +56,34 @@
     "score": 100,
     "ready_count": 5,
     "required_count": 5,
+    "has_uncertain": false,
     "not_ready": []
   },
   "key_dates": [
     {
       "label": "I-485 interview (fictional)",
       "date": "2026-11-18",
+      "type": "other",
+      "loud": "",
       "days_until": 11,
       "urgent": true
     },
     {
       "label": "EAD renewal deadline (fictional)",
       "date": "2026-12-01",
+      "type": "filing_deadline",
+      "loud": "FILING DEADLINE — missing it can forfeit the benefit or the chance to respond.",
       "days_until": 24,
       "urgent": false
     }
   ],
+  "next_action": {
+    "label": "I-485 interview (fictional)",
+    "date": "2026-11-18",
+    "days_until": 11,
+    "type": "other",
+    "action": "Confirm what this date requires and act before it passes."
+  },
   "referral": {
     "flag": true,
     "reasons": [
@@ -86,6 +98,7 @@
     "5 of 5 required documents are on file and valid — readiness 100%.",
     "I-485 interview (fictional): 2026-11-18 — 11 day(s) from now (URGENT).",
     "EAD renewal deadline (fictional): 2026-12-01 — 24 day(s) from now.",
+    "Next action: I-485 interview (fictional) on 2026-11-18 (11 day(s) away) — Confirm what this date requires and act before it passes.",
     "This case should be referred to an accredited attorney or accredited representative before anything is filed.",
     "This checklist is not legal advice."
   ],

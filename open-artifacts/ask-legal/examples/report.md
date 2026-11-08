@@ -25,7 +25,7 @@
   - best match "How long do we retain website visitor data?" scored 18 (tags: privacy, data-retention; terms: long, retain, website, visitor, data, privacy, policy)
   - score 18 ≥ high threshold 9
   - guidance is 981d old (> 365d freshness window) — downgraded one tier
-- answer (source `kb-005`): 26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).
+- answer (source `kb-005`) — **provisional**: Provisional guidance — confirm with Legal.: 26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9).
 
 ## Q: Do we need a license to launch a satellite for the marketing team?
 
@@ -42,6 +42,19 @@
   - score 14 ≥ high threshold 9
   - guidance verified 8d ago (within 365d window)
 - answer (source `kb-004`): Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides on regulator notification under the incident runbook.
+
+## Escalation tickets — deterministic drafts for the lawyer
+
+Each escalation carries a ready-to-send intake ticket: route, question, asker, matched ids, reasons, and the closest KB entry (if any) to start from.
+
+### → `legal-intake`
+
+- question: Do we need a license to launch a satellite for the marketing team?
+- asker: `t.nguyen@example.test`
+- matched KB entries: none (zero overlap)
+- why escalated:
+  - no knowledge-base entry matched any question term or tag
+- no KB entry came close — guidance gap for Legal to fill
 
 ## Audit log (every question, append-only)
 

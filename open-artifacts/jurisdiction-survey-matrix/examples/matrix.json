@@ -2,7 +2,8 @@
   "topic": "Data breach notification — individual notice (fictional survey for Cascade Logistics, Inc.)",
   "asOf": "2026-11-07",
   "policy": {
-    "maxAgeDays": 180
+    "maxAgeDays": 180,
+    "requireSourceUrl": true
   },
   "jurisdictions": [
     "US-CA",
@@ -39,6 +40,8 @@
         "ageDays": 98,
         "answer": "In the most expedient time possible and without unreasonable delay (fictionalized).",
         "citation": "Fictional CalCiv § 1798.82(a)-analog",
+        "sourceUrl": "https://fictional.example/us-ca/civ-1798-82",
+        "quotedText": "The disclosure shall be made in the most expedient time possible and without unreasonable delay.",
         "verifiedDate": "2026-08-01",
         "verifiedBy": "R. Castellan"
       },
@@ -48,6 +51,8 @@
         "ageDays": 98,
         "answer": "Reasonable likelihood of material damage to a resident (fictionalized).",
         "citation": "Fictional CalCiv § 1798.82(a)-analog",
+        "sourceUrl": "https://fictional.example/us-ca/civ-1798-82",
+        "quotedText": "any resident of California whose unencrypted personal information was, or is reasonably believed to have been, acquired by an unauthorized person",
         "verifiedDate": "2026-08-01",
         "verifiedBy": "R. Castellan"
       },
@@ -57,6 +62,8 @@
         "ageDays": 98,
         "answer": "AG copy required when > 500 California residents affected (fictionalized).",
         "citation": "Fictional CalCiv § 1798.82(f)-analog",
+        "sourceUrl": "https://fictional.example/us-ca/civ-1798-82",
+        "quotedText": "Any person required to make notification shall submit a copy of the notification to the Attorney General when more than 500 California residents are notified.",
         "verifiedDate": "2026-08-01",
         "verifiedBy": "R. Castellan"
       },
@@ -66,6 +73,8 @@
         "ageDays": 98,
         "answer": "Civil penalties up to $200 per resident, capped (fictionalized).",
         "citation": "Fictional CalCiv § 1798.155-analog",
+        "sourceUrl": "https://fictional.example/us-ca/civ-1798-155",
+        "quotedText": "A civil penalty not exceeding two hundred dollars ($200) per resident for each violation.",
         "verifiedDate": "2026-08-01",
         "verifiedBy": "R. Castellan"
       }
@@ -77,6 +86,8 @@
         "ageDays": 266,
         "answer": "Notification within 30 days of discovery (fictionalized).",
         "citation": "Fictional 815 ILCS 530/10-analog",
+        "sourceUrl": "https://fictional.example/us-il/815-ilcs-530/10",
+        "quotedText": "Notification shall be made without unreasonable delay following discovery, and in no event later than 30 days after discovery of the breach.",
         "verifiedDate": "2026-02-14",
         "verifiedBy": "M. Delacroix"
       },
@@ -86,6 +97,8 @@
         "ageDays": 266,
         "answer": "Personal information was, or is reasonably believed to have been, acquired (fictionalized).",
         "citation": "Fictional 815 ILCS 530/5-analog",
+        "sourceUrl": "https://fictional.example/us-il/815-ilcs-530/5",
+        "quotedText": "personal information was, or is reasonably believed to have been, acquired by an unauthorized person",
         "verifiedDate": "2026-02-14",
         "verifiedBy": "M. Delacroix"
       },
@@ -107,6 +120,8 @@
         "ageDays": 291,
         "answer": "Most expedient time possible and without unreasonable delay; statutory 30-day outer marker in current practice (fictionalized).",
         "citation": "Fictional GBL § 899-aa(4)-analog",
+        "sourceUrl": "https://fictional.example/us-ny/gbl-899-aa",
+        "quotedText": "The notification shall be made in the most expedient time possible and without unreasonable delay; where more than 5,000 residents are notified, notice shall be provided within 30 days in the manner prescribed.",
         "verifiedDate": "2026-01-20",
         "verifiedBy": "M. Delacroix"
       },
@@ -116,6 +131,8 @@
         "ageDays": 291,
         "answer": "Private information acquired or accessed (fictionalized).",
         "citation": "Fictional GBL § 899-aa(1)(b)-analog",
+        "sourceUrl": "https://fictional.example/us-ny/gbl-899-aa",
+        "quotedText": "private information was, or is reasonably believed to have been, acquired by, or accessed by, a person without valid authorization",
         "verifiedDate": "2026-01-20",
         "verifiedBy": "M. Delacroix"
       },
@@ -159,6 +176,8 @@
         "ageDays": 8,
         "answer": "Without undue delay to individuals when high risk (fictionalized GDPR-analog).",
         "citation": "Fictional GDPR-art-34-analog",
+        "sourceUrl": "https://fictional.example/eu/gdpr/art-34",
+        "quotedText": "the controller shall communicate the personal data breach to the data subject without undue delay",
         "verifiedDate": "2026-10-30",
         "verifiedBy": "A. Fern"
       },
@@ -168,6 +187,8 @@
         "ageDays": 8,
         "answer": "High risk to rights and freedoms (fictionalized).",
         "citation": "Fictional GDPR-art-34(1)-analog",
+        "sourceUrl": "https://fictional.example/eu/gdpr/art-34",
+        "quotedText": "when the personal data breach is likely to result in a high risk to the rights and freedoms of natural persons",
         "verifiedDate": "2026-10-30",
         "verifiedBy": "A. Fern"
       },
@@ -177,6 +198,8 @@
         "ageDays": 8,
         "answer": "Supervisory authority within 72 hours of awareness (fictionalized).",
         "citation": "Fictional GDPR-art-33-analog",
+        "sourceUrl": "https://fictional.example/eu/gdpr/art-33",
+        "quotedText": "the controller shall notify the supervisory authority without undue delay and, where feasible, not later than 72 hours after having become aware of it",
         "verifiedDate": "2026-10-30",
         "verifiedBy": "A. Fern"
       },
@@ -186,6 +209,8 @@
         "ageDays": 8,
         "answer": "Up to 4% of global annual turnover for core obligations (fictionalized).",
         "citation": "Fictional GDPR-art-83(5)-analog",
+        "sourceUrl": "https://fictional.example/eu/gdpr/art-83",
+        "quotedText": "administrative fines up to 20 000 000 EUR, or in the case of an undertaking, up to 4% of the total worldwide annual turnover",
         "verifiedDate": "2026-10-30",
         "verifiedBy": "A. Fern"
       }
@@ -197,6 +222,8 @@
         "ageDays": 606,
         "answer": "Without undue delay (fictionalized UK GDPR-analog).",
         "citation": "Fictional UK-GDPR-art-34-analog",
+        "sourceUrl": "https://fictional.example/uk/gdpr/art-34",
+        "quotedText": "the controller shall communicate a personal data breach to the data subject without undue delay",
         "verifiedDate": "2025-03-11",
         "verifiedBy": "H. Whitlock"
       },
@@ -239,11 +266,82 @@
       }
     ]
   ],
+  "warnings": [],
   "coverage": {
     "total": 28,
     "verified": 8,
     "stale": 5,
     "unverified": 15,
-    "pctVerified": 29
+    "pctVerified": 29,
+    "byJurisdiction": {
+      "US-CA": {
+        "total": 4,
+        "verified": 4,
+        "stale": 0,
+        "unverified": 0
+      },
+      "US-IL": {
+        "total": 4,
+        "verified": 0,
+        "stale": 2,
+        "unverified": 2
+      },
+      "US-NY": {
+        "total": 4,
+        "verified": 0,
+        "stale": 2,
+        "unverified": 2
+      },
+      "US-TX": {
+        "total": 4,
+        "verified": 0,
+        "stale": 0,
+        "unverified": 4
+      },
+      "EU": {
+        "total": 4,
+        "verified": 4,
+        "stale": 0,
+        "unverified": 0
+      },
+      "UK": {
+        "total": 4,
+        "verified": 0,
+        "stale": 1,
+        "unverified": 3
+      },
+      "BR": {
+        "total": 4,
+        "verified": 0,
+        "stale": 0,
+        "unverified": 4
+      }
+    },
+    "byQuestion": {
+      "deadline": {
+        "total": 7,
+        "verified": 2,
+        "stale": 3,
+        "unverified": 2
+      },
+      "threshold": {
+        "total": 7,
+        "verified": 2,
+        "stale": 2,
+        "unverified": 3
+      },
+      "ag-report": {
+        "total": 7,
+        "verified": 2,
+        "stale": 0,
+        "unverified": 5
+      },
+      "penalty": {
+        "total": 7,
+        "verified": 2,
+        "stale": 0,
+        "unverified": 5
+      }
+    }
   }
 }

@@ -11,7 +11,7 @@
       "filedDate": "2026-10-03",
       "serviceMethod": "post-and-mail",
       "contents": {
-        "amount-due": true,
+        "amount-due": { "present": true, "quote": "Rent of $1,250.00 is now due and unpaid" },
         "payment-person": true,
         "payment-methods": false,
         "nonrent-fees-excluded": true
@@ -37,6 +37,27 @@
       "serviceMethod": "certified-carrier-pigeon",
       "contents": {
         "statutory-language": false
+      }
+    },
+    {
+      "id": "E-1034",
+      "caption": "Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",
+      "jurisdiction": "fiction-city-example",
+      "noticeType": "pay-or-quit",
+      "statedPeriodDays": 3,
+      "serviceDate": "2026-10-02",
+      "filedDate": "2026-10-07",
+      "serviceMethod": "personal",
+      "checklist": [
+        { "id": "utility-contact", "label": "Landlord/utility contact printed on notice", "cite": "Fiction Clinic intake checklist v3 (fictional)" }
+      ],
+      "contents": {
+        "amount-due": { "present": true, "quote": "Rent of $980.00 is now due" },
+        "payment-person": true,
+        "payment-methods": true,
+        "nonrent-fees-excluded": true,
+        "bilingual-notice": true,
+        "utility-contact": { "present": true, "quote": "Questions? Call Fiction Properties, (555) 010-1034" }
       }
     }
   ]

@@ -35,6 +35,13 @@
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
   .rule-road { font-size: 12px; color: var(--text-secondary); }
   details summary { cursor: pointer; font-family: var(--font-mono); font-size: 12px; }
+  .filters { display: none; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 12px; font-family: var(--font-mono); font-size: 12px; }
+  .filters.on { display: flex; }
+  .filters label { display: inline-flex; gap: 6px; align-items: center; }
+  .filters select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 4px 6px; }
+  .achip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text-secondary); color: var(--text-secondary); padding: 1px 7px; display: inline-block; margin: 1px 2px 1px 0; white-space: nowrap; }
+  .achip.critical { border-color: var(--bad); color: var(--bad); background: var(--flag-tint); }
+  .achip.high { border-color: var(--bad); color: var(--bad); }
 </style>
 </head>
 <body>
@@ -52,6 +59,17 @@
   </div>
   <div class="err" id="err"></div>
 
+  <h2>Filters</h2>
+  <div class="filters" id="filters">
+    <label><input type="checkbox" id="f-closed" /> include closed</label>
+    <label><input type="checkbox" id="f-stale" /> stale only</label>
+    <label>band
+      <select id="f-band"><option value="">all</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="unquantified">unquantified</option></select>
+    </label>
+    <label>claim <select id="f-claim"></select></label>
+    <label>counsel <select id="f-counsel"></select></label>
+  </div>
+
   <h2>Dashboard</h2>
   <div id="summary"></div>
   <div id="board"></div>
@@ -64,14 +82,15 @@
 </div>
 
 <script type="module">
-import { buildPortfolio, toCSV, renderDashboard, DEFAULT_CLAIM_RULES } from '../core/core.js';
+import { buildPortfolio, toCSV, renderDashboard, applyFilters, DEFAULT_CLAIM_RULES } from '../core/core.js';
 
 const DEFAULT_INPUT = {
   asOf: new Date().toISOString().slice(0, 10),
   matters: [
-    { id: 'LIT-2026-014', name: 'Harbor Bakehouse v. Northwind Logistics (fictional)', client: 'Harbor Bakehouse Co.', claimType: 'breach-of-written-contract', accrualDate: '2025-09-12', status: 'active', stage: 'discovery', exposureLow: 120000, exposureHigh: 340000, counsel: 'A. Ferreira (fictional)', venue: 'Superior Court, fictional county', strategy: 'No ex parte contact; 2-week extension courtesy', nextDeadline: '2026-11-20' },
-    { id: 'LIT-2026-021', name: 'Delgado v. Summit Ridge Hospitality (fictional)', client: 'M. Delgado', claimType: 'personal-injury-negligence', accrualDate: '2024-11-20', status: 'active', stage: 'expert discovery', exposureLow: 15000, exposureHigh: 48000, counsel: 'J. Okafor (fictional)' },
-    { id: 'LIT-2026-041', name: 'Tidewater Fisheries v. Unknown Vessel Operator (fictional)', client: 'Tidewater Fisheries LLC', claimType: 'admiralty-collision', accrualDate: '2026-03-04', status: 'assessing', stage: 'identifying defendant' },
+    { id: 'LIT-2026-014', name: 'Harbor Bakehouse v. Northwind Logistics (fictional)', client: 'Harbor Bakehouse Co.', claimType: 'breach-of-written-contract', accrualDate: '2025-09-12', status: 'active', stage: 'discovery', lastUpdated: '2026-11-05', legalHold: true, conflicts: { status: 'cleared' }, materiality: 'disclosed', exposureLow: 120000, exposureHigh: 340000, exposureBasis: 'Counsel memo 2026-10-12: defense-range estimate (fictional)', sourceDoc: 'MEMO-2026-10-12', counsel: 'A. Ferreira (fictional)', venue: 'Superior Court, fictional county', strategy: 'No ex parte contact; 2-week extension courtesy', nextDeadline: '2026-11-20' },
+    { id: 'LIT-2026-021', name: 'Delgado v. Summit Ridge Hospitality (fictional)', client: 'M. Delgado', claimType: 'personal-injury-negligence', accrualDate: '2024-11-20', status: 'active', stage: 'expert discovery', lastUpdated: '2026-09-01', legalHold: true, conflicts: { status: 'cleared' }, materiality: 'reserved', exposureLow: 15000, exposureHigh: 48000, exposureBasis: 'Claims memo 2026-08-18: settlement range (fictional)', sourceDoc: 'CLAIMS-2026-08-18', reserve: { amount: 25000, asOf: '2026-08-15' }, counsel: 'J. Okafor (fictional)', venue: 'District Court, fictional county' },
+    { id: 'LIT-2026-030', name: 'Okonkwo v. Meridian Foods (fictional)', client: 'P. Okonkwo', claimType: 'employment-discrimination-federal', accrualDate: '2026-08-30', status: 'assessing', stage: 'pre-charge intake', lastUpdated: '2026-08-01', conflicts: { status: 'pending' }, materiality: 'monitored', exposureHigh: 95000, counsel: 'unassigned', venue: 'EEOC (fictional region)' },
+    { id: 'LIT-2026-041', name: 'Tidewater Fisheries v. Unknown Vessel Operator (fictional)', client: 'Tidewater Fisheries LLC', claimType: 'admiralty-collision', accrualDate: '2026-03-04', status: 'assessing', stage: 'identifying defendant', conflicts: { status: 'cleared' }, materiality: 'monitored', counsel: 'unassigned', venue: 'TBD' },
   ],
 };
 
@@ -81,7 +100,7 @@ $('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
 function chip(s) { return `<span class="chip ${s}">${s}</span>`; }
 function money(n) { return n == null ? '—' : '$' + n.toLocaleString('en-US'); }
 
-function render() {
+function evaluate() {
   const errEl = $('err');
   errEl.style.display = 'none';
   let out;
@@ -91,17 +110,52 @@ function render() {
   } catch (e) {
     errEl.textContent = 'Input error: ' + e.message;
     errEl.style.display = 'block';
-    return;
+    return null;
   }
+  window.__full = out;
+  $('filters').classList.add('on');
+  populateFilters(out);
+  return out;
+}
+
+function readFilters() {
+  return {
+    includeClosed: $('f-closed').checked,
+    stale: $('f-stale').checked,
+    band: $('f-band').value || undefined,
+    claimType: $('f-claim').value || undefined,
+    counsel: $('f-counsel').value || undefined,
+  };
+}
+
+function populateFilters(p) {
+  const fill = (id, values) => {
+    const sel = $(id);
+    const prev = sel.value;
+    sel.innerHTML = ['<option value="">all</option>', ...[...new Set(values)].sort().map((v) => `<option>${v}</option>`)].join('');
+    if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  };
+  fill('f-claim', p.matters.map((r) => r.claimType));
+  fill('f-counsel', p.matters.map((r) => r.rulesOfRoad.counsel).filter(Boolean));
+}
+
+function render() {
+  if (!window.__full) return;
+  const out = applyFilters(window.__full, readFilters());
   const s = out.summary;
+  const h = s.nextDeadlines;
+  const an = s.anomalies;
   $('summary').innerHTML = `
     <div class="cards">
       <div class="card"><div class="k">Matters</div><div class="v">${s.total}</div></div>
       <div class="card alert"><div class="k">SOL alerts</div><div class="v">${s.solAlerts}</div></div>
       <div class="card"><div class="k">SOL unverified</div><div class="v">${s.solUnverified}</div></div>
       <div class="card"><div class="k">High-band exposure</div><div class="v">$${s.exposureByBand.high.totalHighEstimate.toLocaleString('en-US')}</div></div>
-      <div class="card"><div class="k">Flagged</div><div class="v">${s.flagged}</div></div>
-    </div>`;
+      <div class="card alert"><div class="k">Anomalies</div><div class="v">${an.total}</div></div>
+    </div>
+    <p class="lede" style="font-size:0.85rem">Next deadlines: overdue ${h.overdue} · ≤14d ${h.within14} · 15–30d ${h.days15to30} · 31–60d ${h.days31to60} · >60d ${h.beyond60} · none ${h.none}.
+    Anomalies: critical ${an.bySeverity.critical} · high ${an.bySeverity.high} · medium ${an.bySeverity.medium} · low ${an.bySeverity.low}.
+    Showing ${out.filtered.kept} of ${out.filtered.of} matters (closed excluded by default).</p>`;
 
   const rows = [...out.matters].sort((a, b) => (a.sol.daysRemaining ?? Infinity) - (b.sol.daysRemaining ?? Infinity))
     .map((r) => `
@@ -110,19 +164,23 @@ function render() {
         <details><summary>rules of the road</summary><div class="rule-road">counsel: ${r.rulesOfRoad.counsel ?? '—'} · venue: ${r.rulesOfRoad.venue ?? '—'} · strategy: ${r.rulesOfRoad.strategy ?? '—'} · next deadline: ${r.rulesOfRoad.nextDeadline ?? '—'}</div></details>
       </td>
       <td>${r.sol.deadline ?? '—'}<br />${chip(r.sol.status)}<br /><span class="cite">${r.sol.daysRemaining ?? '—'} days left · ${r.sol.ruleCite ?? 'no rule'}</span></td>
-      <td>${r.exposure.band}<br /><span class="cite">${money(r.exposure.low)} – ${money(r.exposure.high)}</span></td>
+      <td>${r.exposure.band}<br /><span class="cite">${money(r.exposure.low)} – ${money(r.exposure.high)}</span>${r.exposure.basis ? `<br /><span class="cite">basis: ${r.exposure.basis.replace(/</g, '&lt;')}</span>` : ''}</td>
+      <td>${r.anomalies.length ? r.anomalies.map((a) => `<span class="achip ${a.severity}">${a.id}</span>`).join('') : '—'}</td>
       <td>${r.flags.length ? `<span class="flags">${r.flags.map((f) => f.replace(/</g, '&lt;')).join('<br>')}</span>` : '—'}</td>
     </tr>`).join('');
-  $('board').innerHTML = `<table><thead><tr><th>Matter</th><th>SOL</th><th>Exposure</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('board').innerHTML = `<table><thead><tr><th>Matter</th><th>SOL</th><th>Exposure</th><th>Anomalies</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
   out._csv = toCSV(out);
   window.__portfolio = out;
 }
 
-$('run').addEventListener('click', render);
+$('run').addEventListener('click', () => { if (evaluate()) render(); });
+for (const id of ['f-closed', 'f-stale', 'f-band', 'f-claim', 'f-counsel']) {
+  $(id).addEventListener('change', render);
+}
 $('csv').addEventListener('click', () => {
   if (window.__portfolio) navigator.clipboard?.writeText(window.__portfolio._csv);
 });
-render();
+if (evaluate()) render();
 </script>
 </body>
 </html>

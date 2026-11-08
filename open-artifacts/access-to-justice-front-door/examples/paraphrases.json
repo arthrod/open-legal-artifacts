@@ -1,0 +1,25 @@
+{
+  "note": "20-paraphrase golden set. Status/issue pairs are the recorded deterministic output of the classifier; 'issue' is asserted only when status is classified. Descriptions are fictional.",
+  "cases": [
+    { "text": "I'm being kicked out of my apartment.", "expect": { "status": "classified", "issue": "housing-eviction" } },
+    { "text": "They threw me out of my place last night.", "expect": { "status": "classified", "issue": "housing-eviction" } },
+    { "text": "My husband beats me and I am scared to go home.", "expect": { "status": "classified", "issue": "domestic-violence" } },
+    { "text": "My boss owes me for two weeks of work.", "expect": { "status": "classified", "issue": "employment-wage" } },
+    { "text": "They cut off my cash assistance without telling me why.", "expect": { "status": "classified", "issue": "benefits-denial" } },
+    { "text": "My check was garnished over an old hospital bill.", "expect": { "status": "classified", "issue": "consumer-debt" } },
+    { "text": "My EBT card stopped working and I can't buy food.", "expect": { "status": "classified", "issue": "benefits-denial" } },
+    { "text": "There are roaches everywhere and the landlord won't fix anything.", "expect": { "status": "classified", "issue": "housing-conditions" } },
+    { "text": "I want to clean up my record so I can get a job.", "expect": { "status": "classified", "issue": "record-clearance" } },
+    { "text": "I wasn't paid for working off the clock.", "expect": { "status": "classified", "issue": "employment-wage" } },
+    { "text": "There has been no hot water for a week.", "expect": { "status": "classified", "issue": "housing-conditions" } },
+    { "text": "My landlord gave me papers and I have to be out by Friday.", "expect": { "status": "classified", "issue": "housing-eviction" } },
+    { "text": "I need a protective order against my ex.", "expect": { "status": "classified", "issue": "domestic-violence" } },
+    { "text": "Child support stopped coming and I don't know what to do.", "expect": { "status": "classified", "issue": "family-custody" } },
+    { "text": "My neighbor's tree fell into my yard and now the HOA is fining me over the fence.", "expect": { "status": "escalate" } },
+    { "text": "I want to sue my dentist in another state.", "expect": { "status": "escalate" } },
+    { "text": "The city reassessed my property taxes and I think the formula is wrong.", "expect": { "status": "escalate" } },
+    { "text": "Someone is impersonating me online.", "expect": { "status": "escalate" } },
+    { "text": "I need help with a patent for my invention.", "expect": { "status": "escalate" } },
+    { "text": "My HOA won't let me paint my house purple.", "expect": { "status": "escalate" } }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "scenario": "Personal-injury intake (fictional firm: Bertram & Ozawa LLP) — run 2",
+  "flows": [
+    {
+      "id": "paper-intake",
+      "name": "Human paper intake (legacy process)",
+      "composite": 5.05,
+      "dimensions": {
+        "completeness": 0,
+        "non_redundancy": 5.49,
+        "fallback_quality": 0,
+        "speed": -0.67
+      },
+      "rank": {
+        "from": 2,
+        "to": 1,
+        "changed": true
+      }
+    },
+    {
+      "id": "guided-form",
+      "name": "Guided web form (Meridian Intake, fictional)",
+      "composite": -32,
+      "dimensions": {
+        "completeness": 0,
+        "non_redundancy": 0,
+        "fallback_quality": -66.67,
+        "speed": -87.5,
+        "retention": -37
+      },
+      "rank": {
+        "from": 1,
+        "to": 2,
+        "changed": true
+      }
+    }
+  ]
+}

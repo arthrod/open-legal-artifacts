@@ -20,7 +20,7 @@
   button:hover { background: #333; }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
-  .balances { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; }
+  .balances { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border: var(--hairline); background: #fff; margin-bottom: 16px; }
   .balances div { padding: 12px 14px; border-right: var(--hairline); }
   .balances div:last-child { border-right: none; background: var(--flag-tint); }
   .balances .n { font-family: var(--font-mono); font-size: 18px; font-weight: 500; }
@@ -52,6 +52,9 @@
       <textarea id="input" spellcheck="false"></textarea>
       <p><button id="run">Recompute ledger</button></p>
       <div class="err" id="err"></div>
+      <p style="margin-top:20px" class="kicker">Paste ledger table (CSV/TSV) → deterministic parse, no LLM</p>
+      <textarea id="csv" spellcheck="false" style="min-height:110px" placeholder="id,date,type,amount,applied_to,note&#10;1,2026-01-01,rent,1400,,January rent&#10;2,2026-01-03,payment,1400,,money order #4401"></textarea>
+      <p><button id="parse">Parse table → replace ledger</button></p>
     </div>
     <div>
       <div class="kicker">Audit result</div>
@@ -61,12 +64,16 @@
 </div>
 
 <script type="module">
-import { reviewLedger, toCSV } from "../core/core.js";
+import { reviewLedger, toCSV, parseLedgerTable } from "../core/core.js";
 
 const EXAMPLE = {
   jurisdiction: "DC",
   asOf: "2026-04-30",
-  lease: { monthlyRent: 1400, leaseStart: "2026-01-01", rentDueDay: 1 },
+  claimedBalance: 2270, // what the landlord claims is owed (fictional) — $400 above the recomputation
+  lease: {
+    monthlyRent: 1400, leaseStart: "2026-01-01", rentDueDay: 1,
+    rentSchedule: [{ from: "2026-01-01", amount: 1400 }],
+  },
   ledger: [
     { id: 1, date: "2026-01-01", type: "rent", amount: 1400, note: "January rent" },
     { id: 2, date: "2026-01-03", type: "payment", amount: 1400, note: "money order #4401 (fictional)" },
@@ -87,7 +94,23 @@ const EXAMPLE = {
 const $input = document.getElementById("input");
 const $out = document.getElementById("out");
 const $err = document.getElementById("err");
+const $csv = document.getElementById("csv");
 $input.value = JSON.stringify(EXAMPLE, null, 2);
+
+document.getElementById("parse").addEventListener("click", () => {
+  $err.textContent = "";
+  try {
+    const cur = JSON.parse($input.value);
+    const p = parseLedgerTable($csv.value);
+    if (p.errors.length) { $err.textContent = p.errors.join(" "); return; }
+    cur.ledger = p.entries;
+    $input.value = JSON.stringify(cur, null, 2);
+    $err.textContent = `Parsed ${p.entries.length} entr${p.entries.length === 1 ? "y" : "ies"} into the ledger.` +
+      (p.ignoredRows.length ? ` Ignored ${p.ignoredRows.length} row(s): ` + p.ignoredRows.map((x) => `line ${x.line} (${x.reason})`).join("; ") : " No rows ignored.");
+  } catch (e) {
+    $err.textContent = "Parse error: " + e.message;
+  }
+});
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 const money = (n) => (typeof n === "number" ? n.toFixed(2) : "—");
@@ -98,9 +121,13 @@ document.getElementById("run").addEventListener("click", () => {
     const r = reviewLedger(JSON.parse($input.value));
     if (r.errors?.length) { $err.textContent = r.errors.join(" "); return; }
     const flagged = new Set(r.disputes.map((d) => String(d.entryId ?? "")));
+    const claimedCell = r.claimedBalance
+      ? `<div><div class="l">Claimed (landlord)</div><div class="n">${money(r.claimedBalance.claimed)}</div></div>`
+      : "";
     let html = `<div class="balances">
       <div><div class="l">Balance as ledger stands</div><div class="n">${money(r.balance.ledgerFinal)}</div></div>
       <div><div class="l">Lawful charges only</div><div class="n">${money(r.balance.lawfulFinal)}</div></div>
+      ${claimedCell}
       <div><div class="l">Overcharge identified</div><div class="n">${money(r.balance.overchargeTotal)}</div></div>
     </div>`;
     html += `<div class="scroll"><table><tr><th>#</th><th>Date</th><th>Type</th><th class="amt">Amount</th><th class="amt">Balance</th><th class="amt">Lawful bal.</th><th>Note / dispute</th></tr>`;
@@ -108,7 +135,7 @@ document.getElementById("run").addEventListener("click", () => {
       const ds = r.disputes.filter((d) => String(d.entryId) === String(row.entryId));
       html += `<tr class="${ds.length ? "flag" : ""}"><td>${esc(row.entryId)}</td><td>${esc(row.date)}</td><td>${esc(row.type)}</td>
         <td class="amt">${money(row.amount)}</td><td class="amt">${money(row.balanceAfter)}</td><td class="amt">${money(row.lawfulBalanceAfter)}</td>
-        <td>${esc(row.note)}${ds.map((d) => ` <strong>${esc(d.issue)}</strong> <code>${esc(d.ruleId)}</code>`).join("")}</td></tr>`;
+        <td>${esc(row.note)}${ds.map((d) => ` <strong>${esc(d.issue)}</strong> <code>${esc(d.ruleId)}${d.citation ? " · " + esc(d.citation) : ""}</code>`).join("")}</td></tr>`;
     }
     html += `</table></div>`;
     if (r.underpayments.length) {
@@ -117,7 +144,7 @@ document.getElementById("run").addEventListener("click", () => {
     if (r.disputes.some((d) => d.entryId == null)) {
       html += `<div class="scroll" style="margin-top:12px"><table><tr><th>Issue</th><th>Month</th><th class="amt">Amount</th><th>Rule</th><th>Description</th></tr>`;
       for (const d of r.disputes.filter((x) => x.entryId == null)) {
-        html += `<tr><td>${esc(d.issue)}</td><td>${esc(d.month ?? "")}</td><td class="amt">${money(d.amountInQuestion)}</td><td><code>${esc(d.ruleId)}</code></td><td>${esc(d.text)}</td></tr>`;
+        html += `<tr><td>${esc(d.issue)}</td><td>${esc(d.month ?? "")}</td><td class="amt">${money(d.amountInQuestion)}</td><td><code>${esc(d.ruleId)}${d.citation ? " · " + esc(d.citation) : ""}</code></td><td>${esc(d.text)}</td></tr>`;
       }
       html += `</table></div>`;
     }

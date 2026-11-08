@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//docket-watch-wall//open-legal-artifacts//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:E-103-response-days@docket-watch-wall
+DTSTAMP:20260402T000000Z
+DTSTART;VALUE=DATE:20260417
+DTEND;VALUE=DATE:20260418
+SUMMARY:Response due [verify]
+DESCRIPTION:basis=response-days confidence=medium fictional data — verify against the actual docket
+X-NEEDS-VERIFICATION:TRUE
+END:VEVENT
+END:VCALENDAR

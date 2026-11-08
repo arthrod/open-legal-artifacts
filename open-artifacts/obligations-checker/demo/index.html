@@ -29,6 +29,7 @@
   .chip.unscheduled, .chip.conditional { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
   .clause { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
   .notes { color: var(--text-secondary); font-size: 12px; }
+  .quote { color: var(--text-secondary); font-size: 11px; font-style: italic; }
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
 </style>
 </head>
@@ -41,6 +42,7 @@
   <h2>Register input (JSON)</h2>
   <textarea id="input" spellcheck="false"></textarea>
   <button id="run">Build register</button>
+  <button id="ics" title="One VEVENT + reminder per open dated obligation">Download .ics</button>
   <div class="err" id="err"></div>
 
   <h2>Summary</h2>
@@ -50,7 +52,7 @@
 </div>
 
 <script type="module">
-import { buildRegister, toCSV } from '../core/core.js';
+import { buildRegister, toCSV, toICS } from '../core/core.js';
 
 const DEFAULT_INPUT = {
   asOf: new Date().toISOString().slice(0, 10),
@@ -60,6 +62,7 @@ const DEFAULT_INPUT = {
     { id: 'OBL-2', clause: '§ 5.2', party: 'Supplier', verb: 'deliver', text: 'deliver the platform security audit report', dueDate: '2026-11-12' },
     { id: 'OBL-3', clause: '§ 5.4', party: 'Supplier', verb: 'notify', text: 'notify Customer of any security incident within 72 hours of discovery', dueDate: null, condition: 'within 72 hours of discovery of a security incident' },
     { id: 'OBL-6', clause: '§ 8.2', party: 'Supplier', verb: 'deliver', text: 'deliver the Q3 API usage statement', dueDate: '2026-09-30' },
+    { id: 'OBL-8', clause: '§ 4.4', party: 'Customer', owner: 'Finance (Customer)', verb: 'pay', text: 'pay the quarterly platform license fee of $6,000', dueDate: null, recurrence: { cadence: 'quarterly', anchor: '2026-03-31' }, amount: 6000, sourceQuote: 'Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.' },
   ],
   satisfaction: [
     { obligationId: 'OBL-6', satisfiedOn: '2026-10-03', evidence: 'email thread 2026-10-03 (fictional)' },
@@ -76,6 +79,8 @@ $('run').addEventListener('click', () => {
   try { reg = buildRegister(JSON.parse($('input').value)); }
   catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
   const s = reg.summary;
+  const partyCards = Object.entries(s.byParty).map(([p, b]) => `
+      <div class="card"><div class="k">${esc(p)} · open / overdue / exposure</div><div class="v">${b.open} / ${b.overdue} / $${b.exposure.toLocaleString('en-US')}</div></div>`).join('');
   $('summary').innerHTML = `
     <div class="cards">
       <div class="card"><div class="k">Obligations</div><div class="v">${s.total}</div></div>
@@ -83,20 +88,33 @@ $('run').addEventListener('click', () => {
       <div class="card"><div class="k">Open</div><div class="v">${s.open}</div></div>
       <div class="card"><div class="k">Satisfied</div><div class="v">${s.satisfied}${s.satisfiedLate ? ` (${s.satisfiedLate} late)` : ''}</div></div>
       <div class="card"><div class="k">Unsched./cond.</div><div class="v">${s.unscheduledOrConditional}</div></div>
-    </div>`;
+    </div>
+    <h2>By party</h2>
+    <div class="cards">${partyCards}</div>`;
   const order = { overdue: 0, 'due-soon': 1, unscheduled: 2, conditional: 3, pending: 4, satisfied: 5 };
   const rows = [...reg.obligations].sort((a, b) => order[a.status] - order[b.status] || a.id.localeCompare(b.id))
-    .map((o) => `
+    .map((o) => {
+      const due = o.dueDate ?? (o.recurrence ? `${o.nextDue}${o.cyclesMissed ? ` (+${o.cyclesMissed} missed)` : ''}` : null) ?? '—';
+      return `
     <tr>
-      <td><strong>${esc(o.id)}</strong> <span class="clause">${esc(o.clause ?? '')}</span><br /><span class="notes">${esc(o.party)} · ${esc(o.verb)}${o.amount != null ? ' · $' + o.amount.toLocaleString('en-US') : ''}</span></td>
-      <td>${esc(o.text)}</td>
-      <td>${o.dueDate ?? '—'}${o.condition ? `<br /><span class="notes">if: ${esc(o.condition)}</span>` : ''}</td>
+      <td><strong>${esc(o.id)}</strong> <span class="clause">${esc(o.clause ?? '')}</span><br /><span class="notes">${esc(o.party)}${o.owner ? ` · ${esc(o.owner)}` : ''} · ${esc(o.verb)}${o.amount != null ? ' · $' + o.amount.toLocaleString('en-US') : ''}</span></td>
+      <td>${esc(o.text)}${o.sourceQuote ? `<br /><span class="quote">“${esc(o.sourceQuote)}”</span>` : ''}</td>
+      <td>${due}${o.condition ? `<br /><span class="notes">if: ${esc(o.condition)}</span>` : ''}</td>
       <td><span class="chip ${o.status}">${o.status}</span>${o.breachRisk ? ' <span class="chip overdue">breach risk</span>' : ''}</td>
       <td>${o.satisfaction ? `${o.satisfaction.satisfiedOn}<br /><span class="notes">${esc(o.satisfaction.evidence ?? '')}</span>` : '—'}</td>
       <td>${o.flags.length ? `<span class="notes">${o.flags.map(esc).join('<br>')}</span>` : '—'}</td>
-    </tr>`).join('');
+    </tr>`;}).join('');
   $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Obligation</th><th>Due</th><th>Status</th><th>Satisfaction</th><th>Flags</th></tr></thead><tbody>${rows}</tbody></table>`;
   window.__csv = toCSV(reg);
+  window.__ics = toICS(reg);
+});
+$('ics').addEventListener('click', () => {
+  if (!window.__ics) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([window.__ics], { type: 'text/calendar' }));
+  a.download = 'obligations.ics';
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 $('run').click();
 </script>

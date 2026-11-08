@@ -3,20 +3,30 @@
 Open counterpart of PwC's Subpoena Response Tool (Claude for Legal partner
 gallery). A subpoena-facts JSON goes in; a deterministic tracker comes out:
 
-- deadline math — 14-day FRCP-style default, calendar **or** court-day
-  counting (weekends + holidays), mail-service extension, days remaining,
-  overdue/critical escalation;
+- subpoena classification (5 types incl. grand jury) with a hard
+  STOP/escalation gate that cannot be prompt-forgotten;
+- five tracked deadlines — response/compliance, objections (EARLIER-of
+  rule), production, motion-to-quash window, meet-and-confer — with the
+  earliest escalating when passed or ≤3 days out, all configurable per
+  forum and exportable as an ICS calendar (no dependencies);
 - responsive scope as structured fields (date range, custodians, data types)
-  with overbreadth flags mapped to suggested objections;
+  with overbreadth flags mapped to suggested objections, plus an objection
+  application matrix (categories, custodians, deterministic strength
+  ratings);
+- provenance trail: every critical fact field carries a source tag;
+  untagged fields warn and unverified sources are listed verify-first;
+- portfolio cross-check: caption/party matching flags coordinated issuance;
 - privilege/log workflow (`not_started → … → final`) with forward-only
   transitions and progress %;
 - objection-grounds library (10 stable ids, jurisdiction-dependent,
-  rules-as-data) and a Markdown checklist export.
+  rules-as-data) and a Markdown checklist export with a compliance-plan
+  section (production scope, custodians/systems, format, privilege-log
+  fields).
 
 ## Run
 
 ```bash
-node --test "core/*.test.js"     # 18 tests
+node --test "core/*.test.js"     # 38 tests
 node examples/run.js             # regenerates output.json + checklist.md
 ```
 

@@ -16,6 +16,8 @@
   section { margin-top: 48px; }
   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  .pick { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  select { font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: var(--hairline); border-radius: var(--radius); background: #fff; color: var(--text); }
   .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
   .counts div:last-child { border-right: none; }
@@ -46,9 +48,10 @@
     <div class="rule"></div>
     <p class="lede">A documents × questions matrix where <b>the core verifies, never answers</b>: a cell counts as
       answered ONLY when its answer carries a quote that actually locates in the document (exact or normalized;
-      fuzzy anchors but is flagged for review). Everything else is <b>UNVERIFIED</b> with a machine reason —
-      not_answered, missing_quote, quote_not_verified — and anchors survive CSV/Markdown export. Open
-      reimplementation of Anthropic's closed artifact.</p>
+      fuzzy anchors but is flagged for review) — and, on typed questions, ONLY when the answer satisfies the
+      question's machine-checked schema. Everything else is <b>UNVERIFIED</b> with a machine reason —
+      not_answered, missing_quote, quote_not_verified, constraint_violation, not_present / unclear / needs_review —
+      and anchors survive CSV/Markdown export. Open reimplementation of Anthropic's closed artifact.</p>
     <p class="lede" style="font-size:13px">Worked example (fictional): 3 agreements × 5 questions — 15 cells,
       including one deliberately unanswered and one quote that does not locate (the California governing-law cell).</p>
   </header>
@@ -57,9 +60,17 @@
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
     <div class="row-btns">
+      <div class="pick">
+        <label for="tpl">Question set</label>
+        <select id="tpl">
+          <option value="free">free-text (as extracted)</option>
+          <option value="typed">M&amp;A diligence (typed schema)</option>
+        </select>
+      </div>
       <button id="csvBtn">Export matrix.csv</button>
       <button id="mdBtn" class="ghost">Export matrix.md</button>
       <button id="jsonBtn" class="ghost">Export output.json</button>
+      <button id="diffBtn" class="ghost">Export diff.json</button>
     </div>
   </section>
 
@@ -77,56 +88,90 @@
 </div>
 
 <script type="module">
-  import { buildMatrix, toCSV, toMarkdown } from "../core/core.js";
+  import { buildMatrix, toCSV, toMarkdown, diffMatrices } from "../core/core.js";
   import EXAMPLE from "./example.js";
+  import TEMPLATE from "./templates.js";
 
-  const out = buildMatrix(EXAMPLE);
-  const s = out.summary;
-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const cellOf = (d, q) => out.cells.find((c) => c.documentId === d.id && c.questionId === q.id);
+  const NL = String.fromCharCode(10);
+  const esc = (v) => String(v).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const inputFor = (mode) => ({ ...EXAMPLE, questions: mode === "typed" ? TEMPLATE : EXAMPLE.questions });
 
-  document.getElementById("counts").innerHTML =
-    `<div><b>${s.cells}</b><span>cells</span></div>` +
-    `<div><b>${s.answered}</b><span>answered (anchored)</span></div>` +
-    `<div><b>${s.unverified}</b><span>unverified</span></div>` +
-    `<div><b>${s.flaggedForReview}</b><span>fuzzy — review</span></div>`;
+  let currentInput, currentOut;
 
-  document.getElementById("matrix").innerHTML =
-    `<tr><th>Document</th>${EXAMPLE.questions.map((q) => `<th>${esc(q.question)}</th>`).join("")}</tr>` +
-    EXAMPLE.documents
-      .map(
-        (doc) =>
-          `<tr><td><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></td>` +
-          EXAMPLE.questions
-            .map((q) => {
-              const cell = cellOf(doc, q);
-              if (!cell || cell.status === "unverified") {
-                return `<td class="unv">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</td>`;
-              }
-              const pin = cell.verification?.pinpoint ? ` <b class="pin">[${esc(cell.verification.pinpoint)}]</b>` : "";
-              const flag = cell.verification?.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
-              return `<td class="ans">${esc(cell.answer)}${pin}${flag}<br><b class="pin">chars ${cell.verification.charStart}–${cell.verification.charEnd} · ${esc(cell.verification.classification)}</b></td>`;
-            })
-            .join("") +
-          `</tr>`
-      )
-      .join("");
+  function schemaBadge(cell) {
+    if (!cell.schema) return "";
+    const s = cell.schema;
+    const detail = s.type === "classify" ? ": " + s.matched : s.value !== undefined ? ": " + s.value + (s.unit ? " " + s.unit : "") : "";
+    return ` <b class="pin">[${esc(s.type)}${esc(detail)}]</b>`;
+  }
 
-  const unv = out.cells.filter((c) => c.status === "unverified");
-  document.getElementById("reasons").innerHTML =
-    `<b>Why unverified (machine reasons, never guesses):</b><br>` +
-    (unv.length
-      ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>")
-      : "every supplied cell verified");
+  function render(mode) {
+    currentInput = inputFor(mode);
+    currentOut = buildMatrix(currentInput);
+    const out = currentOut;
+    const s = out.summary;
+    const cellOf = (d, q) => out.cells.find((c) => c.documentId === d.id && c.questionId === q.id);
+
+    document.getElementById("counts").innerHTML =
+      `<div><b>${s.cells}</b><span>cells</span></div>` +
+      `<div><b>${s.answered}</b><span>answered (anchored)</span></div>` +
+      `<div><b>${s.unverified}</b><span>unverified</span></div>` +
+      `<div><b>${s.flaggedForReview}</b><span>fuzzy — review</span></div>` +
+      `<div><b>${s.outliers}</b><span>outlier values</span></div>`;
+
+    document.getElementById("matrix").innerHTML =
+      `<tr><th>Document</th>${currentInput.questions.map((q) => `<th>${esc(q.question)}${q.type ? `<br><b class="pin">[${esc(q.type)}]</b>` : ""}</th>`).join("")}</tr>` +
+      EXAMPLE.documents
+        .map(
+          (doc) =>
+            `<tr><td><b>${esc(doc.name)}</b><br><code>${esc(doc.id)}</code></td>` +
+            currentInput.questions
+              .map((q) => {
+                const cell = cellOf(doc, q);
+                if (!cell || cell.status === "unverified") {
+                  return `<td class="unv">UNVERIFIED (${esc(cell?.unverifiedReason ?? "not_answered")})</td>`;
+                }
+                const pin = cell.verification?.pinpoint ? ` <b class="pin">[${esc(cell.verification.pinpoint)}]</b>` : "";
+                const flag = cell.verification?.classification === "fuzzy" ? ` <span class="fuzzy">quote fuzzy — review</span>` : "";
+                const outlier = cell.flags.includes("outlier_value") ? ` <span class="fuzzy">outlier_value</span>` : "";
+                return `<td class="ans">${esc(cell.answer)}${pin}${flag}${outlier}${schemaBadge(cell)}<br><b class="pin">chars ${cell.verification.charStart}–${cell.verification.charEnd} · ${esc(cell.verification.classification)}</b></td>`;
+              })
+              .join("") +
+            `</tr>`
+        )
+        .join("");
+
+    const unv = out.cells.filter((c) => c.status === "unverified");
+    document.getElementById("reasons").innerHTML =
+      `<b>Why unverified (machine reasons, never guesses):</b><br>` +
+      (unv.length
+        ? unv.map((c) => `· <code>${esc(c.documentId)} × ${esc(c.questionId)}</code> — ${esc(c.unverifiedReason)}`).join("<br>")
+        : "every supplied cell verified");
+  }
+
+  document.getElementById("tpl").onchange = (e) => render(e.target.value);
+  render("free");
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
   }
-  document.getElementById("csvBtn").onclick = () => download("matrix.csv", toCSV(EXAMPLE, out), "text/csv");
-  document.getElementById("mdBtn").onclick = () => download("matrix.md", toMarkdown(EXAMPLE, out), "text/markdown");
-  document.getElementById("jsonBtn").onclick = () => download("matrix-output.json", JSON.stringify(out, null, 2) + "\n", "application/json");
+  document.getElementById("csvBtn").onclick = () => download("matrix.csv", toCSV(currentInput, currentOut), "text/csv");
+  document.getElementById("mdBtn").onclick = () => download("matrix.md", toMarkdown(currentInput, currentOut), "text/markdown");
+  document.getElementById("jsonBtn").onclick = () => download("matrix-output.json", JSON.stringify(currentOut, null, 2) + NL, "application/json");
+  // Re-run diff (mirrors examples/run.ts): this run vs the same extraction with
+  // the one rejected quote (harbor-saas × Q5) corrected to real document text.
+  document.getElementById("diffBtn").onclick = () => {
+    const prev = buildMatrix(inputFor("free"));
+    const next = buildMatrix({
+      ...inputFor("free"),
+      cells: EXAMPLE.cells.map((c) =>
+        c.documentId === "harbor-saas" && c.questionId === "Q5" ? { ...c, answer: "California", quote: "Governing law: California." } : c,
+      ),
+    });
+    download("diff.json", JSON.stringify(diffMatrices(prev, next), null, 2) + NL, "application/json");
+  };
 </script>
 </body>
 </html>

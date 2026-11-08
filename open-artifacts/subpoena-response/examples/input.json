@@ -40,6 +40,15 @@
     ]
   },
   "privilege_review": { "state": "reviewing", "reviewer": "A. Castellanos, assoc." },
+  "provenance": {
+    "subpoena.served_date": { "source": "certificate of service, p. 4 of subpoena (fictional fixture)", "status": "verified" },
+    "subpoena.service_method": { "source": "process server voicemail summary (fictional fixture)", "status": "verify" },
+    "subpoena.caption": { "source": "caption block, p. 1 of subpoena (fictional fixture)", "status": "verified" },
+    "responsive_scope.date_range.start": { "source": "definition of 'Relevant Period', ¶ 3 (fictional fixture)", "status": "verified" },
+    "responsive_scope.date_range.end": { "source": "definition of 'Relevant Period', ¶ 3 (fictional fixture)", "status": "verified" }
+  },
   "objections_selected": ["overbroad_time", "overbroad_custodians", "undue_burden", "pii_privacy", "equally_available"],
+  "production_format": "TIFF + load file, per negotiated protocol draft (fictional)",
+  "review_protocol": "two-pass: outside counsel privilege review, then contract reviewer QC (fictional)",
   "legal_hold": true
 }

@@ -20,7 +20,9 @@
  * review goes to the playbook's defaultApprover.
  */
 
-import { bestWindow, similarity } from './textutil';
+import { bestWindow, similarity, numericTokens } from './textutil';
+import { redline as makeRedline } from './redline';
+import type { Redline } from './redline';
 
 export interface AvoidRule {
   id?: string;
@@ -46,6 +48,8 @@ export interface PlaybookRule {
 export interface Playbook {
   playbookId: string;
   name?: string;
+  /** which paper this playbook is written from; contract.side must agree */
+  side?: 'sales' | 'purchasing';
   defaultApprover: string;
   rules: PlaybookRule[];
 }
@@ -58,7 +62,7 @@ export interface Clause {
 }
 export interface BoardInput {
   playbook: Playbook;
-  contract: { name: string; clauses: Clause[] };
+  contract: { name: string; side?: 'sales' | 'purchasing'; clauses: Clause[] };
   thresholds?: { preferred?: number; fallback?: number; topic?: number };
 }
 
@@ -78,10 +82,16 @@ export interface BoardRow {
   clauseText: string;
   reason: string;
   routedTo: string | null;
+  /** deterministic redline back to the preferred standard (deviates rows) */
+  redline?: Redline | null;
 }
 export interface BoardOutput {
   contractName: string;
   playbookId: string;
+  /** non-null when playbook.side and contract.side disagree */
+  sideMismatch: string | null;
+  /** thresholds actually applied (resolved, as data) */
+  thresholds: { preferred: number; fallback: number; topic: number };
   summary: { compliant: number; deviates: number; dealBreaker: number; unclassified: number };
   rows: BoardRow[];
 }
@@ -101,15 +111,6 @@ interface StandardScore {
   numericMatch: boolean;
   numericDetail: string | null;
   span: { text: string; charStart: number; charEnd: number } | null;
-}
-
-function numericTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^0-9.]+/)
-    .map((t) => t.replace(/^\.+|\.+$/g, ''))
-    .filter((t) => /^[0-9]+(\.[0-9]+)?$/.test(t))
-    .sort();
 }
 
 function sameMultiset(a: string[], b: string[]): boolean {
@@ -243,12 +244,49 @@ function assignRule(clause: Clause, rules: PlaybookRule[], topicTh: number): { r
   return { rule: null, how: `no rule topic matches heading "${clause.heading}" (best similarity ${best ? best.score.toFixed(2) : 'n/a'} < ${topicTh})` };
 }
 
+/** Per-rule tally over board rows, in ruleId first-appearance order; null ruleId (unclassified) buckets last. */
+function rollupRows(rows: BoardRow[]): RuleRollup[] {
+  const order: string[] = [];
+  const byRule = new Map<string, BoardRow[]>();
+  for (const r of rows) {
+    const key = r.ruleId ?? '—';
+    if (!byRule.has(key)) {
+      byRule.set(key, []);
+      order.push(key);
+    }
+    byRule.get(key)!.push(r);
+  }
+  const grouped = order.filter((k) => k !== '—').map((k) => tally(k, byRule.get(k)!));
+  if (byRule.has('—')) grouped.push(tally('—', byRule.get('—')!));
+  return grouped;
+}
+
+function tally(ruleId: string, rs: BoardRow[]): RuleRollup {
+  const compliant = rs.filter((r) => r.classification === 'compliant').length;
+  const deviates = rs.filter((r) => r.classification === 'deviates').length;
+  const dealBreakers = rs.filter((r) => r.classification === 'deal_breaker').length;
+  const unclassified = rs.filter((r) => r.classification === 'unclassified').length;
+  return {
+    ruleId,
+    clauses: rs.length,
+    compliant,
+    deviates,
+    dealBreakers,
+    unclassified,
+    deviationRate: (deviates + dealBreakers) / rs.length,
+  };
+}
+
 export function buildBoard(input: BoardInput): BoardOutput {
   const th = {
     preferred: input.thresholds?.preferred ?? 0.7,
     fallback: input.thresholds?.fallback ?? 0.7,
     topic: input.thresholds?.topic ?? 0.3,
   };
+  const sideMismatch =
+    input.playbook.side !== undefined && input.contract.side !== undefined && input.playbook.side !== input.contract.side
+      ? `side mismatch: playbook is written from the ${input.playbook.side} side but the contract is ${input.contract.side}-side paper — classifications may read in the wrong direction`
+      : null;
   const rows: BoardRow[] = input.contract.clauses.map((clause) => {
     const { rule, how } = assignRule(clause, input.playbook.rules, th.topic);
     if (!rule) {
@@ -264,23 +302,86 @@ export function buildBoard(input: BoardInput): BoardOutput {
         clauseText: clause.text,
         reason: how,
         routedTo: input.playbook.defaultApprover,
+        redline: null,
       };
     }
     const { row } = classifyClause(clause, rule, th);
-    return {
+    const full: BoardRow = {
       ...row,
       heading: clause.heading ?? null,
       routedTo: row.routedTo === '__DEFAULT__' ? input.playbook.defaultApprover : row.routedTo,
+      redline: row.classification === 'deviates' ? makeRedline({ ...row, heading: clause.heading ?? null }, rule) : null,
     };
+    return full;
   });
+  const annotated = sideMismatch ? rows.map((r) => ({ ...r, reason: `${r.reason}; ${sideMismatch}` })) : rows;
 
-  const count = (c: Classification) => rows.filter((r) => r.classification === c).length;
+  const count = (c: Classification) => annotated.filter((r) => r.classification === c).length;
   return {
     contractName: input.contract.name,
     playbookId: input.playbook.playbookId,
+    sideMismatch,
+    thresholds: th,
     summary: { compliant: count('compliant'), deviates: count('deviates'), dealBreaker: count('deal_breaker'), unclassified: count('unclassified') },
-    rows,
+    rows: annotated,
   };
+}
+
+/* ---------- portfolio: batch of contracts, one playbook ---------- */
+
+export interface PortfolioInput {
+  playbook: Playbook;
+  contracts: BoardInput['contract'][];
+  thresholds?: BoardInput['thresholds'];
+}
+
+export interface RuleRollup {
+  ruleId: string;
+  clauses: number;
+  compliant: number;
+  deviates: number;
+  dealBreakers: number;
+  unclassified: number;
+  /** (deviates + dealBreakers) / clauses */
+  deviationRate: number;
+}
+
+export interface PortfolioOutput {
+  playbookId: string;
+  contractNames: string[];
+  boards: BoardOutput[];
+  /** per-rule deviation-frequency rollup across all contracts, ruleId first-appearance order */
+  rollup: RuleRollup[];
+}
+
+export function buildPortfolio(input: PortfolioInput): PortfolioOutput {
+  const boards = input.contracts.map((contract) => buildBoard({ playbook: input.playbook, contract, thresholds: input.thresholds }));
+  const rollup = rollupRows(boards.flatMap((b) => b.rows));
+  return { playbookId: input.playbook.playbookId, contractNames: boards.map((b) => b.contractName), boards, rollup };
+}
+
+export function renderPortfolio(p: PortfolioOutput): string {
+  const lines: string[] = [];
+  lines.push(`# Playbook portfolio — ${p.playbookId}`);
+  lines.push('');
+  lines.push(`${p.boards.length} contracts: ${p.contractNames.join(' · ')}`);
+  lines.push('');
+  lines.push('| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |');
+  lines.push('|---|---|---|---|---|---|---|');
+  for (const r of p.rollup) {
+    lines.push(
+      `| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`,
+    );
+  }
+  lines.push('');
+  for (const b of p.boards) {
+    const s = b.summary;
+    lines.push(
+      `- **${b.contractName}** — ${b.rows.length} clauses: ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`,
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 /** Markdown board — deterministic rendering. */
@@ -289,6 +390,14 @@ export function renderBoard(board: BoardOutput): string {
   lines.push(`# Playbook deviation board — ${board.contractName}`);
   lines.push('');
   lines.push(`Playbook: ${board.playbookId}`);
+  lines.push('');
+  if (board.sideMismatch) {
+    lines.push(`> ⚠ ${board.sideMismatch}`);
+    lines.push('');
+  }
+  lines.push(
+    `Thresholds: preferred ≥ ${board.thresholds.preferred.toFixed(2)} · fallback ≥ ${board.thresholds.fallback.toFixed(2)} · topic ≥ ${board.thresholds.topic.toFixed(2)}`,
+  );
   lines.push('');
   const s = board.summary;
   lines.push(`**${board.rows.length} clauses:** ${s.compliant} compliant · ${s.deviates} deviate · ${s.dealBreaker} deal-breaker · ${s.unclassified} unclassified`);
@@ -301,6 +410,16 @@ export function renderBoard(board: BoardOutput): string {
     );
   }
   lines.push('');
+  lines.push('### Per-rule deviation frequency');
+  lines.push('');
+  lines.push('| Rule | Clauses | Compliant | Deviates | Deal-breakers | Unclassified | Deviation rate |');
+  lines.push('|---|---|---|---|---|---|---|');
+  for (const r of rollupRows(board.rows)) {
+    lines.push(
+      `| ${r.ruleId} | ${r.clauses} | ${r.compliant} | ${r.deviates} | ${r.dealBreakers} | ${r.unclassified} | ${r.deviationRate.toFixed(2)} |`,
+    );
+  }
+  lines.push('');
   for (const r of board.rows) {
     if (r.classification === 'compliant') continue;
     lines.push(`## ${r.clauseId} — ${r.classification}${r.matchedTier !== null ? ` (tier ${r.matchedTier})` : ''}`);
@@ -308,6 +427,15 @@ export function renderBoard(board: BoardOutput): string {
     lines.push(`> ${r.clauseQuote ? r.clauseQuote.text.replace(/\n/g, ' ') : r.clauseText.replace(/\n/g, ' ')}`);
     lines.push('');
     lines.push(r.reason + '.');
+    if (r.redline && (r.redline.removals.length > 0 || r.redline.additions.length > 0)) {
+      lines.push('');
+      lines.push(`Suggested redline to the preferred standard${r.redline.label ? ` (${r.redline.label})` : ''}:`);
+      lines.push('');
+      lines.push('```diff');
+      for (const x of r.redline.removals) lines.push(`- ${x.replace(/\n/g, ' ')}`);
+      for (const x of r.redline.additions) lines.push(`+ ${x.replace(/\n/g, ' ')}`);
+      lines.push('```');
+    }
     if (r.routedTo) lines.push(`Routed to: **${r.routedTo}**.`);
     lines.push('');
   }

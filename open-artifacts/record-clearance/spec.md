@@ -14,12 +14,22 @@ rules-as-data.
 | Filing-deadline date math (earliest date, optional filing-window close) | core (deterministic) |
 | Status tracking (`filed` / `granted` / `denied` recorded filings override recomputation) | core (deterministic) |
 | Referral flags for counsel-dependent relief | core (deterministic, from rules) |
-| Relief types + prerequisites per jurisdiction | rules-as-data (3 example US states: CA, IL, NY) |
+| Filing guidance (steps, forms, fee-waiver note) + authority link per relief type | rules-as-data (deterministic) |
+| Normalizing LLM intake — `uncertain` fields dropped + logged, ids assigned (`validateIntake`) | core (deterministic) |
+| Relief types + prerequisites per jurisdiction | rules-as-data (full tier: CA, IL, NY · guidance tier: TX) |
 | Reading a rap sheet into the client-record JSON | LLM or human (out of core) |
 | Filing decisions | **counsel/legal-aid only** (gate on every report) |
 
 The engine never guesses: a missing client fact or conviction date makes the
 prerequisite `unknown` and the item `data_needed`, never an eligibility call.
+Conviction-level `probationStatus` / `finesPaid` override the client-level
+values, so mixed records (one conviction revoked, another completed) get
+correct per-conviction calls.
+
+Jurisdictions without loaded relief rules can be registered as a **guidance
+tier**: `trackClearance` returns a normal report (`coverageTier: "guidance"`,
+a `guidanceNote`, generic screen items with mandatory referrals) instead of
+a bare unknown-jurisdiction error.
 
 ## Input contract (`ClearanceInput`, JSON)
 
@@ -60,6 +70,10 @@ One item per conviction × relief type:
   `granted` / `denied` (from the recorded filing).
 - `referral`: counsel-dependent relief flag (e.g. certificates requiring
   live-scan, pardon applications).
+- `filingGuidance`: `{ steps[], forms[], feeWaiverNote }` from the rule
+  (illustrative — verify locally).
+- `authority`: `{ cite, url }` — `[verify]`-tagged illustrative citation plus
+  a source URL for every relief type.
 - `gate`: verify-with-counsel message on every report.
 
 ## Prerequisite kinds the engine understands
@@ -81,8 +95,13 @@ The LLM only structures a rap sheet into the input contract:
   "uncertain": [ { "field": "finesPaid", "reason": "rap sheet shows balance, amount unclear" } ] }
 ```
 
-Fields in `uncertain` must be omitted from the record — the engine converts
-them to `unknown` checklist rows rather than letting the model guess.
+Fields in `uncertain` must be omitted from the record — `core.validateIntake`
+implements this contract: it normalizes the LLM payload to a ClearanceInput
+(unknown keys stripped, missing conviction ids assigned), drops each
+`uncertain` field from the client and every conviction, and returns the drops
+as issues; the engine then converts the gaps to `unknown` checklist rows
+rather than letting the model guess. Worked example:
+`examples/intake.json` → `examples/intake-output.json` / `intake-report.md`.
 
 ## What's BETTER than the closed counterpart
 

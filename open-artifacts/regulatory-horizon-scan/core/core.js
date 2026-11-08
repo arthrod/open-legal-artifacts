@@ -87,36 +87,65 @@ const US_STATE_NAMES = new Map([
 
 /* ---------- dedupe ---------- */
 
+/** Fields merged from a duplicate into the kept item (richest wins: a missing
+ * value is filled from the duplicate; existing values are never overwritten). */
+const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadline", "itemType", "provenance", "summary", "source", "link"];
+
 /**
  * Dedupe feed items. Two items are duplicates when they share an id, or when
  * their normalized titles are near-identical AND jurisdictions match.
- * First occurrence wins (feed order = trust order); drops are reported.
+ * First occurrence wins (feed order = trust order), but the kept item is
+ * enriched: any MERGE_FIELD missing on the kept item is filled from the
+ * duplicate (richest source wins), and `mergedFrom` records the dropped ids.
  * @param {Array<any>} items
- * @returns {{ unique: any[], duplicates: Array<{keptId: string, droppedId: string, reason: string}> }}
+ * @returns {{ unique: any[], duplicates: Array<{keptId: string, droppedId: string, reason: string, mergedFields: string[]}> }}
  */
 export function dedupeItems(items) {
   const unique = [];
   const duplicates = [];
   /** @type {Map<string, string>} normTitle|juris -> kept id */
   const seen = new Map();
+  /** @type {Map<string, any>} kept id -> kept item (mutated on merge) */
+  const kept = new Map();
   const seenIds = new Set();
+  const mergeInto = (keptId, dup, reason) => {
+    const target = kept.get(keptId);
+    const mergedFields = [];
+    if (target) {
+      for (const f of MERGE_FIELDS) {
+        if (isEmpty(target[f]) && !isEmpty(dup[f])) {
+          target[f] = dup[f];
+          mergedFields.push(f);
+        }
+      }
+      if (!target.mergedFrom) target.mergedFrom = [];
+      target.mergedFrom.push(String(dup.id ?? ""));
+    }
+    duplicates.push({ keptId, droppedId: String(dup.id ?? ""), reason, mergedFields });
+  };
   for (const it of items ?? []) {
     const id = String(it.id ?? "");
     const juris = normalizeJurisdiction(it.jurisdiction);
     const key = `${normalizeTitle(it.title)}|${juris}`;
     if (seenIds.has(id)) {
-      duplicates.push({ keptId: id, droppedId: id, reason: "duplicate id" });
+      mergeInto(id, it, "duplicate id");
       continue;
     }
     if (seen.has(key)) {
-      duplicates.push({ keptId: seen.get(key), droppedId: id, reason: "same normalized title + jurisdiction" });
+      mergeInto(seen.get(key), it, "same normalized title + jurisdiction");
       continue;
     }
     seenIds.add(id);
     seen.set(key, id);
-    unique.push({ ...it, jurisdiction: juris });
+    const copy = { ...it, jurisdiction: juris };
+    kept.set(id, copy);
+    unique.push(copy);
   }
   return { unique, duplicates };
+}
+
+function isEmpty(v) {
+  return v === null || v === undefined || v === "";
 }
 
 /* ---------- classification ---------- */
@@ -218,7 +247,33 @@ export function scoreItem(item, rubric, profile, asOfIso) {
   }
   breakdown.push({ factor: "proximity", rule: pRule, points: pPts, note: pNote });
 
-  // Factor 4 — rulemaking status
+  // Factor 4 — open comment window (optional: skipped when the rubric omits it)
+  const cwf = rubric.factors.find((f) => f.id === "commentWindow");
+  if (cwf) {
+    const dl = parseDate(item.commentDeadline ?? null);
+    const cd = daysUntil(dl, asOf);
+    let cPts = cwf.points.other ?? 0;
+    let cRule = "no comment deadline";
+    let cNote = String(item.commentDeadline ?? "none");
+    if (cd !== null) {
+      if (cd < 0) {
+        cPts = 0;
+        cRule = "comment window closed";
+      } else {
+        const cth = (cwf.thresholds ?? []).find((t) => cd <= t.withinDays);
+        if (cth) {
+          cPts = cth.points;
+          cRule = `comment window open, closes in ${cd}d (<= ${cth.withinDays}d threshold)`;
+        } else {
+          cRule = `comment window closes in ${cd}d (beyond all thresholds)`;
+        }
+      }
+      cNote = `${item.commentDeadline} (${cd >= 0 ? "+" : ""}${cd}d)`;
+    }
+    breakdown.push({ factor: "commentWindow", rule: cRule, points: cPts, note: cNote });
+  }
+
+  // Factor 5 — rulemaking status
   const sf = rubric.factors.find((f) => f.id === "status");
   const st = String(item.status ?? "").toLowerCase();
   const sPts = sf.points[st] ?? sf.points.other ?? 0;
@@ -230,8 +285,31 @@ export function scoreItem(item, rubric, profile, asOfIso) {
   });
 
   const score = Math.min(rubric.maxScore ?? 100, breakdown.reduce((a, b) => a + b.points, 0));
-  const band = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
-  return { score, band, breakdown };
+  let band = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
+
+  // Deterministic band caps (score is never altered — only the band, with a flag)
+  const flags = [];
+  const provenance = normalizeProvenance(item.provenance);
+  if (provenance !== "primary" && band === "high") {
+    band = "medium";
+    flags.push(`provenance=${provenance}: trace to primary before relying on this item`);
+  }
+  const itemType = String(item.itemType ?? "").toLowerCase();
+  if ((itemType === "anpr" || itemType === "rfi") && band === "high") {
+    band = "medium";
+    flags.push(`itemType=${itemType} is pre-rule exploratory (ANPR/RFI) — band capped below high`);
+  }
+  return { score, band, breakdown, flags, provenance, itemType: itemType || null };
+}
+
+const PROVENANCE_TIERS = new Set(["primary", "secondary", "manual", "unknown"]);
+
+/** Normalize a provenance tier; anything missing or unrecognized is "unknown".
+ * @param {any} p
+ * @returns {string} */
+export function normalizeProvenance(p) {
+  const s = String(p ?? "").trim().toLowerCase();
+  return PROVENANCE_TIERS.has(s) ? s : "unknown";
 }
 
 /* ---------- full scan ---------- */
@@ -248,18 +326,88 @@ export function scanFeed(items, rubric, profile, asOfIso) {
   const scored = unique.map((it) => {
     const cls = classifyItem(it, rubric);
     const sc = scoreItem(it, rubric, profile, asOfIso);
-    return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, scoring: sc };
+    const actionBy = [it.effectiveDate, it.commentDeadline].filter(Boolean).sort()[0] ?? null;
+    return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, actionBy, scoring: sc };
   });
   scored.sort((a, b) => b.scoring.score - a.scoring.score || String(a.title).localeCompare(String(b.title)));
-  const timeline = [...scored]
-    .filter((it) => it.effectiveDate)
-    .sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
-  return { rubricVersion: rubric.version, asOf: asOfIso, generatedBy: "regulatory-horizon-scan core", items: scored, duplicates, timeline };
+  return {
+    rubricVersion: rubric.version,
+    asOf: asOfIso,
+    generatedBy: "regulatory-horizon-scan core",
+    items: scored,
+    duplicates,
+    timeline: buildTimeline(scored, asOfIso),
+    coverageGaps: coverageGaps(unique, profile, rubric),
+  };
+}
+
+/**
+ * Build the action timeline as milestones. Each dated item contributes one
+ * milestone per date kind (effective / comment-deadline); items with no dates
+ * at all are kept in `undated` — nothing is silently dropped.
+ * `upcoming` = milestone date >= asOf; `past` = before asOf. Both sorted by
+ * date, then score descending, then title.
+ * @param {Array<any>} scored
+ * @param {string} asOfIso
+ */
+export function buildTimeline(scored, asOfIso) {
+  const asOf = parseDate(asOfIso);
+  /** @type {Array<any>} */ const upcoming = [];
+  /** @type {Array<any>} */ const past = [];
+  /** @type {Array<any>} */ const undated = [];
+  for (const it of scored ?? []) {
+    const eff = parseDate(it.effectiveDate ?? null);
+    const cdl = parseDate(it.commentDeadline ?? null);
+    if (!eff && !cdl) {
+      undated.push({ itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band });
+      continue;
+    }
+    for (const [kind, dt] of [["effective", eff], ["comment-deadline", cdl]]) {
+      if (!dt) continue;
+      const ms = { date: fmtDate(dt), kind, itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band };
+      (asOf && dt.getTime() < asOf.getTime() ? past : upcoming).push(ms);
+    }
+  }
+  const byDate = (a, b) => String(a.date).localeCompare(String(b.date)) || b.score - a.score || String(a.title).localeCompare(String(b.title));
+  upcoming.sort(byDate);
+  past.sort(byDate);
+  return { upcoming, past, undated };
+}
+
+/**
+ * Step 0 coverage check: which profile jurisdictions and topics have zero
+ * items in the feed? Jurisdiction gaps are severity "high" (blind spot in a
+ * jurisdiction you operate in), core-topic gaps "medium", related-topic
+ * gaps "low".
+ * @param {Array<any>} items — feed items (raw; classified internally)
+ * @param {any} profile
+ * @param {any} rubric — optional; enables topic-gap checks
+ * @returns {Array<{kind: string, value: string, severity: string, note: string}>}
+ */
+export function coverageGaps(items, profile, rubric) {
+  const list = items ?? [];
+  /** @type {Array<{kind: string, value: string, severity: string, note: string}>} */
+  const gaps = [];
+  const feedJuris = new Set(list.map((i) => normalizeJurisdiction(i.jurisdiction)));
+  for (const j of profile?.jurisdictions ?? []) {
+    const code = normalizeJurisdiction(j);
+    if (!feedJuris.has(code)) gaps.push({ kind: "jurisdiction", value: code, severity: "high", note: `profile jurisdiction has zero feed items` });
+  }
+  if (rubric) {
+    const feedTopics = new Set(list.map((i) => classifyItem(i, rubric).topic));
+    for (const t of profile?.coreTopics ?? []) {
+      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "medium", note: `core topic has zero feed items` });
+    }
+    for (const t of profile?.relatedTopics ?? []) {
+      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "low", note: `related topic has zero feed items` });
+    }
+  }
+  return gaps;
 }
 
 /* ---------- diffing ---------- */
 
-const DIFF_FIELDS = ["title", "jurisdiction", "status", "effectiveDate", "publishedDate", "summary", "link"];
+const DIFF_FIELDS = ["title", "jurisdiction", "status", "effectiveDate", "commentDeadline", "itemType", "provenance", "publishedDate", "summary", "link"];
 
 /**
  * Diff two feed snapshots by item id. Detects added/removed items and
@@ -357,8 +505,76 @@ export function toCsv(scan) {
     it.effectiveDate ?? "",
     it.scoring.score,
     it.scoring.band,
-    it.scoring.breakdown.map((b) => `${b.factor}:${b.points} (${b.rule})`).join(" | "),
+    [
+      ...it.scoring.breakdown.map((b) => `${b.factor}:${b.points} (${b.rule})`),
+      ...(it.scoring.flags ?? []).map((f) => `flag: ${f}`),
+    ].join(" | "),
     it.link ?? "",
   ]);
   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
+}
+
+/**
+ * Export a scan result as a Markdown digest: "Bottom line" (action-item count
+ * + earliest action date), coverage gaps, and a per-band, per-item breakdown
+ * where every point carries `factor +N (rule)`. Deterministic: same scan in,
+ * same bytes out.
+ * @param {any} scan — output of scanFeed
+ * @returns {string}
+ */
+export function toMarkdown(scan) {
+  const items = scan.items ?? [];
+  const action = items.filter((it) => it.scoring.band === "high");
+  const actionDates = action.flatMap((it) => [it.effectiveDate, it.commentDeadline].filter(Boolean)).sort();
+  const lines = [];
+  lines.push("# Regulatory horizon scan digest", "");
+  const earliest = actionDates[0];
+  const earliestLabel = earliest
+    ? `; earliest action date ${earliest} (${earliestKind(items, earliest)})`
+    : "; no dated actions";
+  lines.push(
+    `**Bottom line:** ${action.length} action item${action.length === 1 ? "" : "s"} (band=high)${earliestLabel}. As of ${scan.asOf}, rubric \`${scan.rubricVersion}\`.`,
+    ""
+  );
+  lines.push("## Coverage gaps", "");
+  const gaps = scan.coverageGaps ?? [];
+  lines.push(
+    ...(gaps.length
+      ? gaps.map((g) => `- **[${g.severity}]** ${g.kind} ${g.value} — ${g.note}`)
+      : ["- None — every profile jurisdiction and topic has at least one feed item."]),
+    ""
+  );
+  let rank = 0;
+  for (const band of ["high", "medium", "low"]) {
+    const tier = items.filter((it) => it.scoring.band === band);
+    if (!tier.length) continue;
+    lines.push(`## ${band[0].toUpperCase()}${band.slice(1)} band (${tier.length} item${tier.length === 1 ? "" : "s"})`, "");
+    for (const it of tier) {
+      rank += 1;
+      const capped = (it.scoring.flags ?? []).length ? " (band capped)" : "";
+      lines.push(`### ${rank}. ${it.title} — score ${it.scoring.score}${capped}`, "");
+      const meta = [
+        `\`${it.id}\``, it.jurisdiction, it.topic, `status ${it.status}`,
+        ...(it.itemType && it.itemType !== "rule" ? [String(it.itemType).toUpperCase()] : []),
+        `effective ${it.effectiveDate ?? "—"}`, `comments close ${it.commentDeadline ?? "—"}`,
+        `provenance ${it.scoring.provenance ?? "unknown"}`,
+      ];
+      lines.push(meta.join(" · "));
+      for (const b of it.scoring.breakdown) lines.push(`- ${b.factor} +${b.points} (${b.rule})`);
+      for (const f of it.scoring.flags ?? []) lines.push(`- flag: ${f}`);
+      lines.push("");
+    }
+  }
+  lines.push("_All data fictional. Not legal advice._", "");
+  return lines.join("\n");
+}
+
+function earliestKind(items, date) {
+  for (const it of items) {
+    if (it.commentDeadline === date) return `comment window closes — ${it.title}`;
+  }
+  for (const it of items) {
+    if (it.effectiveDate === date) return `effective — ${it.title}`;
+  }
+  return date;
 }

@@ -7,7 +7,12 @@
       "party": "Customer",
       "verb": "pay",
       "text": "pay the Phase 2 milestone fee of $48,000",
+      "owner": "Finance (Customer)",
       "dueDate": "2026-10-30",
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables.",
       "condition": null,
       "amount": 48000,
       "status": "overdue",
@@ -23,7 +28,12 @@
       "party": "Supplier",
       "verb": "deliver",
       "text": "deliver the platform security audit report",
+      "owner": "Security team (Supplier)",
       "dueDate": "2026-11-12",
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026.",
       "condition": null,
       "amount": null,
       "status": "due-soon",
@@ -39,7 +49,12 @@
       "party": "Supplier",
       "verb": "notify",
       "text": "notify Customer of any security incident within 72 hours of discovery",
+      "owner": "Security team (Supplier)",
       "dueDate": null,
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery.",
       "condition": "within 72 hours of discovery of a security incident",
       "amount": null,
       "status": "conditional",
@@ -55,7 +70,12 @@
       "party": "Customer",
       "verb": "return",
       "text": "return all Confidential Materials within 30 days of termination",
+      "owner": null,
       "dueDate": null,
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days.",
       "condition": "within 30 days of termination of the Agreement",
       "amount": null,
       "status": "conditional",
@@ -71,7 +91,12 @@
       "party": "Supplier",
       "verb": "maintain",
       "text": "maintain commercial general liability insurance of at least $1M",
+      "owner": null,
       "dueDate": "2027-03-31",
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence.",
       "condition": null,
       "amount": null,
       "status": "satisfied",
@@ -89,7 +114,12 @@
       "party": "Supplier",
       "verb": "deliver",
       "text": "deliver the Q3 API usage statement",
+      "owner": null,
       "dueDate": "2026-09-30",
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter.",
       "condition": null,
       "amount": null,
       "status": "satisfied",
@@ -109,7 +139,12 @@
       "party": "Both",
       "verb": "renew",
       "text": "exchange written renewal notices for the pilot extension",
+      "owner": null,
       "dueDate": "end of the pilot period",
+      "nextDue": null,
+      "recurrence": null,
+      "cyclesMissed": null,
+      "sourceQuote": "The parties shall exchange written renewal notices no later than the end of the pilot period.",
       "condition": null,
       "amount": null,
       "status": "unscheduled",
@@ -118,23 +153,69 @@
         "dueDate \"end of the pilot period\" not valid ISO — compliance unverified, never guessed"
       ],
       "satisfaction": null
+    },
+    {
+      "id": "OBL-8",
+      "clause": "§ 4.4",
+      "party": "Customer",
+      "verb": "pay",
+      "text": "pay the quarterly platform license fee of $6,000",
+      "owner": "Finance (Customer)",
+      "dueDate": null,
+      "nextDue": "2026-12-31",
+      "recurrence": {
+        "cadence": "quarterly",
+        "anchor": "2026-03-31"
+      },
+      "cyclesMissed": 2,
+      "sourceQuote": "Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026.",
+      "condition": null,
+      "amount": 6000,
+      "status": "overdue",
+      "breachRisk": true,
+      "flags": [
+        "satisfied 5 days late for cycle due 2026-09-30",
+        "breach risk: 2 missed quarterly cycles — due 2026-03-31, 2026-06-30 with no satisfaction record"
+      ],
+      "satisfaction": {
+        "satisfiedOn": "2026-10-05",
+        "evidence": "wire confirmation WIRE-Q3-0042 (fictional)",
+        "note": "Q3 fee paid; Q1 and Q2 cycles unreconciled"
+      }
     }
   ],
   "summary": {
-    "total": 7,
+    "total": 8,
     "byStatus": {
-      "overdue": 1,
+      "overdue": 2,
       "due-soon": 1,
       "conditional": 2,
       "satisfied": 2,
       "unscheduled": 1
     },
-    "breachRisk": 1,
+    "breachRisk": 2,
     "satisfied": 2,
     "satisfiedLate": 1,
-    "open": 2,
-    "flagged": 6,
-    "unscheduledOrConditional": 3
+    "open": 3,
+    "flagged": 7,
+    "unscheduledOrConditional": 3,
+    "byParty": {
+      "Customer": {
+        "open": 2,
+        "overdue": 2,
+        "exposure": 54000
+      },
+      "Supplier": {
+        "open": 1,
+        "overdue": 0,
+        "exposure": 0
+      },
+      "Both": {
+        "open": 0,
+        "overdue": 0,
+        "exposure": 0
+      }
+    }
   },
   "settings": {
     "dueSoonDays": 14

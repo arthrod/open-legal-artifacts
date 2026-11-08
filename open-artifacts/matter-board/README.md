@@ -11,18 +11,29 @@ severity-classified.
   with `changedAt` (matter `updatedAt` when present, else snapshot
   `capturedAt`; provenance recorded) and severity (deadline changes are
   **critical**, configurable rules-as-data).
-- `buildBoard(snapshot, asOf)` — stage columns, deadline-sorted, overdue /
-  due-soon flags.
-- Export diff as **JSON** (version-control friendly) and **CSV**.
+- `buildBoard(snapshot, asOf)` — stage columns (custom `stageOrder` orders the
+  front; stages it omits are appended, so every filtered matter is shown and
+  counts always agree), deadline-sorted, overdue /
+  due-soon flags; optional `owner` / `risk` filters; rollup counts
+  (`counts.matters`, `counts.risk`, `counts.conflictsOpen`).
+- `detectAnomalies(snapshot, asOf)` — `stale` (default >30d), `missing-field`,
+  `closed-with-deadline`; rules (`staleDays`, `required`, `closedStage`) are
+  data, overridable per call.
+- `csvToSnapshot(csv, { capturedAt, source })` — spreadsheet → snapshot
+  (RFC4180 subset), zero LLM; capture time never guessed.
+- Export a diff as **JSON** (version-control friendly) or **CSV**; flagged
+  deadlines as all-day **ICS** (`flaggedToIcs`).
 
 ## Run
 
 ```bash
-node --test            # 11 tests (node:test)
+node --test            # 23 tests (node:test)
 node examples/run.js   # diffs the week-44→week-45 example, writes diff.json, diff.csv, board.json, report.md
 ```
 
-Open `demo/index.html` for the interactive demo (board + changelog + exports).
+Open `demo/index.html` — loads the worked example by default, and you can
+paste your own snapshot JSON (+ previous snapshot for a diff) and an `asOf`
+date to render a live board client-side with the same `core.js`.
 
 ## What's better than the closed counterpart
 

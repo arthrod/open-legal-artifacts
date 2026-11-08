@@ -13,11 +13,23 @@ Filed **2026-11-02** · ruleset NY v2026-11-example
 | motions (day 60–180, typical 120) | 2027-01-01 | 2027-03-02 | 2027-05-01 |
 | trial (day 240–420, typical 330) | 2027-06-30 | 2027-09-28 | 2027-12-27 |
 
+## Release playbook (client detained — illustrative advocacy steps, not advice)
+
+Anchored on the arraignment typical date (filing + 1 days) = **2026-11-03** · playbook `NY-RP-1`
+
+| Day | Step | Motion | Target date |
+|---:|---|---|---|
+| +0 | Custody interview: community ties, employment, family, treatment needs | — | 2026-11-03 |
+| +1 | File written release application with a ties package | release application | 2026-11-04 |
+| +3 | Move for supervised release or non-monetary conditions | conditions motion | 2026-11-06 |
+| +7 | Request a source-of-funds hearing (fictional example procedure) | source hearing | 2026-11-10 |
+| +14 | Move for release review on changed circumstances | review motion | 2026-11-17 |
+
 ## Illustrative sentencing range
 
 0–84 months `NY-SR-D`
 
-## Likely-outcome bands (illustrative data — heuristics, NOT predictions)
+## Likely-outcome bands (illustrative — no empirical claim — heuristics, NOT predictions)
 
 | Outcome | Band |
 |---|---:|

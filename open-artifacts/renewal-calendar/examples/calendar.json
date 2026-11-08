@@ -26,60 +26,20 @@
       "leadTimeDays": 90,
       "leadTimeSource": "rules.byClauseType[auto-renewal]",
       "reason": "90 days before quarter end (2026-12-31)",
+      "daysUntil": -126,
+      "urgency": {
+        "tier": "overdue",
+        "daysUntil": -126
+      },
+      "escalation": {
+        "owner": "general-counsel",
+        "maxDaysOut": 7
+      },
+      "recurrence": null,
       "ambiguityFlag": {
         "type": "quarter-selection",
         "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07."
       }
-    },
-    {
-      "contractId": "CTR-002",
-      "contractName": "Lantern Warehouse Lease",
-      "counterparty": "Lantern Properties LLC",
-      "clauseType": "price-adjustment",
-      "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end.",
-      "expression": "within 60 days of quarter end",
-      "normalized": {
-        "status": "ambiguous",
-        "date": "2026-11-01",
-        "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
-        "candidates": [
-          "2026-11-01",
-          "2027-03-01"
-        ],
-        "ambiguityFlag": {
-          "type": "window-direction-and-quarter",
-          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
-        }
-      },
-      "status": "ambiguous",
-      "date": "2026-11-01",
-      "noticeDeadline": "2026-07-04",
-      "leadTimeDays": 120,
-      "leadTimeSource": "rules.byClauseType[price-adjustment]",
-      "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
-      "ambiguityFlag": {
-        "type": "window-direction-and-quarter",
-        "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07 and \"before\" reading (conservative). Confirm clause intent with a lawyer."
-      }
-    },
-    {
-      "contractId": "CTR-004",
-      "contractName": "Quillmaster Reseller Deal",
-      "counterparty": "Quillmaster Inc.",
-      "clauseType": "auto-renewal",
-      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
-      "expression": "2026-11-01",
-      "normalized": {
-        "status": "exact",
-        "date": "2026-11-01",
-        "reason": "explicit ISO date in clause data"
-      },
-      "status": "confirmed",
-      "date": "2026-11-01",
-      "noticeDeadline": "2026-08-03",
-      "leadTimeDays": 90,
-      "leadTimeSource": "rules.byClauseType[auto-renewal]",
-      "reason": "explicit ISO date in clause data"
     },
     {
       "contractId": "CTR-004",
@@ -98,7 +58,60 @@
       "noticeDeadline": "2026-10-02",
       "leadTimeDays": 30,
       "leadTimeSource": "rules.byClauseType[termination-for-convenience]",
-      "reason": "explicit ISO date in clause data"
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": -36,
+      "urgency": {
+        "tier": "overdue",
+        "daysUntil": -36
+      },
+      "escalation": {
+        "owner": "general-counsel",
+        "maxDaysOut": 7
+      },
+      "recurrence": null
+    },
+    {
+      "contractId": "CTR-002",
+      "contractName": "Lantern Warehouse Lease",
+      "counterparty": "Lantern Properties LLC",
+      "clauseType": "price-adjustment",
+      "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end.",
+      "expression": "within 60 days of quarter end",
+      "normalized": {
+        "status": "ambiguous",
+        "date": "2026-11-01",
+        "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
+        "candidates": [
+          "2026-11-01",
+          "2027-03-01"
+        ],
+        "ambiguityFlag": {
+          "type": "window-direction-and-quarter",
+          "note": "Assumed nearest quarter end 2026-12-31 on/after 2026-11-07. Direction unstated; using the EARLIER candidate (conservative). Confirm clause intent with a lawyer."
+        }
+      },
+      "status": "confirmed",
+      "date": "2027-03-01",
+      "noticeDeadline": "2026-11-01",
+      "leadTimeDays": 120,
+      "leadTimeSource": "rules.byClauseType[price-adjustment]",
+      "reason": "\"within 60 days of quarter end\" — direction unstated; conservatively using the EARLIER candidate (quarter end − 60d)",
+      "daysUntil": -6,
+      "urgency": {
+        "tier": "overdue",
+        "daysUntil": -6
+      },
+      "escalation": {
+        "owner": "general-counsel",
+        "maxDaysOut": 7
+      },
+      "recurrence": null,
+      "confirmation": {
+        "date": "2027-03-01",
+        "confirmedBy": "K. Alvarez, outside counsel",
+        "on": "2026-11-06",
+        "resolvedFlag": "window-direction-and-quarter"
+      }
     },
     {
       "contractId": "CTR-001",
@@ -117,7 +130,20 @@
       "noticeDeadline": "2027-01-01",
       "leadTimeDays": 90,
       "leadTimeSource": "rules.byClauseType[auto-renewal]",
-      "reason": "explicit ISO date in clause data"
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 55,
+      "urgency": {
+        "tier": "60d",
+        "daysUntil": 55
+      },
+      "escalation": {
+        "owner": "contract-owner",
+        "maxDaysOut": 90
+      },
+      "recurrence": {
+        "termMonths": 12,
+        "cycle": 1
+      }
     },
     {
       "contractId": "CTR-001",
@@ -136,7 +162,72 @@
       "noticeDeadline": "2027-03-02",
       "leadTimeDays": 30,
       "leadTimeSource": "clause override",
-      "reason": "explicit ISO date in clause data"
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 115,
+      "urgency": {
+        "tier": "180d",
+        "daysUntil": 115
+      },
+      "escalation": null,
+      "recurrence": null
+    },
+    {
+      "contractId": "CTR-004",
+      "contractName": "Quillmaster Reseller Deal",
+      "counterparty": "Quillmaster Inc.",
+      "clauseType": "auto-renewal",
+      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
+      "expression": "2026-11-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2026-11-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2027-11-01",
+      "noticeDeadline": "2027-08-03",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 269,
+      "urgency": {
+        "tier": "later",
+        "daysUntil": 269
+      },
+      "escalation": null,
+      "recurrence": {
+        "termMonths": 12,
+        "cycle": 1
+      }
+    },
+    {
+      "contractId": "CTR-001",
+      "contractName": "Foundry SaaS MSA",
+      "counterparty": "Foundry Cloud Ltd.",
+      "clauseType": "auto-renewal",
+      "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term.",
+      "expression": "2027-04-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2027-04-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2028-04-01",
+      "noticeDeadline": "2028-01-02",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 421,
+      "urgency": {
+        "tier": "later",
+        "daysUntil": 421
+      },
+      "escalation": null,
+      "recurrence": {
+        "termMonths": 12,
+        "cycle": 2
+      }
     },
     {
       "contractId": "CTR-003",
@@ -155,7 +246,43 @@
       "noticeDeadline": "2028-03-17",
       "leadTimeDays": 90,
       "leadTimeSource": "rules.byClauseType[evergreen]",
-      "reason": "explicit ISO date in clause data"
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 496,
+      "urgency": {
+        "tier": "later",
+        "daysUntil": 496
+      },
+      "escalation": null,
+      "recurrence": null
+    },
+    {
+      "contractId": "CTR-004",
+      "contractName": "Quillmaster Reseller Deal",
+      "counterparty": "Quillmaster Inc.",
+      "clauseType": "auto-renewal",
+      "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior.",
+      "expression": "2026-11-01",
+      "normalized": {
+        "status": "exact",
+        "date": "2026-11-01",
+        "reason": "explicit ISO date in clause data"
+      },
+      "status": "confirmed",
+      "date": "2028-11-01",
+      "noticeDeadline": "2028-08-03",
+      "leadTimeDays": 90,
+      "leadTimeSource": "rules.byClauseType[auto-renewal]",
+      "reason": "explicit ISO date in clause data",
+      "daysUntil": 635,
+      "urgency": {
+        "tier": "later",
+        "daysUntil": 635
+      },
+      "escalation": null,
+      "recurrence": {
+        "termMonths": 12,
+        "cycle": 2
+      }
     }
   ],
   "unresolved": [
@@ -173,12 +300,38 @@
       },
       "status": "unresolved",
       "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
+    },
+    {
+      "contractId": "CTR-005",
+      "contractName": "Orchid Office Lease",
+      "counterparty": "Orchid Holdings BV",
+      "clauseType": "renewal",
+      "quote": "The term may be extended on mutual agreement of the parties.",
+      "expression": "on mutual agreement",
+      "normalized": {
+        "status": "unresolved",
+        "date": null,
+        "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
+      },
+      "status": "unresolved",
+      "reason": "expression \"on mutual agreement\" not in the supported grammar — human review required"
     }
   ],
+  "coverage": [
+    {
+      "contractId": "CTR-005",
+      "contractName": "Orchid Office Lease",
+      "clauseCount": 1,
+      "datedClauses": 0,
+      "reason": "no dated renewal/notice clause — 1 clause(s) found, none resolvable to a date; human review required"
+    }
+  ],
+  "unappliedConfirmations": [],
   "summary": {
-    "total": 8,
-    "confirmed": 5,
-    "ambiguous": 2,
-    "unresolved": 1
+    "total": 11,
+    "confirmed": 8,
+    "ambiguous": 1,
+    "unresolved": 2,
+    "coverageGaps": 1
   }
 }

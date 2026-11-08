@@ -18,6 +18,8 @@
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
   button:hover { background: #333; }
+  button.mode { background: transparent; color: var(--text); border: 1px solid var(--border); margin-right: 8px; padding: 8px 14px; }
+  button.mode:hover { background: var(--hover); }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
   .case { border: var(--hairline); background: #fff; padding: 18px 18px 14px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
@@ -45,8 +47,21 @@
 
   <div class="cols">
     <div>
-      <div class="kicker">Case facts (JSON)</div>
-      <textarea id="input" spellcheck="false"></textarea>
+      <div class="kicker">Input</div>
+      <p style="margin:8px 0 10px">
+        <button id="mode-json" class="mode" style="background:var(--text);color:var(--bg)">JSON input</button>
+        <button id="mode-rap" class="mode">Rap-sheet paste</button>
+      </p>
+      <div id="json-pane">
+        <div class="kicker">Case facts (JSON)</div>
+        <textarea id="input" spellcheck="false"></textarea>
+      </div>
+      <div id="rap-pane" style="display:none">
+        <div class="kicker">Rap sheet (documented paste format — see spec.md)</div>
+        <textarea id="rap" spellcheck="false"></textarea>
+        <div class="kicker" style="margin-top:12px">Screening date (as of)</div>
+        <input id="asof" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
+      </div>
       <p><button id="run">Run screen</button></p>
       <div class="err" id="err"></div>
     </div>
@@ -58,7 +73,7 @@
 </div>
 
 <script type="module">
-import { screenRecord, renderReport } from "../core/core.js";
+import { screenRecord, renderReport, parseRapSheet } from "../core/core.js";
 
 const EXAMPLE = {
   jurisdiction: "DC",
@@ -90,22 +105,93 @@ const $out = document.getElementById("out");
 const $err = document.getElementById("err");
 $input.value = JSON.stringify(EXAMPLE, null, 2);
 
+const RAP_EXAMPLE = [
+  "JURISDICTION: DC",
+  "CASE C-1001 (2021-CF-0001)",
+  "OFFENSE: Possession of a controlled substance (fictional)",
+  "CATEGORY: drug_possession",
+  "CLASS: misdemeanor",
+  "DISPOSITION: conviction",
+  "OFFENSE DATE: 2015-04-02",
+  "DISPOSITION DATE: 2015-09-10",
+  "SENTENCE COMPLETED: 2016-03-01",
+  "FINE PAID: yes",
+  "CASE C-1002",
+  "OFFENSE: Theft II (fictional)",
+  "CATEGORY: theft",
+  "CLASS: misdemeanor",
+  "DISPOSITION: conviction",
+  "OFFENSE DATE: 2021-07-19",
+  "DISPOSITION DATE: 2022-02-08",
+  "SENTENCE COMPLETED: 2022-11-30",
+  "FINE PAID: yes",
+  "handwritten margin note the parser will not guess at",
+  "CASE C-1003",
+  "OFFENSE: Trespass (fictional, still open)",
+  "CATEGORY: trespass",
+  "DISPOSITION: unknown",
+  "OFFENSE DATE: 2026-03-02",
+  "PENDING: yes",
+].join("\n");
+const $rap = document.getElementById("rap");
+$rap.value = RAP_EXAMPLE;
+const $asof = document.getElementById("asof");
+
+let mode = "json";
+function setMode(m) {
+  mode = m;
+  document.getElementById("json-pane").style.display = m === "json" ? "" : "none";
+  document.getElementById("rap-pane").style.display = m === "rap" ? "" : "none";
+  const a = document.getElementById("mode-json");
+  const b = document.getElementById("mode-rap");
+  a.style.background = m === "json" ? "var(--text)" : "transparent";
+  a.style.color = m === "json" ? "var(--bg)" : "var(--text)";
+  b.style.background = m === "rap" ? "var(--text)" : "transparent";
+  b.style.color = m === "rap" ? "var(--bg)" : "var(--text)";
+}
+document.getElementById("mode-json").addEventListener("click", () => setMode("json"));
+document.getElementById("mode-rap").addEventListener("click", () => setMode("rap"));
+setMode("json");
+
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 document.getElementById("run").addEventListener("click", () => {
   $err.textContent = "";
   try {
-    const report = screenRecord(JSON.parse($input.value));
+    let parsedInput;
+    let unmapped = [];
+    if (mode === "rap") {
+      const parsed = parseRapSheet($rap.value);
+      unmapped = parsed.unmappedLines;
+      if (!parsed.jurisdiction) throw new Error("rap sheet needs a JURISDICTION: XX line matching a ruleset id (DC | CA | TX)");
+      if (!parsed.cases.length) throw new Error("rap sheet parsed to 0 cases — expected \"CASE <id>\" header lines");
+      parsedInput = { jurisdiction: parsed.jurisdiction, asOf: $asof.value, cases: parsed.cases };
+    } else {
+      parsedInput = JSON.parse($input.value);
+    }
+    const report = screenRecord(parsedInput);
     const s = report.summary;
-    let html = `<div class="summary">${s.total} cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data</div>`;
+    let html = `<div class="summary">${s.total} cases · ${s.potentially_eligible} potentially eligible · ${s.needs_more_time} need more time · ${s.ineligible} ineligible · ${s.insufficient_data} insufficient data` +
+      (report.nextReviewDate ? `<br>Next recheck date: <strong>${esc(report.nextReviewDate)}</strong>` : "") + `</div>`;
+    if (unmapped.length) {
+      html += `<div class="case" style="border-top-color:var(--border)"><h3>Rap-sheet lines not mapped (never guessed)</h3><ul>` +
+        unmapped.map((u) => `<li>line ${u.line}: ${esc(u.text)}</li>`).join("") + `</ul></div>`;
+    }
     for (const r of report.results) {
       html += `<div class="case"><h3>${esc(r.caseId)} ${r.caseNumber ? "(" + esc(r.caseNumber) + ")" : ""} <span class="badge ${esc(r.determination)}">${esc(r.determination)}</span></h3>`;
       if (r.offense) html += `<div style="font-size:13px;color:var(--text-secondary)">${esc(r.offense)}</div>`;
       if (r.eligibleOnDate) html += `<div style="font-size:13px;margin-top:4px">Earliest eligibility: <strong>${esc(r.eligibleOnDate)}</strong></div>`;
-      if (r.motion) html += `<div style="font-size:13px;margin-top:4px">Motion: ${esc(r.motion)}</div>`;
+      if (r.motion) html += `<div style="font-size:13px;margin-top:4px">Motion: ${esc(r.motion)}${r.statute ? ` · ${esc(r.statute)}` : ""}</div>`;
+      if (r.filingSteps && r.filingSteps.length) {
+        html += `<ul>` + r.filingSteps.map((st) => `<li>next: ${esc(st)}</li>`).join("");
+        if (r.whereToFile) html += `<li>where: ${esc(r.whereToFile)}</li>`;
+        if (r.fee != null) html += `<li>fee: ${esc(r.fee)}</li>`;
+        html += `</ul>`;
+      }
       const items = [
-        ...(r.disqualifiers || []).map((d) => `<li>⚠ ${esc(d.description)} <code>${esc(d.ruleId)}</code></li>`),
+        ...(r.disqualifiers || []).map((d) => `<li>⚠ ${esc(d.description)} <code>${esc(d.ruleId)}</code>${d.statute ? ` <code>${esc(d.statute)}</code>` : ""}</li>`),
         ...(r.missingData || []).map((m) => `<li>missing: ${esc(m)}</li>`),
+        ...(r.basis || []).map((b) => `<li>rule: ${esc(b.text)} <code>${esc(b.ruleId)}</code>${b.statute ? ` <code>${esc(b.statute)}</code>` : ""}</li>`),
       ];
       if (items.length) html += `<ul>${items.join("")}</ul>`;
       html += `</div>`;

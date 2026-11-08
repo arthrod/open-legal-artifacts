@@ -1,0 +1,23 @@
+{
+  "jurisdiction": "IL",
+  "asOf": "2026-11-07",
+  "client": {
+    "probationStatus": "completed",
+    "finesPaid": true,
+    "pendingCases": false,
+    "rapSheetObtained": true
+  },
+  "convictions": [
+    {
+      "offense": "Possession of a controlled substance (fictional)",
+      "offenseCategory": "drug",
+      "offenseClass": "felony_class_W",
+      "dispositionDate": "2019-03-12",
+      "sentenceCompletedDate": "2020-07-01",
+      "probationTerminatedDate": "2020-07-01"
+    }
+  ],
+  "uncertain": [
+    { "field": "finesPaid", "reason": "rap sheet shows a balance; amount and payoff status unclear" }
+  ]
+}

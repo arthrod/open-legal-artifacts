@@ -1,16 +1,19 @@
 {
   "organization": "Vestra Dynamics Corp. (fictional)",
-  "total": 7,
+  "asOf": "2026-11-07",
+  "total": 11,
   "counts": {
     "prohibited": 1,
-    "high": 3,
-    "limited": 1,
-    "minimal": 2
+    "gpai_systemic": 1,
+    "gpai": 0,
+    "high": 4,
+    "limited": 2,
+    "minimal": 3
   },
   "gapCounts": {
     "blocker": 2,
-    "major": 2,
-    "minor": 3
+    "major": 4,
+    "minor": 4
   },
   "blockers": [
     {
@@ -26,6 +29,8 @@
       "gap": "Prohibited-style practice per rubric — suspend pending counsel review."
     }
   ],
+  "needsReview": 1,
+  "outOfScope": 1,
   "byDepartment": {
     "Legal": 1,
     "People": 1,
@@ -33,7 +38,68 @@
     "Sales": 1,
     "Warranty": 1,
     "Facilities": 1,
-    "Corp Dev": 1
+    "Corp Dev": 1,
+    "Energy": 1,
+    "Platform": 1,
+    "Growth": 1,
+    "Retail": 1
+  },
+  "byRole": {
+    "deployer": 9,
+    "provider": 2
+  },
+  "byStatus": {
+    "production": 7,
+    "retired": 1,
+    "pilot": 3
+  },
+  "reviewDue": {
+    "dueSoon": [
+      {
+        "id": "AI-02",
+        "name": "Talent screen",
+        "tier": "high",
+        "nextReview": "2026-11-20",
+        "days": 13
+      },
+      {
+        "id": "AI-03",
+        "name": "Community trust index",
+        "tier": "prohibited",
+        "nextReview": "2025-03-01",
+        "days": -616
+      },
+      {
+        "id": "AI-06",
+        "name": "Shop-floor safety vision",
+        "tier": "high",
+        "nextReview": "2026-08-01",
+        "days": -98
+      },
+      {
+        "id": "AI-08",
+        "name": "Grid-stability predictor",
+        "tier": "high",
+        "nextReview": "2026-11-25",
+        "days": 18
+      },
+      {
+        "id": "AI-09",
+        "name": "VestraLM train",
+        "tier": "gpai_systemic",
+        "nextReview": "2026-12-01",
+        "days": 24
+      }
+    ],
+    "stale": [
+      {
+        "id": "AI-03",
+        "name": "Community trust index",
+        "tier": "prohibited",
+        "nextReview": "2025-03-01",
+        "daysOverdue": 616
+      }
+    ]
   },
   "items": [
     {
@@ -44,7 +110,11 @@
         "dataSensitivity": "confidential",
         "humanOversight": "human-in-loop",
         "autonomy": "draft-with-review",
-        "department": "Legal"
+        "department": "Legal",
+        "role": "deployer",
+        "status": "production",
+        "owner": "M. Okafor",
+        "nextReview": "2027-02-01"
       },
       "tier": "minimal",
       "basis": {
@@ -58,7 +128,14 @@
           "message": "No gaps flagged by the rubric — keep in inventory."
         }
       ],
-      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
+      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -69,6 +146,10 @@
         "humanOversight": "notify",
         "autonomy": "act-with-review",
         "department": "People",
+        "role": "deployer",
+        "status": "production",
+        "owner": "L. Byrne",
+        "nextReview": "2026-11-20",
         "existingControls": [
           "DPA signed"
         ]
@@ -91,7 +172,14 @@
           "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
         }
       ],
-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -101,7 +189,11 @@
         "dataSensitivity": "personal",
         "humanOversight": "none",
         "autonomy": "autonomous",
-        "department": "Marketplace"
+        "department": "Marketplace",
+        "role": "deployer",
+        "status": "retired",
+        "owner": "R. Aldaar",
+        "nextReview": "2025-03-01"
       },
       "tier": "prohibited",
       "basis": {
@@ -121,7 +213,14 @@
           "message": "Autonomous action without logged evaluation/red-team/monitoring control."
         }
       ],
-      "nistRmf": "Govern: prohibit; remove system (GE-1)."
+      "nistRmf": "Govern: prohibit; remove system (GE-1).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "Deploying a prohibited practice is itself banned — stop use and document removal (Art. 5-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -131,7 +230,11 @@
         "dataSensitivity": "confidential",
         "humanOversight": "human-decides",
         "autonomy": "assist",
-        "department": "Sales"
+        "department": "Sales",
+        "role": "deployer",
+        "status": "production",
+        "owner": "K. Kowalski",
+        "nextReview": "2027-01-15"
       },
       "tier": "limited",
       "basis": {
@@ -140,7 +243,14 @@
         "evidenceNote": "EU AI Act Art. 50-style transparency: users must be told they interact with AI."
       },
       "gaps": [],
-      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish)."
+      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "Deployer duties: tell users they are interacting with AI; mark deepfakes/synthetic content (Art. 50-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -151,6 +261,11 @@
         "humanOversight": "human-in-loop",
         "autonomy": "draft-with-review",
         "department": "Warranty",
+        "role": "deployer",
+        "substantialModification": true,
+        "status": "production",
+        "owner": "S. Ferraz",
+        "nextReview": "2026-12-10",
         "existingControls": [
           "model card v3",
           "eval log"
@@ -162,8 +277,21 @@
         "matchedKeyword": "insurance eligibility",
         "evidenceNote": "EU AI Act Annex III 5-style: essential private/public services."
       },
-      "gaps": [],
-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+      "gaps": [
+        {
+          "id": "dual-role-shift",
+          "severity": "major",
+          "message": "Substantial modification under own name — deployer also takes provider obligations (Art. 25-style) [verify]."
+        }
+      ],
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
+      "role": "deployer",
+      "dualRoleFlag": true,
+      "roleNote": "EU AI Act Art. 25-style: substantial modification / fine-tuning under the deployer’s own name shifts the deployer into the provider role — provider obligations now also apply [verify].",
+      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify]. Dual role (Art. 25-style) — provider obligations also apply [verify]: Provider duties: risk-management system, data governance, technical documentation, logging, transparency, human oversight, accuracy/robustness (Art. 8–15-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -174,6 +302,10 @@
         "humanOversight": "human-decides",
         "autonomy": "act-with-review",
         "department": "Facilities",
+        "role": "deployer",
+        "status": "production",
+        "owner": "J. Nkemelu",
+        "nextReview": "2026-08-01",
         "existingControls": [
           "GDPR mapping v1"
         ]
@@ -191,7 +323,14 @@
           "message": "High tier with action autonomy — verify logging, fallback, and review SLAs."
         }
       ],
-      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish)."
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "Deployer duties: competent human oversight, relevant and sufficient input data, worker information, log retention, compliance with provider instructions (Art. 26-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
     },
     {
       "record": {
@@ -201,7 +340,11 @@
         "dataSensitivity": "confidential",
         "humanOversight": "human-in-loop",
         "autonomy": "draft-with-review",
-        "department": "Corp Dev"
+        "department": "Corp Dev",
+        "role": "deployer",
+        "status": "pilot",
+        "owner": "A. Petrov",
+        "nextReview": "2026-12-15"
       },
       "tier": "minimal",
       "basis": {
@@ -215,7 +358,150 @@
           "message": "No gaps flagged by the rubric — keep in inventory."
         }
       ],
-      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct)."
+      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
+    },
+    {
+      "record": {
+        "id": "AI-08",
+        "name": "Grid-stability predictor",
+        "purpose": "Power grid dispatch recommendations for the regional utility control room",
+        "dataSensitivity": "internal",
+        "humanOversight": "human-decides",
+        "autonomy": "draft-with-review",
+        "department": "Energy",
+        "role": "provider",
+        "status": "production",
+        "owner": "D. Haugen",
+        "nextReview": "2026-11-25"
+      },
+      "tier": "high",
+      "basis": {
+        "ruleId": "critical-infrastructure",
+        "matchedKeyword": "power grid dispatch",
+        "evidenceNote": "EU AI Act Annex III 2-style: critical-infrastructure safety components (traffic, water, gas, power) [verify]."
+      },
+      "gaps": [],
+      "nistRmf": "Govern + Map + Measure + Manage: risk management system, logging, human oversight (Art. 9-15-ish).",
+      "role": "provider",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: provider [verify].",
+      "obligations": "Provider duties: risk-management system, data governance, technical documentation, logging, transparency, human oversight, accuracy/robustness (Art. 8–15-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
+    },
+    {
+      "record": {
+        "id": "AI-09",
+        "name": "VestraLM train",
+        "purpose": "General-purpose model training for internal tooling",
+        "dataSensitivity": "internal",
+        "humanOversight": "human-in-loop",
+        "autonomy": "assist",
+        "department": "Platform",
+        "role": "provider",
+        "trainingComputeFlops": 2.3e+25,
+        "status": "pilot",
+        "owner": "T. Iwasaki",
+        "nextReview": "2026-12-01",
+        "existingControls": [
+          "model card v1",
+          "eval log"
+        ]
+      },
+      "tier": "gpai_systemic",
+      "basis": {
+        "ruleId": "gpai-systemic",
+        "note": "training compute 2.3e+25 FLOPs ≥ 1e25 FLOPs — systemic-risk presumption (EU AI Act Art. 51-style) [verify]"
+      },
+      "gaps": [],
+      "nistRmf": "Govern + Map + Measure + Manage: systemic-risk evaluation, adversarial testing, incident reporting (Art. 55-ish) [verify].",
+      "role": "provider",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: provider [verify].",
+      "obligations": "Systemic-risk GPAI provider: model evaluation, adversarial testing, systemic-risk assessment and mitigation, serious-incident reporting (Art. 55-style) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": false
+    },
+    {
+      "record": {
+        "id": "AI-10",
+        "name": "Dark-pattern auditor",
+        "purpose": "Detects dark patterns in the marketing site and flags them for removal",
+        "dataSensitivity": "internal",
+        "humanOversight": "human-decides",
+        "autonomy": "assist",
+        "department": "Growth",
+        "role": "deployer",
+        "status": "production",
+        "owner": "P. Novak",
+        "nextReview": "2027-03-01"
+      },
+      "tier": "minimal",
+      "basis": {
+        "ruleId": "default",
+        "note": "no rubric rule matched; minimal by default"
+      },
+      "gaps": [
+        {
+          "id": "needs-human-review",
+          "severity": "major",
+          "message": "Negation guard: a prohibited-practice keyword hit co-occurs with detect/flag/block/moderate-style language — the system may police rather than perform the practice. Confirm intent with the owner; never classify silently. [verify]"
+        }
+      ],
+      "nistRmf": "Map: inventory entry, no mandatory obligations (voluntary code of conduct).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "No mandatory deployer obligations; keep the inventory entry current (Art. 69-style voluntary code) [verify].",
+      "outOfScope": false,
+      "scopeNote": "",
+      "needsHumanReview": true
+    },
+    {
+      "record": {
+        "id": "AI-11",
+        "name": "Non-EU kiosk FAQ helper",
+        "purpose": "Customer-facing assistant chatbot for the retail kiosk pilot (no EU output)",
+        "dataSensitivity": "public",
+        "humanOversight": "human-decides",
+        "autonomy": "assist",
+        "department": "Retail",
+        "role": "deployer",
+        "euNexus": false,
+        "status": "pilot",
+        "owner": "P. Novak",
+        "nextReview": "2027-01-10"
+      },
+      "tier": "limited",
+      "basis": {
+        "ruleId": "transparency-chatbot",
+        "matchedKeyword": "chatbot",
+        "evidenceNote": "EU AI Act Art. 50-style transparency: users must be told they interact with AI."
+      },
+      "gaps": [
+        {
+          "id": "out-of-eu-scope",
+          "severity": "minor",
+          "message": "EU-nexus gate says out of scope — confirm the nexus assessment before relying on EU-AI-Act tiering [verify]."
+        }
+      ],
+      "nistRmf": "Govern + Map: transparency disclosures (Art. 50-ish).",
+      "role": "deployer",
+      "dualRoleFlag": false,
+      "roleNote": "Obligations mapped for role: deployer [verify].",
+      "obligations": "Deployer duties: tell users they are interacting with AI; mark deepfakes/synthetic content (Art. 50-style) [verify].",
+      "outOfScope": true,
+      "scopeNote": "EU-nexus gate: euNexus:false — the EU AI Act does not apply to this system as registered; tier shown for information only [verify].",
+      "needsHumanReview": false
     }
   ],
   "disclaimer": "First-pass screen against a configurable EU AI Act-ish rubric; not a compliance determination. Fictional data. Not legal advice."

@@ -21,3 +21,4 @@ console.log(
   `${matrix.coverage.verified} verified, ${matrix.coverage.stale} stale, ${matrix.coverage.unverified} unverified ` +
   `(${matrix.coverage.pctVerified}% coverage) — wrote matrix.json, survey.csv, survey.md`
 );
+for (const w of matrix.warnings) console.warn(`⚠ ${w}`);

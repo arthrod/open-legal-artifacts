@@ -1,0 +1,5 @@
+requestNo,type,status,objections,privilegeSafe,reviewState,citationFlags
+RFP 1,rfp,objection-and-response,Trade secret / confidential,yes,draft,
+RFP 7,rfp,withheld-logged,Attorney-client privilege; Work product,FLAG,draft,
+ROG 3,interrogatory,response-only,,yes,draft,
+RFA 12,rfa,objection-and-response,Vague and ambiguous; Assumes facts not in evidence,yes,draft,"cite ""VEST 6100-6142"" is outside every range in the production manifest — verify the production index"

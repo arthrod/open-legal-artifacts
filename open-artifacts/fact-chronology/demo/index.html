@@ -22,22 +22,29 @@
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
   .counts span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--text-secondary); }
   .tl { border: var(--hairline); background: #fff; }
-  .tl .row { display: grid; grid-template-columns: 130px 1fr; gap: 0; border-bottom: var(--hairline); }
+  .tl .row { display: grid; grid-template-columns: 150px 1fr; gap: 0; border-bottom: var(--hairline); }
   .tl .row:last-child { border-bottom: none; }
   .tl .when { font-family: var(--font-mono); font-size: 11px; padding: 12px 12px; border-right: var(--hairline); color: var(--text-secondary); }
   .tl .when b { color: var(--text); font-weight: 500; display: block; }
   .tl .what { padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
   .tl .src { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+  .tl .src + .src { margin-top: 2px; }
   .tl .src b { color: var(--text); }
   .prec { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; border: 1px solid var(--border); padding: 0 4px; margin-left: 6px; color: var(--text-secondary); }
-  .conflict, .gapbox { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
+  .sig { margin-left: 6px; }
+  .tag { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+  .tag.warn { border-color: var(--accent); color: var(--text); background: rgba(234,209,130,.25); }
+  .conflict, .gapbox, .diffbox { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
   .k { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; background: var(--text); color: var(--bg); padding: 1px 6px; margin-right: 8px; }
+  .computed { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
   blockquote { margin: 8px 0 0; padding: 6px 12px; border-left: 2px solid var(--border); font-size: 12.5px; color: var(--text-secondary); }
   .row-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
   button:hover { background: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--text); border-color: var(--text); }
+  .variant-note { font-size: 12.5px; color: var(--text-secondary); margin: 10px 0 0; line-height: 1.6; }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
@@ -48,21 +55,34 @@
     <div class="kicker">open-legal-artifacts · deterministic core</div>
     <h1>Fact chronology</h1>
     <div class="rule"></div>
-    <p class="lede">A timeline where <b>every fact carries its evidence</b>: dates normalized at three precisions,
-      a source anchor (document + verbatim quote + pinpoint) on each entry, conflicts flagged inside topics
-      (date mismatches, divergent accounts), and gaps surfaced — while undated entries stay visible instead of
-      being dropped. Open reimplementation of Anthropic's closed artifact.</p>
+    <p class="lede">A timeline where <b>every fact carries its evidence</b> — and every judgment is machine-checked:
+      near-duplicate facts across documents are <b>merged into one multi-source entry</b>, each quote is
+      <b>verified against the source text</b> (verbatim / approximate / unfound), facts are tied to the
+      <b>case theory</b> (🔴/🟡/⚪ with [SME VERIFY] on borderline calls), privilege-flagged documents are
+      tracked, and three variants (working / statement of facts / witness prep) render from one deterministic core
+      with reproducible version diffs. Open reimplementation of Anthropic's closed artifact.</p>
     <p class="lede" style="font-size:13px">Worked example (fictional): Delgado v. Summit Ridge Hospitality — 10 facts
-      across 5 documents, including a termination date the complaint and the letter disagree about by one day.</p>
+      across 5 documents; one hire reported twice (merged), one termination date the complaint and letter disagree
+      about, one deposition quote that is only an approximate match, one quote the machine cannot find at all.</p>
   </header>
 
   <section>
     <h2>Summary</h2>
     <div class="counts" id="counts"></div>
     <div class="row-btns">
-      <button id="mdBtn">Export chronology.md</button>
+      <button id="mdBtn">Export current view (.md)</button>
       <button id="jsonBtn" class="ghost">Export output.json</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Views</h2>
+    <div class="row-btns" style="margin-top:0">
+      <button id="vWorking" aria-pressed="true">Working chronology</button>
+      <button id="vSof">Statement of facts</button>
+      <button id="vWitness">Witness prep</button>
+    </div>
+    <p class="variant-note" id="variantNote"></p>
   </section>
 
   <section>
@@ -71,66 +91,138 @@
   </section>
 
   <section>
+    <h2>Version diff (v1 → v2)</h2>
+    <div id="diff"></div>
+  </section>
+
+  <section>
     <h2>Timeline</h2>
     <div class="tl" id="timeline"></div>
   </section>
 
-  <section>
+  <section id="undatedSection">
     <h2>Undated / unparseable entries (kept visible)</h2>
     <div class="tl" id="undated"></div>
   </section>
 
   <footer class="disclaimer">
     Deterministic core — an optional LLM may extract { date, topic, text, source quote } tuples from documents
-    (schema in spec.md); the core never guesses a date or a topic. Divergent-account flags are potential conflicts
-    for attorney review, not legal conclusions. All example data fictional. Not legal advice.
+    (schema in spec.md); the core never guesses a date or a topic. Significance tags are deterministic key-term ties
+    for attorney review; divergent-account flags are potential conflicts, not legal conclusions. Statement-of-facts
+    and witness views exclude privilege-flagged documents only as a drafting aid — privilege calls belong to counsel.
+    All example data fictional. Not legal advice.
     <code>anthropic counterpart: Fact chronology (closed)</code>
   </footer>
 </div>
 
 <script type="module">
-  import { buildChronology, renderChronology } from "../core/core.js";
-  import EXAMPLE from "./example.js";
+  import { buildChronology, renderChronology, diffChronology } from "../core/core.js";
+  import EXAMPLE, { EXAMPLE_V1 } from "./example.js";
 
   const out = buildChronology(EXAMPLE);
   const s = out.summary;
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const SIGN = { high: "🔴", medium: "🟡", low: "⚪" };
+  let format = "working";
 
   document.getElementById("counts").innerHTML =
     `<div><b>${s.facts}</b><span>facts</span></div>` +
-    `<div><b>${s.dated}</b><span>dated</span></div>` +
-    `<div><b>${s.undated}</b><span>undated/unparseable</span></div>` +
+    `<div><b>${s.dated}</b><span>dated entries</span></div>` +
+    `<div><b>${s.merged}</b><span>merged dupes</span></div>` +
+    `<div><b>${s.unfoundQuotes}</b><span>unfound quotes</span></div>` +
     `<div><b>${s.conflicts}</b><span>conflicts</span></div>` +
-    `<div><b>${s.gaps}</b><span>gaps &gt; 90d</span></div>`;
+    `<div><b>${s.gaps}</b><span>gaps &gt; 90d</span></div>` +
+    `<div><b>v${out.version}</b><span>version</span></div>`;
 
-  document.getElementById("flags").innerHTML = [
-    ...out.conflicts.map(
-      (c) =>
-        `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.topic)}</b> — ${esc(c.detail)}. Facts: <code>${esc(c.factIds.join(" vs "))}</code>.</div>`
-    ),
-    ...out.gaps.map(
-      (g) =>
-        `<div class="gapbox"><span class="k">gap</span><b>${g.days} days</b> between ${esc(g.fromIso)} (after <code>${esc(g.afterFactId)}</code>) and ${esc(g.toIso)} (before <code>${esc(g.beforeFactId)}</code>).</div>`
-    ),
-  ].join("") || `<div class="gapbox">No conflicts or gaps detected.</div>`;
+  function anchorBadges(a) {
+    const parts = [];
+    if (a.priv === "flag") parts.push(`<span class="tag warn">PRIVILEGE FLAG</span>`);
+    else if (a.priv === "review") parts.push(`<span class="tag">priv: review</span>`);
+    if (a.quoteStatus === "verified") parts.push(`<span class="tag">quote ✓ verified</span>`);
+    else if (a.quoteStatus === "approximate") parts.push(`<span class="tag warn">quote ≈ approximate</span>`);
+    else if (a.quoteStatus === "unfound") parts.push(`<span class="tag warn">quote ✗ unfound</span>`);
+    return parts.join("");
+  }
 
   const entry = (e) => {
     const d = e.date;
+    const sig = e.significance ? `<span class="sig">${SIGN[e.significance]}</span>` : "";
+    const tags =
+      (e.smeVerify ? `<span class="tag warn">[SME VERIFY]</span>` : "") +
+      (e.provenance === "unverified" ? `<span class="tag warn">[verify]</span>` : "");
+    const sources = e.anchors.map((a, i) =>
+      `<div class="src">${e.anchors.length > 1 ? `${i + 1}. ` : "Source: "}<b>${esc(a.docName)}</b>${a.pinpoint ? `, ${esc(a.pinpoint)}` : ""} — "${esc(a.quote)}"${anchorBadges(a)}</div>`
+    ).join("");
+    const merged = e.mergedFrom.length > 0 ? `<div class="src computed">merged from ${esc(e.mergedFrom.join(", "))} — same event, multiple sources</div>` : "";
     return `<div class="row">` +
       `<div class="when"><b>${d ? esc(d.raw) : "?"}</b>${d ? `<span class="prec">${d.precision}</span>` : ""}${e.topic ? `<br>${esc(e.topic)}` : ""}</div>` +
-      `<div class="what">${esc(e.text)}${e.dateLabel ? ` <span style="color:var(--text-secondary)">(${esc(e.dateLabel)})</span>` : ""}` +
-      (e.anchor ? `<div class="src">Source: <b>${esc(e.anchor.docName)}</b>${e.anchor.pinpoint ? `, ${esc(e.anchor.pinpoint)}` : ""} — "${esc(e.anchor.quote)}"</div>` : "") +
+      `<div class="what">${esc(e.text)}${sig}${tags}${e.dateLabel ? ` <span style="color:var(--text-secondary)">(${esc(e.dateLabel)})</span>` : ""}` +
+      (sources || merged ? sources + merged : "") +
       `</div></div>`;
   };
-  document.getElementById("timeline").innerHTML = out.timeline.map(entry).join("");
-  document.getElementById("undated").innerHTML = out.undated.map(entry).join("") || `<div class="row"><div class="what">none</div></div>`;
+
+  const impeachmentLine = (c) =>
+    `<div class="conflict"><span class="k">${format === "witness" ? "impeachment" : esc(c.kind)}</span><b>${esc(c.topic)}</b> — ${esc(c.detail)}. Facts: <code>${esc(c.factIds.join(" vs "))}</code>. <span class="computed">[computed from: ${esc(c.factIds.join(", "))}]</span></div>`;
+
+  function render() {
+    const isSof = format === "sof";
+    const isWitness = format === "witness";
+    // witness prep excludes privilege-flagged entries too, like the core's witness renderer
+    const visibleTimeline = isSof || isWitness ? out.timeline.filter((e) => !e.privFlagged) : out.timeline;
+    const visibleUndated = isWitness ? out.undated.filter((e) => !e.privFlagged) : isSof ? [] : out.undated;
+
+    document.getElementById("variantNote").innerHTML = isSof
+      ? `Statement of facts: dated, non-privileged entries only — excluded ${out.timeline.length - visibleTimeline.length} privileged-flagged and ${out.undated.length} undated/unparseable entries.`
+      : isWitness
+      ? `Witness prep: verbatim quotes for refresh plus impeachment flags; excluded ${out.undated.length - visibleUndated.length + out.timeline.filter((e) => e.privFlagged).length} privileged-flagged entries.`
+      : `Working chronology — the full record: every entry, every flag, privilege and provenance included.`;
+
+    document.getElementById("timeline").innerHTML = visibleTimeline.map(entry).join("") || `<div class="row"><div class="what">none</div></div>`;
+    document.getElementById("undatedSection").style.display = isSof ? "none" : "";
+    document.getElementById("undated").innerHTML = visibleUndated.map(entry).join("") || `<div class="row"><div class="what">none</div></div>`;
+
+    const flagsHtml = isSof
+      ? `<div class="gapbox">Conflicts and gaps are work product — they stay in the working chronology, not the statement of facts.</div>`
+      : [
+          ...(isWitness ? out.conflicts.map(impeachmentLine) : out.conflicts.map(impeachmentLine)),
+          ...(!isWitness
+            ? out.gaps.map(
+                (g) =>
+                  `<div class="gapbox"><span class="k">gap</span><b>${g.days} days</b> between ${esc(g.fromIso)} (after <code>${esc(g.afterFactId)}</code>) and ${esc(g.toIso)} (before <code>${esc(g.beforeFactId)}</code>). <span class="computed">[computed from: ${esc(g.afterFactId)}, ${esc(g.beforeFactId)}]</span></div>`
+              )
+            : []),
+        ].join("") || `<div class="gapbox">No conflicts or gaps detected.</div>`;
+    document.getElementById("flags").innerHTML = flagsHtml;
+
+    for (const [id, fmt] of [["vWorking", "working"], ["vSof", "sof"], ["vWitness", "witness"]]) {
+      document.getElementById(id).setAttribute("aria-pressed", String(format === fmt));
+    }
+  }
+
+  document.getElementById("vWorking").onclick = () => { format = "working"; render(); };
+  document.getElementById("vSof").onclick = () => { format = "sof"; render(); };
+  document.getElementById("vWitness").onclick = () => { format = "witness"; render(); };
+  render();
+
+  // version diff: v1 (previous amendment) vs v2 (current) — deterministic
+  const prev = buildChronology(EXAMPLE_V1);
+  const d = diffChronology(prev, out);
+  const changeList = [
+    ...d.added.map((id) => `+ ${esc(id)} added`),
+    ...d.removed.map((id) => `− ${esc(id)} removed`),
+    ...d.changed.map((c) => `~ ${esc(c.factId)} changed (${esc(c.fields.join("+"))})`),
+  ].map((t) => `<div class="src">${t}</div>`).join("");
+  document.getElementById("diff").innerHTML =
+    `<div class="diffbox"><span class="k">diff</span><b>v${d.fromVersion} → v${d.toVersion}</b> — machine-computed, reproducible: ${esc(d.summary)}</div>` +
+    (changeList || `<div class="gapbox">No differences.</div>`);
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
   }
-  document.getElementById("mdBtn").onclick = () => download("chronology.md", renderChronology(out), "text/markdown");
+  const exportName = { working: "chronology.md", sof: "chronology-sof.md", witness: "chronology-witness.md" };
+  document.getElementById("mdBtn").onclick = () => download(exportName[format], renderChronology(out, { format }), "text/markdown");
   document.getElementById("jsonBtn").onclick = () => download("chronology-output.json", JSON.stringify(out, null, 2) + "\n", "application/json");
 </script>
 </body>

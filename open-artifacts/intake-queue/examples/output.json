@@ -43,11 +43,17 @@
         "level": "routine",
         "reasons": []
       },
-      "state": "conflict-review",
+      "state": "declined",
       "assignedTo": null,
       "flags": [
         "possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1"
-      ]
+      ],
+      "decision": {
+        "action": "decline",
+        "by": "gc-lee (fictional)",
+        "reason": "conflict: Brightpath Solar LLC adverse on LIT-2025-003",
+        "at": "2026-11-07"
+      }
     },
     {
       "id": "INT-1043",
@@ -65,9 +71,15 @@
           "deadline 2026-12-01 in 24 days (≤ 30)"
         ]
       },
-      "state": "assignable",
+      "state": "accepted",
       "assignedTo": null,
-      "flags": []
+      "flags": [],
+      "decision": {
+        "action": "accept",
+        "by": "gc-lee (fictional)",
+        "reason": "capacity confirmed at screening",
+        "at": "2026-11-07"
+      }
     },
     {
       "id": "INT-1044",
@@ -139,11 +151,17 @@
         "level": "routine",
         "reasons": []
       },
-      "state": "conflict-review",
+      "state": "escalated",
       "assignedTo": null,
       "flags": [
         "possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
-      ]
+      ],
+      "decision": {
+        "action": "escalate",
+        "by": "partner-oh (fictional)",
+        "reason": "existing firm client — relationship check needed",
+        "at": "2026-11-07"
+      }
     },
     {
       "id": "INT-1047",
@@ -190,5 +208,42 @@
   "settings": {
     "dedupeThreshold": 0.85,
     "conflictThreshold": 0.8
-  }
+  },
+  "audit": [
+    {
+      "seq": 1,
+      "at": "2026-11-07",
+      "actor": "system",
+      "action": "process",
+      "detail": "7 submissions screened (dedupe ≥ 0.85, conflicts ≥ 0.8)"
+    },
+    {
+      "seq": 2,
+      "at": "2026-11-07",
+      "actor": "staff-kim (fictional)",
+      "action": "assign",
+      "detail": "assigned INT-1041 to staff-kim (fictional)"
+    },
+    {
+      "seq": 3,
+      "at": "2026-11-07",
+      "actor": "gc-lee (fictional)",
+      "action": "decide",
+      "detail": "decline INT-1042: conflict: Brightpath Solar LLC adverse on LIT-2025-003"
+    },
+    {
+      "seq": 4,
+      "at": "2026-11-07",
+      "actor": "gc-lee (fictional)",
+      "action": "decide",
+      "detail": "accept INT-1043: capacity confirmed at screening"
+    },
+    {
+      "seq": 5,
+      "at": "2026-11-07",
+      "actor": "partner-oh (fictional)",
+      "action": "decide",
+      "detail": "escalate INT-1046: existing firm client — relationship check needed"
+    }
+  ]
 }

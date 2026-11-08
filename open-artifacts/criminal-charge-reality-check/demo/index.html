@@ -18,9 +18,17 @@
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
   button:hover { background: #333; }
+  button.ghost { background: transparent; color: var(--text); border: var(--hairline); }
+  button.ghost:hover { background: var(--flag-tint); }
+  .btnrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  select { font-family: var(--font-mono); font-size: 12px; background: #fff; color: var(--text); border: var(--hairline); border-radius: var(--radius); padding: 8px 10px; }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
+  .candidates { display: grid; gap: 20px; margin-top: 12px; }
+  @media (min-width: 768px) { .candidates { grid-template-columns: 1fr 1fr; } }
+  .cand { border: var(--hairline); padding: 14px; background: #fff; }
   .disclaimer { border: 2px solid var(--text); background: var(--flag-tint); padding: 14px 16px; font-size: 13px; line-height: 1.55; font-weight: 600; margin-bottom: 18px; }
+  .pl { border: 2px dashed var(--text); background: #fff; padding: 14px 16px; font-size: 14px; line-height: 1.65; margin-bottom: 18px; }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; margin-bottom: 16px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); }
   th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
@@ -39,15 +47,19 @@
   <h1>Criminal charge reality check</h1>
   <div class="rule"></div>
   <p class="lede">Charge facts in → typical process timeline (arraignment → discovery → motions → trial,
-  day counts configurable per jurisdiction), likely-outcome bands per charge class, and the factors
-  that move the range. Example jurisdictions: NY, PA, OH. The bands are statistical heuristics from
-  illustrative data — <strong>not predictions, not legal advice</strong>.</p>
+  day counts configurable per jurisdiction), likely-outcome bands per charge class, the factors
+  that move the range, a release playbook when the client is detained, and an explicit
+  both-candidates run when the charge class is uncertain. Example jurisdictions: NY, PA, OH. The bands are
+  statistical heuristics from illustrative data — <strong>not predictions, not legal advice</strong>.</p>
 
   <div class="cols">
     <div>
       <div class="kicker">Charge facts (JSON)</div>
       <textarea id="input" spellcheck="false"></textarea>
-      <p><button id="run">Run reality check</button></p>
+      <p class="btnrow">
+        <button id="run">Run reality check</button>
+        <select id="example" aria-label="Prefilled example"></select>
+      </p>
       <div class="err" id="err"></div>
     </div>
     <div>
@@ -58,52 +70,105 @@
 </div>
 
 <script type="module">
-import { realityCheck } from "../core/core.js";
+import { realityCheck, realityCheckMulti, renderPlainLanguage, formatBandSource } from "../core/core.js";
 
-const EXAMPLE = {
-  jurisdiction: "NY",
-  charge: "Criminal possession of stolen property, 4th degree (fictional)",
-  chargeClass: "felony_class_D",
-  filedOn: "2026-11-02",
-  client: { priorConvictions: 1, detained: true, counselAtArraignment: true, evidenceIssues: false },
-  stageOverrides: { trial: { min: 240, typical: 330, max: 420 } },
+const EXAMPLES = {
+  "Single charge (detained)": {
+    jurisdiction: "NY",
+    charge: "Fictional stolen-property offense, 4th degree (code XPL-910.45)",
+    chargeClass: "felony_class_D",
+    filedOn: "2026-11-02",
+    client: { priorConvictions: 1, detained: true, counselAtArraignment: true, evidenceIssues: false },
+    stageOverrides: { trial: { min: 240, typical: 330, max: 420 } },
+  },
+  "Uncertain degree (shows both)": {
+    jurisdiction: "NY",
+    charge: "Fictional value-dependent offense (code XPL-911.20)",
+    filedOn: "2026-11-02",
+    client: { priorConvictions: 1, detained: true, counselAtArraignment: true },
+    uncertain: [{ field: "chargeClass", candidates: ["felony_class_D", "felony_class_E"],
+                  reason: "degree depends on value of property" }],
+  },
 };
 
 const $input = document.getElementById("input");
 const $out = document.getElementById("out");
 const $err = document.getElementById("err");
-$input.value = JSON.stringify(EXAMPLE, null, 2);
+const $example = document.getElementById("example");
+for (const label of Object.keys(EXAMPLES)) $example.add(new Option(label));
+$example.addEventListener("change", () => { $input.value = JSON.stringify(EXAMPLES[$example.value], null, 2); });
+$input.value = JSON.stringify(EXAMPLES[$example.value], null, 2);
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 const bandBar = ([lo, hi]) => `<span class="band"><i style="left:${lo}%;width:${hi - lo}%"></i></span> ${lo}–${hi}%`;
 
+function renderOne(r) {
+  let html = `<div class="disclaimer">⚠️ ${esc(r.disclaimer.text)}</div>`;
+  if (r.errors.length) html += `<div class="unset">unset (never guessed): ${r.errors.map(esc).join(" · ")}</div>`;
+  html += `<table><tr><th>Stage</th><th>Earliest</th><th>Typical</th><th>Latest</th></tr>`;
+  for (const s of r.timeline) {
+    html += `<tr><td>${esc(s.stage)} <span style="color:var(--text-secondary)">day ${s.dayOffset.min}–${s.dayOffset.max}</span></td><td class="mono">${esc(s.window.min)}</td><td class="mono">${esc(s.window.typical)}</td><td class="mono">${esc(s.window.max)}</td></tr>`;
+  }
+  html += `</table>`;
+  if (r.release) {
+    html += `<div class="kicker" style="margin-bottom:6px">Release playbook (detained · ${esc(r.release.ruleId)} · anchored ${esc(r.release.anchoredOn)})</div>`;
+    html += `<table><tr><th>Day</th><th>Step</th><th>Motion</th><th>Target date</th></tr>`;
+    for (const s of r.release.steps) {
+      html += `<tr><td class="mono">+${s.dayOffset}</td><td>${esc(s.step)}</td><td>${s.motion ? esc(s.motion) : "—"}</td><td class="mono">${esc(s.date)}</td></tr>`;
+    }
+    html += `</table><p class="lede" style="font-size:12px">${esc(r.release.note)}</p>`;
+  }
+  if (r.sentencingRange) {
+    html += `<p style="font-size:13px">Illustrative sentencing range: <strong>${r.sentencingRange.minMonths}–${r.sentencingRange.maxMonths} months</strong></p>`;
+  }
+  if (r.outcomeBands) {
+    html += `<table><tr><th>Outcome (heuristic band · ${esc(formatBandSource(r.outcomeBands.bandSource))})</th><th>Range</th></tr>`;
+    for (const k of ["dismissal", "plea_conviction", "trial_conviction", "acquittal"]) {
+      if (r.outcomeBands[k]) html += `<tr><td>${esc(k.replace(/_/g, " "))}</td><td>${bandBar(r.outcomeBands[k])}</td></tr>`;
+    }
+    html += `</table>`;
+  }
+  html += `<div class="kicker" style="margin-bottom:6px">What affects the range</div><ul class="factors">`;
+  for (const f of r.factors) {
+    html += `<li class="${f.applies ? "applies" : ""}">${esc(f.label)} (${esc(f.direction)}) — ${esc(f.note)}${f.basis ? ` [${esc(f.basis)}]` : ""}</li>`;
+  }
+  html += `</ul>`;
+  return html;
+}
+
+function attachPlainToggle(report) {
+  const $btn = document.getElementById("plain-btn");
+  const $box = document.getElementById("plain");
+  $box.style.display = "none";
+  $box.textContent = renderPlainLanguage(report);
+  $btn.style.display = "";
+  $btn.onclick = () => {
+    const show = $box.style.display === "none";
+    $box.style.display = show ? "" : "none";
+    $btn.textContent = show ? "Hide plain-language summary" : "Show plain-language summary";
+  };
+}
+
 document.getElementById("run").addEventListener("click", () => {
   $err.textContent = "";
   try {
-    const r = realityCheck(JSON.parse($input.value));
-    let html = `<div class="disclaimer">⚠️ ${esc(r.disclaimer.text)}</div>`;
-    if (r.errors.length) html += `<div class="unset">unset (never guessed): ${r.errors.map(esc).join(" · ")}</div>`;
-    html += `<table><tr><th>Stage</th><th>Earliest</th><th>Typical</th><th>Latest</th></tr>`;
-    for (const s of r.timeline) {
-      html += `<tr><td>${esc(s.stage)} <span style="color:var(--text-secondary)">day ${s.dayOffset.min}–${s.dayOffset.max}</span></td><td class="mono">${esc(s.window.min)}</td><td class="mono">${esc(s.window.typical)}</td><td class="mono">${esc(s.window.max)}</td></tr>`;
+    const input = JSON.parse($input.value);
+    const uncertain = Array.isArray(input.uncertain) && input.uncertain.some((u) => u.field === "chargeClass");
+    let html = "";
+    let report = null;
+    if (uncertain) {
+      const multi = realityCheckMulti(input);
+      html = `<p class="lede" style="font-size:12px;margin-top:0">Charge class uncertain — ${esc(multi.reason ?? "")}. Both candidates run; uncertainty is never collapsed into one guess.</p>`;
+      html += `<div class="candidates">` + multi.reports.map(({ chargeClass, report: r }) =>
+        `<div class="cand"><div class="kicker" style="margin-bottom:10px">Candidate: ${esc(chargeClass)}</div>${renderOne(r)}</div>`).join("") + `</div>`;
+      report = multi.reports[0].report; // plain-language toggle shows the first candidate
+    } else {
+      report = realityCheck(input);
+      html = renderOne(report);
     }
-    html += `</table>`;
-    if (r.sentencingRange) {
-      html += `<p style="font-size:13px">Illustrative sentencing range: <strong>${r.sentencingRange.minMonths}–${r.sentencingRange.maxMonths} months</strong></p>`;
-    }
-    if (r.outcomeBands) {
-      html += `<table><tr><th>Outcome (heuristic band, ${esc(r.outcomeBands.bandSource)} data)</th><th>Range</th></tr>`;
-      for (const k of ["dismissal", "plea_conviction", "trial_conviction", "acquittal"]) {
-        if (r.outcomeBands[k]) html += `<tr><td>${esc(k.replace(/_/g, " "))}</td><td>${bandBar(r.outcomeBands[k])}</td></tr>`;
-      }
-      html += `</table>`;
-    }
-    html += `<div class="kicker" style="margin-bottom:6px">What affects the range</div><ul class="factors">`;
-    for (const f of r.factors) {
-      html += `<li class="${f.applies ? "applies" : ""}">${esc(f.label)} (${esc(f.direction)}) — ${esc(f.note)}${f.basis ? ` [${esc(f.basis)}]` : ""}</li>`;
-    }
-    html += `</ul>`;
+    html += `<p class="btnrow" style="margin-top:14px"><button id="plain-btn" class="ghost" style="display:none">Show plain-language summary</button></p><div class="pl" id="plain" style="display:none"></div>`;
     $out.innerHTML = html;
+    attachPlainToggle(report);
   } catch (e) {
     $err.textContent = "Input error: " + e.message;
   }

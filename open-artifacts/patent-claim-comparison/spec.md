@@ -17,8 +17,13 @@ text. Limitations with no counterpart are reported as explicit
 | `parseClaim(claimText)` | `{number, preamble{span}, transitional, dependsOn, limitations[{id,text,span}], type}` |
 | `parseClaimSet(text)` | Multi-claim document → parsed claims (split on leading "N.") |
 | `compareLimitations(limsA, limsB, thresholds?)` | Greedy stable best-match alignment → `{rows, counts}` |
-| `compareClaimSets(setA, setB, thresholds?)` | Claim-by-claim pairing by claim number → `{claims, totals, noTeachingFound}` |
-| `toClaimChart(result)` | Markdown chart; every row explicit |
+| `compareClaimSets(setA, setB, thresholds?)` | Claim-by-claim pairing by claim number; limitation-identical A-only/B-only pairs → `renumbered` (conservative) → `{claims, totals, noTeachingFound}` |
+| `mapLimitationsToReference(claim, refText, thresholds?)` | Limitation → reference rows: `verbatim` (span round-trips to exact quote) / `partial` (lexical, `tokenCoverage`) / `notFound`; `{partialAt: 0.5}` |
+| `flagConstructionRisks(claim)` | Deterministic spans for means-for / configured-adapted-operable-to / substantially-about-approximately; never construes |
+| `buildClaimReferenceMatrix(claims, refs, thresholds?)` | Claim × reference coverage → `anticipation-candidate` / `combination` (greedy first-fit cover, input order — not necessarily minimal) / `gaps`; coverage = verbatim or complete token overlap |
+| `toCSV(result)` | Chart CSV; formula-injection cells (=+-@ starts, tab/CR) apostrophe-prefixed |
+| `toSourcesCSV(result)` | `_sources` companion CSV: one row per chart row with span anchors |
+| `toClaimChart(result)` | Markdown chart; every row explicit; flags transitional-scope changes |
 
 Thresholds (rules-as-data): `{ exactAt: 0.96, modifiedAt: 0.45 }` — tune per
 practice; matching is deterministic (ties broken by index order), so identical
@@ -30,7 +35,11 @@ inputs always yield byte-identical charts.
 input:  { setA: "<claims text>", setB: "<claims text>" }   // or parsed arrays
 row:    { relation: 'matched'|'modified'|'removed'|'added',
           aId, aText, aSpan:[start,end), bId, bText, bSpan, similarity, note }
-claims: [{ claimNo, aClaim, bClaim, dependencyChanged, comparison:{rows,counts} }]
+claims: [{ claimNo, aClaim, bClaim, dependencyChanged, transitionalChanged,
+           result: 'compared'|'claim renumbered in set B'|'claim removed in set B'|'claim added in set B',
+           renumberedTo?, comparison:{rows,counts} }]
+refRow: { id, text, span, state: 'verbatim'|'partial'|'notFound',
+          quote, refSpan, tokenCoverage?, note }
 ```
 
 ## Deterministic vs LLM-assisted

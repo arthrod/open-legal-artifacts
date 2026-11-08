@@ -1,7 +1,12 @@
 {
   "jurisdiction": "DC",
   "asOf": "2026-04-30",
-  "lease": { "monthlyRent": 1400, "leaseStart": "2026-01-01", "rentDueDay": 1 },
+  "lease": {
+    "monthlyRent": 1400,
+    "leaseStart": "2026-01-01",
+    "rentDueDay": 1,
+    "rentSchedule": [{ "from": "2026-01-01", "amount": 1400 }]
+  },
   "ledger": [
     { "id": 1, "date": "2026-01-01", "type": "rent", "amount": 1400, "note": "January rent" },
     { "id": 2, "date": "2026-01-03", "type": "payment", "amount": 1400, "note": "money order #4401 (fictional)" },

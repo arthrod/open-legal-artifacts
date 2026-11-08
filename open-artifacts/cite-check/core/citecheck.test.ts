@@ -147,3 +147,90 @@ test('similarity is symmetric and bounded', () => {
   assert.equal(similarity(a, a), 1);
   assert.equal(similarity(a, 'something else entirely') < 0.3, true);
 });
+
+test('number guard caps a near-verbatim quote with an altered digit at fuzzy, with a note', () => {
+  const text = 'The auditor determined that the total loss attributable to the February pipe failure was 34,800 dollars, covering repairs, replacement parts, and three days of lost production at the Millbrook plant, and the report was signed on March 9 by the lead engineer.';
+  const input: CiteCheckInput = {
+    document: { name: 'Motion (fictional)' },
+    sources: [{ id: 'audit', name: 'Audit Report (fictional)', text }],
+    quotes: [{ id: 'N1', text: text.replace('34,800', '35,800'), sourceId: 'audit' }],
+  };
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'fuzzy', JSON.stringify(r));
+  assert.ok(r.notes.some((n) => n.includes('quote "35" vs source "34"')), JSON.stringify(r.notes));
+  assert.ok(r.diff!.some((o) => o.op === 'replace' && o.quote.includes('35') && o.source.includes('34')), JSON.stringify(r.diff));
+});
+
+test('omission detection flags silently dropped tokens (Q2 fixture)', () => {
+  const r = runCiteCheck(DEPO).results.find((x) => x.id === 'Q2')!;
+  assert.equal(r.classification, 'normalized');
+  assert.ok(r.notes.some((n) => n.includes('omits "on the document"')), JSON.stringify(r.notes));
+  assert.ok(r.anchor!.verbatim.endsWith('on the document'), r.anchor!.verbatim);
+  const del = r.diff!.find((o) => o.op === 'delete')!;
+  assert.equal(del.source.join(' '), 'on the document');
+  assert.equal(r.anchor!.verbatim.slice(del.sourceSpan.start, del.sourceSpan.end), 'on the document');
+  assert.equal(del.sourceSpan.end, r.anchor!.verbatim.length);
+});
+
+test('explicit ellipsis makes an omission acceptable (noted, still normalized)', () => {
+  const text = 'The auditor determined that the total loss attributable to the February pipe failure was 34,800 dollars, covering repairs, replacement parts, and three days of lost production at the Millbrook plant, and the report was signed on March 9 by the lead engineer.';
+  const input: CiteCheckInput = {
+    document: { name: 'Motion (fictional)' },
+    sources: [{ id: 'audit', name: 'Audit Report (fictional)', text }],
+    quotes: [{ id: 'E1', text: text.replace('covering repairs, replacement parts,', 'covering repairs …'), sourceId: 'audit' }],
+  };
+  const r = runCiteCheck(input).results[0];
+  assert.equal(r.classification, 'normalized', JSON.stringify(r.notes));
+  assert.ok(r.notes.some((n) => n.includes('ellipsis') && n.includes('replacement parts')), JSON.stringify(r.notes));
+});
+
+test('coverage roll-up reports Checked N of M and never claims confirmation for unchecked quotes', () => {
+  const sub: CiteCheckInput = {
+    ...DEPO,
+    quotes: [DEPO.quotes[0], DEPO.quotes[1], DEPO.quotes[2], DEPO.quotes[3]],
+  };
+  const report = runCiteCheck(sub);
+  assert.equal(report.summary.checked, 3);
+  assert.equal(report.summary.couldNotCheck, 1);
+  assert.equal(report.summary.unparseablePinpoints, 0);
+  const md = renderReport(report);
+  assert.ok(md.includes('Checked 3 of 4'), md.slice(0, 300));
+  assert.ok(md.includes('never reported as "confirmed"'));
+});
+
+test('unverifiable pinpoint details distinguish missing source, unlocated quote, and missing segments', () => {
+  const ghost: CiteCheckInput = {
+    ...DEPO,
+    quotes: [{ id: 'G1', text: 'The seal was intact.', sourceId: 'ghost-doc', pinpoint: 'p. 3' }],
+  };
+  const g = runCiteCheck(ghost).results[0];
+  assert.equal(g.pinpoint?.status, 'unverifiable');
+  assert.ok(g.pinpoint!.detail.includes('source not provided'), g.pinpoint!.detail);
+
+  const q4 = runCiteCheck(DEPO).results.find((x) => x.id === 'Q4')!;
+  assert.equal(q4.pinpoint?.status, 'unverifiable');
+  assert.ok(q4.pinpoint!.detail.includes('quote not located'), q4.pinpoint!.detail);
+
+  const unsegmented: CiteCheckInput = {
+    document: { name: 'Free text (fictional)' },
+    sources: [{ id: 'f', name: 'Free-text Source', text: 'Some unsegmented free text.' }],
+    quotes: [{ id: 'F1', text: 'Some unsegmented free text.', sourceId: 'f', pinpoint: 'p. 3' }],
+  };
+  const f = runCiteCheck(unsegmented).results[0];
+  assert.equal(f.pinpoint?.status, 'unverifiable');
+  assert.ok(f.pinpoint!.detail.includes('source does not declare page segments'), f.pinpoint!.detail);
+});
+
+test('runCiteCheck derives quotes from document.text when quotes are not supplied', () => {
+  const input = {
+    document: {
+      name: 'Extracted brief (fictional)',
+      text: 'She testified that “The seal was already broken.”[1]\n\n[1] Okafor Deposition, p. 11.',
+    },
+    sources: [{ id: 'okafor-depo', name: 'Okafor Deposition (fictional)', aliases: ['Okafor Deposition'], pages: [{ number: 11, text: 'A. The seal was already broken.' }] }],
+  };
+  const report = runCiteCheck(input as unknown as CiteCheckInput);
+  assert.equal(report.summary.total, 1);
+  assert.equal(report.results[0].classification, 'exact');
+  assert.equal(report.results[0].id, 'Q1');
+});

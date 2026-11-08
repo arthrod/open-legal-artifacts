@@ -22,6 +22,10 @@
   .tl-item::before { content: ""; position: absolute; left: -31px; top: 18px; width: 12px; height: 12px;
     background: var(--bg); border: 2px solid var(--text); }
   .tl-item.amb::before { background: var(--flag-tint); }
+  .tier { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    border: 1px solid var(--border); padding: 2px 6px; margin-right: 6px; white-space: nowrap; }
+  @media (max-width: 480px) { .tier { white-space: normal; overflow-wrap: anywhere; max-width: 100%; } }
+  .tier.overdue { border-color: var(--bad); color: var(--bad); }
   .tl-date { font-family: var(--font-mono); font-size: 12px; }
   .tl-date b { font-size: 15px; }
   .tl-item.amb .tl-date b { background: var(--flag-tint); padding: 0 4px; }
@@ -70,6 +74,11 @@
     <ul class="unresolved" id="unresolved"></ul>
   </section>
 
+  <section>
+    <h2>Coverage audit — quiet is not clean</h2>
+    <ul class="unresolved" id="coverage"></ul>
+  </section>
+
   <footer class="disclaimer">
     Deterministic normalization + rules-as-data lead times; the LLM (optional) only structures clause text into the
     input JSON (schema in spec.md). Ambiguous readings are a prompt to read the clause, not a deadline to rely on.
@@ -81,26 +90,34 @@
   import { buildCalendar, toICS } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const cal = buildCalendar(EXAMPLE, EXAMPLE.rules);
+  const cal = buildCalendar(EXAMPLE, EXAMPLE.rules, EXAMPLE.confirmations);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   document.getElementById("stats").innerHTML =
     `<div class="stat"><b>${cal.summary.confirmed}</b><span>confirmed</span></div>` +
     `<div class="stat"><b>${cal.summary.ambiguous}</b><span>ambiguous ⚠</span></div>` +
-    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unresolved → review</span></div>`;
+    `<div class="stat"><b>${cal.summary.unresolved}</b><span>unresolved → review</span></div>` +
+    `<div class="stat"><b>${cal.events.filter((e) => e.urgency.tier === "overdue").length}</b><span>overdue</span></div>` +
+    `<div class="stat"><b>${cal.summary.coverageGaps}</b><span>coverage gaps</span></div>`;
 
   document.getElementById("timeline").innerHTML = cal.events.map((e) =>
     `<div class="tl-item ${e.status === "ambiguous" ? "amb" : ""}">` +
+    `<div style="margin-bottom:6px"><span class="tier ${e.urgency.tier === "overdue" ? "overdue" : ""}">${esc(e.urgency.tier)}${e.urgency.daysUntil < 0 ? ` ${Math.abs(e.urgency.daysUntil)}d late` : ` ${e.urgency.daysUntil}d`}</span>${e.escalation ? `<span class="tier">→ ${esc(e.escalation.owner)}</span>` : ""}${e.recurrence ? `<span class="tier">cycle ${e.recurrence.cycle}/2 · ${e.recurrence.termMonths}mo</span>` : ""}</div>` +
     `<div class="tl-date">give notice by <b>${esc(e.noticeDeadline)}</b> → event ${esc(e.date)} (${e.leadTimeDays}d lead, ${esc(e.leadTimeSource)})</div>` +
     `<div class="tl-name">${esc(e.contractName)} · ${esc(e.clauseType)}${e.counterparty ? ` · ${esc(e.counterparty)}` : ""}</div>` +
     (e.quote ? `<div class="tl-quote">"${esc(e.quote)}"</div>` : "") +
     `<div class="tl-meta">${esc(e.reason)}</div>` +
     (e.ambiguityFlag ? `<div class="ambflag">⚠ ${esc(e.ambiguityFlag.type)} — ${esc(e.ambiguityFlag.note)}</div>` : "") +
+    (e.confirmation ? `<div class="tl-meta">✓ confirmed ${esc(e.confirmation.date)} by ${esc(e.confirmation.confirmedBy ?? "counsel")}${e.confirmation.on ? ` on ${esc(e.confirmation.on)}` : ""} (resolved ${esc(e.confirmation.resolvedFlag)})</div>` : "") +
     `</div>`).join("");
 
   document.getElementById("unresolved").innerHTML = cal.unresolved.length
     ? cal.unresolved.map((u) => `<li><b>${esc(u.contractName)}</b> <code>${esc(u.clauseType)}</code> — <code>${esc(u.expression)}</code><br />${esc(u.reason)}</li>`).join("")
     : `<li>none</li>`;
+
+  document.getElementById("coverage").innerHTML = cal.coverage.length
+    ? cal.coverage.map((c) => `<li><b>${esc(c.contractName)}</b> <code>${esc(c.contractId)}</code><br />${esc(c.reason)}</li>`).join("")
+    : `<li>none — every contract has at least one dated clause</li>`;
 
   document.getElementById("icsBtn").onclick = () => {
     const blob = new Blob([toICS(cal)], { type: "text/calendar" });

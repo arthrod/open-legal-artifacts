@@ -7,27 +7,33 @@
       "id": "OBL-1",
       "clause": "§ 4.1",
       "party": "Customer",
+      "owner": "Finance (Customer)",
       "verb": "pay",
       "text": "pay the Phase 2 milestone fee of $48,000",
       "dueDate": "2026-10-30",
-      "amount": 48000
+      "amount": 48000,
+      "sourceQuote": "Customer shall pay the Phase 2 milestone fee of $48,000 within thirty (30) days of acceptance of the Phase 2 deliverables."
     },
     {
       "id": "OBL-2",
       "clause": "§ 5.2",
       "party": "Supplier",
+      "owner": "Security team (Supplier)",
       "verb": "deliver",
       "text": "deliver the platform security audit report",
-      "dueDate": "2026-11-12"
+      "dueDate": "2026-11-12",
+      "sourceQuote": "Supplier shall deliver to Customer a platform security audit report no later than November 12, 2026."
     },
     {
       "id": "OBL-3",
       "clause": "§ 5.4",
       "party": "Supplier",
+      "owner": "Security team (Supplier)",
       "verb": "notify",
       "text": "notify Customer of any security incident within 72 hours of discovery",
       "dueDate": null,
-      "condition": "within 72 hours of discovery of a security incident"
+      "condition": "within 72 hours of discovery of a security incident",
+      "sourceQuote": "Supplier shall notify Customer of any security incident within seventy-two (72) hours of discovery."
     },
     {
       "id": "OBL-4",
@@ -36,7 +42,8 @@
       "verb": "return",
       "text": "return all Confidential Materials within 30 days of termination",
       "dueDate": null,
-      "condition": "within 30 days of termination of the Agreement"
+      "condition": "within 30 days of termination of the Agreement",
+      "sourceQuote": "Upon termination of this Agreement, Customer shall return all Confidential Materials within thirty (30) days."
     },
     {
       "id": "OBL-5",
@@ -44,7 +51,8 @@
       "party": "Supplier",
       "verb": "maintain",
       "text": "maintain commercial general liability insurance of at least $1M",
-      "dueDate": "2027-03-31"
+      "dueDate": "2027-03-31",
+      "sourceQuote": "Supplier shall maintain, at its own expense, commercial general liability insurance with limits of not less than $1,000,000 per occurrence."
     },
     {
       "id": "OBL-6",
@@ -52,7 +60,8 @@
       "party": "Supplier",
       "verb": "deliver",
       "text": "deliver the Q3 API usage statement",
-      "dueDate": "2026-09-30"
+      "dueDate": "2026-09-30",
+      "sourceQuote": "Supplier shall deliver a quarterly API usage statement within thirty (30) days after the end of each calendar quarter."
     },
     {
       "id": "OBL-7",
@@ -60,11 +69,25 @@
       "party": "Both",
       "verb": "renew",
       "text": "exchange written renewal notices for the pilot extension",
-      "dueDate": "end of the pilot period"
+      "dueDate": "end of the pilot period",
+      "sourceQuote": "The parties shall exchange written renewal notices no later than the end of the pilot period."
+    },
+    {
+      "id": "OBL-8",
+      "clause": "§ 4.4",
+      "party": "Customer",
+      "owner": "Finance (Customer)",
+      "verb": "pay",
+      "text": "pay the quarterly platform license fee of $6,000",
+      "dueDate": null,
+      "recurrence": { "cadence": "quarterly", "anchor": "2026-03-31" },
+      "amount": 6000,
+      "sourceQuote": "Customer shall pay a quarterly platform license fee of $6,000, due on the last day of each calendar quarter, beginning March 31, 2026."
     }
   ],
   "satisfaction": [
     { "obligationId": "OBL-6", "satisfiedOn": "2026-10-03", "evidence": "email thread 2026-10-03 (fictional)", "note": "delivered 3 days late" },
-    { "obligationId": "OBL-5", "satisfiedOn": "2026-04-15", "evidence": "certificate of insurance COI-2026-1187 (fictional)" }
+    { "obligationId": "OBL-5", "satisfiedOn": "2026-04-15", "evidence": "certificate of insurance COI-2026-1187 (fictional)" },
+    { "obligationId": "OBL-8", "satisfiedOn": "2026-10-05", "evidence": "wire confirmation WIRE-Q3-0042 (fictional)", "note": "Q3 fee paid; Q1 and Q2 cycles unreconciled" }
   ]
 }

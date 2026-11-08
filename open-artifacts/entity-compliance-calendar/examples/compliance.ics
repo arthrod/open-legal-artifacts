@@ -11,14 +11,44 @@ DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE franchise tax\nStatute
  
  (fictional): fictional 8 Del. C. § 391-analog\nRule: annual, formati
  on 
- anniversary (03-15)\nStatus: scheduled\nRules-as-data defaults; ve
- rify a
- gainst current statute. Not legal advice.
+ anniversary (03-15)\nRule verified: 2025-06-01 — STALE (>365d): 
+ re-ver
+ ify before relying\nGood standing: ok (confirmed 2026-10-15)\nS
+ tatus: sc
+ heduled\nRules-as-data defaults; verify against current stat
+ ute. Not leg
+ al advice.
 RRULE:FREQ=YEARLY
 BEGIN:VALARM
 TRIGGER:-P30D
 ACTION:DISPLAY
 DESCRIPTION:Filing window — DE franchise tax (Northwind Robotics\, Inc.)
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:E-1-ca-sos-biennial-20260801@open-legal-artifacts
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20260801
+SUMMARY:[DELINQUENT] CA statement of information — Northwind Robotics\,
+  Inc. (US-DE)
+DESCRIPTION:Northwind Robotics, Inc. [E-1] — CA statement of informatio
+ 
+ n\nStatute (fictional): fictional Cal. Corp. Code § 6210-analog\nRul
+ e: 
+ biennial, qualification anniversary (08-01), even-cycle from ancho
+ r year
+ \nRule verified: 2026-09-15\nGood standing: ok (confirmed 2026-
+ 10-15)\nS
+ TATUS: DELINQUENT — cure immediately (fictional data)\nRul
+ es-as-data d
+ efaults; verify against current statute. Not legal advice.
+RRULE:FREQ=YEARLY;INTERVAL=2
+BEGIN:VALARM
+TRIGGER:-P30D
+ACTION:DISPLAY
+DESCRIPTION:Filing window — CA statement of information (Northwind Robo
+ 
+ tics\, Inc.)
 END:VALARM
 END:VEVENT
 BEGIN:VEVENT
@@ -30,9 +60,11 @@ DESCRIPTION:Northwind Robotics, Inc. [E-1] — DE registered agent renewa
  
  l\nStatute (fictional): fictional 8 Del. C. § 132-analog\nRule: annu
  al,
-  fixed 6/1\nStatus: scheduled\nRules-as-data defaults; verify agai
- nst cu
- rrent statute. Not legal advice.
+  fixed 6/1\nRule verified: 2026-07-10\nGood standing: ok (confirme
+ d 2026
+ -10-15)\nStatus: scheduled\nRules-as-data defaults; verify agai
+ nst curre
+ nt statute. Not legal advice.
 RRULE:FREQ=YEARLY
 BEGIN:VALARM
 TRIGGER:-P30D
@@ -53,10 +85,12 @@ DESCRIPTION:Northwind Robotics California, Inc. [E-2] — CA statement of
   information\nStatute (fictional): fictional Cal. Corp. Code § 6210-
  ana
  log\nRule: biennial, formation anniversary (06-01), even-cycle fro
- m form
- ation year\nSTATUS: DELINQUENT — cure immediately (fictional 
- data)\nRu
- les-as-data defaults; verify against current statute. Not le
+ m anch
+ or year\nRule verified: 2026-09-15\nGood standing: stale (confi
+ rmed 2024
+ -11-01)\nSTATUS: DELINQUENT — cure immediately (fictional 
+ data)\nRules
+ -as-data defaults; verify against current statute. Not le
  gal advice.
 RRULE:FREQ=YEARLY;INTERVAL=2
 BEGIN:VALARM
@@ -77,9 +111,11 @@ DESCRIPTION:Northwind Robotics NY LLC [E-3] — NY biennial statement\nSt
  
  atute (fictional): fictional NY LLC Law § 301-analog\nRule: biennial
  , f
- ixed 4/15\nSTATUS: DELINQUENT — cure immediately (fictional data
- )\nRul
- es-as-data defaults; verify against current statute. Not legal 
+ ixed 4/15\nRule verified: 2026-08-20\nGood standing: ok (confirmed
+  2026-
+ 08-01)\nSTATUS: DELINQUENT — cure immediately (fictional data
+ )\nRules-
+ as-data defaults; verify against current statute. Not legal 
  advice.
 RRULE:FREQ=YEARLY;INTERVAL=2
 BEGIN:VALARM

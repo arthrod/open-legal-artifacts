@@ -1,0 +1,100 @@
+{
+  "contractName": "Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)",
+  "playbookId": "PB-NDA-2026-v3",
+  "sideMismatch": null,
+  "thresholds": {
+    "preferred": 0.7,
+    "fallback": 0.7,
+    "topic": 0.3
+  },
+  "summary": {
+    "compliant": 1,
+    "deviates": 2,
+    "dealBreaker": 0,
+    "unclassified": 1
+  },
+  "rows": [
+    {
+      "clauseId": "E1",
+      "ruleId": "term",
+      "classification": "deviates",
+      "matchedTier": 1,
+      "matchedLabel": "Evergreen, 90-day exit",
+      "similarity": 0.9473684210526315,
+      "clauseQuote": {
+        "text": "This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice",
+        "charStart": 10,
+        "charEnd": 134
+      },
+      "clauseText": "4.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice of non-renewal.",
+      "reason": "matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard",
+      "routedTo": "Legal Operations",
+      "heading": "Term",
+      "redline": {
+        "label": "3-year fixed term",
+        "removals": [
+          "renews automatically",
+          "successive one-year terms unless either party gives ninety days prior written notice"
+        ],
+        "additions": [
+          "commences on the Effective Date and continues",
+          "three (3) years."
+        ]
+      }
+    },
+    {
+      "clauseId": "E2",
+      "ruleId": "liability",
+      "classification": "compliant",
+      "matchedTier": "preferred",
+      "matchedLabel": "Mutual cap at 12 months of fees",
+      "similarity": 1,
+      "clauseQuote": {
+        "text": "Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim",
+        "charStart": 15,
+        "charEnd": 165
+      },
+      "clauseText": "9.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim.",
+      "reason": "matches preferred standard (Mutual cap at 12 months of fees)",
+      "routedTo": null,
+      "heading": "Limitation of Liability",
+      "redline": null
+    },
+    {
+      "clauseId": "E3",
+      "ruleId": "term",
+      "classification": "deviates",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 0.7142857142857143,
+      "clauseQuote": null,
+      "clauseText": "4.1 Term. This Agreement commences on the Effective Date and continues for eighteen months.",
+      "reason": "no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has []",
+      "routedTo": "General Counsel",
+      "heading": "Term",
+      "redline": {
+        "label": "3-year fixed term",
+        "removals": [
+          "eighteen months."
+        ],
+        "additions": [
+          "three (3) years."
+        ]
+      }
+    },
+    {
+      "clauseId": "E4",
+      "heading": "Governing Law",
+      "ruleId": null,
+      "classification": "unclassified",
+      "matchedTier": null,
+      "matchedLabel": null,
+      "similarity": 0,
+      "clauseQuote": null,
+      "clauseText": "12.1 Governing Law. This Agreement is governed by the laws of the State of New York.",
+      "reason": "no rule topic matches heading \"Governing Law\" (best similarity 0.00 < 0.3)",
+      "routedTo": "Legal Operations",
+      "redline": null
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 /** Tests for intake-benchmark core. Run: node --test "core/*.test.js" */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { benchmark, scoreFlow, exportCsv, exportMd, DEFAULT_WEIGHTS } from './core.js';
+import { benchmark, scoreFlow, exportCsv, exportMd, DEFAULT_WEIGHTS, rankStability, validateCapture, compare } from './core.js';
+import { getCanon, listCanons } from './canons.js';
 
 const REQUIRED = ['full_name', 'date_of_birth', 'incident_date', 'incident_location', 'contact_email', 'insurance_carrier'];
 
@@ -87,6 +88,182 @@ describe('benchmark', () => {
   test('zero flows or unknown weight keys throw', () => {
     assert.throws(() => benchmark({ scenario: { required_fields: REQUIRED }, flows: [] }), /At least one/);
     assert.throws(() => benchmark({ scenario: { required_fields: REQUIRED }, flows: [flow()], config: { weights: { vibes: 1 } } }), /vibes/);
+  });
+});
+
+describe('canon library', () => {
+  test('listCanons returns the four practice areas; unknown id throws', () => {
+    assert.deepEqual(listCanons().sort(), ['consumer', 'family', 'housing', 'immigration']);
+    assert.throws(() => getCanon('nope'), /Unknown canon/);
+  });
+  test('getCanon fields are tagged core/deadline/conflict with both risk classes present', () => {
+    for (const id of listCanons()) {
+      const c = getCanon(id);
+      assert.ok(c.fields.length >= 6, `${id} canon too thin`);
+      for (const f of c.fields) {
+        assert.ok(typeof f.name === 'string' && f.name.length > 0);
+        assert.ok(['core', 'deadline', 'conflict'].includes(f.risk_class), `${id}.${f.name} bad risk_class`);
+      }
+      assert.ok(c.fields.some((f) => f.risk_class === 'deadline'), `${id} lacks a deadline field`);
+      assert.ok(c.fields.some((f) => f.risk_class === 'conflict'), `${id} lacks a conflict field`);
+    }
+  });
+  test('benchmark accepts scenario.canon and scores flow fields against it', () => {
+    const housing = getCanon('housing');
+    const r = benchmark({ scenario: { canon: 'housing' }, flows: [flow()] });
+    const covered = housing.fields.filter((f) => ['full_name', 'date_of_birth', 'contact_email', 'incident_date', 'incident_location'].includes(f.name));
+    assert.equal(r.flows[0].dimensions.completeness, Math.round((covered.length / housing.fields.length) * 10000) / 100);
+    assert.equal(r.flows[0].dimensions.deadline_capture, 0); // no deadline fields asked
+    for (const f of housing.fields.filter((x) => x.risk_class !== 'core')) {
+      assert.ok(r.flows[0].metrics.missing_critical.includes(f.name), `${f.name} should be in missing_critical`);
+    }
+  });
+  test('scenario with both canon and required_fields: canon wins with a warning', () => {
+    const r = benchmark({ scenario: { canon: 'housing', required_fields: REQUIRED }, flows: [flow()] });
+    assert.equal(r.flows[0].metrics.covered_fields.length, 2); // full_name + contact_email only in housing canon
+    assert.ok(r.warnings.some((w) => /canon "housing" overrides/.test(w)));
+  });
+});
+
+describe('risk dimensions', () => {
+  const TAGGED = [
+    { name: 'full_name', risk_class: 'core' },
+    { name: 'statute_of_limitations_date', risk_class: 'deadline' },
+    { name: 'adverse_party_name', risk_class: 'conflict' },
+  ];
+  test('untagged canon leaves deadline_capture/conflict_check null', () => {
+    const s = scoreFlow(flow(), REQUIRED);
+    assert.equal(s.dimensions.deadline_capture, null);
+    assert.equal(s.dimensions.conflict_check, null);
+    assert.deepEqual(s.metrics.missing_critical, []);
+  });
+  test('unasked deadline/conflict fields score <100 and land in missing_critical', () => {
+    const s = scoreFlow(flow({ steps: [{ id: 's1', fields: ['Full Name'], latency_seconds: 10, fallback: 'x' }] }), TAGGED);
+    assert.equal(s.dimensions.deadline_capture, 0);
+    assert.equal(s.dimensions.conflict_check, 0);
+    assert.deepEqual(s.metrics.missing_critical, ['statute_of_limitations_date', 'adverse_party_name']);
+  });
+  test('all critical fields asked score 100 with empty missing_critical', () => {
+    const s = scoreFlow(flow({ steps: [{ id: 's1', fields: ['full_name', 'statute_of_limitations_date', 'adverse_party_name'], latency_seconds: 10, fallback: 'x' }] }), TAGGED);
+    assert.equal(s.dimensions.deadline_capture, 100);
+    assert.equal(s.dimensions.conflict_check, 100);
+    assert.deepEqual(s.metrics.missing_critical, []);
+  });
+  test('unknown risk_class throws', () => {
+    assert.throws(() => scoreFlow(flow(), [{ name: 'x', risk_class: 'urgent' }]), /risk_class/);
+  });
+});
+
+describe('rankStability', () => {
+  const tenFields = Array.from({ length: 10 }, (_, i) => `f${i + 1}`);
+  const mk = (id, name, fields, latency) => ({
+    id, name, kind: 'software', abandonment_rate: 0,
+    steps: [{ id: 's1', purpose: 'all', fields, latency_seconds: latency, fallback: 'phone' }],
+  });
+  test('clear winner → zero flips, robust', () => {
+    const r = rankStability({ scenario: { required_fields: tenFields }, flows: [
+      mk('good', 'Good', tenFields, 100),
+      mk('bad', 'Bad', ['f1'], 99999),
+    ] });
+    assert.equal(r.flips, 0);
+    assert.equal(r.flip_rate, 0);
+    assert.equal(r.verdict, 'robust');
+    assert.ok(r.runs >= 4);
+  });
+  test('near-tie → some flips, fragile', () => {
+    const r = rankStability({ scenario: { required_fields: tenFields }, flows: [
+      mk('wide', 'Wide', tenFields, 3000),  // completeness 100, speed 30
+      mk('fast', 'Fast', tenFields.slice(0, 7), 300), // completeness 70, speed 100
+    ] });
+    assert.ok(r.flips > 0, `expected flips > 0, got ${r.flips}`);
+    assert.equal(r.verdict, 'fragile');
+    assert.ok(r.flip_rate > 0 && r.flip_rate <= 1);
+  });
+  test('deterministic: identical output on rerun', () => {
+    const input = { scenario: { required_fields: REQUIRED }, flows: [flow(), flow({ id: 'two', name: 'Flow Two' })] };
+    assert.deepEqual(rankStability(input), rankStability(input));
+  });
+});
+
+describe('fair mode', () => {
+  test('composites recompute on the intersection of available dimensions, with warning', () => {
+    const input = {
+      scenario: { required_fields: REQUIRED },
+      flows: [
+        flow({ id: 'with', name: 'With telemetry', abandonment_rate: 0 }),
+        flow({ id: 'without', name: 'Without telemetry', abandonment_rate: null }),
+      ],
+    };
+    const plain = benchmark(input);
+    const fair = benchmark({ ...input, config: { fairMode: true } });
+    const withT = plain.flows.find((f) => f.id === 'with');
+    const withoutT = plain.flows.find((f) => f.id === 'without');
+    // without fair mode retention boosts the flow that has it
+    assert.ok(withT.composite > withoutT.composite);
+    const fw = fair.flows.find((f) => f.id === 'with');
+    const fwOut = fair.flows.find((f) => f.id === 'without');
+    assert.equal(fw.composite, fwOut.composite); // identical once retention is excluded for both
+    assert.ok(fw.composite < withT.composite);
+    assert.ok(fair.warnings.some((w) => /fair mode/i.test(w) && /retention/.test(w)));
+  });
+  test('fair mode with all dimensions shared changes nothing and stays quiet', () => {
+    const input = { scenario: { required_fields: REQUIRED }, flows: [flow({ abandonment_rate: 0.2 }), flow({ id: 'two', name: 'Flow Two', abandonment_rate: 0.4 })] };
+    const plain = benchmark(input);
+    const fair = benchmark({ ...input, config: { fairMode: true } });
+    assert.deepEqual(plain.flows.map((f) => [f.id, f.composite]), fair.flows.map((f) => [f.id, f.composite]));
+    assert.ok(!fair.warnings.some((w) => /fair mode/i.test(w)));
+  });
+});
+
+describe('capture QA (validateCapture)', () => {
+  test('latency outliers beyond 7 days are flagged', () => {
+    const r = validateCapture({ flows: [{ id: 'f1', name: 'F1', kind: 'software', steps: [{ id: 's1', purpose: 'identity', fields: ['full_name'], latency_seconds: 7 * 86400 + 1 }] }] });
+    assert.equal(r.valid, true);
+    assert.ok(r.warnings.some((w) => /latency_seconds.*7 days/.test(w)));
+  });
+  test('missing purpose and out-of-bounds abandonment warn; empty/invalid structure errors', () => {
+    const r = validateCapture({ flows: [{ id: 'f1', name: 'F1', steps: [{ id: 's1', fields: ['full_name'], latency_seconds: 5 }], abandonment_rate: 2 }] });
+    assert.ok(r.warnings.some((w) => /purpose/.test(w)));
+    assert.ok(r.warnings.some((w) => /abandonment_rate/.test(w)));
+    const bad = validateCapture({ flows: [] });
+    assert.equal(bad.valid, false);
+    assert.ok(bad.errors.length >= 1);
+  });
+  test('well-formed capture passes clean', () => {
+    const r = validateCapture({ flows: [flow({ abandonment_rate: 0.1 })] });
+    assert.equal(r.valid, true);
+    assert.deepEqual(r.warnings, []);
+  });
+});
+
+describe('drift diff (compare)', () => {
+  const mkInput = (aAb, bAb) => ({
+    scenario: { required_fields: REQUIRED },
+    flows: [
+      flow({ id: 'a', name: 'Flow A', abandonment_rate: aAb }),
+      flow({ id: 'b', name: 'Flow B', abandonment_rate: bAb }),
+    ],
+  });
+  test('changed abandonment → retention delta and rank flip flagged', () => {
+    const before = benchmark(mkInput(0.5, 0.1));
+    const after = benchmark(mkInput(0.1, 0.5));
+    const d = compare(after, before);
+    const a = d.flows.find((f) => f.id === 'a');
+    const b = d.flows.find((f) => f.id === 'b');
+    assert.equal(a.dimensions.retention, 40);
+    assert.equal(a.rank.changed, true);
+    assert.deepEqual(a.rank, { from: 2, to: 1, changed: true });
+    assert.deepEqual(b.rank, { from: 1, to: 2, changed: true });
+    assert.equal(a.composite > 0, true);
+  });
+  test('identical runs → zero deltas, no rank changes', () => {
+    const r = benchmark(mkInput(0.2, 0.3));
+    const d = compare(r, benchmark(mkInput(0.2, 0.3)));
+    for (const f of d.flows) {
+      assert.equal(f.composite, 0);
+      assert.equal(f.rank.changed, false);
+      for (const v of Object.values(f.dimensions)) assert.equal(v, 0);
+    }
   });
 });
 

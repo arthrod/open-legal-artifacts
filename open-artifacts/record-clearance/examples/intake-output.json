@@ -1,0 +1,147 @@
+{
+  "issues": [
+    "conviction 1 missing id — assigned \"C1\"",
+    "uncertain: client.finesPaid dropped — rap sheet shows a balance; amount and payoff status unclear",
+    "uncertain: conviction C1.finesPaid treated as unknown (client value not inherited) — rap sheet shows a balance; amount and payoff status unclear"
+  ],
+  "report": {
+    "asOf": "2026-11-07",
+    "jurisdiction": "IL",
+    "ruleset": {
+      "id": "IL",
+      "name": "Illinois (example ruleset)",
+      "version": "2026-11-example"
+    },
+    "coverageTier": "full",
+    "items": [
+      {
+        "convictionId": "C1",
+        "offense": "Possession of a controlled substance (fictional)",
+        "reliefTypeId": "IL-expungement",
+        "reliefName": "Expungement petition",
+        "ruleId": "IL-CR1",
+        "checklist": [
+          {
+            "id": "IL-CR1-a",
+            "label": "No pending criminal cases",
+            "ruleId": "IL-CR1",
+            "status": "met",
+            "detail": "pendingCases = false"
+          },
+          {
+            "id": "IL-CR1-b",
+            "label": "All fines paid",
+            "ruleId": "IL-CR1",
+            "status": "unknown",
+            "detail": "client.finesPaid not provided"
+          },
+          {
+            "id": "IL-CR1-c",
+            "label": "Offense eligible for expungement",
+            "ruleId": "IL-CR1",
+            "status": "met",
+            "detail": "category/class not in exclusion list"
+          },
+          {
+            "id": "IL-CR1-d",
+            "label": "3-year waiting period after sentence",
+            "ruleId": "IL-CR1",
+            "status": "met",
+            "detail": "3 years from 2020-07-01; satisfied 2023-07-01",
+            "date": "2023-07-01"
+          }
+        ],
+        "filing": null,
+        "filingGuidance": {
+          "steps": [
+            "Obtain a certified disposition for each conviction (illustrative).",
+            "Verify eligibility against the exclusion list before drafting.",
+            "File the expungement petition with the circuit clerk and serve the State's Attorney.",
+            "Attend the hearing if the court requires it."
+          ],
+          "forms": [
+            "Expungement petition (illustrative form name — verify locally)",
+            "Notice to State's Attorney (illustrative)"
+          ],
+          "feeWaiverNote": "A fee-waiver application may be filed with the petition (illustrative — verify locally)."
+        },
+        "authority": {
+          "cite": "20 ILCS 2630/5.2 (expungement) — illustrative [verify]",
+          "url": "https://www.illinoiscourts.gov/"
+        },
+        "earliestFilingDate": "2023-07-01",
+        "lastFilingDate": null,
+        "status": "data_needed",
+        "referral": null
+      },
+      {
+        "convictionId": "C1",
+        "offense": "Possession of a controlled substance (fictional)",
+        "reliefTypeId": "IL-sealing",
+        "reliefName": "Sealing petition",
+        "ruleId": "IL-CR2",
+        "checklist": [
+          {
+            "id": "IL-CR2-a",
+            "label": "No pending cases",
+            "ruleId": "IL-CR2",
+            "status": "met",
+            "detail": "pendingCases = false"
+          },
+          {
+            "id": "IL-CR2-b",
+            "label": "At most 2 qualifying convictions",
+            "ruleId": "IL-CR2",
+            "status": "met",
+            "detail": "1 conviction(s); cap 2"
+          },
+          {
+            "id": "IL-CR2-c",
+            "label": "3 years since sentence completion",
+            "ruleId": "IL-CR2",
+            "status": "met",
+            "detail": "3 years from 2020-07-01; satisfied 2023-07-01",
+            "date": "2023-07-01"
+          }
+        ],
+        "filing": null,
+        "filingGuidance": {
+          "steps": [
+            "Obtain a certified rap sheet listing all convictions (illustrative).",
+            "Confirm the conviction-count cap before filing.",
+            "File the sealing petition with the circuit clerk and serve required parties.",
+            "Calendar the objection window and any hearing date."
+          ],
+          "forms": [
+            "Sealing petition (illustrative form name — verify locally)",
+            "Fingerprint card receipt (illustrative)"
+          ],
+          "feeWaiverNote": "A fee-waiver application is available from the circuit clerk (illustrative — verify locally)."
+        },
+        "authority": {
+          "cite": "20 ILCS 2630/5.5 (sealing) — illustrative [verify]",
+          "url": "https://www.illinoiscourts.gov/"
+        },
+        "earliestFilingDate": "2023-07-01",
+        "lastFilingDate": null,
+        "status": "ready_to_file",
+        "referral": null
+      }
+    ],
+    "summary": {
+      "total": 2,
+      "ready_to_file": 1,
+      "waiting": 0,
+      "blocked": 0,
+      "data_needed": 1,
+      "filed": 0,
+      "granted": 0,
+      "denied": 0
+    },
+    "referrals": [],
+    "gate": {
+      "required": true,
+      "message": "Example rulesets only. Prerequisites marked unknown need court records before any determination; verify everything with counsel or a legal aid clinic before filing."
+    }
+  }
+}

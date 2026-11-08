@@ -9,7 +9,7 @@ export default {
       "pages": [
         { "number": 11, "text": "Q. What happened at the loading dock? A. The trailer arrived at the dock around 4 p.m. and the seal was already broken when our team inspected it at 4:10 p.m." },
         { "number": 12, "text": "Q. Who signed the delivery receipt? A. Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document." },
-        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest." }
+        { "number": 15, "text": "Q. Was the cargo ever weighed? A. We weighed the pallets the next morning and found a shortfall of 340 kilograms against the manifest. The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon." }
       ]
     },
     {
@@ -92,6 +92,13 @@ export default {
       "sourceId": "weber-emails",
       "pinpoint": "p. 3",
       "proposition": "Source not in the record excerpt."
+    },
+    {
+      "id": "Q10 (brief p. 18)",
+      "text": "The manifest itself listed 12,580 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon.",
+      "sourceId": "okafor-depo",
+      "pinpoint": "p. 15",
+      "proposition": "The brief's manifest figure — caught by the number guard (altered digit)."
     }
   ]
 };

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   parseDate, fmtDate, addDays, daysBetween, monthKey, dueDateFor, cents,
   getRuleset, reviewLedger, validateLateFee, toCSV, renderReport,
+  JURISDICTION_RULES, parseLedgerTable,
 } from "./core.js";
 
 const RENT = 1400;
@@ -180,6 +181,226 @@ test("CSV export: header + row-per-entry, CRLF terminated", () => {
   assert.equal(lines[0], "entry_id,date,type,amount,balance_after,lawful_balance_after,note");
   assert.equal(lines.length, 3); // header + 2 entries
   assert.match(lines[1], /^1,2026-01-01,rent,1400\.00,1400\.00,1400\.00/);
+});
+
+/* ---------- wave-2 improvements ---------- */
+
+test("unknown charge type => unknown_charge_type dispute, excluded from lawful balance", () => {
+  const ledger = cleanLedger().slice(0, 2).concat([
+    e_(9, "2026-01-15", "convenience_fee", 25),
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  const d = r.disputes.find((x) => x.issue === "unknown_charge_type");
+  assert.ok(d, "unknown_charge_type dispute present");
+  assert.equal(d.amountInQuestion, 25);
+  assert.equal(r.balance.ledgerFinal, 25);   // still in the as-charged ledger
+  assert.equal(r.balance.lawfulFinal, 0);    // never counted lawful
+});
+
+test("malformed entries (bad date, non-positive amount, duplicate id) => ignoredEntries, never silent", () => {
+  const ledger = [
+    e_(1, "2026-01-01", "rent", RENT),
+    e_(2, "2026-01-03", "payment", RENT),
+    e_(3, "2026-13-01", "rent", RENT),   // impossible month
+    e_(4, "2026-01-20", "rent", 0),      // non-positive amount
+    e_(1, "2026-01-25", "rent", RENT),   // duplicate id
+  ];
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  assert.equal(r.ignoredEntries.length, 3);
+  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("unparseable date")));
+  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("invalid amount")));
+  assert.ok(r.ignoredEntries.some((x) => x.reason.includes("duplicate id")));
+  assert.equal(r.rows.length, 2);
+  assert.equal(r.disputes.length, 0); // the dirty rows don't leak into the audit
+});
+
+test("claimedBalance 1870 vs recomputed 1470 => claimed_balance_mismatch of 400", () => {
+  const ledger = [
+    e_(1, "2026-01-01", "rent", RENT),
+    e_(2, "2026-01-03", "payment", RENT),
+    e_(3, "2026-02-01", "rent", RENT),
+    e_(4, "2026-02-21", "late_fee", 70, { appliedTo: "2026-02" }), // unpaid Feb: triggered, within cap
+  ];
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-02-28", lease, claimedBalance: 1870, ledger });
+  assert.equal(r.balance.ledgerFinal, 1470);
+  const d = r.disputes.find((x) => x.issue === "claimed_balance_mismatch");
+  assert.ok(d, "mismatch dispute present");
+  assert.equal(d.amountInQuestion, 400);
+  assert.equal(r.claimedBalance.delta, 400);
+});
+
+test("parseLedgerTable: CSV with dirty rows => parsed entries + ignoredRows", () => {
+  const csv = [
+    "id,date,type,amount,applied_to,note",
+    "1,2026-01-01,rent,1400,,January rent",
+    "2,2026-13-01,rent,1400,,bad month",
+    "3,2026-01-15,misc_fee,abc,,bad amount",
+    "4,2026-01-03,payment,-5,,negative",
+    "5,2026-01-03,payment,1400,,ok",
+  ].join("\n");
+  const p = parseLedgerTable(csv);
+  assert.equal(p.errors.length, 0);
+  assert.equal(p.entries.length, 2);
+  assert.equal(p.ignoredRows.length, 3);
+  assert.deepEqual(p.entries[0], { id: 1, date: "2026-01-01", type: "rent", amount: 1400, note: "January rent" });
+  assert.ok(p.ignoredRows.every((x) => x.line > 1 && x.reason.length > 0));
+  assert.ok(p.ignoredRows.some((x) => x.reason.includes("date")));
+  assert.ok(p.ignoredRows.some((x) => x.reason.includes("amount")));
+});
+
+test("parseLedgerTable: TSV sniffed, $/commas stripped, ids auto-assigned without id column", () => {
+  const tsv = "date\ttype\tamount\tnote\n2026-01-01\trent\t$1,400.00\t\"January rent\"\n2026-01-03\tpayment\t1400\t\nok";
+  const p = parseLedgerTable(tsv);
+  assert.equal(p.errors.length, 0);
+  assert.equal(p.entries.length, 2);
+  assert.equal(p.entries[0].amount, 1400);
+  assert.equal(p.entries[0].id, 1);
+  assert.equal(p.entries[0].note, "January rent");
+});
+
+test("parseLedgerTable: missing required header column => error, no entries", () => {
+  const p = parseLedgerTable("date,amount\n2026-01-01,1400");
+  assert.equal(p.errors.length, 1);
+  assert.ok(p.errors[0].includes("type"));
+  assert.equal(p.entries.length, 0);
+});
+
+test("deposit interest credited at 6%/yr vs rule's 25% => interest_miscalculation for the delta", () => {
+  const ledger = cleanLedger().slice(0, 2).concat([
+    e_(9, "2026-01-31", "interest", 60, { kind: "deposit", principal: 1000, days: 365, ratePct: 6 }),
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  const d = r.disputes.find((x) => x.issue === "interest_miscalculation");
+  assert.ok(d, "interest dispute present");
+  assert.equal(d.amountInQuestion, 190); // expected 250 at 25% − credited 60 at 6%
+  assert.equal(d.ruleId, "DC-DI");
+  assert.ok(d.citation && d.citation.includes("verify"));
+  assert.equal(r.balance.ledgerFinal, -60);  // credit as ledger stands
+  assert.equal(r.balance.lawfulFinal, -250); // credit at the ruleset rate
+});
+
+test("judgment interest charged above the rule rate => interest_miscalculation overcharge", () => {
+  const ledger = cleanLedger().slice(0, 2).concat([
+    e_(9, "2026-01-31", "interest", 250, { kind: "judgment", principal: 1000, days: 365, ratePct: 25 }),
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  const d = r.disputes.find((x) => x.issue === "interest_miscalculation");
+  assert.ok(d && d.amountInQuestion === 190); // charged 250 at 25% vs 60 lawful at 6%
+  assert.equal(d.ruleId, "DC-JI");
+  assert.equal(r.balance.ledgerFinal, 250);
+  assert.equal(r.balance.lawfulFinal, 60);
+});
+
+test("interest entry missing principal/days/ratePct => ignored, never silently recomputed", () => {
+  const ledger = cleanLedger().slice(0, 2).concat([
+    e_(9, "2026-01-31", "interest", 60),
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  assert.equal(r.ignoredEntries.length, 1);
+  assert.ok(r.ignoredEntries[0].reason.includes("principal"));
+});
+
+test("rentSchedule jump of 20% under a 10% cap => rent_increase_over_cap dispute", () => {
+  const leaseSched = {
+    ...lease,
+    rentSchedule: [{ from: "2026-01-01", amount: RENT }, { from: "2026-03-01", amount: 1680 }],
+  };
+  const ledger = [
+    e_(1, "2026-01-01", "rent", RENT), e_(2, "2026-01-03", "payment", RENT),
+    e_(3, "2026-02-01", "rent", RENT), e_(4, "2026-02-03", "payment", RENT),
+    e_(5, "2026-03-01", "rent", 1680),
+  ];
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease: leaseSched, ledger });
+  const d = r.disputes.find((x) => x.issue === "rent_increase_over_cap");
+  assert.ok(d, "cap dispute present");
+  assert.equal(d.month, "2026-03");
+  assert.equal(d.amountInQuestion, 140); // 1680 − 1400 × 1.10
+  assert.ok(d.citation && d.citation.includes("verify"));
+  assert.ok(!r.disputes.some((x) => x.issue === "rent_overcharged")); // charged at the scheduled amount
+});
+
+test("disputes carry the rule's citation; the report Rule column surfaces it", () => {
+  const ledger = cleanLedger().slice(0, 4).concat([
+    e_(9, "2026-03-01", "rent", RENT),
+    e_(10, "2026-03-02", "payment", RENT),
+    e_(11, "2026-03-02", "late_fee", 70, { appliedTo: "2026-03" }),
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease, ledger });
+  const d = r.disputes.find((x) => x.issue === "late_fee_before_grace");
+  assert.equal(d.citation, JURISDICTION_RULES.DC.citations["DC-LF"]);
+  assert.ok(d.citation.includes("[verify"));
+  const md = renderReport(r);
+  assert.ok(md.includes(d.citation)); // surfaced in the report's Rule column
+});
+
+/* ---------- wave-3.5 fix round (review 88) ---------- */
+
+test("two +9% steps one month apart exceed the 10% annual cap on a 12-month lookback", () => {
+  const leaseSched = {
+    ...lease,
+    rentSchedule: [
+      { from: "2026-01-01", amount: RENT },
+      { from: "2026-02-01", amount: 1526 },    // +9% — lawful alone
+      { from: "2026-03-01", amount: 1663.34 }, // second +9% within 12 months ⇒ +18.8% vs base
+    ],
+  };
+  const ledger = [
+    e_(1, "2026-01-01", "rent", RENT), e_(2, "2026-01-03", "payment", RENT),
+    e_(3, "2026-02-01", "rent", 1526), e_(4, "2026-02-03", "payment", 1526),
+    e_(5, "2026-03-01", "rent", 1663.34),
+  ];
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-03-31", lease: leaseSched, ledger });
+  const d = r.disputes.find((x) => x.issue === "rent_increase_over_cap");
+  assert.ok(d, "back-to-back +9% steps must trip the annual cap");
+  assert.equal(d.month, "2026-03");
+  assert.equal(d.amountInQuestion, 123.34); // 1663.34 − 1400 × 1.10
+});
+
+test("increases spaced ≥12 months apart compare against the rent effective 12 months prior, not the previous step", () => {
+  // step3 is +9% vs the previous step (old check) but +18.8% vs the 1400 effective 12 months prior
+  const leaseClose = {
+    ...lease,
+    rentSchedule: [
+      { from: "2026-01-01", amount: RENT },
+      { from: "2026-06-01", amount: 1526 },    // +9%
+      { from: "2027-01-01", amount: 1663.34 }, // 7 months later ⇒ cumulative vs 12-mo base
+    ],
+  };
+  const rClose = reviewLedger({ jurisdiction: "DC", asOf: "2027-01-31", lease: leaseClose, ledger: [] });
+  assert.ok(rClose.disputes.some((x) => x.issue === "rent_increase_over_cap" && x.month === "2027-01"));
+  // same steps spaced ≥12 months apart are lawful under the rolling cap
+  const leaseSpaced = {
+    ...lease,
+    rentSchedule: [
+      { from: "2026-01-01", amount: RENT },
+      { from: "2026-06-01", amount: 1526 },
+      { from: "2027-07-01", amount: 1663.34 }, // 13 months after the +9% step
+    ],
+  };
+  const rSpaced = reviewLedger({ jurisdiction: "DC", asOf: "2027-07-31", lease: leaseSpaced, ledger: [] });
+  assert.ok(!rSpaced.disputes.some((x) => x.issue === "rent_increase_over_cap"));
+});
+
+test("interest severity derives from sign: under-charged judgment / over-credited deposit are not tenant-harm severities", () => {
+  const ledger = cleanLedger().slice(0, 2).concat([
+    e_(9, "2026-01-31", "interest", 30, { kind: "judgment", principal: 1000, days: 365, ratePct: 3 }),  // below the 6% rule rate
+    e_(10, "2026-01-31", "interest", 300, { kind: "deposit", principal: 1000, days: 365, ratePct: 30 }), // above the 25% rule rate
+  ]);
+  const r = reviewLedger({ jurisdiction: "DC", asOf: "2026-01-31", lease, ledger });
+  const ds = r.disputes.filter((x) => x.issue === "interest_miscalculation");
+  assert.equal(ds.length, 2);
+  for (const d of ds) assert.equal(d.severity, "accuracy"); // neither direction harms the tenant
+  assert.equal(ds[0].amountInQuestion, 30);   // judgment: expected 60, charged 30
+  assert.equal(ds[1].amountInQuestion, 50);   // deposit: credited 300, rule requires 250
+});
+
+test("parseLedgerTable: leading-zero id like \"007\" is preserved as text, not coerced to 7", () => {
+  const csv = "id,date,type,amount\n007,2026-01-01,rent,1400\n7,2026-01-03,payment,1400";
+  const p = parseLedgerTable(csv);
+  assert.equal(p.errors.length, 0);
+  assert.equal(p.entries.length, 2);
+  assert.equal(p.entries[0].id, "007");
+  assert.equal(p.entries[1].id, 7);
 });
 
 test("markdown report includes balances, disputes, and the verify gate", () => {

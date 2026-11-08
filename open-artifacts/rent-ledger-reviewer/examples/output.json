@@ -145,6 +145,7 @@
       "month": "2026-02",
       "amountInQuestion": 70,
       "ruleId": "DC-LF",
+      "citation": "D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative]",
       "text": "Fee charged for 2026-02, but rent was paid by 2026-02-04, within the 5-day grace window (due 2026-02-01)."
     },
     {
@@ -154,6 +155,7 @@
       "month": "2026-03",
       "amountInQuestion": 80,
       "ruleId": "DC-LF",
+      "citation": "D.C. Code tit. 42, rent-stabilization late-fee provisions [verify — illustrative]",
       "text": "Fee 150.00 exceeds the 5% of monthly rent cap of 70.00 for 2026-03."
     },
     {
@@ -163,6 +165,7 @@
       "month": "2026-01",
       "amountInQuestion": 250,
       "ruleId": "DC-ALLOWABLE",
+      "citation": "D.C. Code tit. 42 + DCMR housing regs [verify — illustrative]",
       "text": "Charge of type \"misc_fee\" (250.00 on 2026-01-15) is not an allowable charge type in the DC example ruleset."
     }
   ],
@@ -171,7 +174,9 @@
     "lawfulFinal": 1470,
     "overchargeTotal": 400
   },
+  "claimedBalance": null,
   "underpayments": [],
+  "ignoredEntries": [],
   "gate": {
     "required": true,
     "message": "Recomputation uses illustrative example rulesets; figures are screening estimates for attorney review, not a determination of what is owed. Verify against the actual lease, ledger originals, and current local law."

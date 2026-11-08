@@ -6,6 +6,12 @@
     "issuing_authority": "Superior Court of Maricopa County (fictionalized caption)",
     "opposing": "Counsel for plaintiff L. Drummond"
   },
+  "classification": {
+    "type": "third_party_documents",
+    "basis": "document categories present; no other type marker matched",
+    "stop": false,
+    "escalation": []
+  },
   "deadline": {
     "served_date": "2026-11-02",
     "service_method": "mail",
@@ -14,6 +20,64 @@
     "day_type": "calendar",
     "deadline": "2026-11-19",
     "skipped_noncourt_days": []
+  },
+  "deadlines_all": {
+    "response": {
+      "kind": "response",
+      "label": "Response / compliance",
+      "deadline": "2026-11-19",
+      "total_days": 17,
+      "day_type": "calendar",
+      "basis": "17 calendar day(s) from service 2026-11-02 by mail (+3 ext.)"
+    },
+    "objection": {
+      "kind": "objection",
+      "label": "Objections",
+      "deadline": "2026-11-15",
+      "total_days": 13,
+      "day_type": "calendar",
+      "basis": "earlier of compliance date (2026-11-19) and 10 day(s) after service (2026-11-15) → 2026-11-15",
+      "candidates": {
+        "compliance_date": "2026-11-19",
+        "fixed_days_after_service": "2026-11-15"
+      }
+    },
+    "production": {
+      "kind": "production",
+      "label": "Production",
+      "deadline": "2026-12-05",
+      "total_days": 33,
+      "day_type": "calendar",
+      "basis": "33 calendar day(s) from service 2026-11-02 (incl. 3 ext.)"
+    },
+    "quash_window": {
+      "kind": "quash_window",
+      "label": "Motion-to-quash window (outer limit)",
+      "deadline": "2026-11-19",
+      "total_days": 17,
+      "day_type": "calendar",
+      "basis": "17 calendar day(s) from service 2026-11-02 (incl. 3 ext.)"
+    },
+    "meet_and_confer": {
+      "kind": "meet_and_confer",
+      "label": "Meet and confer",
+      "deadline": "2026-11-12",
+      "total_days": 10,
+      "day_type": "calendar",
+      "basis": "10 calendar day(s) from service 2026-11-02 (incl. 3 ext.)"
+    },
+    "earliest_deadline": {
+      "kind": "meet_and_confer",
+      "label": "Meet and confer",
+      "deadline": "2026-11-12",
+      "days_remaining": -1
+    },
+    "escalation": [
+      "EARLIEST DEADLINE PASSED: Meet and confer was 2026-11-12 (1 day(s) ago) — escalate immediately."
+    ],
+    "notes": [
+      "Objection deadlines often run from the EARLIER of the compliance date or a fixed number of days after service — this varies by forum; research the applicable rule before relying on any date here."
+    ]
   },
   "deadline_math": {
     "days_remaining": 6,
@@ -121,6 +185,115 @@
       "privilege"
     ]
   },
+  "objection_matrix": [
+    {
+      "id": "overbroad_time",
+      "label": "Overbroad time period",
+      "strength": "strong",
+      "strength_basis": "10.8-year range is 2.2× the 5-year threshold.",
+      "categories": [
+        "email",
+        "telemetry logs",
+        "personal text messages",
+        "maintenance records"
+      ],
+      "custodians": [
+        "R. Okonkwo",
+        "T. Marsh",
+        "S. Feld",
+        "J. Alvarado-Ruiz",
+        "M. Pretorius",
+        "D. Whitcombe",
+        "K. Nakamura",
+        "B. Vess",
+        "P. Ionescu",
+        "E. Brandt"
+      ]
+    },
+    {
+      "id": "overbroad_custodians",
+      "label": "Overbroad custodians",
+      "strength": "moderate",
+      "strength_basis": "10 custodians is 1.3× the 8-custodian threshold.",
+      "categories": [
+        "email",
+        "telemetry logs",
+        "personal text messages",
+        "maintenance records"
+      ],
+      "custodians": [
+        "R. Okonkwo",
+        "T. Marsh",
+        "S. Feld",
+        "J. Alvarado-Ruiz",
+        "M. Pretorius",
+        "D. Whitcombe",
+        "K. Nakamura",
+        "B. Vess",
+        "P. Ionescu",
+        "E. Brandt"
+      ]
+    },
+    {
+      "id": "pii_privacy",
+      "label": "Personal / sensitive data",
+      "strength": "moderate",
+      "strength_basis": "Personal/sensitive categories requested (personal text messages); strength depends on applicable privacy law.",
+      "categories": [
+        "personal text messages"
+      ],
+      "custodians": [
+        "R. Okonkwo",
+        "T. Marsh",
+        "S. Feld",
+        "J. Alvarado-Ruiz",
+        "M. Pretorius",
+        "D. Whitcombe",
+        "K. Nakamura",
+        "B. Vess",
+        "P. Ionescu",
+        "E. Brandt"
+      ]
+    },
+    {
+      "id": "privilege",
+      "label": "Privileged material",
+      "strength": "moderate",
+      "strength_basis": "Privilege review always runs; strength depends on counsel involvement in the implicated categories.",
+      "categories": [
+        "email",
+        "personal text messages"
+      ],
+      "custodians": [
+        "R. Okonkwo",
+        "T. Marsh",
+        "S. Feld",
+        "J. Alvarado-Ruiz",
+        "M. Pretorius",
+        "D. Whitcombe",
+        "K. Nakamura",
+        "B. Vess",
+        "P. Ionescu",
+        "E. Brandt"
+      ]
+    },
+    {
+      "id": "undue_burden",
+      "label": "Unduly burdensome / disproportionate",
+      "strength": "unrated",
+      "strength_basis": "No numeric heuristic for this ground — strength is a manual assessment.",
+      "categories": [],
+      "custodians": []
+    },
+    {
+      "id": "equally_available",
+      "label": "Equally available from another source",
+      "strength": "unrated",
+      "strength_basis": "No numeric heuristic for this ground — strength is a manual assessment.",
+      "categories": [],
+      "custodians": []
+    }
+  ],
   "privilege": {
     "state": "reviewing",
     "progress": 40
@@ -158,9 +331,88 @@
     }
   ],
   "legal_hold": true,
+  "provenance": {
+    "entries": [
+      {
+        "field": "subpoena.served_date",
+        "status": "verified",
+        "source": "certificate of service, p. 4 of subpoena (fictional fixture)"
+      },
+      {
+        "field": "subpoena.service_method",
+        "status": "verify",
+        "source": "process server voicemail summary (fictional fixture)"
+      },
+      {
+        "field": "subpoena.caption",
+        "status": "verified",
+        "source": "caption block, p. 1 of subpoena (fictional fixture)"
+      },
+      {
+        "field": "responsive_scope.date_range.start",
+        "status": "verified",
+        "source": "definition of 'Relevant Period', ¶ 3 (fictional fixture)"
+      },
+      {
+        "field": "responsive_scope.date_range.end",
+        "status": "verified",
+        "source": "definition of 'Relevant Period', ¶ 3 (fictional fixture)"
+      }
+    ],
+    "verify_first": [
+      {
+        "field": "subpoena.service_method",
+        "source": "process server voicemail summary (fictional fixture)"
+      }
+    ],
+    "warnings": []
+  },
+  "compliance": {
+    "production_scope": [
+      "email",
+      "telemetry logs",
+      "personal text messages",
+      "maintenance records"
+    ],
+    "date_range": {
+      "start": "2016-01-01",
+      "end": "2026-11-01"
+    },
+    "custodians": [
+      "R. Okonkwo",
+      "T. Marsh",
+      "S. Feld",
+      "J. Alvarado-Ruiz",
+      "M. Pretorius",
+      "D. Whitcombe",
+      "K. Nakamura",
+      "B. Vess",
+      "P. Ionescu",
+      "E. Brandt"
+    ],
+    "systems": [
+      "Exchange Online",
+      "FleetTrack SaaS",
+      "carrier records for 4 drivers",
+      "ShopFloor DB",
+      "paper files"
+    ],
+    "production_format": "TIFF + load file, per negotiated protocol draft (fictional)",
+    "review_protocol": "two-pass: outside counsel privilege review, then contract reviewer QC (fictional)",
+    "privilege_log_fields": [
+      "date",
+      "author",
+      "recipients",
+      "subject/matter",
+      "privilege_basis",
+      "withheld_in_part"
+    ]
+  },
+  "today": "2026-11-13",
   "warnings": [
     "overbroad_time: Date range spans 10.8 years (> 5-year threshold).",
     "overbroad_custodians: 10 custodians named (> 8 threshold).",
-    "pii_privacy: Personal-device/message data types requested: personal text messages."
+    "pii_privacy: Personal-device/message data types requested: personal text messages.",
+    "EARLIEST DEADLINE PASSED: Meet and confer was 2026-11-12 (1 day(s) ago) — escalate immediately."
   ]
 }

@@ -64,7 +64,8 @@
     </div>
     <div class="examples">
       <button data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
-      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → downgrade</button>
+      <button data-q="How long do we retain website visitor data under the privacy policy?">stale guidance → provisional medium</button>
+      <button data-q="What is our data-retention approach?">weak match → escalate + draft</button>
       <button data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
     </div>
     <div id="answer"></div>
@@ -102,8 +103,13 @@
     $("answer").innerHTML =
       `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
       (r.answered
-        ? `<div class="answer">${esc(r.answer)}<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
-        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
+        ? `<div class="answer">${esc(r.answer)}` +
+          (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
+          `<br /><small>source <code>${r.sourceId}</code> · audit <code>${r.auditId}</code></small></div>`
+        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>` +
+          (r.suggestedEntry
+            ? `<div class="answer">Ticket draft for the lawyer — closest entry <code>${r.suggestedEntry.id}</code>: “${esc(r.suggestedEntry.question)}”. A correction can re-enter the KB as pending-approval.</div>`
+            : `<div class="answer">Ticket draft: zero KB overlap — guidance gap for Legal.</div>`)) +
       `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
     renderLog();
   }

@@ -2,11 +2,11 @@
 
 ## Judge Whitfield — commercial docket (2 new)
 - **2026-04-01** Meridian Foods v. Bluecrest Logistics — Joint stipulation extending expert disclosures
-- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs [URGENT: Sanctions motion/order]
+- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days [URGENT: Sanctions motion/order]
 
 ## Bluecrest Logistics — party watch (2 new)
 - **2026-04-01** Meridian Foods v. Bluecrest Logistics — Joint stipulation extending expert disclosures
-- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs [URGENT: Sanctions motion/order]
+- **2026-04-02** Meridian Foods v. Bluecrest Logistics — Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days [URGENT: Sanctions motion/order]
 
 ## Employment docket (2 new)
 - **2026-04-02** Orr v. Talos Systems — Order to show cause re: failure to appear at mediation [URGENT: Order to show cause]

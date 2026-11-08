@@ -3,24 +3,32 @@
 Deterministic quote verification for legal documents: compares every quoted
 passage in a brief/memo against its cited sources and classifies it as
 **exact / normalized / fuzzy / not_found**, with a similarity score, a located
-verbatim anchor (source + page/§/¶ + char offsets), and pinpoint citation
-validation (`p. 12`, `pp. 12-13`, `at 123`, `§ 5.2`, `¶ 8`). Wrong page cites
-and missing sources are flagged. See [spec.md](spec.md) for the full IO
-contract and the LLM-part prompt schema. Fictional worked example in
-[examples/](examples/) — 9 quotes from a fictional appeal yield 5 exact,
-1 normalized, 1 fuzzy, 2 not_found and 2 pinpoint mismatches.
+verbatim anchor (source + page/§/¶ + char offsets), a machine-checkable token
+diff, and pinpoint citation validation (`p. 12`, `pp. 12-13`, `at 123`, `§ 5.2`,
+`¶ 8`, `Tr. 12:4-12:8`, `§§ 5-6`, `id. at 123`, `n. 12`). Wrong page cites and
+missing sources are flagged. Deterministic guards catch altered digits (the
+number guard caps them at fuzzy) and silently dropped tokens (omission notes,
+with explicit ellipses accepted). See [spec.md](spec.md) for the full IO
+contract, the document-side extractor, and the LLM-part prompt schema /
+proposition harness. Fictional worked example in [examples/](examples/) —
+10 quotes from a fictional appeal yield 5 exact, 1 normalized, 2 fuzzy,
+2 not_found and 2 pinpoint mismatches.
 
 ## Layout
 
 - `core/` — dependency-free TypeScript, no LLM: `textutil.ts` (token-span
-  matcher), `pinpoint.ts` (citation parser), `citecheck.ts` (engine + report),
-  `citecheck.test.ts`.
+  matcher + number guard), `diff.ts` (LCS token diff), `pinpoint.ts` (citation
+  parser), `extract.ts` (document-side quote/footnote extractor),
+  `citecheck.ts` (engine + report), `propositions.ts` (LLM prompt-builder +
+  verdict gate), `core.js` (plain-JS port for the demo, kept at parity by
+  `parity.test.ts`), tests alongside.
 - `examples/` — `input.json` (fictional brief + depo/MSA/declaration sources),
   `run.ts`, generated `output.json` + `report.md`.
+- `demo/` — standalone HTML demo importing `../core/core.js`.
 
 ## Run
 
 ```bash
-npx tsx --test core/citecheck.test.ts   # 12 tests
-npx tsx examples/run.ts                 # regenerates examples/output.json + report.md
+npx tsx --test core/*.test.ts    # 33 tests
+npx tsx examples/run.ts          # regenerates examples/output.json + report.md
 ```

@@ -28,6 +28,7 @@
   .st.present { background: var(--flag-tint); }
   .st.missing, .st.expired { border: 1px solid var(--bad); color: var(--bad); background: transparent; }
   .st.expiring_soon { background: var(--border); }
+  .st.uncertain { background: var(--accent); }
   .muted { color: var(--text-secondary); font-size: 13px; }
   .warn { border: var(--hairline); padding: 6px 10px; margin: 6px 0; font-size: 13px; }
   .summary { background: #fff; border: var(--hairline); padding: 12px; font-size: 14px; }
@@ -46,13 +47,17 @@
     <div class="sec">Case facts JSON (editable)</div>
     <textarea id="input" spellcheck="false"></textarea>
     <button id="run">Read case →</button>
+    <div class="sec">Paste a notice (fictional) → deterministic parse</div>
+    <textarea id="notice" spellcheck="false" style="min-height:130px"></textarea>
+    <button id="parse">Parse notice → merge into facts</button>
+    <div id="parseOut" class="muted"></div>
     <div id="err" class="err"></div>
   </section>
   <section id="out" aria-live="polite"></section>
 </main></div>
 
 <script type="module">
-import { readCase, exportChecklistMd } from '../core/core.js';
+import { readCase, exportChecklistMd, parseNotice } from '../core/core.js';
 
 const SAMPLE = {
   case_type: "employment_based",
@@ -72,6 +77,15 @@ const SAMPLE = {
 
 const $ = (id) => document.getElementById(id);
 $('input').value = JSON.stringify(SAMPLE, null, 2);
+$('notice').value = [
+  'U.S. Citizenship and Immigration Services (fictional sample)',
+  'Form I-797C, Notice of Action',
+  'Application Support Center — Biometrics Appointment Notice',
+  'Application Type: FORM I-140, Immigrant Petition for Alien Worker',
+  'Appointment Date: November 24, 2026',
+  'Time: 9:00 AM',
+  'Please bring this notice and photo identification.',
+].join('\n');
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
 function render(r) {
@@ -85,19 +99,41 @@ function render(r) {
   h += `<div class="sec">Required documents</div><ul>`;
   for (const c of r.checklist.filter((x) => x.required)) h += `<li><span class="st ${c.status}">${c.status}</span><strong>${esc(c.label)}</strong><br><span class="muted">${esc(c.detail)}</span></li>`;
   h += `</ul>`;
+  if (r.next_action) h += `<div class="warn">→ <strong>Next action:</strong> ${esc(r.next_action.label)} — ${esc(r.next_action.date)} (${r.next_action.days_until} day(s) away) — ${esc(r.next_action.action)}</div>`;
   if (r.key_dates.length) {
     h += `<div class="sec">Key dates</div><ul>`;
-    for (const k of r.key_dates) h += `<li><strong>${esc(k.label)}: ${esc(k.date)}</strong> <span class="muted">— ${k.days_until >= 0 ? `${k.days_until} day(s) away${k.urgent ? ' · URGENT' : ''}` : `${-k.days_until} day(s) ago`}</span></li>`;
+    for (const k of r.key_dates) h += `<li><strong>${esc(k.label)}: ${esc(k.date)}</strong> <span class="muted">— ${k.days_until >= 0 ? `${k.days_until} day(s) away${k.urgent ? ' · URGENT' : ''}` : `${-k.days_until} day(s) ago`} · ${esc(k.type)}</span></li>`;
     h += `</ul>`;
   }
   if (r.warnings.length) { h += `<div class="sec">Warnings</div>`; for (const w of r.warnings) h += `<div class="warn">⚠ ${esc(w)}</div>`; }
   h += `<div class="sec">Plain-language summary</div><div class="summary">${r.summary.map((s) => `<p>${esc(s)}</p>`).join('')}</div>
-    <div class="sec">Checklist export</div><textarea readonly style="min-height:160px">${esc(exportChecklistMd(r))}</textarea>`;
+    <div class="sec">Checklist export <select id="lang"><option value="en">EN</option><option value="es">ES</option></select> <span class="muted">(ES = unofficial translation)</span></div><textarea readonly style="min-height:160px">${esc(exportChecklistMd(r, { lang: 'en' }))}</textarea>`;
   $('out').innerHTML = h;
+  $('lang').addEventListener('change', () => {
+    document.querySelector('#out textarea').value = exportChecklistMd(r, { lang: $('lang').value });
+  });
 }
 $('run').addEventListener('click', () => {
   $('err').textContent = '';
   try { render(readCase(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
+});
+$('parse').addEventListener('click', () => {
+  $('err').textContent = '';
+  try {
+    const p = parseNotice($('notice').value);
+    const facts = JSON.parse($('input').value);
+    facts.documents = { ...(facts.documents ?? {}), ...p.facts.documents };
+    facts.key_dates = { ...(facts.key_dates ?? {}), ...p.facts.key_dates };
+    facts.complexity = [...new Set([...(facts.complexity ?? []), ...p.facts.complexity])];
+    facts.uncertain = [...new Set([...(facts.uncertain ?? []), ...p.facts.uncertain])];
+    $('input').value = JSON.stringify(facts, null, 2);
+    $('parseOut').innerHTML = p.matched
+      ? `<strong>${esc(p.form_label)}</strong> — extracted ${p.extraction_log.length} field(s):` +
+        p.extraction_log.map((e) => `<br>· <code>${esc(e.template)}.${esc(e.field)} = ${esc(e.value)}</code>`).join('') +
+        (p.facts.uncertain.length ? `<br>⚠ uncertain: ${p.facts.uncertain.map(esc).join(' · ')}` : '')
+      : `⚠ ${esc(p.facts.uncertain[0] ?? 'No match')}`;
+    render(readCase(facts));
+  } catch (e) { $('err').textContent = String(e.message ?? e); }
 });
 render(readCase(SAMPLE));
 </script>

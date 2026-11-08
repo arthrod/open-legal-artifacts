@@ -1,16 +1,20 @@
 {
   "documentName": "Appellant's Opening Brief — Halcyon Dynamics, Inc. v. Meridian Freight Systems, LLC (No. 26-1187, fictional)",
   "summary": {
-    "total": 9,
+    "total": 10,
     "exact": 5,
     "normalized": 1,
-    "fuzzy": 1,
+    "fuzzy": 2,
     "not_found": 2,
+    "checked": 8,
+    "couldNotCheck": 2,
+    "unparseablePinpoints": 0,
     "pinpointIssues": 2
   },
   "results": [
     {
       "id": "Q1 (brief p. 6)",
+      "proposition": "The delivery was accepted without exception, defeating the notice defense.",
       "classification": "exact",
       "similarity": 1,
       "coverage": 1,
@@ -33,12 +37,37 @@
         "status": "ok",
         "detail": "quote is located on 12"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "mr",
+            "beltran",
+            "signed",
+            "the",
+            "delivery",
+            "receipt",
+            "at",
+            "4",
+            "20",
+            "p.m",
+            "without",
+            "noting",
+            "any",
+            "exception",
+            "on",
+            "the",
+            "document"
+          ]
+        }
+      ],
       "notes": [
         "proposition support is an LLM/human judgment — not evaluated by this core"
       ]
     },
     {
       "id": "Q2 (brief p. 7)",
+      "proposition": "Same receipt facts, quoting with altered punctuation.",
       "classification": "normalized",
       "similarity": 1,
       "coverage": 1,
@@ -48,8 +77,8 @@
         "segmentKind": "page",
         "segmentLabel": "12",
         "charStart": 198,
-        "charEnd": 279,
-        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception"
+        "charEnd": 295,
+        "verbatim": "Mr. Beltran signed the delivery receipt at 4:20 p.m. without noting any exception on the document"
       },
       "bestCandidate": null,
       "pinpoint": {
@@ -61,13 +90,48 @@
         "status": "ok",
         "detail": "quote is located on 12"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "mr",
+            "beltran",
+            "signed",
+            "the",
+            "delivery",
+            "receipt",
+            "at",
+            "4",
+            "20",
+            "p.m",
+            "without",
+            "noting",
+            "any",
+            "exception"
+          ]
+        },
+        {
+          "op": "delete",
+          "source": [
+            "on",
+            "the",
+            "document"
+          ],
+          "sourceSpan": {
+            "start": 82,
+            "end": 97
+          }
+        }
+      ],
       "notes": [
         "matches modulo case/punctuation/whitespace",
+        "omits \"on the document\" without an ellipsis",
         "proposition support is an LLM/human judgment — not evaluated by this core"
       ]
     },
     {
       "id": "Q3 (brief p. 9)",
+      "proposition": "Receipt signed without exception (paraphrased in the brief).",
       "classification": "fuzzy",
       "similarity": 0.7,
       "coverage": 0.8235294117647058,
@@ -90,6 +154,53 @@
         "status": "ok",
         "detail": "quote is located on 12"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "mr",
+            "beltran",
+            "signed",
+            "the",
+            "delivery",
+            "receipt"
+          ]
+        },
+        {
+          "op": "delete",
+          "source": [
+            "at",
+            "4",
+            "20",
+            "p.m"
+          ],
+          "sourceSpan": {
+            "start": 40,
+            "end": 51
+          }
+        },
+        {
+          "op": "equal",
+          "source": [
+            "without",
+            "noting",
+            "any",
+            "exception",
+            "on",
+            "the",
+            "document"
+          ]
+        },
+        {
+          "op": "insert",
+          "quote": [
+            "at",
+            "the",
+            "loading",
+            "dock"
+          ]
+        }
+      ],
       "notes": [
         "substantial overlap but not verbatim — requires human review",
         "proposition support is an LLM/human judgment — not evaluated by this core"
@@ -97,6 +208,7 @@
     },
     {
       "id": "Q4 (brief p. 11)",
+      "proposition": "Unsupervised unloading — nothing in the cited deposition supports this.",
       "classification": "not_found",
       "similarity": 0.2608695652173913,
       "coverage": 0.4,
@@ -117,14 +229,16 @@
           "from": 12
         },
         "status": "unverifiable",
-        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
+        "detail": "quote not located in the source, so the pinpoint cannot be validated"
       },
+      "diff": null,
       "notes": [
         "best candidate similarity 0.26 below threshold 0.7"
       ]
     },
     {
       "id": "Q5 (brief p. 13)",
+      "proposition": "Correct quote, wrong page cite.",
       "classification": "exact",
       "similarity": 1,
       "coverage": 1,
@@ -147,6 +261,30 @@
         "status": "mismatch",
         "detail": "pinpoint says p. 15 but the quote is located on 12"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "mr",
+            "beltran",
+            "signed",
+            "the",
+            "delivery",
+            "receipt",
+            "at",
+            "4",
+            "20",
+            "p.m",
+            "without",
+            "noting",
+            "any",
+            "exception",
+            "on",
+            "the",
+            "document"
+          ]
+        }
+      ],
       "notes": [
         "PINPOINT ISSUE: pinpoint says p. 15 but the quote is located on 12",
         "proposition support is an LLM/human judgment — not evaluated by this core"
@@ -154,6 +292,7 @@
     },
     {
       "id": "Q6 (brief p. 14)",
+      "proposition": "The 90-day termination right was preserved.",
       "classification": "exact",
       "similarity": 1,
       "coverage": 1,
@@ -176,12 +315,34 @@
         "status": "ok",
         "detail": "quote is located in § 5.2"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "customer",
+            "may",
+            "terminate",
+            "this",
+            "agreement",
+            "for",
+            "convenience",
+            "upon",
+            "ninety",
+            "90",
+            "days",
+            "prior",
+            "written",
+            "notice"
+          ]
+        }
+      ],
       "notes": [
         "proposition support is an LLM/human judgment — not evaluated by this core"
       ]
     },
     {
       "id": "Q7 (brief p. 15)",
+      "proposition": "Correct clause text cited to the wrong section.",
       "classification": "exact",
       "similarity": 1,
       "coverage": 1,
@@ -204,6 +365,26 @@
         "status": "mismatch",
         "detail": "pinpoint says § 5.2 but the quote is located in § 9.1"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "neither",
+            "party",
+            "shall",
+            "be",
+            "liable",
+            "for",
+            "indirect",
+            "or",
+            "consequential",
+            "damages",
+            "including",
+            "lost",
+            "profits"
+          ]
+        }
+      ],
       "notes": [
         "PINPOINT ISSUE: pinpoint says § 5.2 but the quote is located in § 9.1",
         "proposition support is an LLM/human judgment — not evaluated by this core"
@@ -211,6 +392,7 @@
     },
     {
       "id": "Q8 (brief p. 16)",
+      "proposition": "Damage was visible on arrival.",
       "classification": "exact",
       "similarity": 1,
       "coverage": 1,
@@ -233,12 +415,35 @@
         "status": "ok",
         "detail": "quote is located in ¶ 8"
       },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "the",
+            "photographs",
+            "show",
+            "water",
+            "staining",
+            "on",
+            "four",
+            "of",
+            "the",
+            "eleven",
+            "pallets",
+            "delivered",
+            "under",
+            "this",
+            "shipment"
+          ]
+        }
+      ],
       "notes": [
         "proposition support is an LLM/human judgment — not evaluated by this core"
       ]
     },
     {
       "id": "Q9 (brief p. 17)",
+      "proposition": "Source not in the record excerpt.",
       "classification": "not_found",
       "similarity": 0,
       "coverage": 0,
@@ -250,11 +455,112 @@
           "from": 3
         },
         "status": "unverifiable",
-        "detail": "source does not declare page segments, so the pinpoint cannot be validated"
+        "detail": "source not provided, so the pinpoint cannot be validated"
       },
       "bestCandidate": null,
+      "diff": null,
       "notes": [
         "source \"weber-emails\" not provided"
+      ]
+    },
+    {
+      "id": "Q10 (brief p. 18)",
+      "proposition": "The brief's manifest figure — caught by the number guard (altered digit).",
+      "classification": "fuzzy",
+      "similarity": 0.9555555555555556,
+      "coverage": 0.9772727272727273,
+      "anchor": {
+        "sourceId": "okafor-depo",
+        "sourceName": "Deposition of Sandra Okafor (Jan. 14, 2026)",
+        "segmentKind": "page",
+        "segmentLabel": "15",
+        "charStart": 432,
+        "charEnd": 695,
+        "verbatim": "The manifest itself listed 12,480 kilograms of freight on the outbound leg, and the reweigh at the Millbrook terminal showed only 12,140 kilograms, a difference the intake team documented in the overflow log and reported to the dispatch office that same afternoon"
+      },
+      "bestCandidate": null,
+      "pinpoint": {
+        "raw": "p. 15",
+        "parsed": {
+          "kind": "page",
+          "from": 15
+        },
+        "status": "ok",
+        "detail": "quote is located on 15"
+      },
+      "diff": [
+        {
+          "op": "equal",
+          "source": [
+            "the",
+            "manifest",
+            "itself",
+            "listed",
+            "12"
+          ]
+        },
+        {
+          "op": "replace",
+          "quote": [
+            "580"
+          ],
+          "source": [
+            "480"
+          ],
+          "sourceSpan": {
+            "start": 30,
+            "end": 33
+          }
+        },
+        {
+          "op": "equal",
+          "source": [
+            "kilograms",
+            "of",
+            "freight",
+            "on",
+            "the",
+            "outbound",
+            "leg",
+            "and",
+            "the",
+            "reweigh",
+            "at",
+            "the",
+            "millbrook",
+            "terminal",
+            "showed",
+            "only",
+            "12",
+            "140",
+            "kilograms",
+            "a",
+            "difference",
+            "the",
+            "intake",
+            "team",
+            "documented",
+            "in",
+            "the",
+            "overflow",
+            "log",
+            "and",
+            "reported",
+            "to",
+            "the",
+            "dispatch",
+            "office",
+            "that",
+            "same",
+            "afternoon"
+          ]
+        }
+      ],
+      "notes": [
+        "matches modulo case/punctuation/whitespace",
+        "quote \"580\" vs source \"480\"",
+        "number alteration caps the classification at fuzzy — requires human review",
+        "proposition support is an LLM/human judgment — not evaluated by this core"
       ]
     }
   ]

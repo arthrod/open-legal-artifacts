@@ -1,8 +1,8 @@
 id,submittedAt,client,opposing,matterType,deadline,state,duplicateOf,conflictCount,urgencyLevel,assignedTo,flags
 INT-1041,2026-11-06,Ridgeline Dental Group PC,Sable Insurance Company,insurance coverage dispute,2026-11-13,assigned,,0,urgent,staff-kim (fictional),
-INT-1042,2026-11-06,M. Iwata (fictional),Brightpath Solar,property damage,2026-12-20,conflict-review,,1,routine,,possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1
-INT-1043,2026-11-07,Foxglove Rentals LLC,C. Moreau (fictional),eviction filing,2026-12-01,assignable,,0,deadline-soon,,
+INT-1042,2026-11-06,M. Iwata (fictional),Brightpath Solar,property damage,2026-12-20,declined,,1,routine,,possible conflict: Brightpath Solar LLC (adverse on LIT-2025-003) matches opposing at 1
+INT-1043,2026-11-07,Foxglove Rentals LLC,C. Moreau (fictional),eviction filing,2026-12-01,accepted,,0,deadline-soon,,
 INT-1044,2026-11-07,Harbor Bakehouse Co.,Delgado Trucking LLC,contract dispute,2027-02-01,conflict-review,,1,routine,,possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1
 INT-1045,2026-11-07,Tilly Andersen (fictional),Coastal View Apartments,security deposit return,,urgent,,0,urgent,,
-INT-1046,2026-11-07,Northwind Logistics,Palmer Freight Solutions,freight contract dispute,2027-01-15,conflict-review,,1,routine,,"possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
+INT-1046,2026-11-07,Northwind Logistics,Palmer Freight Solutions,freight contract dispute,2027-01-15,escalated,,1,routine,,"possible conflict: Northwind Logistics, Inc. (client on LIT-2026-014) matches client at 1"
 INT-1047,2026-11-07,Harbor Bakehouse Company,"Delgado Trucking, L.L.C.",contract dispute,2027-02-01,duplicate,INT-1044,1,routine,,"same parties as INT-1044 (client 1, opposing 1); possible conflict: Harbor Bakehouse Co. (client on LIT-2026-014) matches client at 1"

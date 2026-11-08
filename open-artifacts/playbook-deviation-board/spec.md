@@ -53,17 +53,28 @@ YAML subset supported by the dependency-free parser: nested maps, `- ` lists
 
 ## Input (`BoardInput`)
 
-`{ playbook, contract: { name, clauses: [{ id, heading?, text, ruleId? }] }, thresholds? }`
-with defaults `preferred: 0.7`, `fallback: 0.7`, `topic: 0.3`.
+`{ playbook, contract: { name, side?, clauses: [{ id, heading?, text, ruleId? }] }, thresholds? }`
+with defaults `preferred: 0.7`, `fallback: 0.7`, `topic: 0.3`. Optional
+`playbook.side` / `contract.side` (`sales` | `purchasing`): when both are set
+and differ, the output carries a `sideMismatch` warning and every row's
+`reason` repeats it.
+
+Portfolio variant: `buildPortfolio({ playbook, contracts: [...], thresholds? })`
+classifies a contract set and adds a per-rule deviation-frequency `rollup`
+(counts + `deviationRate = (deviates + dealBreakers) / clauses`).
 
 ## Output (`BoardOutput`)
 
-One row per clause:
+`contractName`, `playbookId`, `sideMismatch`, `thresholds` (the resolved
+values, as data), `summary`, and one row per clause:
 
 - `classification`: `compliant` | `deviates` | `deal_breaker` | `unclassified`
 - `matchedTier`: `'preferred'` | fallback tier number | `null` (beyond playbook)
 - `matchedLabel`, `similarity`, `clauseQuote` (char-span + verbatim text of the
   matched clause fragment), full `clauseText`, `reason`, `routedTo`.
+- `redline`: on `deviates` rows, a deterministic token diff back to the
+  preferred standard (`{ label, removals, additions }`, char-anchored in the
+  clause / preferred text); rendered as a ` ```diff ` block in `board.md`.
 
 Decision order per clause: avoid rules first (contains, or similarity ≥ the
 avoid rule's threshold), then preferred (similarity ≥ threshold, numbers must
@@ -76,6 +87,23 @@ Routing: deal-breakers and tier ≥ `minFallbackTier` deviations and
 beyond-playbook clauses → the rule's escalation approver; lower-tier
 deviations → `defaultApprover`; compliant → nobody; unclassified →
 `defaultApprover`.
+
+## Review-loop utilities (deterministic)
+
+- `core/diff.ts` — `decide(board, decisions)` records a decision log bound to
+  `boardHash(board)` (stable 32-bit hash of the exact `BoardOutput`; use it for
+  quick change detection and keep the frozen board as the actual audit
+  evidence); rejects unknown and duplicate clauseIds. `diffBoards(a, b)` diffs
+  two runs of the same contract into `newRows` (only in `b`) / `droppedRows`
+  (only in `a` — e.g. a deal-breaker clause deleted in draft v2) /
+  `resolvedRows` (non-compliant → compliant) / `changedRows` (with the list of
+  changed fields) / unchanged, with a summary count for each bucket.
+- `core/drift.ts` — `detectDrift(entries, { threshold = 5, lookbackMonths = 12 })`
+  consumes accepted-deviation entries `{ date, ruleId, direction, kind? }`
+  (dates must be real `YYYY-MM-DD` calendar dates) and
+  proposes per rule: **Flag** (threshold met and the window includes
+  deal-breaker language), **Revise** (threshold met, single direction),
+  **Clarify** (threshold met, split directions), or null (watch only).
 
 ## Prompt schema for the LLM part
 
@@ -99,5 +127,11 @@ Same playbook + contract → byte-identical `output.json` / `board.md`
   them from your playbook's rule list).
 - `contains` avoid-rules are literal substring checks after lowercasing and
   whitespace collapse; regex avoid-rules are deliberately not supported.
-- Number-word drift ("three" vs "3") is not normalized; standards should quote
-  the playbook's own wording.
+- Number-word normalization is gated: a run of English number words
+  (one–ninety-nine plus hundred/thousand scales) counts as a number only when
+  immediately followed by its own digit restatement or a unit word (time,
+  money, percent: "eighteen (18) months", "ninety days", "successive one-year
+  terms"). Bare number words in prose — "no one party may…" — yield no numeric
+  token and cannot flip the numeric guard. The drafting restatement
+  "eighteen (18)" collapses to a single number, so "eighteen (18) months",
+  "18 months", and "eighteen months" are equivalent.

@@ -1,7 +1,7 @@
 /** Tests for jurisdiction-survey-matrix core. Run: node --test (from artifact root) */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown } from "./core.js";
+import { parseDate, classifyCell, buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown } from "./core.js";
 
 const AS_OF = "2026-11-07";
 
@@ -13,13 +13,13 @@ const SURVEY = {
     { id: "threshold", text: "What risk threshold triggers individual notice?" },
   ],
   cells: [
-    { jurisdiction: "US-CA", question: "deadline", answer: "Without undue delay; state AG if >500 residents (fictional example).", citation: "Fictional Civ. Code § 1798.82-like statute", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan" },
-    { jurisdiction: "US-CA", question: "threshold", answer: "Reasonable likelihood of harm (fictional).", citation: "Fictional Civ. Code § 1798.82(b)-like statute", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan" },
-    { jurisdiction: "US-NY", question: "deadline", answer: "30 days (fictional example).", citation: "Fictional Gen. Bus. Law § 899-aa-like statute", verifiedDate: "2026-01-20", verifiedBy: "M. Delacroix" }, // stale at asOf (291d)
+    { jurisdiction: "US-CA", question: "deadline", answer: "Without undue delay; state AG if >500 residents (fictional example).", citation: "Fictional Civ. Code § 1798.82-like statute", sourceUrl: "https://fictional.example/us-ca/civ-1798-82", quotedText: "disclosure shall be made in the most expedient time possible and without unreasonable delay; a copy shall be sent to the Attorney General if more than 500 residents are notified", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan" },
+    { jurisdiction: "US-CA", question: "threshold", answer: "Reasonable likelihood of harm (fictional).", citation: "Fictional Civ. Code § 1798.82(b)-like statute", sourceUrl: "https://fictional.example/us-ca/civ-1798-82", quotedText: "reasonable likelihood of material damage to a resident", verifiedDate: "2026-08-01", verifiedBy: "R. Castellan" },
+    { jurisdiction: "US-NY", question: "deadline", answer: "30 days (fictional example).", citation: "Fictional Gen. Bus. Law § 899-aa-like statute", sourceUrl: "https://fictional.example/us-ny/gbl-899-aa", quotedText: "notification shall be made within 30 days of discovery", verifiedDate: "2026-01-20", verifiedBy: "M. Delacroix" }, // stale at asOf (291d)
     { jurisdiction: "US-NY", question: "threshold", answer: "Private information exposure (fictional).", citation: "", verifiedDate: "2026-01-20" }, // no citation -> unverified
     // US-TX: entirely missing -> unverified
-    { jurisdiction: "EU", question: "deadline", answer: "72 hours to supervisory authority (GDPR-style, fictionalized).", citation: "Fictional GDPR art. 33-like provision", verifiedDate: "2026-10-30", verifiedBy: "A. Fern" },
-    { jurisdiction: "EU", question: "threshold", answer: "Risk to rights and freedoms (fictionalized).", citation: "Fictional GDPR art. 33/34-like provision", verifiedDate: "2026-10-30", verifiedBy: "A. Fern", },
+    { jurisdiction: "EU", question: "deadline", answer: "72 hours to supervisory authority (GDPR-style, fictionalized).", citation: "Fictional GDPR art. 33-like provision", sourceUrl: "https://fictional.example/eu/gdpr-art-33", quotedText: "the controller shall notify the supervisory authority within 72 hours", verifiedDate: "2026-10-30", verifiedBy: "A. Fern" },
+    { jurisdiction: "EU", question: "threshold", answer: "Risk to rights and freedoms (fictionalized).", citation: "Fictional GDPR art. 33/34-like provision", sourceUrl: "https://fictional.example/eu/gdpr-art-34", quotedText: "risk to the rights and freedoms of natural persons", verifiedDate: "2026-10-30", verifiedBy: "A. Fern", },
   ],
 };
 
@@ -44,8 +44,8 @@ test("classifyCell: answer without citation is unverified, never surfaced", () =
 
 test("classifyCell: citation without answer and malformed dates are unverified", () => {
   assert.match(classifyCell({ answer: "", citation: "X v. Y", verifiedDate: "2026-01-01" }, {}, AS_OF).reason, /no answer/);
-  assert.match(classifyCell({ answer: "yes", citation: "X v. Y", verifiedDate: "Jan 1 2026" }, {}, AS_OF).reason, /verification date missing or malformed/);
-  assert.match(classifyCell({ answer: "yes", citation: "X v. Y", verifiedDate: "2027-01-01" }, {}, AS_OF).reason, /in the future/);
+  assert.match(classifyCell({ answer: "yes", citation: "X v. Y", sourceUrl: "https://fictional.example/x", verifiedDate: "Jan 1 2026" }, {}, AS_OF).reason, /verification date missing or malformed/);
+  assert.match(classifyCell({ answer: "yes", citation: "X v. Y", sourceUrl: "https://fictional.example/x", verifiedDate: "2027-01-01" }, {}, AS_OF).reason, /in the future/);
 });
 
 test("classifyCell: stale window is configurable rules-as-data", () => {
@@ -101,4 +101,79 @@ test("toMarkdown renders header, coverage, and explicit UNVERIFIED cells", () =>
   assert.match(md, /\*\*UNVERIFIED\*\*/);
   assert.match(md, /STALE/);
   assert.match(md, /re-verified against current law/);
+});
+
+test("link gate: cited cell without sourceUrl is unverified (requireSourceUrl defaults on)", () => {
+  const gated = classifyCell({ ...SURVEY.cells[0], sourceUrl: undefined }, {}, AS_OF);
+  assert.equal(gated.status, "unverified");
+  assert.match(gated.reason, /sourceUrl/);
+  const relaxed = classifyCell({ ...SURVEY.cells[0], sourceUrl: undefined }, { requireSourceUrl: false }, AS_OF);
+  assert.equal(relaxed.status, "verified");
+});
+
+test("buildMatrix surfaces sourceUrl + quotedText; CSV/MD link the law", () => {
+  const m = buildMatrix(SURVEY, AS_OF);
+  const ca = m.grid[0][0];
+  assert.equal(ca.sourceUrl, SURVEY.cells[0].sourceUrl);
+  assert.ok(ca.quotedText.includes("unreasonable delay"));
+  const lines = toCsv(m).trim().split("\n");
+  assert.match(lines[0], /sourceUrl/);
+  assert.match(lines.find((l) => l.startsWith("US-CA,deadline")), /fictional\.example/);
+  const md = toMarkdown(m);
+  assert.match(md, /\[Fictional Civ\. Code § 1798\.82-like statute\]\(https:\/\/fictional\.example\/us-ca\/civ-1798-82\)/);
+});
+
+test("buildMatrix warns on duplicates, orphans, and empty lists — no silent drops", () => {
+  const survey = {
+    topic: "t",
+    jurisdictions: ["A"],
+    questions: [{ id: "q1", text: "?" }],
+    cells: [
+      { jurisdiction: "A", question: "q1", answer: "first", citation: "c1", sourceUrl: "https://fictional.example/1", verifiedDate: "2026-01-01" },
+      { jurisdiction: "A", question: "q1", answer: "second", citation: "c2", sourceUrl: "https://fictional.example/2", verifiedDate: "2026-02-01" },
+      { jurisdiction: "ZZ", question: "q1", answer: "x", citation: "c", sourceUrl: "https://fictional.example/3", verifiedDate: "2026-01-01" },
+      { jurisdiction: "A", question: "nope", answer: "x", citation: "c", sourceUrl: "https://fictional.example/4", verifiedDate: "2026-01-01" },
+    ],
+  };
+  const m = buildMatrix(survey, AS_OF);
+  assert.ok(m.warnings.some((w) => /duplicate/i.test(w) && /a\|q1/.test(w)));
+  assert.ok(m.warnings.some((w) => /orphan/i.test(w) && /ZZ/.test(w)));
+  assert.ok(m.warnings.some((w) => /orphan/i.test(w) && /nope/.test(w)));
+  assert.equal(m.grid[0][0].citation, "c2"); // last one wins, but the drop is warned
+  const empty = buildMatrix({ topic: "t", jurisdictions: [], questions: [], cells: [] }, AS_OF);
+  assert.ok(empty.warnings.filter((w) => /empty/i.test(w)).length >= 2);
+});
+
+test("figure consistency: answer digits missing from quotedText are flagged, warning-only", () => {
+  const cell = {
+    jurisdiction: "A", question: "q1", answer: "Notify within 30 days.", citation: "c",
+    sourceUrl: "https://fictional.example/x", verifiedDate: "2026-08-01",
+    quotedText: "notification shall be made without unreasonable delay",
+  };
+  const flagged = classifyCell(cell, {}, AS_OF);
+  assert.equal(flagged.status, "verified"); // warning-only, never a silent drop of content
+  assert.ok(flagged.warnings.some((w) => /figures not in quoted source: 30/.test(w)));
+  const clean = classifyCell({ ...cell, quotedText: "notification shall be made within 30 days" }, {}, AS_OF);
+  assert.deepEqual(clean.warnings, []);
+  const m = buildMatrix({ topic: "t", jurisdictions: ["A"], questions: [{ id: "q1", text: "?" }], cells: [cell] }, AS_OF);
+  assert.ok(m.grid[0][0].warnings[0].includes("figures not in quoted source"));
+});
+
+test("toWorklist: stale + unverified only, stale ranked first", () => {
+  const m = buildMatrix(SURVEY, AS_OF);
+  const wl = toWorklist(m);
+  assert.equal(wl.length, m.coverage.stale + m.coverage.unverified); // 1 + 3
+  assert.equal(wl[0].status, "stale");
+  assert.equal(wl[0].jurisdiction, "US-NY");
+  assert.ok(wl.every((r) => r.status === "stale" || r.status === "unverified"));
+  const md = worklistToMarkdown(m);
+  assert.match(md, /# Re-verification worklist/);
+  assert.match(md, /\| 1 \| STALE \| US-NY \|/);
+});
+
+test("coverage breakdown: byJurisdiction and byQuestion", () => {
+  const m = buildMatrix(SURVEY, AS_OF);
+  assert.deepEqual(m.coverage.byJurisdiction["US-TX"], { total: 2, verified: 0, stale: 0, unverified: 2 });
+  assert.equal(m.coverage.byJurisdiction["US-CA"].verified, 2);
+  assert.deepEqual(m.coverage.byQuestion["threshold"], { total: 4, verified: 2, stale: 0, unverified: 2 });
 });

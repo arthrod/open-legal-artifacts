@@ -39,6 +39,8 @@
   .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
   .pill.open { background: var(--text); color: var(--bg); }
   .pill.draft, .pill.draft-pending { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
+  .pill.overdue { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
+  .pill.due-soon { border-color: var(--warn); color: var(--warn); }
   .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
@@ -46,10 +48,18 @@
   button.ghost { background: transparent; color: var(--text); }
   button.chip { background: transparent; color: var(--text); padding: 6px 12px; font-size: 12px; }
   button.chip.active { background: var(--text); color: var(--bg); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button:disabled:hover { background: var(--text); color: var(--bg); }
+  .gate textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12.5px; padding: 8px 10px;
+    border: var(--hairline); background: var(--bg); color: var(--text); margin-top: 10px; }
+  .gate input { font-family: var(--font-mono); font-size: 12.5px; padding: 6px 10px; border: var(--hairline);
+    background: var(--bg); color: var(--text); }
+  .gate .blockers .conflict { margin-top: 10px; }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   .scroll { overflow-x: auto; }
   .q { color: var(--text-secondary); font-size: 12px; }
+  .cite { color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono); }
 </style>
 </head>
 <body>
@@ -60,9 +70,10 @@
     <div class="rule"></div>
     <p class="lede">A diligence Q&amp;A log whose core <b>cross-examines the answers</b>: questions carry
       buyer, category, and answer history (draft/sent); deterministic heuristics detect contradictions
-      between answers — numbers by unit, terms by antonym pairs — each flagged with verbatim evidence
-      quotes; and a disclosure-readiness score is computed from the log itself. Open reimplementation
-      of Anthropic's closed artifact.</p>
+      between answers — numbers by canonical unit and magnitude, terms by antonym pairs — each flagged
+      with verbatim evidence quotes; sent answers carry data-room citations; an approve→send release
+      gate is code, not convention; and a disclosure-readiness score is computed from the log itself.
+      Open reimplementation of Anthropic's closed artifact.</p>
     <p class="lede" style="font-size:13px">Worked example (fictional): Project Copperfield, three buyers,
       eight questions — including a pending draft that quietly changes the EBITDA story.</p>
   </header>
@@ -83,6 +94,11 @@
   </section>
 
   <section>
+    <h2>Pre-send gate — release blockers, live</h2>
+    <div class="conflict gate" id="gate"></div>
+  </section>
+
+  <section>
     <h2>Q&amp;A log</h2>
     <div class="row" id="filterChips" style="margin: 0 0 12px"></div>
     <div class="scroll"><table id="log"></table></div>
@@ -90,77 +106,86 @@
 
   <footer class="disclaimer">
     Deterministic heuristics — an optional LLM may draft answers from data-room excerpts (schema in spec.md),
-    but workflow state, contradiction detection, and the readiness score are pure code. Flags are for human
-    review, never legal conclusions. All example data fictional. Not legal advice.
+    but workflow state, contradiction detection, citations, the release gate, and the readiness score are pure
+    code. Flags are for human review, never legal conclusions. All example data fictional. Not legal advice.
     <code>anthropic counterpart: Sell-side Q&amp;A log (closed)</code>
   </footer>
 </div>
 
 <script type="module">
-  import { buildQaLog, qaLogToCsv, qaLogToJson } from "../core/core.js";
+  import { buildQaLog, qaLogToCsv, qaLogToJson, detectContradictions, releaseBlockers, transition, buyerView } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const log = buildQaLog(EXAMPLE);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let currentFilter = "all";
+  let currentLog = null;
 
-  const s = log.summary;
-  document.getElementById("counts").innerHTML =
-    `<div><b>${s.items}</b><span>questions</span></div>` +
-    `<div><b>${s.sent}</b><span>sent</span></div>` +
-    `<div><b>${s.open}</b><span>open</span></div>` +
-    `<div><b>${s.pendingDrafts}</b><span>draft-pending</span></div>` +
-    `<div><b>${s.contradictions}</b><span>contradictions</span></div>`;
+  function render() {
+    const log = buildQaLog(EXAMPLE);
+    currentLog = log;
+    const s = log.summary;
+    document.getElementById("counts").innerHTML =
+      `<div><b>${s.items}</b><span>questions</span></div>` +
+      `<div><b>${s.sent}</b><span>sent</span></div>` +
+      `<div><b>${s.open}</b><span>open</span></div>` +
+      `<div><b>${s.pendingDrafts}</b><span>draft-pending</span></div>` +
+      `<div><b>${s.contradictions}</b><span>contradictions</span></div>` +
+      `<div><b>${s.overdue}</b><span>overdue</span></div>`;
 
-  const r = log.readiness;
-  document.getElementById("readiness").innerHTML =
-    `<div><span class="score">${r.score}</span><span class="band">${r.band}</span></div>` +
-    `<div class="comp">coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}<br>` +
-    `pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}<br>` +
-    `consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}</div>` +
-    `<div class="bar"><i style="width:${r.score}%"></i></div>`;
+    const r = log.readiness;
+    document.getElementById("readiness").innerHTML =
+      `<div><span class="score">${r.score}</span><span class="band">${r.band}</span></div>` +
+      `<div class="comp">coverage ${Math.round(r.components.coverage * 100)}% × ${r.weights.coverage}<br>` +
+      `pipeline ${Math.round(r.components.pipeline * 100)}% × ${r.weights.pipeline}<br>` +
+      `consistency ${Math.round(r.components.consistency * 100)}% × ${r.weights.consistency}<br>` +
+      `provenance ${Math.round(r.components.provenance * 100)}% × ${r.weights.provenance}</div>` +
+      `<div class="bar"><i style="width:${r.score}%"></i></div>` +
+      (log.aging ? `<div class="comp">aging as of ${esc(log.aging.asOf)}<br>SLA warn ${log.aging.sla.warnDays}d · breach ${log.aging.sla.breachDays}d</div>` : "");
 
-  document.getElementById("contradictions").innerHTML = log.contradictions.length
-    ? log.contradictions
-        .map(
-          (c) =>
-            `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.between.join(" vs "))}</b> · ${esc(c.category)} — ${esc(c.detail)}.` +
-            c.evidence.map((e) => `<blockquote><b>${esc(e.itemId)} (${e.answerStatus}):</b> ${esc(e.quote)}</blockquote>`).join("") +
-            `</div>`
-        )
-        .join("")
-    : `<div class="conflict">No contradictions detected within categories.</div>`;
+    document.getElementById("contradictions").innerHTML = log.contradictions.length
+      ? log.contradictions
+          .map(
+            (c) =>
+              `<div class="conflict"><span class="k">${c.kind}</span><b>${esc(c.between.join(" vs "))}</b> · ${esc(c.category)} — ${esc(c.detail)}.` +
+              c.evidence.map((e) => `<blockquote><b>${esc(e.itemId)} (${e.answerStatus}):</b> ${esc(e.quote)}</blockquote>`).join("") +
+              `</div>`
+          )
+          .join("")
+      : `<div class="conflict">No contradictions detected within categories.</div>`;
 
-  // log table with buyer filter
-  const buyers = ["all", ...new Set(log.items.map((i) => i.buyer))];
-  const chips = document.getElementById("filterChips");
-  chips.innerHTML = buyers.map((b, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-b="${esc(b)}">${esc(b)}</button>`).join("");
-  function renderLog(filter) {
-    const rows = log.items.filter((i) => filter === "all" || i.buyer === filter);
+    // log table with buyer filter
+    const buyers = ["all", ...new Set(log.items.map((i) => i.buyer))];
+    const chips = document.getElementById("filterChips");
+    chips.innerHTML = buyers.map((b) => `<button class="chip ${b === currentFilter ? "active" : ""}" data-b="${esc(b)}">${esc(b)}</button>`).join("");
+    const rows = log.items.filter((i) => currentFilter === "all" || i.buyer === currentFilter);
     document.getElementById("log").innerHTML =
-      `<tr><th>Id</th><th>Buyer</th><th>Category</th><th>Status</th><th>Question / current answer</th><th>Answers</th></tr>` +
+      `<tr><th>Id</th><th>Buyer</th><th>Category</th><th>Status</th><th>Question / current answer</th><th>Aging</th><th>Answers</th></tr>` +
       rows
         .map((it) => {
           const status = it.status === "draft-pending" ? "draft-pending" : it.status;
+          const cites = (it.citations ?? []).map((c) => `<div class="cite">📎 <code>${esc(c.docId)} ${esc(c.locator)}</code></div>`).join("");
+          const aging = it.daysOpen == null ? "—" : `<span class="pill ${it.sla}">${it.daysOpen}d</span>`;
           return (
             `<tr class="${it.contradicted ? "flag" : ""}">` +
             `<td class="mono"><code>${esc(it.id)}</code></td>` +
             `<td>${esc(it.buyer)}</td>` +
             `<td>${esc(it.category)}</td>` +
-            `<td><span class="pill ${status}">${status}</span>${it.contradicted ? `<br><span class="pill open">conflict</span>` : ""}</td>` +
-            `<td><div class="q">${esc(it.question)}</div><div>${it.currentAnswer ? esc(it.currentAnswer) : "<i>no sent answer yet</i>"}</div>` +
+            `<td><span class="pill ${status}">${status}</span>${it.contradicted ? `<br><span class="pill open">conflict</span>` : ""}${it.blockers.length ? `<br><span class="pill open">blocked</span>` : ""}</td>` +
+            `<td><div class="q">${esc(it.question)}</div><div>${it.currentAnswer ? esc(it.currentAnswer) : "<i>no sent answer yet</i>"}</div>${cites}` +
             (it.pendingDraft ? `<div class="q">⌛ pending draft: ${esc(it.pendingDraft)}</div>` : "") + `</td>` +
+            `<td class="mono">${aging}</td>` +
             `<td class="mono">${it.answersCount}</td></tr>`
           );
         })
         .join("");
   }
-  renderLog("all");
-  chips.addEventListener("click", (ev) => {
+
+  render();
+  document.getElementById("filterChips").addEventListener("click", (ev) => {
     const btn = ev.target.closest("button[data-b]");
     if (!btn) return;
-    chips.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    renderLog(btn.dataset.b);
+    currentFilter = btn.dataset.b;
+    render();
   });
 
   function download(name, content, type) {
@@ -168,8 +193,79 @@
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
   }
-  document.getElementById("jsonBtn").onclick = () => download("qa-log.json", qaLogToJson(log), "application/json");
-  document.getElementById("csvBtn").onclick = () => download("qa-log.csv", qaLogToCsv(log), "text/csv");
+  document.getElementById("jsonBtn").onclick = () => download("qa-log.json", qaLogToJson(currentLog), "application/json");
+  document.getElementById("csvBtn").onclick = () => {
+    // when a specific buyer is filtered, export the buyer-safe projection (cross-buyer evidence redacted)
+    const buyer = currentLog.items.find((i) => i.buyer === currentFilter);
+    const view = buyer ? buyerView(currentLog, buyer.buyerId) : currentLog;
+    download(buyer ? `qa-log-${buyer.buyerId}.csv` : "qa-log.csv", qaLogToCsv(view), "text/csv");
+  };
+
+  /* ---- pre-send gate: edit the pending draft, watch blockers update live ---- */
+  const GATE_ID = "Q-005";
+  const gateEl = document.getElementById("gate");
+
+  function gateItem() {
+    const base = EXAMPLE.items.find((i) => i.id === GATE_ID);
+    if (!base) return null;
+    const approver = (document.getElementById("gateApprover")?.value ?? "").trim();
+    const text = document.getElementById("gateText")?.value ?? base.answers.find((a) => a.status === "draft")?.text ?? "";
+    return {
+      ...base,
+      answers: base.answers.map((a) =>
+        a.status === "draft" ? { ...a, text, approvedBy: approver || null, approvedAt: approver ? EXAMPLE.settings.asOf : null } : a
+      ),
+    };
+  }
+
+  function renderGate(releasedMsg) {
+    const base = EXAMPLE.items.find((i) => i.id === GATE_ID);
+    const hasDraft = base && base.answers.some((a) => a.status === "draft");
+    if (!hasDraft) {
+      gateEl.innerHTML =
+        `<div class="q">Editing <code>${GATE_ID}</code> (Lantern Harbor Capital · financials) — the pending draft.</div>` +
+        `<div class="row">${releasedMsg ? `<b>${esc(releasedMsg)}</b>` : ""}<span class="pill open">released</span> <span class="q">reload the page to reset the demo.</span></div>`;
+      return;
+    }
+    const draftText = base.answers.find((a) => a.status === "draft").text;
+    const approver = (document.getElementById("gateApprover")?.value ?? "").trim();
+    const text = document.getElementById("gateText")?.value ?? draftText;
+    gateEl.innerHTML =
+      `<div class="q">Editing the pending draft for <code>${GATE_ID}</code> (Lantern Harbor Capital · financials). ` +
+      `Send is disabled until every release blocker clears — try changing “declined 4%” to “declined 5%”, or clear the approver field.</div>` +
+      `<textarea id="gateText" rows="3">${esc(text)}</textarea>` +
+      `<div class="row"><label class="q" for="gateApprover">Approver</label> <input id="gateApprover" placeholder="e.g. A. Reyes (GC)" value="${esc(approver)}"></div>` +
+      `<div class="blockers" id="gateBlockers"></div>` +
+      `<div class="row"><button id="gateSend" disabled>Approve &amp; send</button><span class="q">transition(item, { type: "approve" }) → { type: "send" }) — approval is recorded as the audit trail.</span></div>`;
+    const ta = document.getElementById("gateText");
+    const ap = document.getElementById("gateApprover");
+    ta.addEventListener("input", refreshBlockers);
+    ap.addEventListener("input", refreshBlockers);
+    refreshBlockers();
+
+    function refreshBlockers() {
+      const item = gateItem();
+      const contradictions = detectContradictions({
+        ...EXAMPLE,
+        items: EXAMPLE.items.map((i) => (i.id === GATE_ID ? item : i)),
+      }).filter((c) => c.evidence.some((e) => e.itemId === GATE_ID && e.answerStatus === "draft")); // gate blocks on the DRAFT contradicting the record
+      const blockers = releaseBlockers(item, contradictions);
+      document.getElementById("gateBlockers").innerHTML = blockers.length
+        ? blockers.map((b) => `<div class="conflict"><span class="k">${esc(b.code)}</span>${esc(b.detail)}</div>`).join("")
+        : `<div class="conflict">No release blockers — the draft may be approved and sent.</div>`;
+      document.getElementById("gateSend").disabled = blockers.length > 0;
+    }
+
+    document.getElementById("gateSend").onclick = () => {
+      const item = gateItem();
+      const approved = transition(item, { type: "approve", approver: (document.getElementById("gateApprover").value || "unspecified approver").trim(), at: EXAMPLE.settings.asOf });
+      const sent = transition(approved, { type: "send" });
+      EXAMPLE.items = EXAMPLE.items.map((i) => (i.id === GATE_ID ? sent : i));
+      render();
+      renderGate(`Draft released — approved by ${esc(approved.answers.find((a) => a.approvedBy).approvedBy)} on ${esc(EXAMPLE.settings.asOf)}.`);
+    };
+  }
+  renderGate();
 </script>
 </body>
 </html>

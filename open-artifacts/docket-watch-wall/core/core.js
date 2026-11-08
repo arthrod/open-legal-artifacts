@@ -35,6 +35,136 @@ export const DEFAULT_ESCALATION_RULES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Deadline rules (deterministic heuristics — ALL fictional, always [verify])
+// ---------------------------------------------------------------------------
+
+/**
+ * Deadline phrases as data. SIMPLIFIED FICTION — no jurisdiction rule tables
+ * (out of scope, see spec.md). Every extracted deadline carries
+ * needsVerification:true; nothing is invented when no rule matches.
+ * Each pattern has one capture group = day count.
+ * @type {Array<{id: string, label: string, pattern: string, confidence: 'medium'}>}
+ */
+export const DEADLINE_RULES = [
+  { id: 'response-days', label: 'Response due', pattern: 'response\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
+  { id: 'answer-days', label: 'Answer due', pattern: 'answer\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
+  { id: 'opposition-days', label: 'Opposition due', pattern: 'opposition\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
+  { id: 'reply-brief-days', label: 'Reply brief due', pattern: 'reply\\s+brief\\s+due\\s+within\\s+(\\d+)\\s+days', confidence: 'medium' },
+];
+
+// ---------------------------------------------------------------------------
+// Safe-rule linting (untrusted-text hardening)
+// ---------------------------------------------------------------------------
+
+/** Thrown by lintRule/escalate when a rule pattern is unsafe or invalid. */
+export class SafeRuleError extends Error {
+  constructor(message, rule) {
+    super(`${message} (rule: ${JSON.stringify(rule && rule.id !== undefined ? rule.id : rule)})`);
+    this.name = 'SafeRuleError';
+  }
+}
+
+// quantified group whose body itself contains a quantifier, e.g. (a+)+, (?:x{2})?
+const NESTED_QUANTIFIER = /\((?:\?:)?[^()+]*[+*{][^()]*\)[*+{?]/;
+// alternation inside a quantified group, e.g. (a|b)+
+const QUANTIFIED_ALTERNATION = /\((?:\?:)?[^()]*(?:\|[^()]*)+\)[*+{?]/;
+
+/**
+ * Lint one escalation/deadline rule before its pattern is compiled and run
+ * over untrusted filer text. Heuristic ReDoS screen — not a proof. Throws
+ * SafeRuleError on: empty/oversized (>200 chars) pattern, invalid regex,
+ * nested quantifiers, alternation inside a quantified group, or more than 4
+ * alternation branches. Returns true when the rule passes.
+ * @param {{pattern: string}} rule
+ * @returns {boolean}
+ */
+export function lintRule(rule) {
+  if (!rule || typeof rule.pattern !== 'string' || rule.pattern.length === 0) {
+    throw new SafeRuleError('rule.pattern must be a non-empty string', rule);
+  }
+  if (rule.pattern.length > 200) {
+    throw new SafeRuleError('rule.pattern exceeds 200 characters', rule);
+  }
+  try {
+    new RegExp(rule.pattern, 'i'); // eslint-disable-line no-new
+  } catch (e) {
+    throw new SafeRuleError(`rule.pattern is not a valid regular expression (${e.message})`, rule);
+  }
+  if (NESTED_QUANTIFIER.test(rule.pattern)) {
+    throw new SafeRuleError('nested quantifier (quantified group containing a quantifier) — ReDoS risk', rule);
+  }
+  if (QUANTIFIED_ALTERNATION.test(rule.pattern)) {
+    throw new SafeRuleError('alternation inside a quantified group — ReDoS risk', rule);
+  }
+  if ((rule.pattern.match(/\|/g) || []).length > 4) {
+    throw new SafeRuleError('more than 4 alternation branches', rule);
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Deadline extraction
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Parse 'YYYY-MM-DD' (first 10 chars) as UTC ms; null when unusable. */
+function parseUTCDate(value) {
+  const s = typeof value === 'string' ? value.slice(0, 10) : '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** UTC ms → 'YYYY-MM-DD'. */
+function fmtUTCDate(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Deadline anchor: caller-supplied asOf wins, else the entry's filing date.
+ * Documented recipe — the core never reads a clock (see spec.md).
+ */
+function anchorMs(entry, asOf) {
+  return (asOf ? parseUTCDate(asOf) : null) ?? parseUTCDate(entry.date);
+}
+
+/**
+ * Extract candidate deadlines from one entry's description. Deterministic:
+ * each DEADLINE_RULES match yields {date, label, basis, confidence,
+ * needsVerification:true}. Blank court → confidence 'low' (never a silent
+ * default); a non-empty court keeps the rule tier — the core keeps no court
+ * registry (recognizing court names would be a jurisdiction table, out of
+ * scope, see spec.md). No matching basis → [] (no deadline is invented).
+ *
+ * @param {Object} entry
+ * @param {{asOf?: string}} [options]  anchor date ('YYYY-MM-DD'); defaults to entry.date
+ * @returns {Array<{date: string, label: string, basis: string, confidence: string, needsVerification: boolean}>}
+ */
+export function extractDeadlines(entry, { asOf } = {}) {
+  const anchor = anchorMs(entry, asOf);
+  if (anchor === null) return [];
+  const court = norm(entry.case && entry.case.court);
+  const out = [];
+  for (const rule of DEADLINE_RULES) {
+    lintRule(rule);
+    const m = new RegExp(rule.pattern, 'i').exec(entry.description || '');
+    if (!m) continue;
+    const days = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(days)) continue;
+    out.push({
+      date: fmtUTCDate(anchor + days * DAY_MS),
+      label: rule.label,
+      basis: rule.id,
+      confidence: court ? rule.confidence : 'low',
+      needsVerification: true,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Feed normalization (future CourtListener RECAP hook — pure, no network)
 // ---------------------------------------------------------------------------
 
@@ -91,10 +221,21 @@ function entryMatchesWatcher(entry, watcher) {
  * @returns {Array<{ruleId: string, label: string, level: string, match: string}>}
  */
 export function escalate(entry, rules = DEFAULT_ESCALATION_RULES) {
+  return applyRules(entry, compileRules(rules));
+}
+
+/** Lint every rule, then compile its pattern once (fail closed pre-match). */
+function compileRules(rules) {
+  return rules.map((rule) => {
+    lintRule(rule); // fail closed: never compile an unlinted pattern over untrusted text
+    return { rule, re: new RegExp(rule.pattern, 'i') };
+  });
+}
+
+/** Run already-linted, already-compiled rules over one entry. */
+function applyRules(entry, compiled) {
   const out = [];
-  const text = norm(entry.description);
-  for (const rule of rules) {
-    const re = new RegExp(rule.pattern, 'i');
+  for (const { rule, re } of compiled) {
     const m = re.exec(entry.description || '');
     if (m) out.push({ ruleId: rule.id, label: rule.label, level: rule.level, match: m[0] });
   }
@@ -110,16 +251,25 @@ export function escalate(entry, rules = DEFAULT_ESCALATION_RULES) {
  * @param {Object[]} entries   feed entries (shape as fromRecapPayload)
  * @param {Object[]} watchers  [{id, name, judge?, party?, practiceArea?, deadlineHorizonDays?}]
  * @param {{ ids?: string[]|Set<string> }} [seenStore]  previously seen entry ids
+ * @param {{ escalationRules?: EscalationRule[], asOf?: string, horizonDays?: number }} [options]
+ *        escalationRules override the defaults end-to-end (escalatedNew + toMarkdown);
+ *        asOf anchors deadline date math (defaults to each entry's filing date);
+ *        horizonDays is the fallback deadline horizon (watcher value wins, default 14)
  * @returns {{ wall: Array<{ watcher: Object, newEntries: Array<Object> }>,
  *             escalatedNew: Array<{ watcherId: string, entry: Object, escalations: Object[] }>,
+ *             deadlinesNew: Array<{ watcherId: string, entry: Object, deadlines: Object[] }>,
  *             nextSeenStore: { ids: string[], updatedAt: string|null, count: number },
  *             stats: Object }}
  */
-export function processFeed(entries, watchers, seenStore = {}) {
+export function processFeed(entries, watchers, seenStore = {}, options = {}) {
   const seen = new Set(Array.isArray(seenStore.ids) ? seenStore.ids : []);
+  const rules = options.escalationRules || DEFAULT_ESCALATION_RULES;
+  let compiled = null; // lint+compile rules once per processFeed, on first use
   const wall = [];
   const escalatedNew = [];
+  const deadlinesNew = [];
   let totalNew = 0;
+  let totalDeadlines = 0;
 
   for (const watcher of watchers) {
     const matching = entries.filter((e) => entryMatchesWatcher(e, watcher));
@@ -127,8 +277,19 @@ export function processFeed(entries, watchers, seenStore = {}) {
     totalNew += fresh.length;
     wall.push({ watcher, newEntries: fresh });
     for (const entry of fresh) {
-      const esc = escalate(entry);
+      const esc = applyRules(entry, (compiled ??= compileRules(rules)));
       if (esc.length) escalatedNew.push({ watcherId: watcher.id, entry, escalations: esc });
+      const anchor = anchorMs(entry, options.asOf);
+      const dls = extractDeadlines(entry, { asOf: options.asOf });
+      if (dls.length) {
+        const horizon = watcher.deadlineHorizonDays ?? options.horizonDays ?? 14;
+        const flagged = dls.map((d) => {
+          const daysUntil = anchor !== null ? (parseUTCDate(d.date) - anchor) / DAY_MS : Infinity;
+          return { ...d, withinHorizon: daysUntil >= 0 && daysUntil <= horizon };
+        });
+        deadlinesNew.push({ watcherId: watcher.id, entry, deadlines: flagged });
+        totalDeadlines += flagged.length;
+      }
     }
   }
 
@@ -138,6 +299,7 @@ export function processFeed(entries, watchers, seenStore = {}) {
   return {
     wall,
     escalatedNew,
+    deadlinesNew,
     nextSeenStore: {
       ids: [...nextIds].sort(),
       updatedAt: null, // set by the caller's clock when persisting (keeps core deterministic)
@@ -148,8 +310,35 @@ export function processFeed(entries, watchers, seenStore = {}) {
       watchers: watchers.length,
       newEntries: totalNew,
       escalated: escalatedNew.length,
+      deadlines: totalDeadlines,
     },
   };
+}
+
+/**
+ * Prune a seen-store snapshot: `keep` ids (the current feed's ids) always
+ * survive — even over a smaller cap; remaining capacity is filled from the
+ * tail of the existing id list (ids are stored sorted, so the head is the
+ * stalest-looking). Deterministic — no clock reads.
+ * @param {{ ids: string[], updatedAt?: string|null, count?: number }} store
+ * @param {{ keep?: string[]|Set<string>, maxIds?: number }} [options]
+ * @returns {{ ids: string[], updatedAt: string|null, count: number }}
+ */
+export function pruneSeenStore(store, { keep = [], maxIds = 500 } = {}) {
+  const ids = Array.isArray(store && store.ids) ? store.ids : [];
+  const keepSet = new Set(Array.from(keep, String));
+  const retained = [];
+  const have = new Set();
+  const add = (id) => { if (!have.has(id)) { have.add(id); retained.push(id); } };
+  for (const k of keepSet) add(k); // keep ids win, even beyond maxIds
+  if (retained.length < maxIds) {
+    for (let i = ids.length - 1; i >= 0 && retained.length < maxIds; i--) {
+      const id = String(ids[i]);
+      if (!keepSet.has(id)) add(id);
+    }
+  }
+  const out = retained.sort();
+  return { ids: out, updatedAt: (store && store.updatedAt) ?? null, count: out.length };
 }
 
 /**
@@ -172,11 +361,16 @@ export function stampSeenStore(nextSeenStore, isoTimestamp) {
  */
 export function toMarkdown(result) {
   const lines = ['# Docket watch wall — new entries since last review', ''];
+  // render stored escalations only — no re-derivation, so caller-supplied
+  // escalationRules flow through processFeed → toMarkdown unchanged
+  const escBy = new Map();
+  for (const x of result.escalatedNew || []) escBy.set(`${x.watcherId}|${String(x.entry.id)}`, x.escalations);
   for (const col of result.wall) {
     lines.push(`## ${col.watcher.name} (${col.newEntries.length} new)`);
     if (!col.newEntries.length) { lines.push('_no new matching entries_', ''); continue; }
     for (const e of col.newEntries) {
-      const esc = escalate(e).map((x) => `[${x.level.toUpperCase()}: ${x.label}]`).join(' ');
+      const esc = (escBy.get(`${col.watcher.id}|${String(e.id)}`) || [])
+        .map((x) => `[${x.level.toUpperCase()}: ${x.label}]`).join(' ');
       lines.push(`- **${e.date}** ${e.case.name} — ${e.description} ${esc}`.trim());
     }
     lines.push('');
@@ -185,4 +379,57 @@ export function toMarkdown(result) {
   lines.push('');
   lines.push('_Feed data is fictional. CourtListener RECAP ingestion is a spec\'d future hook (see spec.md); this core makes no network calls._');
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Deadline feed export (iCal) — deterministic deadlines.yaml analog
+// ---------------------------------------------------------------------------
+
+/**
+ * Render extracted deadlines of a processFeed result as iCal (RFC 5545
+ * dialect) text — every VEVENT carries X-NEEDS-VERIFICATION:TRUE. All-day
+ * dates only; DTSTAMP is pinned to the entry's filing date so output is
+ * replay-identical (the core never reads a clock). Deadlines seen by
+ * multiple watchers are emitted once. Lines are not RFC-folded at 75 octets
+ * (calendar parsers tolerate long lines; kept simple + deterministic).
+ * @param {ReturnType<typeof processFeed>} result
+ * @returns {string}
+ */
+export function toDeadlineFeed(result) {
+  const seen = new Set();
+  const events = [];
+  for (const row of result.deadlinesNew || []) {
+    const stamp = (row.entry && row.entry.date) || '1970-01-01';
+    for (const d of row.deadlines) {
+      const uid = `${String(row.entry.id)}-${d.basis}@docket-watch-wall`;
+      if (seen.has(uid)) continue;
+      seen.add(uid);
+      events.push({ d, uid, stamp });
+    }
+  }
+  events.sort((a, b) => (a.d.date < b.d.date ? -1 : a.d.date > b.d.date ? 1 : (a.uid < b.uid ? -1 : 1)));
+  const escText = (s) => String(s).replace(/([,;\\])/g, '\\$1');
+  const ymd = (iso) => iso.replaceAll('-', '');
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//docket-watch-wall//open-legal-artifacts//EN',
+    'CALSCALE:GREGORIAN',
+  ];
+  for (const ev of events) {
+    const end = fmtUTCDate(parseUTCDate(ev.d.date) + DAY_MS); // DTEND is exclusive
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${ev.uid}`,
+      `DTSTAMP:${ymd(ev.stamp)}T000000Z`,
+      `DTSTART;VALUE=DATE:${ymd(ev.d.date)}`,
+      `DTEND;VALUE=DATE:${ymd(end)}`,
+      `SUMMARY:${escText(`${ev.d.label} [verify]`)}`,
+      `DESCRIPTION:${escText(`basis=${ev.d.basis} confidence=${ev.d.confidence} fictional data — verify against the actual docket`)}`,
+      'X-NEEDS-VERIFICATION:TRUE',
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n') + '\r\n';
 }

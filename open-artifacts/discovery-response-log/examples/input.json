@@ -3,13 +3,21 @@
   "court": "N.D. Cal. (fictional filing)",
   "servedDate": "2026-03-10",
   "serviceMethod": "mail",
+  "extensions": [
+    {
+      "days": 14,
+      "basis": "parties' stipulation extending responses to RFP set one",
+      "agreedDate": "2026-03-24"
+    }
+  ],
   "requests": [
     {
       "requestNo": "RFP 1",
       "type": "rfp",
       "text": "All documents concerning the design, testing, or manufacture of the VX-2 battery module.",
       "responseText": "After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below.",
-      "objectionIds": ["overbroad", "trade-secret"]
+      "objectionIds": ["overbroad", "trade-secret"],
+      "citations": ["VEST 0001-3120"]
     },
     {
       "requestNo": "RFP 7",
@@ -30,10 +38,17 @@
       "requestNo": "RFA 12",
       "type": "rfa",
       "text": "Admit that the QC-14 test log was altered after March 2025.",
-      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
-      "objectionIds": ["vague-ambiguous", "assumes-facts"]
+      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
+      "objectionIds": ["vague-ambiguous", "assumes-facts"],
+      "citations": ["VEST 2871-2904", "VEST 6100-6142"]
     }
   ],
+  "config": {
+    "productionManifest": [
+      { "prefix": "VEST", "start": 1, "end": 5000 },
+      { "prefix": "WIDG", "start": 1, "end": 5000 }
+    ]
+  },
   "meetAndConferRounds": [
     {
       "requestNo": "RFP 1",

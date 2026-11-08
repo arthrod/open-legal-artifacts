@@ -1,5 +1,17 @@
 {
   "caseName": "Delgado v. Summit Ridge Hospitality, LLC (No. 25-cv-0442, fictional)",
+  "version": 2,
+  "posture": "A",
+  "theory": {
+    "name": "Retaliatory termination after wage-complaint activity (fictional theory)",
+    "keyTerms": [
+      "terminated",
+      "employment",
+      "written warning",
+      "final wages",
+      "vacation pay"
+    ]
+  },
   "timeline": [
     {
       "factId": "F1",
@@ -15,25 +27,36 @@
         "docId": "compl",
         "docName": "Complaint (filed Feb. 6, 2025)",
         "quote": "Plaintiff was hired as a floor manager on March 3, 2020.",
-        "pinpoint": "¶ 7"
-      }
-    },
-    {
-      "factId": "F2",
-      "date": {
-        "raw": "2020-03-03",
-        "iso": "2020-03-03",
-        "precision": "day"
+        "pinpoint": "¶ 7",
+        "priv": null,
+        "quoteStatus": "verified"
       },
-      "dateLabel": null,
-      "topic": "hire",
-      "text": "Delgado was hired as a floor manager and completed onboarding that week.",
-      "anchor": {
-        "docId": "answer",
-        "docName": "Answer and Affirmative Defenses",
-        "quote": "Defendant admits Plaintiff was hired as a floor manager on March 3, 2020.",
-        "pinpoint": "¶ 2"
-      }
+      "anchors": [
+        {
+          "docId": "compl",
+          "docName": "Complaint (filed Feb. 6, 2025)",
+          "quote": "Plaintiff was hired as a floor manager on March 3, 2020.",
+          "pinpoint": "¶ 7",
+          "priv": null,
+          "quoteStatus": "verified"
+        },
+        {
+          "docId": "answer",
+          "docName": "Answer and Affirmative Defenses",
+          "quote": "Defendant admits Plaintiff was hired as a floor manager on March 3, 2020.",
+          "pinpoint": "¶ 2",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [
+        "F2"
+      ],
+      "significance": "low",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F3",
@@ -47,10 +70,28 @@
       "text": "Reyes gave Delgado a written warning about cash-handling procedures.",
       "anchor": {
         "docId": "reyes-depo",
-        "docName": "Deposition of L. Reyes (Oct. 14, 2025)",
+        "docName": "Deposition of L. Reyes (Oct. 14, 2025) — privilege disputed",
         "quote": "I gave her a written warning about the cash drawer on December first.",
-        "pinpoint": "p. 44"
-      }
+        "pinpoint": "p. 44",
+        "priv": "flag",
+        "quoteStatus": "approximate"
+      },
+      "anchors": [
+        {
+          "docId": "reyes-depo",
+          "docName": "Deposition of L. Reyes (Oct. 14, 2025) — privilege disputed",
+          "quote": "I gave her a written warning about the cash drawer on December first.",
+          "pinpoint": "p. 44",
+          "priv": "flag",
+          "quoteStatus": "approximate"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "medium",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": true,
+      "privReview": false
     },
     {
       "factId": "F4",
@@ -66,8 +107,26 @@
         "docId": "delgado-decl",
         "docName": "Declaration of M. Delgado (Feb. 3, 2025)",
         "quote": "No one ever gave me a written or verbal warning in almost five years.",
-        "pinpoint": "¶ 11"
-      }
+        "pinpoint": "¶ 11",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "delgado-decl",
+          "docName": "Declaration of M. Delgado (Feb. 3, 2025)",
+          "quote": "No one ever gave me a written or verbal warning in almost five years.",
+          "pinpoint": "¶ 11",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "high",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F7",
@@ -83,8 +142,26 @@
         "docId": "compl",
         "docName": "Complaint (filed Feb. 6, 2025)",
         "quote": "Defendant issued final wages on January 15, 2025, but did not include accrued vacation pay.",
-        "pinpoint": "¶ 19"
-      }
+        "pinpoint": "¶ 19",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "compl",
+          "docName": "Complaint (filed Feb. 6, 2025)",
+          "quote": "Defendant issued final wages on January 15, 2025, but did not include accrued vacation pay.",
+          "pinpoint": "¶ 19",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "high",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F5",
@@ -100,8 +177,26 @@
         "docId": "compl",
         "docName": "Complaint (filed Feb. 6, 2025)",
         "quote": "On January 9, 2025, Mr. Reyes told Ms. Delgado she was terminated, effective at the end of her shift.",
-        "pinpoint": "¶ 14"
-      }
+        "pinpoint": "¶ 14",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "compl",
+          "docName": "Complaint (filed Feb. 6, 2025)",
+          "quote": "On January 9, 2025, Mr. Reyes told Ms. Delgado she was terminated, effective at the end of her shift.",
+          "pinpoint": "¶ 14",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "high",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F6",
@@ -117,8 +212,26 @@
         "docId": "term-letter",
         "docName": "Termination letter (Jan. 10, 2025)",
         "quote": "This letter confirms the termination of your employment, effective January 10, 2025.",
-        "pinpoint": "p. 1"
-      }
+        "pinpoint": "p. 1",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "term-letter",
+          "docName": "Termination letter (Jan. 10, 2025)",
+          "quote": "This letter confirms the termination of your employment, effective January 10, 2025.",
+          "pinpoint": "p. 1",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "high",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F8",
@@ -134,13 +247,32 @@
         "docId": "compl",
         "docName": "Complaint (filed Feb. 6, 2025)",
         "quote": "Plaintiff files this Complaint on February 6, 2025.",
-        "pinpoint": "¶ 1"
-      }
+        "pinpoint": "¶ 1",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "compl",
+          "docName": "Complaint (filed Feb. 6, 2025)",
+          "quote": "Plaintiff files this Complaint on February 6, 2025.",
+          "pinpoint": "¶ 1",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "low",
+      "smeVerify": true,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     }
   ],
   "undated": [
     {
       "factId": "F9",
+      "date": null,
       "dateLabel": "at all relevant times",
       "topic": null,
       "text": "The cash-handling policy posted in the back office was never updated after 2021.",
@@ -148,20 +280,57 @@
         "docId": "delgado-decl",
         "docName": "Declaration of M. Delgado (Feb. 3, 2025)",
         "quote": "The policy on the wall was the same one from 2021 the whole time I worked there.",
-        "pinpoint": "¶ 6"
-      }
+        "pinpoint": "¶ 6",
+        "priv": null,
+        "quoteStatus": "verified"
+      },
+      "anchors": [
+        {
+          "docId": "delgado-decl",
+          "docName": "Declaration of M. Delgado (Feb. 3, 2025)",
+          "quote": "The policy on the wall was the same one from 2021 the whole time I worked there.",
+          "pinpoint": "¶ 6",
+          "priv": null,
+          "quoteStatus": "verified"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "low",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": false,
+      "privReview": false
     },
     {
       "factId": "F10",
+      "date": null,
       "dateLabel": null,
       "topic": "policy-update",
       "text": "Summit Ridge rolled out a new cash-handling policy to all locations.",
       "anchor": {
         "docId": "reyes-depo",
-        "docName": "Deposition of L. Reyes (Oct. 14, 2025)",
-        "quote": "We rolled the new cash policy out to all locations in spring of 2024.",
-        "pinpoint": "p. 51"
-      }
+        "docName": "Deposition of L. Reyes (Oct. 14, 2025) — privilege disputed",
+        "quote": "We rolled the new cash policy out to all franchise locations across the state in spring of 2024.",
+        "pinpoint": "p. 51",
+        "priv": "flag",
+        "quoteStatus": "unfound"
+      },
+      "anchors": [
+        {
+          "docId": "reyes-depo",
+          "docName": "Deposition of L. Reyes (Oct. 14, 2025) — privilege disputed",
+          "quote": "We rolled the new cash policy out to all franchise locations across the state in spring of 2024.",
+          "pinpoint": "p. 51",
+          "priv": "flag",
+          "quoteStatus": "unfound"
+        }
+      ],
+      "mergedFrom": [],
+      "significance": "low",
+      "smeVerify": false,
+      "provenance": "document",
+      "privFlagged": true,
+      "privReview": false
     }
   ],
   "unparseableDates": [
@@ -195,16 +364,18 @@
       "fromIso": "2020-03-03",
       "toIso": "2024-12-01",
       "days": 1734,
-      "afterFactId": "F2",
+      "afterFactId": "F1",
       "beforeFactId": "F3"
     }
   ],
   "summary": {
     "facts": 10,
-    "dated": 8,
+    "dated": 7,
     "undated": 2,
     "unparseableDates": 1,
     "conflicts": 2,
-    "gaps": 1
+    "gaps": 1,
+    "merged": 1,
+    "unfoundQuotes": 1
   }
 }

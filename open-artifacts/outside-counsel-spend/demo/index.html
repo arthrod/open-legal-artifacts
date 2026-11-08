@@ -28,8 +28,8 @@
   td.mono { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; }
   tr.flag td { background: #fffbe6; }
   .pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--text); white-space: nowrap; }
-  .pill.over_rate, .pill.over, .pill.no_rate_card, .pill.high_write_off { background: var(--text); color: var(--bg); }
-  .pill.unknown_level, .pill.unbudgeted { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+  .pill.over_rate, .pill.over, .pill.no_rate_card, .pill.high_write_off, .pill.block_billing, .pill.disallowed_expense, .pill.max_hours_per_day, .pill.rate_creep, .pill.hours_spike { background: var(--text); color: var(--bg); }
+  .pill.unknown_level, .pill.unbudgeted, .pill.staffing_ratio { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .bar { position: relative; background: var(--hover); height: 8px; width: 160px; }
   .bar i { position: absolute; inset: 0 auto 0 0; background: var(--text); }
   .bar i.over { background: var(--flag-tint); outline: 1px solid var(--text); color: var(--bad); border-color: var(--bad);}
@@ -52,11 +52,12 @@
     <h1>Outside counsel spend</h1>
     <div class="rule"></div>
     <p class="lede">A spend audit whose core is the <b>findings ledger</b>: every hourly entry checked
-      against the negotiated rate card for that firm × matter × date, budget variance net of write-offs,
-      and over-threshold write-offs flagged — each finding citing the entry, the rule, and the dollar impact.
+      against the negotiated rate card for that firm × matter × date, budget variance net of write-offs
+      with the entries that drove it, billing-guideline and trend flags, and over-threshold write-offs
+      flagged — each finding citing the entry, the rule, and the dollar impact.
       Open reimplementation of Anthropic's closed dashboard artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, three matters,
-      Aug–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
+    <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, four matters,
+      Jul–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
   </header>
 
   <section>
@@ -80,24 +81,31 @@
   </section>
 
   <section>
+    <h2>Billing-guideline &amp; anomaly flags</h2>
+    <div class="scroll"><table id="guidelines"></table></div>
+  </section>
+
+  <section>
     <h2>Period rollups</h2>
     <div class="row" id="periodChips" style="margin: 0 0 12px"></div>
     <div class="scroll"><table id="periods"></table></div>
     <div class="row">
       <button id="jsonBtn">Export audit JSON</button>
       <button id="csvBtn" class="ghost">Export findings CSV</button>
+      <button id="tpBtn" class="ghost">Export talking points (MD)</button>
     </div>
   </section>
 
   <footer class="disclaimer">
-    Deterministic audit — an optional LLM may structure LEDES/invoice exports into ledger JSON (schema in spec.md),
-    but rate compliance, budget variance, and flags are pure code. All example data fictional. Not legal or billing advice.
+    Deterministic audit — LEDES 1998B invoices parse deterministically (core/ledes.js); other invoice formats may be
+    LLM-assisted into ledger JSON (schema in spec.md), but rate compliance, budgets, guidelines, anomalies, and flags
+    are pure code. All example data fictional. Not legal or billing advice.
     <code>anthropic counterpart: Outside counsel spend (closed)</code>
   </footer>
 </div>
 
 <script type="module">
-  import { runSpendAudit, auditToCsv, auditToJson } from "../core/core.js";
+  import { runSpendAudit, auditToCsv, auditToJson, renderTalkingPoints } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
   const audit = runSpendAudit(EXAMPLE);
@@ -117,7 +125,9 @@
     `<div><b>${usd(s.netSpend)}</b><span>net spend</span></div>` +
     `<div><b>${s.rateExceptions}</b><span>rate exceptions</span></div>` +
     `<div><b>${s.overBudget}</b><span>over budget</span></div>` +
-    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>`;
+    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>` +
+    `<div><b>${s.guidelineFlags ?? 0}</b><span>guideline flags</span></div>` +
+    `<div><b>${s.anomalyFlags ?? 0}</b><span>anomaly flags</span></div>`;
 
   table("rates", ["Entry", "Matter × Firm", "Timekeeper (level)", "Period", "Billed", "Expected", "Impact", "Status"], [
     ...audit.rateFindings.map((f) => ({
@@ -136,7 +146,7 @@
     ...(audit.rateFindings.length ? [] : [{ cells: [{ v: "no rate exceptions" }] }]),
   ]);
 
-  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "", "Status"], [
+  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "Drivers", "", "Status"], [
     ...audit.budgetVariances.map((b) => ({
       cls: b.status === "over" ? "flag" : "",
       cells: [
@@ -146,6 +156,7 @@
         { v: usd(b.net), cls: "amt" },
         { v: b.approved === null ? "—" : usd(b.approved), cls: "amt" },
         { v: b.variance === null ? "—" : `${usd(b.variance)}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}`, cls: "amt" },
+        { v: b.drivers ? b.drivers.map((d) => `<code>${esc(d.entryId)}</code> ${usd(d.amount)}`).join(", ") : "—", cls: "mono" },
         { v: b.approved === null ? "" : `<div class="bar"><i class="${b.status === "over" ? "over" : ""}" style="width:${Math.min(100, Math.round((b.net / b.approved) * 100))}%"></i></div>` },
         { v: `<span class="pill ${b.status}">${b.status}</span>` },
       ],
@@ -166,6 +177,34 @@
       ],
     })),
     ...(audit.writeOffFlags.length ? [] : [{ cells: [{ v: "no write-offs above threshold" }] }]),
+  ]);
+
+  table("guidelines", ["Kind", "Rule", "Ref", "Matter × Firm", "Period", "Detail", "Impact"], [
+    ...(audit.guidelineFindings ?? []).map((g) => ({
+      cls: "flag",
+      cells: [
+        { v: `<span class="pill ${g.flag}">${g.flag}</span>` },
+        { v: `<code>${esc(g.ruleId)}</code>`, cls: "mono" },
+        { v: g.entryIds.length === 1 ? `<code>${esc(g.entryIds[0])}</code>` : `${g.entryIds.length} entries`, cls: "mono" },
+        { v: g.matterId === null ? "—" : `${esc(matter(g.matterId))}${g.firmId ? ` × ${esc(firm(g.firmId))}` : ""}` },
+        { v: g.period ?? "—", cls: "mono" },
+        { v: esc(g.detail) },
+        { v: g.amountImpact === null ? "—" : usd(g.amountImpact), cls: "amt" },
+      ],
+    })),
+    ...(audit.anomalyFlags ?? []).map((a) => ({
+      cls: "flag",
+      cells: [
+        { v: `<span class="pill ${a.flag}">${a.flag}</span>` },
+        { v: "—", cls: "mono" },
+        { v: a.entryIds.map((i) => `<code>${esc(i)}</code>`).join(", "), cls: "mono" },
+        { v: esc(firm(a.firmId)) },
+        { v: `${esc(a.fromPeriod)}→${esc(a.toPeriod)}`, cls: "mono" },
+        { v: esc(a.detail) },
+        { v: "—", cls: "amt" },
+      ],
+    })),
+    ...((audit.guidelineFindings?.length ?? 0) + (audit.anomalyFlags?.length ?? 0) ? [] : [{ cells: [{ v: "no guideline or anomaly flags" }] }]),
   ]);
 
   // period rollups with interactive period filter
@@ -217,6 +256,7 @@
   }
   document.getElementById("jsonBtn").onclick = () => download("spend-audit.json", auditToJson(audit), "application/json");
   document.getElementById("csvBtn").onclick = () => download("spend-findings.csv", auditToCsv(audit), "text/csv");
+  document.getElementById("tpBtn").onclick = () => download("spend-talking-points.md", renderTalkingPoints(audit, { firmNames: EXAMPLE.meta.firmNames, matterNames: EXAMPLE.meta.matterNames }), "text/markdown");
 </script>
 </body>
 </html>

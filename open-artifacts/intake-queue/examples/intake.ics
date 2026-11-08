@@ -1,0 +1,49 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//intake-queue//open-legal-artifacts//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:INT-1041@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261113
+SUMMARY:Intake INT-1041: Ridgeline Dental Group PC v. Sable Insurance Compa
+ ny
+DESCRIPTION:insurance coverage dispute — deadline. State: assigned.
+END:VEVENT
+BEGIN:VEVENT
+UID:INT-1042@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261220
+SUMMARY:Intake INT-1042: M. Iwata (fictional) v. Brightpath Solar
+DESCRIPTION:property damage — deadline. State: declined.
+END:VEVENT
+BEGIN:VEVENT
+UID:INT-1043@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261201
+SUMMARY:Intake INT-1043: Foxglove Rentals LLC v. C. Moreau (fictional)
+DESCRIPTION:eviction filing — deadline. State: accepted.
+END:VEVENT
+BEGIN:VEVENT
+UID:INT-1044@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270201
+SUMMARY:Intake INT-1044: Harbor Bakehouse Co. v. Delgado Trucking LLC
+DESCRIPTION:contract dispute — deadline. State: conflict-review.
+END:VEVENT
+BEGIN:VEVENT
+UID:INT-1046@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270115
+SUMMARY:Intake INT-1046: Northwind Logistics v. Palmer Freight Solutions
+DESCRIPTION:freight contract dispute — deadline. State: escalated.
+END:VEVENT
+BEGIN:VEVENT
+UID:INT-1047@intake-queue
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20270201
+SUMMARY:Intake INT-1047: Harbor Bakehouse Company v. Delgado Trucking\, L.L
+ .C.
+DESCRIPTION:contract dispute — deadline. State: duplicate.
+END:VEVENT
+END:VCALENDAR

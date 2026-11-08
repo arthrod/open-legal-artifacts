@@ -4,4 +4,17 @@ rate,L-005,M-211,HPL,2026-09,over_rate,"billed 950/h for level ""partner"" but c
 rate,L-006,M-212,MVL,2026-08,no_rate_card,"no rate card covers firm ""MVL"" on 2026-08-20",
 rate,L-007,M-212,MVL,2026-10,unknown_level,"level ""counsel"" is not on rate card for firm ""MVL"" — expected rate cannot be determined",
 budget,M-210×HPL,M-210,HPL,,over,net spend 11673.75 exceeds approved 8000 by 3673.75 (45.92%),3673.75
+budget,M-213×HPL,M-213,HPL,,unbudgeted,no budget found for this matter × firm (net spend 5639.75),5639.75
 write_off,L-010,M-211,HPL,2026-09,high_write_off,"write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: ""Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.""",1800
+guideline,L-001,M-210,HPL,2026-09,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (3400),3400
+guideline,L-002,M-210,HPL,2026-09,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2892.5),2892.5
+guideline,L-004,M-211,HPL,2026-08,block_billing,2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2475),2475
+guideline,L-010,M-211,HPL,2026-09,block_billing,3 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (7200),7200
+guideline,L-017,M-213,HPL,2026-09,disallowed_expense,"category ""meals"" billed 214.75 over the 75 cap (rule DE-01) — excess 139.75",139.75
+guideline,L-015,M-213,HPL,2026-09,max_hours_per_day,"D. Lindqvist billed 11.5h on 2026-09-15 across 2 entries (cap 10h, rule HD-01) — over-cap portion billed at entry rates is 277.5",277.5
+guideline,SR-01,M-211,,,staffing_ratio,junior/senior staffing ratio 0 on matter M-211 is below the 1.5 minimum (rule SR-01) — 0 non-senior hours vs 16 senior hours,
+guideline,SR-01,M-212,,,staffing_ratio,junior/senior staffing ratio 0.6 on matter M-212 is below the 1.5 minimum (rule SR-01) — 1.5 non-senior hours vs 2.5 senior hours,
+anomaly,L-014+L-015+L-016,,HPL,2026-08→2026-09,hours_spike,11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period,
+anomaly,L-012+L-013,,HPL,2026-07→2026-08,rate_creep,"realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08",
+anomaly,L-004+L-005+L-010,,HPL,2026-08→2026-09,hours_spike,13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period,
+anomaly,L-004+L-005+L-010,,HPL,2026-08→2026-09,rate_creep,"realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09",

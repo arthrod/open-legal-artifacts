@@ -3,7 +3,7 @@
   "vintage": 2026,
   "company": "Quillform Analytics, Inc. (fictional)",
   "gridAsOf": "2026-01",
-  "sourceNote": "Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.",
+  "sourceNote": "Structural enums follow the NVCA Model Legal Documents (public at nvca.org) as a STRUCTURE baseline only. All numeric ranges and percentile bands are EXAMPLE defaults for demonstration — replace them with your own dated market data (deal corpus or published surveys) before relying on any verdict.",
   "terms": [
     {
       "name": "liquidation_preference_multiple",
@@ -14,7 +14,8 @@
       "source": {
         "name": "NVCA structure + EXAMPLE numeric default — replace with dated market data",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "participation",
@@ -25,7 +26,8 @@
       "source": {
         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "anti_dilution",
@@ -36,7 +38,8 @@
       "source": {
         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "seniority",
@@ -47,13 +50,14 @@
       "source": {
         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "investor_board_seats",
       "value": 2,
       "verdict": "inside_market",
-      "detail": "2 seatswithin 1–2 seatsrange.",
+      "detail": "2 seatswithin 1–2 seatsrange — at p75 band (EXAMPLE percentiles — replace with your own dated data).",
       "benchmark": "1–2 seats",
       "source": {
         "name": "EXAMPLE DEFAULT — not market data; replace with your own dated source",
@@ -69,7 +73,8 @@
       "source": {
         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "redemption",
@@ -80,7 +85,8 @@
       "source": {
         "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
         "asOf": "2026-01"
-      }
+      },
+      "favor": "investor"
     },
     {
       "name": "pro_rata_rights",
@@ -107,17 +113,21 @@
     {
       "name": "founder_vesting_restart",
       "value": true,
-      "verdict": "no_benchmark",
-      "detail": "No benchmark entry for this term in this round’s grid; add one rather than guessing.",
-      "benchmark": "—",
-      "source": null
+      "verdict": "outside_market",
+      "detail": "true is not the standard setting (false).",
+      "benchmark": "false",
+      "source": {
+        "name": "NVCA Model Legal Documents (public structural baseline, nvca.org)",
+        "asOf": "2026-01"
+      },
+      "favor": "investor"
     }
   ],
   "counts": {
     "inside_market": 3,
-    "outside_market": 6,
+    "outside_market": 7,
     "unknown_value_type": 0,
-    "no_benchmark": 1
+    "no_benchmark": 0
   },
   "warnings": []
 }

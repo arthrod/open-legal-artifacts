@@ -57,6 +57,20 @@ const PRIVILEGE_MARKERS = [
   'withheld', 'withhold', 'redact', 'redacted', 'fre 502', 'fre502',
 ];
 
+/**
+ * Deterministic negation/waiver contexts that neutralize a marker hit:
+ * "without waiver of privilege and work product", "not privileged",
+ * "nothing is withheld", "isn't privileged". Anything not matching these
+ * patterns still flags (flag-on-uncertain default; see README for limits).
+ */
+const NEGATION_BEFORE =
+  /\bwithout waiver of\b[\w\s-]*$|\b(?:not|no|non-|nothing|neither|never)\b(?:\s+(?:is|are|was|were|be|been|being|am|a|an|the|any|further|longer))?\s*$|\w+n['’]t\s*$/;
+
+/** True when the text right before a marker hit is a negation/waiver context. */
+function isNegatedBefore(text, idx) {
+  return NEGATION_BEFORE.test(text.slice(Math.max(0, idx - 48), idx));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -101,11 +115,13 @@ export function diffDays(aIso, bIso) {
  * @param {Object} params
  * @param {string} params.servedDate      ISO date the requests were served
  * @param {string} [params.serviceMethod] key of config.serviceExtensions
+ * @param {Array<{days:number, basis?:string, agreedDate?:string}>} [params.extensions]
+ *   FRCP 29(b) stipulated extensions; each adds an audit line to calculation[]
  * @param {Object} [config]
  * @param {number} [config.responseDays=30]
  * @param {Record<string,number>} [config.serviceExtensions]
- * @param {number[]} [config.holidays] ISO holidays skipped only if config.countBusinessDays
  * @returns {{dueDate: string, responseDays: number, extensionDays: number,
+ *            stipulatedDays: number,
  *            serviceMethod: string, ruleBasis: string, calculation: string[]}}
  */
 export function calculateDeadline(params, config = {}) {
@@ -114,18 +130,31 @@ export function calculateDeadline(params, config = {}) {
   const method = params.serviceMethod || 'electronic';
   if (!(method in ext)) throw new Error('unknown serviceMethod: ' + method);
   const extensionDays = ext[method];
+  let stipulatedDays = 0;
+  const stipulationLines = [];
+  for (const s of params.extensions || []) {
+    if (!Number.isInteger(s.days) || s.days <= 0) {
+      throw new Error('invalid stipulated extension days: ' + JSON.stringify(s.days));
+    }
+    stipulatedDays += s.days;
+    stipulationLines.push(
+      `+ ${s.days} days stipulated extension (FRCP 29(b)${s.agreedDate ? ' — agreed ' + s.agreedDate : ''}: ${s.basis || 'stipulation between counsel'})`,
+    );
+  }
   // FRCP 6(a)(1): exclude the day of service itself.
-  const dueDate = addDays(addDays(params.servedDate, 1), responseDays + extensionDays - 1);
+  const dueDate = addDays(addDays(params.servedDate, 1), responseDays + extensionDays + stipulatedDays - 1);
   return {
     dueDate,
     responseDays,
     extensionDays,
+    stipulatedDays,
     serviceMethod: method,
     ruleBasis: 'FRCP 33(b)(2)/34(b)(2) + FRCP 6(a),(d) — configurable defaults',
     calculation: [
       `service ${params.servedDate} (${method}); day of service excluded (FRCP 6(a)(1))`,
       `+ ${responseDays} days response period (FRCP default 30; configured: ${responseDays})`,
       `+ ${extensionDays} days service-method extension (FRCP 6(d) default for method "${method}")`,
+      ...stipulationLines,
     ],
   };
 }
@@ -149,28 +178,87 @@ export function deadlineStatus(dueDate, asOf) {
 /**
  * Screen a draft response for privilege-sensitive content so the draft is
  * never accidentally released with a disclosure of privileged material.
+ * Deterministic negation/waiver contexts ("without waiver of privilege",
+ * "not privileged", "nothing is withheld") do not flag; anything else that
+ * matches a marker flags — flag-on-uncertain default.
  *
  * @param {string} responseText
+ * @param {Object} [config]
+ * @param {string[]} [config.privilegeMarkers] replace the default marker list
  * @returns {{privilegeSafe: boolean, flags: string[]}}
  *   flags is empty when safe; each flag names the marker + a reason.
  */
-export function assessPrivilegeSafety(responseText) {
+export function assessPrivilegeSafety(responseText, config = {}) {
   const text = (responseText || '').toLowerCase();
+  const markers = config.privilegeMarkers || PRIVILEGE_MARKERS;
   const flags = [];
-  for (const marker of PRIVILEGE_MARKERS) {
-    if (text.includes(marker)) {
-      flags.push(`mentions "${marker}" — verify against the privilege log before release; do not describe withheld content here`);
+  for (const marker of markers) {
+    let idx = text.indexOf(marker);
+    while (idx !== -1) {
+      if (!isNegatedBefore(text, idx)) {
+        flags.push(`mentions "${marker}" — verify against the privilege log before release; do not describe withheld content here`);
+        break;
+      }
+      idx = text.indexOf(marker, idx + marker.length);
     }
   }
   return { privilegeSafe: flags.length === 0, flags };
 }
 
 // ---------------------------------------------------------------------------
+// Citation-manifest check
+// ---------------------------------------------------------------------------
+
+/** Bates-style cite: PREFIX NNNN or PREFIX NNNN-NNNN. */
+const BATES_CITE = /^([A-Za-z][A-Za-z0-9]*)[ -]?(\d{1,6})(?:\s*-\s*(\d{1,6}))?$/;
+
+/**
+ * Check a response's Bates citations against the production manifest
+ * (ranges actually produced). A cite outside every manifest range — or not
+ * parseable as a Bates cite — is flagged rather than trusted.
+ * No manifest configured → no flags (screening is opt-in).
+ *
+ * @param {string[]} citations
+ * @param {Array<{prefix:string, start:number, end:number}>} [manifest]
+ * @returns {{citations: string[], citationFlags: string[]}}
+ */
+export function checkCitations(citations = [], manifest = null) {
+  const flags = [];
+  if (!manifest || !manifest.length) return { citations: [...citations], citationFlags: flags };
+  for (const cite of citations) {
+    const m = BATES_CITE.exec(String(cite).trim());
+    if (!m) {
+      flags.push(`"${cite}" is not a recognizable Bates cite (expected PREFIX 0000-9999) — fix or annotate`);
+      continue;
+    }
+    const [, prefix, start, end] = m;
+    const citeStart = Number(start);
+    const citeEnd = end === undefined ? citeStart : Number(end);
+    if (citeEnd < citeStart) {
+      flags.push(`"${cite}" has an inverted range — fix before release`);
+      continue;
+    }
+    const covered = manifest.some(
+      (r) => r.prefix.toLowerCase() === prefix.toLowerCase() && citeStart >= r.start && citeEnd <= r.end,
+    );
+    if (!covered) flags.push(`cite "${cite}" is outside every range in the production manifest — verify the production index`);
+  }
+  return { citations: [...citations], citationFlags: flags };
+}
+
+// ---------------------------------------------------------------------------
 // Drafting + versioned rounds (meet and confer)
 // ---------------------------------------------------------------------------
 
-let seq = 0;
-function nextId(prefix) { seq += 1; return `${prefix}-${String(seq).padStart(3, '0')}`; }
+/**
+ * Deterministic entry id derived from the request number (no module counter —
+ * identical inputs produce identical ids regardless of call order).
+ */
+function idFor(requestNo) {
+  const slug = String(requestNo).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) throw new Error('requestNo must contain at least one letter or digit');
+  return 'dr-' + slug;
+}
 
 /**
  * Create the v1 draft response entry for one discovery request.
@@ -182,7 +270,8 @@ function nextId(prefix) { seq += 1; return `${prefix}-${String(seq).padStart(3, 
  * @param {string} [request.responseText]   substantive draft answer
  * @param {string[]} [request.objectionIds] ground ids from the library
  * @param {string} [request.privilegeBasis] short basis if withholding
- * @param {Object} [config]                 supplies the grounds library
+ * @param {string[]} [request.citations]    Bates cites relied on by the answer
+ * @param {Object} [config]                 supplies grounds library + manifest + markers
  * @returns {import('./core.js').DraftEntry}
  */
 export function draftResponse(request, config = {}) {
@@ -192,17 +281,21 @@ export function draftResponse(request, config = {}) {
   const unknown = (request.objectionIds || []).filter((id) => !byId.has(id));
   if (unknown.length) throw new Error('unknown objection ground ids: ' + unknown.join(', '));
   const objections = objectionIds.map((id) => byId.get(id));
-  const screening = assessPrivilegeSafety(request.responseText || '');
+  const screening = assessPrivilegeSafety(request.responseText || '', config);
+  const { citations, citationFlags } = checkCitations(request.citations, config.productionManifest);
   const withholding = Boolean(request.privilegeBasis);
   return {
-    id: nextId('dr'),
+    id: idFor(request.requestNo),
     requestNo: request.requestNo,
     type: request.type,
     requestText: request.text,
     responseText: request.responseText || '',
+    citations,
+    citationFlags,
     objections,
     privilegeBasis: request.privilegeBasis || null,
     status: withholding ? 'withheld-logged' : objections.length ? 'objection-and-response' : 'response-only',
+    reviewState: 'draft',
     privilegeSafe: withholding ? false : screening.privilegeSafe,
     safetyFlags: withholding
       ? [`withholds on: ${request.privilegeBasis} — must appear on the privilege log (FRCP 26(b)(5))`]
@@ -215,6 +308,7 @@ export function draftResponse(request, config = {}) {
           responseText: request.responseText || '',
           objectionIds,
           privilegeBasis: request.privilegeBasis || null,
+          citations,
         },
         changes: ['initial draft'],
       },
@@ -223,7 +317,7 @@ export function draftResponse(request, config = {}) {
 }
 
 /** Fields tracked across meet-and-confer revisions. */
-const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis'];
+const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis', 'citations'];
 
 /**
  * Revise a draft after a meet-and-confer round. Appends a new version with a
@@ -233,9 +327,17 @@ const TRACKED = ['responseText', 'objectionIds', 'privilegeBasis'];
  * @param {import('./core.js').DraftEntry} draft
  * @param {Object} patch                   subset of TRACKED fields
  * @param {string} [label]                 e.g. "M&C round 2 — narrowed to 2024"
+ * @param {Object} [config]                same config as draftResponse (grounds,
+ *   productionManifest, privilegeMarkers) — objection ids and citations are
+ *   validated against it, and unknown ground ids throw
  * @returns {import('./core.js').DraftEntry} same draft, mutated + returned
  */
-export function reviseDraft(draft, patch, label) {
+export function reviseDraft(draft, patch, label, config = {}) {
+  if (patch.objectionIds !== undefined) {
+    const grounds = new Map((config.objectionGrounds || DEFAULT_OBJECTION_GROUNDS).map((g) => [g.id, g]));
+    const unknown = patch.objectionIds.filter((id) => !grounds.has(id));
+    if (unknown.length) throw new Error('unknown objection ground ids: ' + unknown.join(', '));
+  }
   const prev = draft.versions[draft.versions.length - 1];
   const round = prev.round + 1;
   const changes = [];
@@ -250,11 +352,16 @@ export function reviseDraft(draft, patch, label) {
   if (!changes.length) changes.push('no substantive change recorded this round');
   if (patch.responseText !== undefined) draft.responseText = patch.responseText;
   if (patch.objectionIds !== undefined) {
-    const grounds = new Map(DEFAULT_OBJECTION_GROUNDS.map((g) => [g.id, g]));
-    draft.objections = patch.objectionIds.filter((id) => grounds.has(id)).map((id) => grounds.get(id));
+    const grounds = new Map((config.objectionGrounds || DEFAULT_OBJECTION_GROUNDS).map((g) => [g.id, g]));
+    draft.objections = patch.objectionIds.map((id) => grounds.get(id));
   }
   if (patch.privilegeBasis !== undefined) draft.privilegeBasis = patch.privilegeBasis;
-  const screening = assessPrivilegeSafety(draft.responseText);
+  if (patch.citations !== undefined) {
+    const checked = checkCitations(patch.citations, config.productionManifest);
+    draft.citations = checked.citations;
+    draft.citationFlags = checked.citationFlags;
+  }
+  const screening = assessPrivilegeSafety(draft.responseText, config);
   draft.status = draft.privilegeBasis
     ? 'withheld-logged'
     : draft.objections.length ? 'objection-and-response' : 'response-only';
@@ -272,6 +379,47 @@ export function reviseDraft(draft, patch, label) {
 }
 
 // ---------------------------------------------------------------------------
+// Review / release gate
+// ---------------------------------------------------------------------------
+
+const REVIEW_STATES = ['draft', 'in-review', 'approved'];
+
+/**
+ * Set an entry's review state (draft → in-review → approved). Approving a
+ * withholding entry attests it appears on the privilege log (FRCP 26(b)(5)).
+ * @param {import('./core.js').DraftEntry} entry
+ * @param {'draft'|'in-review'|'approved'} state
+ * @returns {import('./core.js').DraftEntry} same entry, mutated + returned
+ */
+export function setReviewState(entry, state) {
+  if (!REVIEW_STATES.includes(state)) throw new Error('invalid reviewState: ' + JSON.stringify(state));
+  entry.reviewState = state;
+  return entry;
+}
+
+/**
+ * Code-enforced release gate: throws unless EVERY entry is attorney-approved
+ * and privilege-safe. Withholding entries ('withheld-logged') are releasable
+ * once approved — approval attests the privilege-log routing — but a draft
+ * whose text trips the privilege screen blocks release even when approved.
+ * @param {ReturnType<typeof buildLog>} log
+ * @returns {true} when releasable
+ * @throws {Error} listing every blocking entry
+ */
+export function assertReleasable(log) {
+  const blockers = [];
+  for (const e of log.entries) {
+    if (e.reviewState !== 'approved') {
+      blockers.push(`${e.requestNo}: review state "${e.reviewState}" — attorney approval required before release`);
+    } else if (!e.privilegeSafe && e.status !== 'withheld-logged') {
+      blockers.push(`${e.requestNo}: privilege-unsafe draft — resolve flags: ${e.safetyFlags.join('; ')}`);
+    }
+  }
+  if (blockers.length) throw new Error('log not releasable:\n- ' + blockers.join('\n- '));
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Log assembly
 // ---------------------------------------------------------------------------
 
@@ -282,11 +430,18 @@ export function reviseDraft(draft, patch, label) {
  * @param {string} params.servedDate
  * @param {string} [params.serviceMethod]
  * @param {Array<Object>} params.requests  passed to draftResponse one by one
+ * @param {Array<{days:number, basis?:string, agreedDate?:string}>} [params.extensions]
+ *   FRCP 29(b) stipulated extensions for the whole set
  * @param {Object} [config]
  * @returns {{ deadline: Object, entries: import('./core.js').DraftEntry[],
  *             counts: Object, disclaimer: string }}
  */
 export function buildLog(params, config = {}) {
+  const seen = new Set();
+  for (const r of params.requests) {
+    if (seen.has(r.requestNo)) throw new Error('duplicate requestNo: ' + r.requestNo + ' — request numbers must be unique within a set');
+    seen.add(r.requestNo);
+  }
   const deadline = calculateDeadline(params, config);
   const entries = params.requests.map((r) => draftResponse(r, config));
   const counts = {
@@ -295,6 +450,7 @@ export function buildLog(params, config = {}) {
     responseOnly: entries.filter((e) => e.status === 'response-only').length,
     withheldLogged: entries.filter((e) => e.status === 'withheld-logged').length,
     privilegeFlags: entries.filter((e) => !e.privilegeSafe).length,
+    citationFlags: entries.filter((e) => e.citationFlags.length > 0).length,
   };
   return {
     deadline,
@@ -311,7 +467,8 @@ export function buildLog(params, config = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * Render the log as a markdown table for meet-and-confer correspondence.
+ * Render the log as a markdown table for meet-and-confer correspondence,
+ * plus a per-round diff table for every entry with revision history.
  * @param {ReturnType<typeof buildLog>} log
  * @returns {string}
  */
@@ -320,15 +477,54 @@ export function toMarkdown(log) {
     `# Discovery response log`,
     ``,
     `Response deadline: **${log.deadline.dueDate}** (${log.deadline.serviceMethod} service, ` +
-      `${log.deadline.responseDays}d + ${log.deadline.extensionDays}d ext)`,
+      `${log.deadline.responseDays}d + ${log.deadline.extensionDays}d ext` +
+      `${log.deadline.stipulatedDays ? ` + ${log.deadline.stipulatedDays}d stipulated (FRCP 29(b))` : ''})`,
     ``,
-    `| # | Type | Status | Objections | Privilege-safe |`,
-    `|---|------|--------|------------|----------------|`,
+    `| # | Type | Status | Objections | Privilege-safe | Review | Cite check |`,
+    `|---|------|--------|------------|----------------|--------|------------|`,
   ];
   for (const e of log.entries) {
     const obj = e.objections.map((o) => o.label).join('; ') || '—';
-    lines.push(`| ${e.requestNo} | ${e.type} | ${e.status} | ${obj} | ${e.privilegeSafe ? 'yes' : 'FLAG'} |`);
+    const cite = e.citationFlags.length ? `FLAG (${e.citationFlags.length})` : 'ok';
+    lines.push(`| ${e.requestNo} | ${e.type} | ${e.status} | ${obj} | ${e.privilegeSafe ? 'yes' : 'FLAG'} | ${e.reviewState} | ${cite} |`);
+  }
+  const revised = log.entries.filter((e) => e.versions.length > 1);
+  if (revised.length) {
+    lines.push('', `## Meet-and-confer rounds`, ``,
+      `| Entry | Round | Label | Changes |`,
+      `|-------|-------|-------|---------|`);
+    for (const e of revised) {
+      for (const v of e.versions) {
+        const changes = v.changes.map((c) => c.replace(/\|/g, '\\|')).join('<br>');
+        lines.push(`| ${e.requestNo} | ${v.round} | ${v.label} | ${changes} |`);
+      }
+    }
   }
   lines.push('', `_${log.disclaimer}_`);
   return lines.join('\n');
+}
+
+/**
+ * CSV export (RFC 4180-style quoting): header + one row per entry.
+ * @param {ReturnType<typeof buildLog>} log
+ * @returns {string}
+ */
+export function toCSV(log) {
+  const esc = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const rows = [['requestNo', 'type', 'status', 'objections', 'privilegeSafe', 'reviewState', 'citationFlags'].join(',')];
+  for (const e of log.entries) {
+    rows.push([
+      e.requestNo,
+      e.type,
+      e.status,
+      e.objections.map((o) => o.label).join('; '),
+      e.privilegeSafe ? 'yes' : 'FLAG',
+      e.reviewState,
+      e.citationFlags.join('; '),
+    ].map(esc).join(','));
+  }
+  return rows.join('\n');
 }

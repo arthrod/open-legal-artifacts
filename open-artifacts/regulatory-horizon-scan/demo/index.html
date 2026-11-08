@@ -36,9 +36,20 @@
   .chip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: var(--hairline);
     padding: 2px 8px; margin: 2px 4px 2px 0; background: #fff; }
   .chip.dup { background: var(--flag-tint); border-color: var(--text); color: var(--bad); border-color: var(--bad);}
+  .chip.gap-high { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+  .chip.gap-medium { color: var(--warn); border-color: var(--warn); }
+  .chip.gap-low { color: var(--text-secondary); }
+  .flag { font-family: var(--font-mono); font-size: 10px; color: var(--bad); }
+  .weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px 24px; margin-top: 8px; }
+  .weights fieldset { border: var(--hairline); padding: 8px 12px 10px; margin: 0; }
+  .weights legend { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 4px; }
+  .wrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
+  .wrow label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+  .wrow input { width: 64px; font-family: var(--font-mono); font-size: 12px; padding: 3px 6px; border: var(--hairline); background: #fff; }
   .diff li { list-style: none; padding: 6px 0; border-bottom: var(--hairline); font-size: 13px; }
   .from { text-decoration: line-through; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
   .to { font-family: var(--font-mono); font-size: 12px; background: var(--flag-tint); padding: 0 3px; color: var(--warn); border-color: var(--warn);}
+  .tl-label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-top: 14px; }
   .ok { color: var(--text-secondary); font-size: 13px; }
   .err { color: #b00020; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
@@ -52,10 +63,11 @@
     <div class="rule"></div>
     <h1>Regulatory horizon scan</h1>
     <p class="lede">Feed of regulatory items in, deduped + classified + impact-ranked scan out —
-      scored by a transparent, versioned rubric you can audit and diff. Open reimplementation of
+      scored by a transparent, versioned rubric you can audit, re-weight, and diff. Open reimplementation of
       Anthropic's closed artifact; the scoring is <b>never</b> a black box.</p>
     <p class="lede" style="font-size:13px">Every point of every score carries a factor, a rule, and a reason.
-      When a rule changes between snapshots, you see the field-by-field diff.</p>
+      Comment windows and ANPR/RFI nuance are first-class; non-primary sources are flagged and capped;
+      undated items are kept on the timeline, never dropped.</p>
   </header>
 
   <section>
@@ -65,21 +77,32 @@
       <button id="run">Run scan</button>
       <button id="diffBtn" class="ghost">Diff vs previous snapshot</button>
       <button id="csvBtn" class="ghost">Export CSV</button>
+      <button id="mdBtn" class="ghost">Download digest (.md)</button>
     </div>
     <p class="err" id="err" hidden></p>
   </section>
 
   <section>
+    <h2>Rubric weights (rules-as-data — edit and re-run)</h2>
+    <div id="weights" class="weights"></div>
+    <div class="row">
+      <button id="rerun" class="ghost">Apply weights &amp; re-run</button>
+      <button id="resetW" class="ghost">Reset to rubric defaults</button>
+    </div>
+  </section>
+
+  <section>
     <h2>Ranked scan</h2>
+    <div id="gaps"></div>
     <div id="dedupe" class="ok"></div>
     <div style="overflow-x:auto"><table id="scanTable">
-      <thead><tr><th>#</th><th>Rule</th><th>Juris</th><th>Topic</th><th>Status</th><th>Effective</th><th>Score</th><th>Why this score</th></tr></thead>
+      <thead><tr><th>#</th><th>Rule</th><th>Juris</th><th>Topic</th><th>Type</th><th>Status</th><th>Effective</th><th>Comments close</th><th>Score</th><th>Why this score</th></tr></thead>
       <tbody></tbody>
     </table></div>
   </section>
 
   <section>
-    <h2>Timeline by effective date</h2>
+    <h2>Timeline — actionBy = earliest of effective date / comment deadline</h2>
     <ul id="timeline" class="diff"></ul>
   </section>
 
@@ -96,23 +119,71 @@
 </div>
 
 <script type="module">
-  import { scanFeed, diffFeeds, toCsv } from "../core/core.js";
+  import { scanFeed, diffFeeds, toCsv, toMarkdown } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile, AS_OF = EXAMPLE.asOf;
+  const DEFAULT_RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile, AS_OF = EXAMPLE.asOf;
+  let rubric = structuredClone(DEFAULT_RUBRIC);
   const $ = (id) => document.getElementById(id);
 
   $("input").value = JSON.stringify({ asOf: AS_OF, currentFeed: EXAMPLE.currentFeed }, null, 2);
   let lastScan = null;
 
-  $("run").onclick = () => {
+  /* ---- rubric weight editor (every factor point is an editable number) ---- */
+  function buildWeights() {
+    const host = $("weights");
+    host.innerHTML = "";
+    for (const f of rubric.factors) {
+      const fs = document.createElement("fieldset");
+      const legend = document.createElement("legend");
+      legend.textContent = f.id;
+      fs.appendChild(legend);
+      for (const [k, v] of Object.entries(f.points ?? {})) {
+        fs.appendChild(wrow(`${f.id}:${k}`, v));
+      }
+      (f.thresholds ?? []).forEach((t, i) => {
+        fs.appendChild(wrow(`${f.id}:≤${t.withinDays}d`, t.points, i));
+      });
+      host.appendChild(fs);
+    }
+  }
+  function wrow(label, value, thr) {
+    const div = document.createElement("div");
+    div.className = "wrow";
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.value = value; inp.step = "1";
+    inp.dataset.factor = label.split(":")[0]; inp.dataset.key = label.split(":")[1];
+    if (thr !== undefined) inp.dataset.thr = thr;
+    div.append(lab, inp);
+    return div;
+  }
+  function readWeights() {
+    const next = structuredClone(DEFAULT_RUBRIC);
+    for (const inp of $("weights").querySelectorAll("input")) {
+      const f = next.factors.find((x) => x.id === inp.dataset.factor);
+      if (!f) continue;
+      const n = Number(inp.value);
+      if (!Number.isFinite(n)) continue;
+      if (inp.dataset.thr !== undefined) f.thresholds[+inp.dataset.thr].points = n;
+      else f.points[inp.dataset.key] = n;
+    }
+    return next;
+  }
+  $("rerun").onclick = () => { rubric = readWeights(); run(); };
+  $("resetW").onclick = () => { rubric = structuredClone(DEFAULT_RUBRIC); buildWeights(); run(); };
+
+  /* ---- scan ---- */
+  function run() {
     $("err").hidden = true;
     try {
       const feed = JSON.parse($("input").value).currentFeed;
-      lastScan = scanFeed(feed, RUBRIC, PROFILE, AS_OF);
+      lastScan = scanFeed(feed, rubric, PROFILE, AS_OF);
       renderScan(lastScan);
     } catch (e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; }
-  };
+  }
+  $("run").onclick = run;
 
   function renderScan(scan) {
     const tb = $("scanTable").querySelector("tbody");
@@ -122,22 +193,33 @@
       tr.className = "band-" + it.scoring.band;
       const why = document.createElement("details");
       why.innerHTML = `<summary>breakdown</summary><ul class="breakdown">` +
-        it.scoring.breakdown.map((b) => `<li><b>${b.factor} +${b.points}</b> — ${b.rule} <i>(${b.note})</i></li>`).join("") +
+        it.scoring.breakdown.map((b) => `<li><b>${b.factor} +${b.points}</b> — ${esc(b.rule)} <i>(${esc(b.note)})</i></li>`).join("") +
+        (it.scoring.flags ?? []).map((f) => `<li class="flag">flag: ${esc(f)}</li>`).join("") +
         `</ul>`;
-      tr.innerHTML = `<td class="score">${i + 1}</td><td>${esc(it.title)}</td><td><span class="chip">${it.jurisdiction}</span></td>` +
-        `<td>${it.topic}</td><td>${it.status}</td><td class="score">${it.effectiveDate ?? "—"}</td>` +
-        `<td class="score">${it.scoring.score}<br><small style="color:var(--text-secondary)">${it.scoring.band}</small></td>`;
+      const flags = (it.scoring.flags ?? []).map((f) => `<br><span class="flag">${esc(f)}</span>`).join("");
+      tr.innerHTML = `<td class="score">${i + 1}</td><td>${esc(it.title)}</td><td><span class="chip">${esc(it.jurisdiction)}</span></td>` +
+        `<td>${it.topic}</td><td>${esc((it.itemType ?? "—").toUpperCase())}</td><td>${esc(it.status)}</td>` +
+        `<td class="score">${esc(it.effectiveDate ?? "—")}</td><td class="score">${esc(it.commentDeadline ?? "—")}</td>` +
+        `<td class="score">${it.scoring.score}<br><small style="color:var(--text-secondary)">${it.scoring.band}</small>${flags}</td>`;
       tr.appendChild(document.createElement("td")).appendChild(why);
       tb.appendChild(tr);
     });
     $("dedupe").innerHTML = scan.duplicates.length
-      ? "Deduped: " + scan.duplicates.map((d) => `<span class="chip dup">${d.droppedId} → ${d.keptId}</span>`).join("")
+      ? "Deduped: " + scan.duplicates.map((d) => `<span class="chip dup">${esc(d.droppedId)} → ${esc(d.keptId)}${d.mergedFields.length ? " (+" + d.mergedFields.join("/") + ")" : ""}</span>`).join("")
       : "No duplicates in this feed.";
-    $("timeline").innerHTML = scan.timeline
-      .map((it) => `<li><span class="score">${it.effectiveDate}</span> · score ${it.scoring.score} · ${esc(it.title)} <span class="chip">${it.jurisdiction}</span></li>`)
-      .join("") || '<li class="ok">No dated items.</li>';
+    const gaps = scan.coverageGaps ?? [];
+    $("gaps").innerHTML = gaps.length
+      ? "Coverage gaps: " + gaps.map((g) => `<span class="chip gap-${g.severity}">${g.severity} · ${g.kind} ${g.value}</span>`).join("")
+      : "Coverage: no gaps — every profile jurisdiction/topic has feed items.";
+    const ms = (m) => `<li><span class="score">${esc(m.date)}</span> · <span class="chip">${m.kind}</span> · score ${m.score} · ${esc(m.title)} <span class="chip">${esc(m.jurisdiction)}</span></li>`;
+    $("timeline").innerHTML =
+      `<div class="tl-label">Upcoming</div>` + (scan.timeline.upcoming.map(ms).join("") || '<li class="ok">No upcoming milestones.</li>') +
+      (scan.timeline.past.length ? `<div class="tl-label">Past</div>` + scan.timeline.past.map(ms).join("") : "") +
+      (scan.timeline.undated.length ? `<div class="tl-label">Undated (kept, not dropped)</div>` +
+        scan.timeline.undated.map((u) => `<li>score ${u.score} · ${esc(u.title)} <span class="chip">${esc(u.jurisdiction)}</span></li>`).join("") : "");
   }
 
+  /* ---- diff ---- */
   $("diffBtn").onclick = () => {
     let feed;
     try { feed = JSON.parse($("input").value).currentFeed; } catch (e) { return err(e); }
@@ -149,16 +231,25 @@
     $("diff").innerHTML = lines.join("") || '<li class="ok">No changes between snapshots.</li>';
   };
 
+  /* ---- exports ---- */
   $("csvBtn").onclick = () => {
     if (!lastScan) return err(new Error("run the scan first"));
-    const blob = new Blob([toCsv(lastScan)], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "regulatory-horizon-scan.csv"; a.click();
+    download("regulatory-horizon-scan.csv", toCsv(lastScan), "text/csv");
   };
+  $("mdBtn").onclick = () => {
+    if (!lastScan) return err(new Error("run the scan first"));
+    download("regulatory-horizon-scan-digest.md", toMarkdown(lastScan), "text/markdown");
+  };
+  function download(name, text, type) {
+    const blob = new Blob([text], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  }
 
   function err(e) { $("err").hidden = false; $("err").textContent = "Error: " + e.message; }
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+  buildWeights();
   $("run").click(); // prefilled worked example renders on load
 </script>
 </body>

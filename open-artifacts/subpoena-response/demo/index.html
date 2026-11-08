@@ -29,6 +29,9 @@
   code { font-family: var(--font-mono); font-size: 11px; }
   .muted { color: var(--text-secondary); font-size: 13px; }
   .warn { border: var(--hairline); padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+  .stop { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin: 10px 0; }
+  .chip { font-family: var(--font-mono); font-size: 11px; border: var(--hairline); padding: 2px 6px; margin-right: 6px; }
+  .chip.strong { background: var(--flag-tint); }
 </style>
 </head>
 <body>
@@ -36,7 +39,7 @@
   <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
   <h1>subpoena-response</h1>
   <div class="rule"></div>
-  <p class="lede">Deadline math (14-day FRCP-style default, configurable), structured responsive scope, privilege-log workflow, objection-grounds library, checklist export. Fictional matter.</p>
+  <p class="lede">Deadline math (14-day FRCP-style default, configurable), subpoena classification with a grand-jury stop gate, five tracked deadlines incl. the earlier-of objection rule, structured responsive scope, objection application matrix with strength ratings, provenance trail, privilege-log workflow, compliance-plan checklist export. Fictional matter.</p>
 </div></header>
 
 <div class="wrap"><main>
@@ -74,7 +77,15 @@ const SAMPLE = {
     ]
   },
   privilege_review: { state: "reviewing", reviewer: "A. Castellanos, assoc." },
+  provenance: {
+    "subpoena.served_date": { source: "certificate of service, p. 4 (fictional)", status: "verified" },
+    "subpoena.service_method": { source: "process server voicemail (fictional)", status: "verify" },
+    "subpoena.caption": { source: "caption block, p. 1 (fictional)", status: "verified" },
+    "responsive_scope.date_range.start": { source: "'Relevant Period', ¶ 3 (fictional)", status: "verified" },
+    "responsive_scope.date_range.end": { source: "'Relevant Period', ¶ 3 (fictional)", status: "verified" }
+  },
   objections_selected: ["overbroad_time", "overbroad_custodians", "undue_burden", "pii_privacy", "equally_available"],
+  production_format: "TIFF + load file, per negotiated protocol draft (fictional)",
   legal_hold: true
 };
 
@@ -83,11 +94,22 @@ $('input').value = JSON.stringify(SAMPLE, null, 2);
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
 function render(r) {
-  let h = `<div class="sec">Deadline</div>
+  let h = '';
+  if (r.classification && r.classification.stop) h += `<div class="stop">🛑 STOP — GRAND JURY SUBPOENA: escalate to criminal counsel before any substantive response.</div>`;
+  h += `<div class="sec">Deadline</div>
     <p class="deadline">${esc(r.deadline.deadline)}</p>
-    <p class="muted">${r.deadline.total_days} ${r.deadline.day_type} day(s) from service ${esc(r.deadline.served_date)} by ${esc(r.deadline.service_method)} (+${r.deadline.extension_days} ext.)
+    <p class="muted">type: <strong>${esc(r.classification?.type ?? 'unclassified')}</strong> · ${r.deadline.total_days} ${r.deadline.day_type} day(s) from service ${esc(r.deadline.served_date)} by ${esc(r.deadline.service_method)} (+${r.deadline.extension_days} ext.)
     · <span class="status ${r.deadline_math.status}">${r.deadline_math.status}</span>
     ${r.deadline_math.days_remaining != null ? ` · ${r.deadline_math.days_remaining} day(s) left` : ''}</p>`;
+  if (r.deadlines_all) {
+    h += `<div class="sec">All deadlines (earliest: ${esc(r.deadlines_all.earliest_deadline.label)} ${esc(r.deadlines_all.earliest_deadline.deadline)})</div><ul>`;
+    for (const kind of ['response', 'objection', 'production', 'quash_window', 'meet_and_confer']) {
+      const e = r.deadlines_all[kind];
+      if (!e) continue;
+      h += `<li><code>${esc(e.kind)}</code> <strong>${esc(e.deadline)}</strong> — <span class="muted">${esc(e.basis)}</span></li>`;
+    }
+    h += `</ul><p class="muted">Objection deadlines often run from the EARLIER of the compliance date or fixed days after service — varies by forum; verify the rule.</p>`;
+  }
   h += `<div class="sec">Privilege / log workflow — ${esc(r.privilege.state)}</div>
     <div class="bar"><div style="width:${r.privilege.progress}%"></div></div>
     <p class="muted">${r.privilege.progress}% · legal hold: ${r.legal_hold ? 'issued' : 'NOT issued'}</p>`;
@@ -95,9 +117,17 @@ function render(r) {
     <ul><li><code>range</code> ${esc(r.scope.date_range.start)} → ${esc(r.scope.date_range.end)} (${r.scope.date_range.span_years} yrs)</li>
     <li><code>custodians</code> ${r.scope.custodian_count}</li>
     ${r.scope.data_types.map((d) => `<li><code>data</code> ${esc(d.type)}${d.systems.length ? ' — ' + esc(d.systems.join('; ')) : ''}</li>`).join('')}</ul>`;
-  h += `<div class="sec">Objection grounds (${r.objections.length})</div><ul>`;
-  for (const o of r.objections) h += `<li><strong>${esc(o.label)}</strong> — <span class="muted">${esc(o.description)}</span></li>`;
+  h += `<div class="sec">Objection grounds (${r.objections.length}) — application matrix</div><ul>`;
+  const matrix = new Map((r.objection_matrix ?? []).map((m) => [m.id, m]));
+  for (const o of r.objections) {
+    const m = matrix.get(o.id);
+    h += `<li><strong>${esc(o.label)}</strong>${m ? ` <span class="chip ${m.strength}">${m.strength}</span>` : ''}<br><span class="muted">${esc(o.description)}${m ? ` — categories: ${esc(m.categories.join(', ') || '—')}; custodians: ${m.custodians.length}` : ''}</span></li>`;
+  }
   h += `</ul>`;
+  if (r.provenance && r.provenance.verify_first.length) {
+    h += `<div class="sec">Verify first (unverified sources)</div>`;
+    for (const v of r.provenance.verify_first) h += `<div class="warn">⚠ ${esc(v.field)} — ${esc(v.source)} [verify]</div>`;
+  }
   if (r.warnings.length) { h += `<div class="sec">Warnings</div>`; for (const w of r.warnings) h += `<div class="warn">⚠ ${esc(w)}</div>`; }
   h += `<div class="sec">Checklist export</div><textarea readonly style="min-height:180px">${esc(exportChecklistMd(r))}</textarea>`;
   $('out').innerHTML = h;

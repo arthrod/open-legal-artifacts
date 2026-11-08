@@ -13,8 +13,8 @@
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 18px 0; }
   main { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px 0 64px; }
   @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
-  textarea { width: 100%; min-height: 420px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
-  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 0 24px; }
+  textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 12px; resize: vertical; }
+  button { font-family: var(--font-mono); font-size: 13px; background: var(--text); color: var(--bg); border: none; padding: 10px 18px; cursor: pointer; margin: 12px 12px 24px 0; }
   button:hover { background: var(--accent); color: var(--text); }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
@@ -26,6 +26,26 @@
   .gap code { font-family: var(--font-mono); font-size: 11px; }
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 8px; }
   .muted { color: var(--text-secondary); font-size: 13px; }
+  /* Guided interview */
+  .meta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .meta-row label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .meta-row input, .meta-row select { border: var(--hairline); background: #fff; padding: 8px 10px; font-family: var(--font-mono); font-size: 13px; }
+  .pillar-h { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 22px 0 6px; border-bottom: var(--hairline); padding-bottom: 4px; }
+  .qcard { border: var(--hairline); background: #fff; padding: 12px 14px; margin: 8px 0; }
+  .qcard .qtext { font-size: 14px; }
+  .qcard .qtext code { font-family: var(--font-mono); font-size: 11px; }
+  .qcard .refs { margin-top: 4px; }
+  .lvls { display: flex; gap: 8px; margin: 10px 0 8px; }
+  .lvls button { margin: 0; padding: 6px 14px; background: var(--hover); color: var(--text); font-size: 12px; }
+  .lvls button.sel { background: var(--text); color: var(--bg); }
+  .lvls button:hover { background: var(--accent); color: var(--text); }
+  .ev { width: 100%; border: var(--hairline); background: var(--bg); padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; }
+  .action { display: flex; gap: 10px; align-items: baseline; border: var(--hairline); padding: 8px 12px; margin: 6px 0; background: #fff; font-size: 13px; }
+  .action .rank { font-family: var(--font-mono); font-size: 12px; }
+  .action .prio { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+  .action.hirisk { border-left: 4px solid var(--accent); }
+  .dir-improved { color: var(--ok); font-family: var(--font-mono); font-size: 12px; }
+  .dir-regressed { color: var(--bad); font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -33,21 +53,29 @@
   <span class="t-eyebrow">Open legal artifacts · partner-built counterpart</span>
   <h1>ai-governance-benchmark</h1>
   <div class="rule"></div>
-  <p class="lede">Score an AI-governance assessment against an open, versioned rubric. Deterministic, evidence-first, framework-grounded. Fictional data below.</p>
+  <p class="lede">Guided interview → deterministic scoring against an open, versioned rubric: ranked next actions, fictional-cohort percentiles, re-run diff, MD + CSV exports. Fictional data below.</p>
 </div></header>
 
 <div class="wrap"><main>
   <section>
-    <div class="sec">Assessment JSON (editable)</div>
-    <textarea id="input" spellcheck="false"></textarea>
+    <div class="sec">Guided interview</div>
+    <div class="meta-row">
+      <label for="org">Organization</label>
+      <input id="org" type="text" size="28">
+      <label for="preset">Sector preset</label>
+      <select id="preset"></select>
+    </div>
+    <div id="interview"></div>
     <button id="run">Run benchmark →</button>
     <div id="err" class="err"></div>
+    <div class="sec">Assessment JSON (built from the interview; edits live until the next interview change)</div>
+    <textarea id="input" spellcheck="false"></textarea>
   </section>
   <section id="out" aria-live="polite"></section>
 </main></div>
 
 <script type="module">
-import { scoreAssessment, exportReportMd } from '../core/core.js';
+import { scoreAssessment, exportReportMd, compare, diffAssessments, exportGapsCsv, PILLARS, QUESTION_BANK, LEVEL_LABELS, SECTOR_PRESETS } from '../core/core.js';
 
 const SAMPLE = {
   org: { name: "Northlake Logistics (fictional)", sector: "freight brokerage", assessment_date: "2026-10-12" },
@@ -69,30 +97,146 @@ const SAMPLE = {
 };
 
 const $ = (id) => document.getElementById(id);
-$('input').value = JSON.stringify(SAMPLE, null, 2);
+const state = { org: { ...SAMPLE.org }, levels: {}, evidence: {} };
+for (const a of SAMPLE.answers) { state.levels[a.questionId] = a.level; state.evidence[a.questionId] = a.evidence; }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
-
-function render(r) {
-  let h = `<div class="sec">Overall — ${esc(r.org?.name ?? '')}</div>
-    <p style="font-size:26px;letter-spacing:-0.01em">${r.overall.score.toFixed(2)} <span class="muted">/ 3.00</span>
-    · <span class="band ${r.overall.maturity.id}">${esc(r.overall.maturity.label)}</span></p>`;
-  if (r.warnings.length) h += `<p class="muted">⚠ ${esc(r.warnings.join(' '))}</p>`;
-  h += `<div class="sec">Pillar maturity</div><table><tr><th>Pillar</th><th>Wt</th><th>Score</th><th>Maturity</th></tr>`;
-  for (const p of r.pillars) h += `<tr><td>${esc(p.name)}</td><td>${(p.weight*100).toFixed(0)}%</td><td>${p.score.toFixed(2)}</td><td><span class="band ${p.maturity.id}">${esc(p.maturity.label)}</span></td></tr>`;
-  h += `</table><div class="sec">Gaps (${r.gaps.length})</div>`;
-  for (const g of r.gaps) h += `<div class="gap"><code>${esc(g.questionId)}</code> · ${esc(g.text)}<br>
-    <span class="muted">${esc(g.frameworkRefs.join('; '))}</span><br><span class="muted">→ ${esc(g.remediation)}</span></div>`;
-  h += `<div class="sec">Report export</div><textarea readonly style="min-height:160px">${esc(exportReportMd(r))}</textarea>`;
-  $('out').innerHTML = h;
+/* ---- Build the interview UI from the question bank (rules-as-data) ---- */
+function buildInterview() {
+  const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  let h = '';
+  for (const p of PILLARS) {
+    h += `<div class="pillar-h">${escHtml(p.name)} · ${(p.weight * 100).toFixed(0)}%</div>`;
+    for (const q of QUESTION_BANK.filter((x) => x.pillar === p.id)) {
+      h += `<div class="qcard" data-qid="${escHtml(q.id)}">
+        <div class="qtext"><code>${escHtml(q.id)}</code> ${escHtml(q.text)}${q.highRisk ? ' <span class="muted">· high-risk ×1.5</span>' : ''}</div>
+        <div class="refs muted">${escHtml(q.frameworkRefs.join('; '))} · ${escHtml(q.euAiActRefs.join('; '))}</div>
+        <div class="lvls">${LEVEL_LABELS.map((label, i) =>
+          `<button type="button" data-level="${i}" title="${escHtml(label)}">${i}</button>`).join('')}</div>
+        <input class="ev" type="text" placeholder="Evidence (optional) — what you observed, verbatim where possible">
+      </div>`;
+    }
+  }
+  $('interview').innerHTML = h;
+  refreshSelection();
 }
 
-$('run').addEventListener('click', () => {
-  $('err').textContent = '';
-  try { render(scoreAssessment(JSON.parse($('input').value), { gapThreshold: 1 })); }
-  catch (e) { $('err').textContent = String(e.message ?? e); }
+function refreshSelection() {
+  for (const card of document.querySelectorAll('.qcard')) {
+    const qid = card.dataset.qid;
+    for (const b of card.querySelectorAll('.lvls button')) {
+      b.classList.toggle('sel', Number(b.dataset.level) === (state.levels[qid] ?? 0));
+    }
+    const ev = card.querySelector('.ev');
+    if (ev.value !== (state.evidence[qid] ?? '')) ev.value = state.evidence[qid] ?? '';
+  }
+}
+
+function buildAssessment() {
+  return {
+    org: state.org,
+    answers: QUESTION_BANK.map((q) => ({ questionId: q.id, level: state.levels[q.id] ?? 0, evidence: state.evidence[q.id] ?? '' })),
+  };
+}
+function syncJson() { $('input').value = JSON.stringify(buildAssessment(), null, 2); }
+
+$('interview').addEventListener('click', (e) => {
+  const b = e.target.closest('.lvls button');
+  if (!b) return;
+  const card = b.closest('.qcard');
+  state.levels[card.dataset.qid] = Number(b.dataset.level);
+  refreshSelection();
+  syncJson();
 });
-render(scoreAssessment(SAMPLE, { gapThreshold: 1 }));
+$('interview').addEventListener('input', (e) => {
+  const ev = e.target.closest('.ev');
+  if (!ev) return;
+  state.evidence[ev.closest('.qcard').dataset.qid] = ev.value;
+  syncJson();
+});
+$('org').addEventListener('input', () => { state.org.name = $('org').value; syncJson(); });
+
+const presetSel = $('preset');
+for (const [id, preset] of Object.entries(SECTOR_PRESETS)) {
+  const opt = document.createElement('option');
+  opt.value = id; opt.textContent = preset.label;
+  presetSel.appendChild(opt);
+}
+
+/* ---- Run + render ---- */
+let prevAssessment = null;
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+function render(r, d) {
+  const cmp = compare(r);
+  let h = `<div class="sec">Overall — ${esc(r.org?.name ?? '')}</div>
+    <p style="font-size:26px;letter-spacing:-0.01em">${r.overall.score.toFixed(2)} <span class="muted">/ 3.00</span>
+    · <span class="band ${r.overall.maturity.id}">${esc(r.overall.maturity.label)}</span>
+    <span class="muted">· p${cmp.overall.percentile} of ${esc(cmp.cohort)}</span></p>`;
+  if (r.warnings.length) h += `<p class="muted">⚠ ${esc(r.warnings.join(' '))}</p>`;
+
+  h += `<div class="sec">Pillar maturity (vs fictional cohort)</div><table><tr><th>Pillar</th><th>Wt</th><th>Score</th><th>Maturity</th><th>pctl</th></tr>`;
+  for (let i = 0; i < r.pillars.length; i++) {
+    const p = r.pillars[i], pc = cmp.pillars[i];
+    h += `<tr><td>${esc(p.name)}</td><td>${(p.weight * 100).toFixed(0)}%</td><td>${p.score.toFixed(2)}</td><td><span class="band ${p.maturity.id}">${esc(p.maturity.label)}</span></td><td>p${pc.percentile}</td></tr>`;
+  }
+
+  h += `</table><div class="sec">Next actions (ranked)</div>`;
+  if (!r.actions.length) h += `<p class="muted">No actions — no gaps at the threshold.</p>`;
+  for (const [i, a] of r.actions.entries()) {
+    h += `<div class="action${a.highRisk ? ' hirisk' : ''}"><span class="rank">${i + 1}.</span>
+      <span><code class="rank">${esc(a.questionId)}</code> — ${esc(a.remediation)}</span>
+      <span class="prio">priority ${a.priority.toFixed(3)}${a.highRisk ? ' · high-risk ×1.5' : ''}</span></div>`;
+  }
+
+  if (d) {
+    h += `<div class="sec">Change vs previous run</div>
+      <p class="muted">Overall ${d.overall.prevScore.toFixed(2)} → ${d.overall.currScore.toFixed(2)}
+      (<span class="${d.overall.delta >= 0 ? 'dir-improved' : 'dir-regressed'}">${d.overall.delta >= 0 ? '+' : ''}${d.overall.delta.toFixed(2)}</span>)
+      · ${d.summary.improved} improved · ${d.summary.regressed} regressed · ${d.summary.unchanged} unchanged</p>`;
+    for (const q of d.questions) {
+      h += `<div class="gap"><code>${esc(q.questionId)}</code> · ${esc(q.text)}<br>
+        <span class="${q.direction === 'improved' ? 'dir-improved' : 'dir-regressed'}">${q.prevLevel} → ${q.currLevel} (${q.direction})</span></div>`;
+    }
+  }
+
+  h += `<div class="sec">Gaps (${r.gaps.length})</div>`;
+  for (const g of r.gaps) h += `<div class="gap"><code>${esc(g.questionId)}</code> · ${esc(g.text)}<br>
+    <span class="muted">${esc(g.frameworkRefs.join('; '))}</span><br>
+    <span class="muted">${esc(g.euAiActRefs.join('; '))}</span><br><span class="muted">→ ${esc(g.remediation)}</span></div>`;
+
+  h += `<div class="sec">Report export</div><textarea readonly style="min-height:160px">${esc(exportReportMd(r))}</textarea>
+    <button id="dl-csv" type="button">Download gaps CSV ↓</button>`;
+  $('out').innerHTML = h;
+  $('dl-csv').addEventListener('click', () => {
+    const blob = new Blob([exportGapsCsv(r)], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ai-governance-gaps.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+function run() {
+  $('err').textContent = '';
+  let assessment;
+  try { assessment = JSON.parse($('input').value); }
+  catch (e) { $('err').textContent = `JSON parse error: ${e.message}`; return; }
+  try {
+    const config = { gapThreshold: 1 };
+    if (presetSel.value) config.preset = presetSel.value;
+    const r = scoreAssessment(assessment, config);
+    const d = prevAssessment ? diffAssessments(prevAssessment, assessment, config) : null;
+    render(r, d);
+    prevAssessment = assessment;
+  } catch (e) { $('err').textContent = String(e.message ?? e); }
+}
+
+$('run').addEventListener('click', run);
+$('org').value = SAMPLE.org.name;
+buildInterview();
+syncJson();
+run();
 </script>
 </body>
 </html>

@@ -1,0 +1,295 @@
+{
+  "cells": [
+    {
+      "documentId": "cory-msa",
+      "questionId": "Q1",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "3 years from the Effective Date",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "3 years from the Effective Date",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "cory-msa",
+      "questionId": "Q2",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "90 days prior written notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "90 days prior written notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "cory-msa",
+      "questionId": "Q3",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "Fees paid in the preceding 12 months",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "Fees paid in the preceding 12 months",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "cory-msa",
+      "questionId": "Q4",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "No — consent required",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "No — consent required",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "cory-msa",
+      "questionId": "Q5",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "England and Wales",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "England and Wales",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "lightway-nda",
+      "questionId": "Q1",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "2 years from the Effective Date",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "2 years from the Effective Date",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "lightway-nda",
+      "questionId": "Q2",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "30 days written notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "30 days written notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "lightway-nda",
+      "questionId": "Q3",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "$50,000 total",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "$50,000 total",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "lightway-nda",
+      "questionId": "Q4",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "No (receiving party may not assign)",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "No (receiving party may not assign)",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "lightway-nda",
+      "questionId": "Q5",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "New York",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "New York",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "harbor-saas",
+      "questionId": "Q1",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "12 months, auto-renewing",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "12 months, auto-renewing",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "harbor-saas",
+      "questionId": "Q2",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "60 days notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "60 days notice",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "harbor-saas",
+      "questionId": "Q3",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "unverified",
+        "answer": null,
+        "classification": null,
+        "unverifiedReason": "not_answered"
+      },
+      "next": {
+        "status": "unverified",
+        "answer": null,
+        "classification": null,
+        "unverifiedReason": "not_answered"
+      }
+    },
+    {
+      "documentId": "harbor-saas",
+      "questionId": "Q4",
+      "added": false,
+      "removed": false,
+      "changed": false,
+      "prev": {
+        "status": "answered",
+        "answer": "Yes, to a merger successor",
+        "classification": "exact",
+        "unverifiedReason": null
+      },
+      "next": {
+        "status": "answered",
+        "answer": "Yes, to a merger successor",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    },
+    {
+      "documentId": "harbor-saas",
+      "questionId": "Q5",
+      "added": false,
+      "removed": false,
+      "changed": true,
+      "prev": {
+        "status": "unverified",
+        "answer": null,
+        "classification": null,
+        "unverifiedReason": "quote_not_verified"
+      },
+      "next": {
+        "status": "answered",
+        "answer": "California",
+        "classification": "exact",
+        "unverifiedReason": null
+      }
+    }
+  ],
+  "summary": {
+    "added": 0,
+    "removed": 0,
+    "changed": 1,
+    "unchanged": 14
+  }
+}

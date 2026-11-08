@@ -1,7 +1,7 @@
 /** Tests for entity-compliance-calendar core. Run: node --test (from artifact root) */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDate, nextDue, buildMatrix, toCsv, toICS } from "./core.js";
+import { parseDate, nextDue, buildMatrix, toCsv, toICS, report, auditHealth, ingestAgentReport, applyFilingUpdates } from "./core.js";
 
 const AS_OF = "2026-11-07";
 
@@ -173,4 +173,159 @@ test("toICS: recurrence rules per obligation kind, delinquent marker, folding", 
 test("parseDate rejects malformed dates", () => {
   assert.equal(parseDate("2026-11-31"), null);
   assert.ok(parseDate("2026-11-30"));
+});
+
+/* ---------- Wave 2 (plans-v2): provenance, qualifications, health, ingestion ---------- */
+
+test("rule staleness: verifiedOn >365d before asOf → ruleStale true, status unchanged", () => {
+  const ob = { ...OBS[0], effectiveFrom: "2020-01-01", verifiedOn: "2025-10-01" }; // 402d before asOf
+  const r = nextDue(ob, ENT(), [], AS_OF);
+  assert.equal(r.ruleStale, true);
+  assert.equal(r.status, "delinquent"); // staleness is metadata, never a verdict change
+  assert.equal(nextDue({ ...OBS[0], verifiedOn: "2026-10-01" }, ENT(), [], AS_OF).ruleStale, false); // 37d → fresh
+  assert.equal(nextDue(OBS[0], ENT(), [], AS_OF).ruleStale, false); // no verifiedOn → not asserted stale
+});
+
+test("rule staleness + good standing + fees surface in CSV and ICS", () => {
+  const m = buildMatrix({
+    asOf: AS_OF,
+    entities: [ENT({ goodStandingConfirmedOn: "2026-10-01" })],
+    obligations: [{ ...OBS[0], verifiedOn: "2025-10-01" }],
+    filings: [{ entityId: "E-1", obligationId: "de-franchise", period: 2020, filedOn: "2020-03-10", fee: 400 }],
+  });
+  const csv = toCsv(m);
+  assert.match(csv.split("\n")[0], /goodStanding,fee,verifiedOn,ruleStale$/);
+  assert.match(csv.split("\n")[1], /,true$/);
+  assert.match(csv.split("\n")[1], /,ok,400,/); // standing state + latest filing fee carried per row
+  assert.match(toICS(m), /STALE/);
+  assert.match(toICS(m), /Good standing: ok/);
+});
+
+test("foreign qualifications: obligation binds via qualification, anchored to qualifiedOn", () => {
+  const e = ENT({ qualifications: [{ jurisdiction: "US-CA", qualifiedOn: "2022-08-01" }] });
+  const filings = [2022, 2024].map((p) => ({ entityId: "E-1", obligationId: "ca-sos-biennial", period: p, filedOn: "x" }));
+  const r = nextDue(OBS[1], e, filings, AS_OF); // biennial from 2022-08-01 → next unfiled 2026-08-01, 98d overdue
+  assert.equal(r.dueOn, "2026-08-01");
+  assert.equal(r.status, "delinquent");
+  assert.match(r.ruleNote, /qualification/);
+  const r2 = nextDue(OBS[1], e, [...filings, { entityId: "E-1", obligationId: "ca-sos-biennial", period: 2026, filedOn: "x" }], AS_OF);
+  assert.deepEqual({ s: r2.status, d: r2.dueOn }, { s: "scheduled", d: "2028-08-01" });
+  // not qualified there → n/a with reason
+  const na = nextDue(OBS[1], ENT(), [], AS_OF);
+  assert.equal(na.status, "n/a");
+  assert.match(na.skipReason, /foreign/);
+  // qualified but no date → unknown, never guessed
+  const nodate = nextDue(OBS[1], ENT({ qualifications: [{ jurisdiction: "US-CA" }] }), [], AS_OF);
+  assert.equal(nodate.status, "unknown");
+  assert.equal(nodate.dueOn, null);
+});
+
+test("unknown status: missing anchor data splits from n/a and is counted", () => {
+  assert.equal(nextDue(OBS[0], ENT({ formedOn: null }), [], AS_OF).status, "unknown");
+  assert.equal(nextDue(OBS[3], ENT({ jurisdiction: "US-TX", formedOn: null }), [], AS_OF).status, "unknown");
+  const m = buildMatrix({ asOf: AS_OF, entities: [ENT({ formedOn: null }), ENT()], obligations: [OBS[0]], filings: [] });
+  assert.equal(m.counts.unknown, 1);
+  assert.equal(m.counts.delinquent, 1);
+  assert.equal(m.counts["n/a"], 0);
+  // impossible fixed dates remain n/a — that is bad RULE data, not missing ENTITY data
+  assert.equal(nextDue({ ...OBS[2], dueDay: 30, dueMonth: 2 }, ENT({ jurisdiction: "US-NY" }), [], AS_OF).status, "n/a");
+});
+
+test("fees + good standing: matrix totals, standing states, CSV columns", () => {
+  const m = buildMatrix({
+    asOf: AS_OF,
+    entities: [
+      ENT({ goodStandingConfirmedOn: "2026-10-01" }), // ok
+      ENT({ id: "E-2", jurisdiction: "US-CA", formedOn: "2021-06-01", goodStandingConfirmedOn: "2025-01-01" }), // stale
+      ENT({ id: "E-3", jurisdiction: "US-TX", type: "llc", formedOn: "2026-06-01" }), // unknown
+    ],
+    obligations: OBS,
+    filings: [
+      { entityId: "E-1", obligationId: "de-franchise", period: 2020, filedOn: "x", fee: 400 },
+      { entityId: "E-1", obligationId: "de-franchise", period: 2021, filedOn: "x", fee: 400 },
+      { entityId: "E-2", obligationId: "ca-sos-biennial", period: 2021, filedOn: "x", fee: 20 },
+    ],
+  });
+  assert.equal(m.feeTotals.recorded, 820);
+  assert.deepEqual(m.feeTotals.byEntity, { "E-1": 800, "E-2": 20, "E-3": 0 });
+  const st = Object.fromEntries(m.goodStanding.map((g) => [g.entityId, g.state]));
+  assert.deepEqual(st, { "E-1": "ok", "E-2": "stale", "E-3": "unknown" });
+  const e1row = toCsv(m).split("\n").find((l) => l.startsWith("E-1,") && l.includes("de-franchise"));
+  assert.ok(e1row.endsWith(",ok,400,,"), e1row); // standing, latest filing fee, no verifiedOn, not stale
+});
+
+test("report(): 30/60/90/180 windows bucket actionable cells cumulatively", () => {
+  const ob = (id, month, day) => ({ ...OBS[2], id, recurring: "annual", dueMonth: month, dueDay: day });
+  const obligations = [ob("a35", 12, 12), ob("b75", 1, 21), ob("c100", 2, 15), ob("dOver", 6, 1)];
+  const m = buildMatrix({
+    asOf: AS_OF,
+    entities: [ENT({ jurisdiction: "US-NY", formedOn: "2025-12-12" })],
+    obligations,
+    filings: [
+      { entityId: "E-1", obligationId: "a35", period: 2025, filedOn: "x" }, // next 2026-12-12, +35d
+      { entityId: "E-1", obligationId: "b75", period: 2026, filedOn: "x" }, // next 2027-01-21, +75d
+      { entityId: "E-1", obligationId: "c100", period: 2026, filedOn: "x" }, // next 2027-02-15, +100d
+    ],
+  });
+  const rep = report(m);
+  assert.deepEqual(rep.windows.map((w) => w.days), [30, 60, 90, 180]);
+  assert.deepEqual(rep.windows.map((w) => w.count), [1, 2, 3, 4]); // overdue always in; +35 @60; +75 @90; +100 @180
+  assert.equal(rep.windows[0].items[0].obligationId, "dOver"); // 159d overdue sorts first
+  assert.equal(rep.actionable.length, 4);
+  // custom windows are honored
+  assert.deepEqual(report(m, [45, 120]).windows.map((w) => w.days), [45, 120]);
+});
+
+test("auditHealth: each flag fires exactly once on its fixture; clean and dissolved entities stay clean", () => {
+  const entities = [
+    ENT({ goodStandingConfirmedOn: "2026-10-01" }), // clean
+    ENT({ id: "E-2", formedOn: null, goodStandingConfirmedOn: "2026-10-01" }), // missing formedOn
+    ENT({ id: "E-3", formedOn: "2018-03-01", status: "dormant", goodStandingConfirmedOn: "2026-10-01" }), // dormant >5y
+    ENT({ id: "E-4", goodStandingConfirmedOn: "2025-01-01" }), // stale standing (675d)
+    ENT({ id: "E-5" }), // unknown standing
+    ENT({ id: "E-6", footprint: ["US-WA"], qualifications: [{ jurisdiction: "US-CA", qualifiedOn: "2022-01-01" }], goodStandingConfirmedOn: "2026-10-01" }), // WA gap, CA covered
+    ENT({ id: "E-7", status: "dissolved" }), // standing checks skipped for dissolved
+  ];
+  const h = auditHealth({ asOf: AS_OF, entities, obligations: OBS });
+  const codes = h.flags.map((f) => f.code).sort();
+  assert.deepEqual(codes, ["dormant-dissolution-candidate", "foreign-qualification-gap", "good-standing-stale", "good-standing-unknown", "missing-formedOn"]);
+  assert.equal(h.counts.flags, 5);
+  assert.equal(h.counts.byCode["good-standing-stale"], 1);
+  assert.ok(!h.flags.some((f) => f.entityId === "E-1" || f.entityId === "E-7"), "clean/dissolved entities must not flag");
+});
+
+const AGENT_CSV = [
+  "Report Date,Entity Name,Jurisdiction,Status,Good Standing",
+  '2026-10-31,"Acme Holdings, LLC",US-DE,Active,Yes',
+  "2026-10-31,Borealis Craft LLC,US-CO,Active,No",
+  "2026-10-31,Zephyr Ghost Inc,US-TX,Active,Yes",
+].join("\n");
+
+test("ingestAgentReport: case/punctuation-insensitive matching with matched/unmatched/notInReport diff", () => {
+  const entities = [
+    ENT({ name: "ACME Holdings LLC" }), // ≡ "Acme Holdings, LLC" modulo case + comma
+    ENT({ id: "E-2", name: "Northwind Robotics NY LLC", jurisdiction: "US-NY", formedOn: "2019-07-01" }),
+  ];
+  const r = ingestAgentReport(entities, AGENT_CSV);
+  assert.equal(r.reportDate, "2026-10-31");
+  assert.equal(r.matched.length, 1);
+  assert.equal(r.matched[0].entityId, "E-1");
+  assert.equal(r.matched[0].reportName, "Acme Holdings, LLC");
+  assert.equal(r.matched[0].goodStanding, true);
+  assert.deepEqual(r.unmatched.map((u) => u.reportName), ["Borealis Craft LLC", "Zephyr Ghost Inc"]);
+  assert.deepEqual(r.notInReport.map((u) => u.entityId), ["E-2"]);
+});
+
+test("applyFilingUpdates: dry-run proposes only; confirm applies without mutating input; idempotent", () => {
+  const entities = [ENT({ name: "ACME Holdings LLC", goodStandingConfirmedOn: "2025-05-01" })];
+  const ing = ingestAgentReport(entities, AGENT_CSV);
+  const dry = applyFilingUpdates(entities, ing);
+  assert.equal(dry.applied, false);
+  assert.ok(dry.updates.some((u) => u.entityId === "E-1" && u.field === "goodStandingConfirmedOn" && u.to === "2026-10-31"));
+  assert.equal(entities[0].goodStandingConfirmedOn, "2025-05-01"); // untouched by dry run
+  const done = applyFilingUpdates(entities, ing, { confirm: true });
+  assert.equal(done.applied, true);
+  assert.equal(done.entities.find((e) => e.id === "E-1").goodStandingConfirmedOn, "2026-10-31");
+  assert.equal(entities[0].goodStandingConfirmedOn, "2025-05-01"); // original array never mutated
+  assert.equal(applyFilingUpdates(done.entities, ing).updates.length, 0); // idempotent
 });

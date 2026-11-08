@@ -8,12 +8,19 @@
       "title": "CCPA Amendment: Children's Data Opt-In",
       "jurisdiction": "US-CA",
       "status": "final",
+      "itemType": "rule",
       "effectiveDate": "2027-01-01",
+      "commentDeadline": null,
       "publishedDate": "2026-08-12",
       "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
       "source": "CA Privacy Agency tracker",
+      "provenance": "primary",
       "link": "https://example.gov/ca-ccpa-amend",
+      "mergedFrom": [
+        "ca-ccpa-amend-dup"
+      ],
       "topic": "privacy",
+      "actionBy": "2027-01-01",
       "scoring": {
         "score": 95,
         "band": "high",
@@ -37,12 +44,21 @@
             "note": "2027-01-01 (+55d)"
           },
           {
+            "factor": "commentWindow",
+            "rule": "no comment deadline",
+            "points": 0,
+            "note": "none"
+          },
+          {
             "factor": "status",
             "rule": "status=\"final\"",
             "points": 15,
             "note": "final"
           }
-        ]
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "rule"
       }
     },
     {
@@ -50,14 +66,18 @@
       "title": "Texas Biometric Retention Schedule",
       "jurisdiction": "US-TX",
       "status": "proposed",
+      "itemType": "NPRM",
       "effectiveDate": "2027-04-01",
+      "commentDeadline": "2026-11-25",
       "publishedDate": "2026-10-30",
       "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
       "source": "Texas register feed (fictional)",
+      "provenance": "primary",
       "link": "https://example.gov/tx-biometric",
       "topic": "privacy",
+      "actionBy": "2026-11-25",
       "scoring": {
-        "score": 78,
+        "score": 93,
         "band": "high",
         "breakdown": [
           {
@@ -79,12 +99,133 @@
             "note": "2027-04-01 (+145d)"
           },
           {
+            "factor": "commentWindow",
+            "rule": "comment window open, closes in 18d (<= 30d threshold)",
+            "points": 15,
+            "note": "2026-11-25 (+18d)"
+          },
+          {
             "factor": "status",
             "rule": "status=\"proposed\"",
             "points": 8,
             "note": "proposed"
           }
-        ]
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "nprm"
+      }
+    },
+    {
+      "id": "us-fcc-ai-disclosure",
+      "title": "FCC AI Voice Disclosure in Outreach Calls",
+      "jurisdiction": "US-FED",
+      "status": "final",
+      "itemType": "rule",
+      "effectiveDate": "2027-02-15",
+      "commentDeadline": null,
+      "publishedDate": "2026-09-02",
+      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
+      "source": "Federal-register-like feed (fictional)",
+      "provenance": "primary",
+      "link": "https://example.gov/fcc-ai-voice",
+      "topic": "ai",
+      "actionBy": "2027-02-15",
+      "scoring": {
+        "score": 85,
+        "band": "high",
+        "breakdown": [
+          {
+            "factor": "jurisdiction",
+            "rule": "exact profile jurisdiction match",
+            "points": 30,
+            "note": "US-FED"
+          },
+          {
+            "factor": "topic",
+            "rule": "core topic",
+            "points": 25,
+            "note": "topic=ai via \"ai-generated\""
+          },
+          {
+            "factor": "proximity",
+            "rule": "effective in 100d (<= 180d threshold)",
+            "points": 15,
+            "note": "2027-02-15 (+100d)"
+          },
+          {
+            "factor": "commentWindow",
+            "rule": "no comment deadline",
+            "points": 0,
+            "note": "none"
+          },
+          {
+            "factor": "status",
+            "rule": "status=\"final\"",
+            "points": 15,
+            "note": "final"
+          }
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "rule"
+      }
+    },
+    {
+      "id": "us-sec-ai-anpr",
+      "title": "SEC ANPR: Artificial Intelligence Model Risk",
+      "jurisdiction": "US-FED",
+      "status": "proposed",
+      "itemType": "ANPR",
+      "effectiveDate": null,
+      "commentDeadline": "2026-12-01",
+      "publishedDate": "2026-10-20",
+      "summary": "Advance notice of proposed rulemaking seeking comment on artificial-intelligence model risk management for broker-dealers.",
+      "source": "Federal-register-like feed (fictional)",
+      "provenance": "primary",
+      "link": "https://example.gov/sec-ai-anpr",
+      "topic": "ai",
+      "actionBy": "2026-12-01",
+      "scoring": {
+        "score": 78,
+        "band": "medium",
+        "breakdown": [
+          {
+            "factor": "jurisdiction",
+            "rule": "exact profile jurisdiction match",
+            "points": 30,
+            "note": "US-FED"
+          },
+          {
+            "factor": "topic",
+            "rule": "core topic",
+            "points": 25,
+            "note": "topic=ai via \"artificial intelligence\""
+          },
+          {
+            "factor": "proximity",
+            "rule": "no parseable effective date",
+            "points": 0,
+            "note": "none"
+          },
+          {
+            "factor": "commentWindow",
+            "rule": "comment window open, closes in 24d (<= 30d threshold)",
+            "points": 15,
+            "note": "2026-12-01 (+24d)"
+          },
+          {
+            "factor": "status",
+            "rule": "status=\"proposed\"",
+            "points": 8,
+            "note": "proposed"
+          }
+        ],
+        "flags": [
+          "itemType=anpr is pre-rule exploratory (ANPR/RFI) — band capped below high"
+        ],
+        "provenance": "primary",
+        "itemType": "anpr"
       }
     },
     {
@@ -92,12 +233,16 @@
       "jurisdiction": "US-NY",
       "title": "NY Wage Transparency for Remote Roles",
       "status": "effective",
+      "itemType": "rule",
       "effectiveDate": "2026-09-17",
+      "commentDeadline": null,
       "publishedDate": "2026-03-03",
       "summary": "Salary ranges must be posted for remote roles performed from New York.",
       "source": "NY DOL bulletin (fictional)",
+      "provenance": "primary",
       "link": "https://example.gov/ny-pay-transparency",
       "topic": "employment",
+      "actionBy": "2026-09-17",
       "scoring": {
         "score": 62,
         "band": "medium",
@@ -121,54 +266,21 @@
             "note": "2026-09-17 (-51d)"
           },
           {
+            "factor": "commentWindow",
+            "rule": "no comment deadline",
+            "points": 0,
+            "note": "none"
+          },
+          {
             "factor": "status",
             "rule": "status=\"effective\"",
             "points": 20,
             "note": "effective"
           }
-        ]
-      }
-    },
-    {
-      "id": "us-fcc-ai-disclosure",
-      "title": "FCC AI Voice Disclosure in Outreach Calls",
-      "jurisdiction": "US-FED",
-      "status": "final",
-      "effectiveDate": "2027-02-15",
-      "publishedDate": "2026-09-02",
-      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
-      "source": "Federal-register-like feed (fictional)",
-      "link": "https://example.gov/fcc-ai-voice",
-      "topic": "other",
-      "scoring": {
-        "score": 60,
-        "band": "medium",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "exact profile jurisdiction match",
-            "points": 30,
-            "note": "US-FED"
-          },
-          {
-            "factor": "topic",
-            "rule": "topic outside profile",
-            "points": 0,
-            "note": "topic=other"
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 100d (<= 180d threshold)",
-            "points": 15,
-            "note": "2027-02-15 (+100d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"final\"",
-            "points": 15,
-            "note": "final"
-          }
-        ]
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "rule"
       }
     },
     {
@@ -176,12 +288,16 @@
       "title": "EU Umbrella Data Regulation 2026",
       "jurisdiction": "EU",
       "status": "proposed",
+      "itemType": "rule",
       "effectiveDate": "2028-03-01",
+      "commentDeadline": null,
       "publishedDate": "2026-10-28",
       "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
       "source": "EUR-Lex-like feed (fictional)",
+      "provenance": "primary",
       "link": "https://example.eu/umbrella-2026",
       "topic": "other",
+      "actionBy": "2028-03-01",
       "scoring": {
         "score": 8,
         "band": "low",
@@ -205,12 +321,21 @@
             "note": "2028-03-01 (+480d)"
           },
           {
+            "factor": "commentWindow",
+            "rule": "no comment deadline",
+            "points": 0,
+            "note": "none"
+          },
+          {
             "factor": "status",
             "rule": "status=\"proposed\"",
             "points": 8,
             "note": "proposed"
           }
-        ]
+        ],
+        "flags": [],
+        "provenance": "primary",
+        "itemType": "rule"
       }
     }
   ],
@@ -218,219 +343,92 @@
     {
       "keptId": "ca-ccpa-amend",
       "droppedId": "ca-ccpa-amend-dup",
-      "reason": "same normalized title + jurisdiction"
+      "reason": "same normalized title + jurisdiction",
+      "mergedFields": []
     }
   ],
-  "timeline": [
-    {
-      "id": "ny-pay-transparency",
-      "jurisdiction": "US-NY",
-      "title": "NY Wage Transparency for Remote Roles",
-      "status": "effective",
-      "effectiveDate": "2026-09-17",
-      "publishedDate": "2026-03-03",
-      "summary": "Salary ranges must be posted for remote roles performed from New York.",
-      "source": "NY DOL bulletin (fictional)",
-      "link": "https://example.gov/ny-pay-transparency",
-      "topic": "employment",
-      "scoring": {
-        "score": 62,
-        "band": "medium",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "exact profile jurisdiction match",
-            "points": 30,
-            "note": "US-NY"
-          },
-          {
-            "factor": "topic",
-            "rule": "related topic",
-            "points": 12,
-            "note": "topic=employment via \"wage\""
-          },
-          {
-            "factor": "proximity",
-            "rule": "already effective",
-            "points": 0,
-            "note": "2026-09-17 (-51d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"effective\"",
-            "points": 20,
-            "note": "effective"
-          }
-        ]
-      }
-    },
-    {
-      "id": "ca-ccpa-amend",
-      "title": "CCPA Amendment: Children's Data Opt-In",
-      "jurisdiction": "US-CA",
-      "status": "final",
-      "effectiveDate": "2027-01-01",
-      "publishedDate": "2026-08-12",
-      "summary": "Requires opt-in consent before processing minors' personal information; finalized with an earlier effective date.",
-      "source": "CA Privacy Agency tracker",
-      "link": "https://example.gov/ca-ccpa-amend",
-      "topic": "privacy",
-      "scoring": {
-        "score": 95,
-        "band": "high",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "exact profile jurisdiction match",
-            "points": 30,
-            "note": "US-CA"
-          },
-          {
-            "factor": "topic",
-            "rule": "core topic",
-            "points": 25,
-            "note": "topic=privacy via \"ccpa\""
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 55d (<= 90d threshold)",
-            "points": 25,
-            "note": "2027-01-01 (+55d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"final\"",
-            "points": 15,
-            "note": "final"
-          }
-        ]
-      }
-    },
-    {
-      "id": "us-fcc-ai-disclosure",
-      "title": "FCC AI Voice Disclosure in Outreach Calls",
-      "jurisdiction": "US-FED",
-      "status": "final",
-      "effectiveDate": "2027-02-15",
-      "publishedDate": "2026-09-02",
-      "summary": "Disclosure banner for AI-generated voice in commercial outreach calls; final rule text published.",
-      "source": "Federal-register-like feed (fictional)",
-      "link": "https://example.gov/fcc-ai-voice",
-      "topic": "other",
-      "scoring": {
-        "score": 60,
-        "band": "medium",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "exact profile jurisdiction match",
-            "points": 30,
-            "note": "US-FED"
-          },
-          {
-            "factor": "topic",
-            "rule": "topic outside profile",
-            "points": 0,
-            "note": "topic=other"
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 100d (<= 180d threshold)",
-            "points": 15,
-            "note": "2027-02-15 (+100d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"final\"",
-            "points": 15,
-            "note": "final"
-          }
-        ]
-      }
-    },
-    {
-      "id": "tx-biometric-retention",
-      "title": "Texas Biometric Retention Schedule",
-      "jurisdiction": "US-TX",
-      "status": "proposed",
-      "effectiveDate": "2027-04-01",
-      "publishedDate": "2026-10-30",
-      "summary": "Proposed 12-month retention cap for biometric identifiers used in workplace access systems.",
-      "source": "Texas register feed (fictional)",
-      "link": "https://example.gov/tx-biometric",
-      "topic": "privacy",
-      "scoring": {
+  "timeline": {
+    "upcoming": [
+      {
+        "date": "2026-11-25",
+        "kind": "comment-deadline",
+        "itemId": "tx-biometric-retention",
+        "title": "Texas Biometric Retention Schedule",
+        "jurisdiction": "US-TX",
+        "score": 93,
+        "band": "high"
+      },
+      {
+        "date": "2026-12-01",
+        "kind": "comment-deadline",
+        "itemId": "us-sec-ai-anpr",
+        "title": "SEC ANPR: Artificial Intelligence Model Risk",
+        "jurisdiction": "US-FED",
         "score": 78,
-        "band": "high",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "US state rule, but US-FED in profile (federal overlay applies nationwide)",
-            "points": 30,
-            "note": "US-TX"
-          },
-          {
-            "factor": "topic",
-            "rule": "core topic",
-            "points": 25,
-            "note": "topic=privacy via \"biometric\""
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 145d (<= 180d threshold)",
-            "points": 15,
-            "note": "2027-04-01 (+145d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"proposed\"",
-            "points": 8,
-            "note": "proposed"
-          }
-        ]
+        "band": "medium"
+      },
+      {
+        "date": "2027-01-01",
+        "kind": "effective",
+        "itemId": "ca-ccpa-amend",
+        "title": "CCPA Amendment: Children's Data Opt-In",
+        "jurisdiction": "US-CA",
+        "score": 95,
+        "band": "high"
+      },
+      {
+        "date": "2027-02-15",
+        "kind": "effective",
+        "itemId": "us-fcc-ai-disclosure",
+        "title": "FCC AI Voice Disclosure in Outreach Calls",
+        "jurisdiction": "US-FED",
+        "score": 85,
+        "band": "high"
+      },
+      {
+        "date": "2027-04-01",
+        "kind": "effective",
+        "itemId": "tx-biometric-retention",
+        "title": "Texas Biometric Retention Schedule",
+        "jurisdiction": "US-TX",
+        "score": 93,
+        "band": "high"
+      },
+      {
+        "date": "2028-03-01",
+        "kind": "effective",
+        "itemId": "eu-umbrella-2026",
+        "title": "EU Umbrella Data Regulation 2026",
+        "jurisdiction": "EU",
+        "score": 8,
+        "band": "low"
       }
+    ],
+    "past": [
+      {
+        "date": "2026-09-17",
+        "kind": "effective",
+        "itemId": "ny-pay-transparency",
+        "title": "NY Wage Transparency for Remote Roles",
+        "jurisdiction": "US-NY",
+        "score": 62,
+        "band": "medium"
+      }
+    ],
+    "undated": []
+  },
+  "coverageGaps": [
+    {
+      "kind": "jurisdiction",
+      "value": "UK",
+      "severity": "high",
+      "note": "profile jurisdiction has zero feed items"
     },
     {
-      "id": "eu-umbrella-2026",
-      "title": "EU Umbrella Data Regulation 2026",
-      "jurisdiction": "EU",
-      "status": "proposed",
-      "effectiveDate": "2028-03-01",
-      "publishedDate": "2026-10-28",
-      "summary": "Official proposal published: cross-border data-flow licensing with a 15-month runway.",
-      "source": "EUR-Lex-like feed (fictional)",
-      "link": "https://example.eu/umbrella-2026",
-      "topic": "other",
-      "scoring": {
-        "score": 8,
-        "band": "low",
-        "breakdown": [
-          {
-            "factor": "jurisdiction",
-            "rule": "no profile jurisdiction match",
-            "points": 0,
-            "note": "EU"
-          },
-          {
-            "factor": "topic",
-            "rule": "topic outside profile",
-            "points": 0,
-            "note": "topic=other"
-          },
-          {
-            "factor": "proximity",
-            "rule": "effective in 480d (beyond all thresholds)",
-            "points": 0,
-            "note": "2028-03-01 (+480d)"
-          },
-          {
-            "factor": "status",
-            "rule": "status=\"proposed\"",
-            "points": 8,
-            "note": "proposed"
-          }
-        ]
-      }
+      "kind": "topic",
+      "value": "security",
+      "severity": "low",
+      "note": "related topic has zero feed items"
     }
   ]
 }

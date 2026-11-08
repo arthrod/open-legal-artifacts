@@ -3,8 +3,36 @@ export default {
   "company": "Northwind Robotics, Inc. (fictional)",
   "rules": {
     "defaultLeadTimeDays": 60,
-    "byClauseType": { "auto-renewal": 90, "evergreen": 90, "termination-for-convenience": 30, "price-adjustment": 120 }
+    "byClauseType": {
+      "auto-renewal": 90,
+      "evergreen": 90,
+      "termination-for-convenience": 30,
+      "price-adjustment": 120
+    },
+    "escalation": [
+      {
+        "maxDaysOut": 7,
+        "owner": "general-counsel"
+      },
+      {
+        "maxDaysOut": 30,
+        "owner": "procurement-lead"
+      },
+      {
+        "maxDaysOut": 90,
+        "owner": "contract-owner"
+      }
+    ]
   },
+  "confirmations": [
+    {
+      "contractId": "CTR-002",
+      "clauseType": "price-adjustment",
+      "date": "2027-03-01",
+      "confirmedBy": "K. Alvarez, outside counsel",
+      "on": "2026-11-06"
+    }
+  ],
   "contracts": [
     {
       "id": "CTR-001",
@@ -12,8 +40,18 @@ export default {
       "counterparty": "Foundry Cloud Ltd.",
       "effectiveDate": "2025-04-01",
       "clauses": [
-        { "type": "auto-renewal", "date": "2027-04-01", "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term." },
-        { "type": "termination-for-convenience", "date": "2027-04-01", "leadTimeDaysOverride": 30, "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
+        {
+          "type": "auto-renewal",
+          "date": "2027-04-01",
+          "renewalTermMonths": 12,
+          "quote": "This Agreement renews automatically for successive one (1) year terms unless either party gives written notice at least ninety (90) days prior to the end of the then-current term."
+        },
+        {
+          "type": "termination-for-convenience",
+          "date": "2027-04-01",
+          "leadTimeDaysOverride": 30,
+          "quote": "Either party may terminate for convenience on thirty (30) days written notice."
+        }
       ]
     },
     {
@@ -22,8 +60,16 @@ export default {
       "counterparty": "Lantern Properties LLC",
       "effectiveDate": "2024-02-01",
       "clauses": [
-        { "type": "auto-renewal", "dateExpression": "90 days before quarter end", "quote": "Tenant must notify Landlord of intent not to renew at least ninety (90) days before the end of the calendar quarter in which the term expires." },
-        { "type": "price-adjustment", "dateExpression": "within 60 days of quarter end", "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end." }
+        {
+          "type": "auto-renewal",
+          "dateExpression": "90 days before quarter end",
+          "quote": "Tenant must notify Landlord of intent not to renew at least ninety (90) days before the end of the calendar quarter in which the term expires."
+        },
+        {
+          "type": "price-adjustment",
+          "dateExpression": "within 60 days of quarter end",
+          "quote": "Base rent shall adjust to CPI within sixty (60) days of quarter end."
+        }
       ]
     },
     {
@@ -32,8 +78,16 @@ export default {
       "counterparty": "Helix Service Co.",
       "effectiveDate": "2026-06-15",
       "clauses": [
-        { "type": "evergreen", "date": "2028-06-15", "quote": "This agreement continues in force until terminated; initial term ends June 15, 2028." },
-        { "type": "notice", "dateExpression": "on mutual agreement", "quote": "The parties may amend the notice period by mutual agreement." }
+        {
+          "type": "evergreen",
+          "date": "2028-06-15",
+          "quote": "This agreement continues in force until terminated; initial term ends June 15, 2028."
+        },
+        {
+          "type": "notice",
+          "dateExpression": "on mutual agreement",
+          "quote": "The parties may amend the notice period by mutual agreement."
+        }
       ]
     },
     {
@@ -42,10 +96,31 @@ export default {
       "counterparty": "Quillmaster Inc.",
       "effectiveDate": "2025-11-01",
       "clauses": [
-        { "type": "auto-renewal", "date": "2026-11-01", "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior." },
-        { "type": "termination-for-convenience", "date": "2026-11-01", "quote": "Either party may terminate for convenience on thirty (30) days written notice." }
+        {
+          "type": "auto-renewal",
+          "date": "2026-11-01",
+          "renewalTermMonths": 12,
+          "quote": "Renews annually each November 1 unless notice is given sixty (60) days prior."
+        },
+        {
+          "type": "termination-for-convenience",
+          "date": "2026-11-01",
+          "quote": "Either party may terminate for convenience on thirty (30) days written notice."
+        }
+      ]
+    },
+    {
+      "id": "CTR-005",
+      "name": "Orchid Office Lease",
+      "counterparty": "Orchid Holdings BV",
+      "effectiveDate": "2026-03-01",
+      "clauses": [
+        {
+          "type": "renewal",
+          "dateExpression": "on mutual agreement",
+          "quote": "The term may be extended on mutual agreement of the parties."
+        }
       ]
     }
   ]
 }
-

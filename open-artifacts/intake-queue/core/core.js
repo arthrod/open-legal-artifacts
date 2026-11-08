@@ -53,7 +53,17 @@ export const STATES = {
   urgent: ['assigned', 'conflict-review'],
   assignable: ['assigned'],
   assigned: [],
+  // decision-layer terminal states (reached only via decide(), never transition())
+  accepted: [],
+  declined: [],
+  escalated: [],
 };
+
+// Decision layer: accept / decline / escalate from any open (undecided)
+// state. Every decision requires an actor and a reason — no unexplained
+// routing, unlike the counterpart's LLM-opaque triage.
+const DECISION_ACTIONS = { accept: 'accepted', decline: 'declined', escalate: 'escalated' };
+const DECIDABLE_STATES = ['new', 'conflict-review', 'urgent', 'assignable'];
 
 /** Guarded state transition for one queue item. */
 export function transition(item, to) {
@@ -140,17 +150,33 @@ export function processQueue(input) {
     }
     seen.push({ id: sub.id, client: sub.client.name, opposing: sub.opposing.name });
 
-    // conflict check: either party matching any roster entry
+    // conflict check: either party matching any roster entry or one of its
+    // aliases[] — aliases are first-class candidates; on a score tie the
+    // primary roster name wins (an alias only supplements, never overrides)
     const conflicts = [];
     for (const r of roster) {
+      const candidates = [{ name: r.name, alias: null }, ...(r.aliases ?? []).map((a) => ({ name: a, alias: a }))];
       for (const [side, party] of [['client', sub.client.name], ['opposing', sub.opposing.name]]) {
-        const sim = nameSimilarity(r.name, party);
-        if (sim >= conflictThreshold) {
-          conflicts.push({ rosterName: r.name, role: r.role, matter: r.matter ?? null, matchedSide: side, score: sim });
+        let best = null;
+        for (const cand of candidates) {
+          const sim = nameSimilarity(cand.name, party);
+          if (!best || sim > best.score) best = { score: sim, via: cand.alias };
+        }
+        if (best && best.score >= conflictThreshold) {
+          conflicts.push({
+            rosterName: r.name,
+            role: r.role,
+            matter: r.matter ?? null,
+            matchedSide: side,
+            score: best.score,
+            ...(best.via ? { aliasMatch: true, matchedVia: best.via } : {}),
+          });
         }
       }
     }
-    for (const c of conflicts) flags.push(`possible conflict: ${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matches ${c.matchedSide} at ${c.score}`);
+    for (const c of conflicts) {
+      flags.push(`possible conflict: ${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matches ${c.matchedSide} at ${c.score}${c.aliasMatch ? ` via alias "${c.matchedVia}"` : ''}`);
+    }
 
     const urgency = assessUrgency(sub, asOf, st);
 
@@ -184,7 +210,9 @@ export function processQueue(input) {
     duplicates: items.filter((i) => i.duplicateOf).length,
     urgent: items.filter((i) => ['urgent', 'overdue'].includes(i.urgency.level)).length,
   };
-  return { asOf, items, summary, settings: { dedupeThreshold, conflictThreshold } };
+  const queue = { asOf, items, summary, settings: { dedupeThreshold, conflictThreshold }, audit: [] };
+  appendAudit(queue, 'process', 'system', `${items.length} submissions screened (dedupe ≥ ${dedupeThreshold}, conflicts ≥ ${conflictThreshold})`);
+  return queue;
 }
 
 function tally(values) {
@@ -193,14 +221,45 @@ function tally(values) {
   return t;
 }
 
-/** Assign an item to staff (new/conflict-review/urgent/assignable → assigned). */
+/** Append one entry to the queue's audit trail (who did what, when). */
+function appendAudit(queue, action, actor, detail) {
+  queue.audit.push({ seq: queue.audit.length + 1, at: queue.asOf, actor, action, detail });
+}
+
+/** Assign an item to staff (new/conflict-review/urgent/assignable → assigned).
+ *  Validates the transition on a copy first: a rejected assign leaves the
+ *  item untouched and writes no audit entry. */
 export function assign(queue, id, staffId) {
   const item = queue.items.find((i) => i.id === id);
   if (!item) return { ok: false, queue, error: `no item "${id}"` };
-  item.assignedTo = staffId;
-  const r = transition(item, 'assigned');
+  const r = transition({ ...item, assignedTo: staffId }, 'assigned');
   if (!r.ok) return { ok: false, queue, error: r.error };
   Object.assign(item, r.item);
+  appendAudit(queue, 'assign', staffId, `assigned ${id} to ${staffId}`);
+  return { ok: true, queue };
+}
+
+/** Record an accept / decline / escalate decision with actor + reason.
+ *  Terminal: once accepted/declined/escalated (or assigned/duplicate), no
+ *  further decision is possible. */
+export function decide(queue, id, action, by, reason) {
+  const item = queue.items.find((i) => i.id === id);
+  if (!item) return { ok: false, queue, error: `no item "${id}"` };
+  if (!(action in DECISION_ACTIONS)) {
+    return { ok: false, queue, error: `unknown decision "${action}" (use: ${Object.keys(DECISION_ACTIONS).join(', ')})` };
+  }
+  if (!by || !String(by).trim()) {
+    return { ok: false, queue, error: `decision "${action}" on ${id} requires an actor (by)` };
+  }
+  if (!reason || !String(reason).trim()) {
+    return { ok: false, queue, error: `decision "${action}" on ${id} requires a reason` };
+  }
+  if (!DECIDABLE_STATES.includes(item.state)) {
+    return { ok: false, queue, error: `decision ${action} from ${item.state} not allowed (allowed from: ${DECIDABLE_STATES.join(', ')})` };
+  }
+  item.state = DECISION_ACTIONS[action];
+  item.decision = { action, by, reason: String(reason), at: queue.asOf };
+  appendAudit(queue, 'decide', by, `${action} ${id}: ${reason}`);
   return { ok: true, queue };
 }
 
@@ -224,12 +283,154 @@ export function renderQueue(q) {
   L.push('| # | Id | Submitted | Client ↔ Opposing | Matter | Deadline | Urgency | State | Notes |');
   L.push('|---|---|---|---|---|---|---|---|---|');
   const rank = { overdue: 0, urgent: 1, 'deadline-soon': 2, routine: 3 };
-  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, new: 5 };
+  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
   [...q.items]
     .sort((a, b) => stateRank[a.state] - stateRank[b.state] || rank[a.urgency.level] - rank[b.urgency.level] || (a.id < b.id ? -1 : 1))
     .forEach((i, n) => {
-      L.push(`| ${n + 1} | ${i.id} | ${i.submittedAt} | ${i.client} ↔ ${i.opposing} | ${i.matterType} | ${i.deadline ?? '—'} | ${i.urgency.level} | ${i.state}${i.assignedTo ? ` → ${i.assignedTo}` : ''} | ${i.flags.join('; ') || '—'} |`);
+      L.push(`| ${n + 1} | ${i.id} | ${i.submittedAt} | ${i.client} ↔ ${i.opposing} | ${i.matterType} | ${i.deadline ?? '—'} | ${i.urgency.level} | ${i.state}${i.assignedTo ? ` → ${i.assignedTo}` : ''}${i.decision ? ` (${i.decision.action} by ${i.decision.by})` : ''} | ${i.flags.join('; ') || '—'} |`);
     });
   L.push('');
+  L.push('## Audit log', '');
+  L.push('| # | At | Actor | Action | Detail |');
+  L.push('|---|---|---|---|---|');
+  for (const a of q.audit ?? []) {
+    L.push(`| ${a.seq} | ${a.at} | ${a.actor} | ${a.action} | ${a.detail} |`);
+  }
+  L.push('');
   return L.join('\n');
+}
+
+// ------------------------------------------------------ letter drafts
+
+/** Cite one conflict the way a letter must: roster party, role, matter,
+ *  matched side, score — and the alias when the match came via one. */
+function citeConflict(c) {
+  const base = `${c.rosterName} (${c.role} on ${c.matter ?? 'roster'}) matched the ${c.matchedSide} party`;
+  return c.aliasMatch
+    ? `${base} "${c.matchedVia}" (alias) with similarity score ${c.score}`
+    : `${base} with similarity score ${c.score}`;
+}
+
+/**
+ * Deterministic letter drafts: kind = 'engagement' | 'declination'.
+ * Every line is generated from queue fields — nothing invented, no
+ * hallucination possible. Jurisdiction stays a [JURISDICTION] placeholder
+ * (UPL-safe: these templates are not legal advice).
+ */
+export function renderLetter(q, id, kind) {
+  const item = q.items.find((i) => i.id === id);
+  if (!item) throw new Error(`no item "${id}"`);
+  if (kind !== 'engagement' && kind !== 'declination') {
+    throw new Error(`unknown letter kind "${kind}" (use: engagement, declination)`);
+  }
+  const L = [];
+  L.push('[FIRM LETTERHEAD]', '');
+  L.push(`Date: ${q.asOf}`, '');
+  L.push(`${item.client}`);
+  L.push(`Re: ${kind === 'engagement' ? 'Proposed engagement' : 'Your inquiry'} — ${item.matterType} (intake ${item.id})`, '');
+  L.push(`Dear ${item.client}:`, '');
+  if (kind === 'engagement') {
+    L.push(`Thank you for contacting [FIRM NAME] about the matter above. We are pleased to confirm that [FIRM NAME] will consider representing you in this matter, subject to the terms below.`);
+    if (item.conflicts.length === 0) {
+      L.push('', `Conflict screening: our roster check found no roster match at or above the ${q.settings.conflictThreshold} conflict threshold for either party (intake ${item.id}, screened ${q.asOf}).`);
+    } else {
+      L.push('', `Conflict screening: our roster check found ${item.conflicts.length} possible match(es) that must be resolved before opening the matter:`);
+      for (const c of item.conflicts) L.push(`- ${citeConflict(c)}`);
+    }
+    L.push('', `Scope: ${item.matterType}.${item.deadline ? ` The intake records a possible deadline of ${item.deadline} [verify].` : ''} Scope of services, fees, and the governing law of [JURISDICTION] [verify] will be set out in a signed engagement agreement.`);
+    L.push('', 'This draft is a template generated from intake data; it is not legal advice and creates no attorney-client relationship until the engagement agreement is signed.');
+  } else {
+    const c = item.conflicts.find((x) => x.role === 'adverse' || x.role === 'client') ?? item.conflicts[0] ?? null;
+    L.push(`Thank you for contacting [FIRM NAME] about the matter above. After our conflict-screening review, we are unable to accept this engagement.`);
+    L.push('', c ? `Our records show that ${citeConflict(c)}. Because of that relationship, we cannot represent you in this matter.` : `Our screening review did not identify a matter we can accept; the decision record below states the reason.`);
+    if (item.decision) L.push('', `Decision record: ${item.decision.action} by ${item.decision.by} on ${item.decision.at} — "${item.decision.reason}".`);
+    L.push('', `Deadlines can pass quickly: the intake records ${item.deadline ? `a possible deadline of ${item.deadline} [verify]` : 'no deadline'}. Please consult another attorney promptly; the [JURISDICTION] bar association [verify] maintains a lawyer referral service.`);
+    L.push('', 'This letter is not legal advice and does not create an attorney-client relationship.');
+  }
+  L.push('', 'Sincerely,', '[FIRM NAME]');
+  return L.join('\n');
+}
+
+// ------------------------------------------------------------ ICS
+
+/**
+ * RFC 5545 calendar export: one VEVENT per submission with a valid ISO
+ * deadline. CRLF line endings, escaped text (\\, \\; \\n), folding at
+ * 75 octets per line (multibyte characters counted as their UTF-8 size).
+ */
+export function toICS(q) {
+  const escIcs = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const cpOctets = (cp) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
+  const fold = (line) => {
+    const out = [];
+    let cur = '';
+    let curOct = 0;
+    for (const ch of line) {
+      const chOct = cpOctets(ch.codePointAt(0));
+      if (curOct + chOct > 75) { // RFC 5545 3.1: ≤75 octets per line
+        out.push(cur);
+        cur = ' ';
+        curOct = 1;
+      }
+      cur += ch;
+      curOct += chOct;
+    }
+    out.push(cur);
+    return out;
+  };
+  const stamp = `${q.asOf.replace(/-/g, '')}T000000Z`;
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//intake-queue//open-legal-artifacts//EN', 'CALSCALE:GREGORIAN'];
+  for (const i of q.items) {
+    if (!i.deadline || !VALID_ISO.test(i.deadline)) continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${i.id}@intake-queue`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${i.deadline.replace(/-/g, '')}`,
+      `SUMMARY:${escIcs(`Intake ${i.id}: ${i.client} v. ${i.opposing}`)}`,
+      `DESCRIPTION:${escIcs(`${i.matterType} — deadline. State: ${i.state}.`)}`,
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.flatMap(fold).join('\r\n') + '\r\n';
+}
+
+// --------------------------------------------------- ingest verifier
+
+/**
+ * Verify an LLM extraction against the raw source text before it enters
+ * the queue: every extracted party name must appear VERBATIM in the
+ * source (enforces the spec's "copy names verbatim" prompt rule).
+ * Non-verbatim names flag the submission `unverified-extraction` and a
+ * human must re-extract; null names are simply "nothing extracted".
+ */
+export function ingestSubmission(extracted, sourceText) {
+  const source = String(sourceText ?? '');
+  const submission = {
+    id: extracted.id,
+    submittedAt: extracted.submittedAt,
+    client: { name: extracted.client?.name ?? null },
+    opposing: { name: extracted.opposing?.name ?? null },
+    matterType: extracted.matterType ?? null,
+    description: extracted.description ?? null,
+    deadline: extracted.deadline ?? null,
+    occurredOn: extracted.occurredOn ?? null,
+    flags: [],
+  };
+  const issues = [];
+  for (const side of ['client', 'opposing']) {
+    const name = submission[side].name;
+    // verbatim = appears in the source delimited by non-letter/non-digit
+    // characters on both sides (any script), so a truncated "Sable
+    // Insurance Co" inside "Sable Insurance Company" — or a name glued
+    // to another word ("XRidgeline…", "…CompanyX") — does NOT count as
+    // copied verbatim
+    const verbatim = name != null && new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(source);
+    if (name != null && !verbatim) {
+      issues.push(`${side} name "${name}" not found verbatim in source text — extraction unverified`);
+      if (!submission.flags.includes('unverified-extraction')) submission.flags.push('unverified-extraction');
+    }
+  }
+  return { ok: issues.length === 0, submission, issues };
 }

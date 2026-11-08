@@ -3,8 +3,8 @@
   "jurisdiction": "DC",
   "ruleset": {
     "id": "DC",
-    "name": "District of Columbia (example ruleset)",
-    "version": "2026-11-example"
+    "name": "District of Columbia (example ruleset, statutes cited for verification)",
+    "version": "2026-11-dc-cited"
   },
   "results": [
     {
@@ -18,14 +18,25 @@
       "basis": [
         {
           "ruleId": "DC-R1",
-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
+          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         },
         {
           "ruleId": "DC-R1",
-          "text": "Waiting period satisfied on or after 2024-03-01; no disqualifier matched."
+          "text": "Waiting period satisfied on or after 2024-03-01; no disqualifier matched.",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         }
       ],
-      "motion": "Motion to Seal Conviction Record"
+      "motion": "Motion to Seal Conviction Record",
+      "statute": "D.C. Code § 16-806(a)(3) [verify]",
+      "filingSteps": [
+        "Draft the motion stating all unsealed citations, arrests, charges, and convictions as reasonably known (§ 16-806(c)(1)(A)) [verify]",
+        "Serve a copy of the motion on the prosecutor (§ 16-806(d)) [verify]",
+        "File with the court; the order is due within 180 days (§ 16-806(i)(4)(C)) [verify]",
+        "If granted, records are sealed within 90 days (§ 16-806(j)) [verify]"
+      ],
+      "whereToFile": "D.C. Superior Court [verify]",
+      "fee": "No filing fee stated in § 16-806 [verify]"
     },
     {
       "caseId": "C-2022-037",
@@ -38,14 +49,19 @@
       "basis": [
         {
           "ruleId": "DC-R1",
-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
+          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         },
         {
           "ruleId": "DC-R1",
           "text": "As of 2026-11-07, 3 of 8 required years elapsed."
         }
       ],
-      "motion": null
+      "motion": null,
+      "statute": null,
+      "filingSteps": null,
+      "whereToFile": null,
+      "fee": null
     },
     {
       "caseId": "C-2023-005",
@@ -58,14 +74,24 @@
       "basis": [
         {
           "ruleId": "DC-R2",
-          "text": "DC acquittal path: 0-year wait anchored to dispositionDate"
+          "text": "DC acquittal path: 0-year wait anchored to dispositionDate",
+          "statute": "D.C. Code § 16-803 [verify]"
         },
         {
           "ruleId": "DC-R2",
-          "text": "Waiting period satisfied on or after 2024-06-20; no disqualifier matched."
+          "text": "Waiting period satisfied on or after 2024-06-20; no disqualifier matched.",
+          "statute": "D.C. Code § 16-803 [verify]"
         }
       ],
-      "motion": "Motion to Seal Following Acquittal"
+      "motion": "Motion to Seal Following Acquittal",
+      "statute": "D.C. Code § 16-803 [verify]",
+      "filingSteps": [
+        "Draft the motion stating the grounds and supporting facts (§ 16-803(b)(1)) [verify]",
+        "Serve a copy on the prosecutor (§ 16-803(c)) [verify]",
+        "File with the court; may be filed at any time (§ 16-803(b)(2)(B)) [verify]"
+      ],
+      "whereToFile": "D.C. Superior Court [verify]",
+      "fee": "No filing fee stated in § 16-803 [verify]"
     },
     {
       "caseId": "C-2024-089",
@@ -77,22 +103,29 @@
         {
           "code": "disqualifying_category",
           "description": "Offense category \"violent_felony\" is disqualifying on the conviction path.",
-          "ruleId": "DC-R1"
+          "ruleId": "DC-R1",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         },
         {
           "code": "disqualifying_class",
           "description": "Offense class \"felony_class_B\" is disqualifying on the conviction path.",
-          "ruleId": "DC-R1"
+          "ruleId": "DC-R1",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         }
       ],
       "missingData": [],
       "basis": [
         {
           "ruleId": "DC-R1",
-          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate"
+          "text": "DC conviction path: 8-year wait anchored to sentenceCompletedDate",
+          "statute": "D.C. Code § 16-806(a)(3) [verify]"
         }
       ],
-      "motion": null
+      "motion": null,
+      "statute": null,
+      "filingSteps": null,
+      "whereToFile": null,
+      "fee": null
     },
     {
       "caseId": "C-2026-201",
@@ -103,7 +136,7 @@
       "disqualifiers": [
         {
           "code": "pending_case",
-          "description": "A pending case is open; most schemes bar sealing until it resolves.",
+          "description": "This case is pending; most schemes bar sealing until it resolves.",
           "ruleId": "GATE-PENDING"
         }
       ],
@@ -111,7 +144,11 @@
         "disposition (conviction / acquittal / dismissed / nolle_prosequi / deferred_adjudication)"
       ],
       "basis": [],
-      "motion": null
+      "motion": null,
+      "statute": null,
+      "filingSteps": null,
+      "whereToFile": null,
+      "fee": null
     }
   ],
   "gate": {
@@ -124,5 +161,6 @@
     "needs_more_time": 1,
     "ineligible": 1,
     "insufficient_data": 1
-  }
+  },
+  "nextReviewDate": "2030-11-30"
 }

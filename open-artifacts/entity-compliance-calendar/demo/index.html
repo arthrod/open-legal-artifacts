@@ -31,6 +31,9 @@
   .pill.scheduled { background: #fff; }
   .pill.satisfied { background: #fff; color: var(--text-secondary); border-color: var(--border); }
   .pill.na { background: var(--hover); color: var(--text-secondary); border-color: var(--border); }
+  .pill.unknown { background: var(--flag-tint); color: var(--text-secondary); border-color: var(--border); border-style: dashed; }
+  .flag li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
+  .flag code { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
   .delinq li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .delinq .days { font-family: var(--font-mono); background: var(--flag-tint); padding: 0 4px; color: var(--warn); border-color: var(--warn);}
   .row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -66,12 +69,20 @@
   </section>
 
   <section>
+    <h2>Health audit</h2>
+    <ul class="flag" id="health"></ul>
+  </section>
+
+  <section>
     <h2>Delinquency flags</h2>
     <ul class="delinq" id="delinq"></ul>
   </section>
 
   <section>
     <h2>Entities × obligations matrix</h2>
+    <div class="row" style="margin-bottom:16px" id="winBtns">
+      <span style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);align-self:center">Filing window:</span>
+    </div>
     <div style="overflow-x:auto"><table id="matrix">
       <thead><tr><th>Entity</th><th>Obligation</th><th>Next due</th><th>Period</th><th>Rule</th><th>Status</th></tr></thead>
       <tbody></tbody>
@@ -87,10 +98,12 @@
 </div>
 
 <script type="module">
-  import { buildMatrix, toCsv, toICS } from "../core/core.js";
+  import { buildMatrix, toCsv, toICS, report, auditHealth } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
   const m = buildMatrix(EXAMPLE);
+  const rep = report(m);
+  const health = auditHealth(EXAMPLE);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   document.getElementById("stats").innerHTML =
@@ -98,29 +111,75 @@
     `<div class="stat"><b>${m.counts["due-soon"]}</b><span>due soon</span></div>` +
     `<div class="stat"><b>${m.counts.scheduled}</b><span>scheduled</span></div>` +
     `<div class="stat"><b>${m.counts.satisfied}</b><span>satisfied</span></div>` +
-    `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>`;
+    `<div class="stat"><b>${m.counts.unknown}</b><span>unknown</span></div>` +
+    `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>` +
+    `<div class="stat"><b>$${m.feeTotals.recorded}</b><span>fees recorded</span></div>` +
+    `<div class="stat"><b>${health.counts.flags}</b><span>health flags</span></div>`;
+
+  document.getElementById("health").innerHTML = health.flags.length
+    ? health.flags.map((f) => `<li>⚠️ <code>${esc(f.code)}</code> <b>${esc(f.entityName)}</b>${f.jurisdiction ? ` (${esc(f.jurisdiction)})` : ""} — ${esc(f.detail)}</li>`).join("")
+    : `<li>no health flags 🎉</li>`;
 
   document.getElementById("delinq").innerHTML = m.delinquent.length
     ? m.delinquent.map((d) => `<li>🔴 <b>${esc(d.entityName)}</b> — ${esc(d.obligationName)}: due ${esc(d.dueOn)}, overdue <span class="days">${d.overdueDays}d</span></li>`).join("")
     : `<li>none — no delinquent obligations 🎉</li>`;
 
+  // Filing-window filter: bucket actionable cells into 30/60/90/180d windows (overdue always included).
+  const asOfMs = Date.parse(m.asOf + "T00:00:00Z");
+  const daysOut = (cell) => Math.round((Date.parse(cell.dueOn + "T00:00:00Z") - asOfMs) / 86400000);
+  let winFilter = Infinity; // "all" by default
   const tb = document.getElementById("matrix").querySelector("tbody");
-  m.entities.forEach((e, r) => {
-    m.obligations.forEach((o, c) => {
-      const cell = m.grid[r][c];
-      const tr = document.createElement("tr");
-      const due = cell.dueOn
-        ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
-        : esc(cell.skipReason ?? cell.ruleNote ?? "—");
-      tr.innerHTML =
-        `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn)}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
-        `<td>${esc(o.name)}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
-        `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
-        `<td>${esc(cell.ruleNote ?? "")}</td>` +
-        `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
-      tb.appendChild(tr);
+
+  function renderMatrix() {
+    tb.innerHTML = "";
+    let shown = 0;
+    m.entities.forEach((e, r) => {
+      m.obligations.forEach((o, c) => {
+        const cell = m.grid[r][c];
+        const d = cell.dueOn ? daysOut(cell) : null;
+        if (winFilter !== Infinity && (!cell.dueOn || !["delinquent", "due-soon", "scheduled"].includes(cell.status) || d > winFilter)) return;
+        shown++;
+        const tr = document.createElement("tr");
+        const due = cell.dueOn
+          ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
+          : esc(cell.skipReason ?? cell.ruleNote ?? "—");
+        tr.innerHTML =
+          `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn ?? "?")}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
+          `<td>${esc(o.name)}${o.verifiedOn ? `<div class="sub">verified ${esc(o.verifiedOn)}</div>` : ""}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
+          `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
+          `<td>${esc(cell.ruleNote ?? "")}${cell.ruleStale ? `<div class="sub" style="color:var(--warn)">rule stale — verified &gt;365d ago</div>` : ""}</td>` +
+          `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
+        tb.appendChild(tr);
+      });
     });
-  });
+    return shown;
+  }
+
+  const winBtns = document.getElementById("winBtns");
+  const mkBtn = (label, value) => {
+    const b = document.createElement("button");
+    b.className = "ghost";
+    b.textContent = label;
+    b.onclick = () => {
+      winFilter = value;
+      const n = renderMatrix();
+      [...winBtns.querySelectorAll("button")].forEach((x) => {
+        const on = x === b;
+        x.style.background = on ? "var(--text)" : "";
+        x.style.color = on ? "var(--bg)" : "";
+      });
+      countSpan.textContent = value === Infinity ? `${n} of ${m.counts.cells} cells` : `${n} filing${n === 1 ? "" : "s"} due ≤${value}d (overdue included)`;
+    };
+    winBtns.appendChild(b);
+    return b;
+  };
+  mkBtn("All", Infinity);
+  rep.windows.forEach((w) => mkBtn(`≤${w.days}d (${w.count})`, w.days));
+  const countSpan = document.createElement("span");
+  countSpan.id = "matrixCount";
+  countSpan.style.cssText = "font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);align-self:center;margin-left:4px";
+  winBtns.appendChild(countSpan);
+  countSpan.textContent = `${renderMatrix()} of ${m.counts.cells} cells`;
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });

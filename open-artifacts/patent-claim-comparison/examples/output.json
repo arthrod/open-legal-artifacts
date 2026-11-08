@@ -215,6 +215,9 @@
         "aDependsOn": null,
         "bDependsOn": null,
         "dependencyChanged": false,
+        "aTransitional": "comprising",
+        "bTransitional": "comprising",
+        "transitionalChanged": false,
         "result": "compared",
         "comparison": {
           "rows": [
@@ -302,6 +305,9 @@
         "aDependsOn": 1,
         "bDependsOn": 1,
         "dependencyChanged": false,
+        "aTransitional": null,
+        "bTransitional": null,
+        "transitionalChanged": false,
         "result": "compared",
         "comparison": {
           "rows": [
@@ -351,9 +357,94 @@
       "modified": 2,
       "removed": 0,
       "added": 0,
+      "renumbered": 0,
       "claimsOnlyInA": 1,
       "claimsOnlyInB": 1
     },
     "noTeachingFound": 0
+  },
+  "matrix": {
+    "claims": [
+      {
+        "claimNo": 1,
+        "coverage": "combination",
+        "refs": [
+          {
+            "id": "REF-A 'Kessler cooling jacket' (fictional)",
+            "covered": 2,
+            "verbatim": 2,
+            "partial": 1,
+            "notFound": 1
+          },
+          {
+            "id": "REF-B 'Norlund control unit' (fictional)",
+            "covered": 2,
+            "verbatim": 0,
+            "partial": 2,
+            "notFound": 2
+          }
+        ],
+        "uncoveredLimitations": [],
+        "combinationRefs": [
+          "REF-A 'Kessler cooling jacket' (fictional)",
+          "REF-B 'Norlund control unit' (fictional)"
+        ]
+      },
+      {
+        "claimNo": 2,
+        "coverage": "gaps",
+        "refs": [
+          {
+            "id": "REF-A 'Kessler cooling jacket' (fictional)",
+            "covered": 0,
+            "verbatim": 0,
+            "partial": 0,
+            "notFound": 1
+          },
+          {
+            "id": "REF-B 'Norlund control unit' (fictional)",
+            "covered": 0,
+            "verbatim": 0,
+            "partial": 1,
+            "notFound": 0
+          }
+        ],
+        "uncoveredLimitations": [
+          "L1"
+        ],
+        "combinationRefs": null
+      },
+      {
+        "claimNo": 3,
+        "coverage": "gaps",
+        "refs": [
+          {
+            "id": "REF-A 'Kessler cooling jacket' (fictional)",
+            "covered": 0,
+            "verbatim": 0,
+            "partial": 0,
+            "notFound": 2
+          },
+          {
+            "id": "REF-B 'Norlund control unit' (fictional)",
+            "covered": 0,
+            "verbatim": 0,
+            "partial": 0,
+            "notFound": 2
+          }
+        ],
+        "uncoveredLimitations": [
+          "L1",
+          "L2"
+        ],
+        "combinationRefs": null
+      }
+    ],
+    "totals": {
+      "claims": 3,
+      "anticipationCandidates": 0,
+      "combination": 1,
+      "gaps": 2
+    }
   }
 }

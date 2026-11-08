@@ -25,8 +25,12 @@
   td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
   .chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
-  .chip.urgent, .chip.overdue, .chip.duplicate { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
+  .chip.urgent, .chip.overdue, .chip.duplicate, .chip.declined, .chip.escalated { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .notes { color: var(--text-secondary); font-size: 12px; }
+  select, input[type="text"] { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
+  .controls input[type="text"] { flex: 1; min-width: 180px; }
+  pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; background: #fff; border: var(--hairline); padding: 12px; overflow: auto; white-space: pre-wrap; margin: 12px 0 0; }
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
 </style>
 </head>
@@ -45,35 +49,74 @@
   <div id="summary"></div>
   <h2>Queue</h2>
   <div id="board"></div>
+
+  <h2>Decide / assign</h2>
+  <p class="lede">Guarded decision layer: accept / decline / escalate (reason required) or assign. Rejected actions leave the queue untouched and write no audit entry.</p>
+  <div class="controls">
+    <select id="d-id"></select>
+    <select id="d-action"><option value="accept">accept</option><option value="decline">decline</option><option value="escalate">escalate</option><option value="assign">assign</option></select>
+    <input type="text" id="d-by" placeholder="actor / assignee (required, fictional, e.g. gc-lee)" />
+    <input type="text" id="d-reason" placeholder="reason (required for decisions)" />
+    <button id="d-go">Record</button>
+  </div>
+  <div class="err" id="d-err"></div>
+
+  <h2>Letter draft</h2>
+  <p class="lede">Deterministic engagement / declination templates — every line traceable to queue fields; jurisdiction stays a [JURISDICTION] placeholder (not legal advice).</p>
+  <div class="controls">
+    <select id="l-id"></select>
+    <select id="l-kind"><option>declination</option><option>engagement</option></select>
+    <button id="l-go">Draft letter</button>
+  </div>
+  <pre id="letter" hidden></pre>
+
+  <h2>Calendar export (ICS)</h2>
+  <p class="lede">One VEVENT per submission with a valid deadline — deadlines leave the queue and reach a calendar.</p>
+  <button id="ics-go">Download intake-deadlines.ics</button>
+  <pre id="ics-out" hidden></pre>
+
+  <h2>Audit log</h2>
+  <div id="audit"></div>
+
+  <h2>Ingest verifier</h2>
+  <p class="lede">LLM extractions enter the queue only if every extracted name appears verbatim (word-delimited) in the source text; otherwise the submission is flagged <code>unverified-extraction</code>.</p>
+  <textarea id="ing-source" spellcheck="false" style="min-height: 90px"></textarea>
+  <textarea id="ing-extracted" spellcheck="false" style="min-height: 90px"></textarea>
+  <button id="ing-go">Verify extraction</button>
+  <div class="err" id="ing-out"></div>
 </div>
 
 <script type="module">
-import { processQueue } from '../core/core.js';
+import { processQueue, assign, decide, renderLetter, toICS, ingestSubmission } from '../core/core.js';
 
 const DEFAULT_INPUT = {
-  asOf: new Date().toISOString().slice(0, 10),
+  asOf: '2026-11-07',
   roster: [
     { name: 'Northwind Logistics, Inc.', role: 'client', matter: 'LIT-2026-014' },
-    { name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003' },
+    { name: 'Brightpath Solar LLC', role: 'adverse', matter: 'LIT-2025-003', aliases: ['BPS Solarworks'] },
   ],
   submissions: [
     { id: 'INT-1041', submittedAt: '2026-11-06', client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'insurance coverage dispute', deadline: '2026-11-13' },
     { id: 'INT-1042', submittedAt: '2026-11-06', client: { name: 'M. Iwata (fictional)' }, opposing: { name: 'Brightpath Solar' }, matterType: 'property damage', deadline: '2026-12-20' },
+    { id: 'INT-1048', submittedAt: '2026-11-07', client: { name: 'Quiet Harbor Tenants Assoc' }, opposing: { name: 'BPS Solarworks' }, matterType: 'roofing defect', deadline: '2026-12-15' },
     { id: 'INT-1044', submittedAt: '2026-11-07', client: { name: 'Harbor Bakehouse Co.' }, opposing: { name: 'Delgado Trucking LLC' }, matterType: 'contract dispute', deadline: '2027-02-01' },
     { id: 'INT-1047', submittedAt: '2026-11-07', client: { name: 'Harbor Bakehouse Company' }, opposing: { name: 'Delgado Trucking, L.L.C.' }, matterType: 'contract dispute' },
     { id: 'INT-1045', submittedAt: '2026-11-07', client: { name: 'Tilly Andersen (fictional)' }, opposing: { name: 'Coastal View Apartments' }, matterType: 'security deposit return', occurredOn: '2024-05-30' },
   ],
 };
 
+const DEFAULT_SOURCE = 'From: Dana Reyes (fictional). My company Ridgeline Dental Group PC has a billing dispute with Sable Insurance Company.';
+const DEFAULT_EXTRACTED = { client: { name: 'Ridgeline Dental Group PC' }, opposing: { name: 'Sable Insurance Company' }, matterType: 'billing dispute' };
+
 const $ = (id) => document.getElementById(id);
 $('input').value = JSON.stringify(DEFAULT_INPUT, null, 2);
+$('ing-source').value = DEFAULT_SOURCE;
+$('ing-extracted').value = JSON.stringify(DEFAULT_EXTRACTED, null, 2);
 function esc(s) { return String(s).replace(/</g, '&lt;'); }
 
-$('run').addEventListener('click', () => {
-  const errEl = $('err'); errEl.style.display = 'none';
-  let q;
-  try { q = processQueue(JSON.parse($('input').value)); }
-  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
+let q = null;
+
+function renderAll() {
   const s = q.summary;
   $('summary').innerHTML = `
     <div class="cards">
@@ -81,8 +124,9 @@ $('run').addEventListener('click', () => {
       <div class="card alert"><div class="k">Urgent</div><div class="v">${s.urgent}</div></div>
       <div class="card"><div class="k">Conflicts</div><div class="v">${s.conflicts}</div></div>
       <div class="card"><div class="k">Duplicates</div><div class="v">${s.duplicates}</div></div>
+      <div class="card"><div class="k">Audit entries</div><div class="v">${q.audit.length}</div></div>
     </div>`;
-  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, new: 5 };
+  const stateRank = { urgent: 0, 'conflict-review': 1, assignable: 2, duplicate: 3, assigned: 4, accepted: 5, declined: 6, escalated: 7, new: 8 };
   const rows = [...q.items].sort((a, b) => stateRank[a.state] - stateRank[b.state] || a.id.localeCompare(b.id))
     .map((i) => `
     <tr>
@@ -91,11 +135,67 @@ $('run').addEventListener('click', () => {
       <td>${esc(i.matterType)}<br /><span class="notes">deadline: ${i.deadline ?? '—'}</span></td>
       <td><span class="chip ${i.urgency.level}">${i.urgency.level}</span></td>
       <td><span class="chip ${i.state}">${i.state}</span>${i.duplicateOf ? `<br /><span class="notes">dup of ${esc(i.duplicateOf)}</span>` : ''}</td>
-      <td>${i.conflicts.length ? i.conflicts.map((c) => `<span class="notes"><strong>${esc(c.rosterName)}</strong> (${c.role} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}</span>`).join('<br>') : '—'}</td>
-      <td>${i.flags.length ? `<span class="notes">${i.flags.map(esc).join('<br>')}</span>` : '—'}</td>
+      <td>${i.conflicts.length ? i.conflicts.map((c) => `<span class="notes"><strong>${esc(c.rosterName)}</strong> (${c.role} on ${esc(c.matter ?? 'roster')}) ↔ ${c.matchedSide} @ ${c.score}${c.aliasMatch ? ` <strong>via alias “${esc(c.matchedVia)}”</strong>` : ''}</span>`).join('<br>') : '—'}</td>
+      <td>${i.flags.length ? `<span class="notes">${i.flags.map(esc).join('<br>')}</span>` : '—'}${i.decision ? `<br /><span class="notes">${esc(i.decision.action)} by ${esc(i.decision.by)}: ${esc(i.decision.reason)}</span>` : ''}</td>
     </tr>`).join('');
   $('board').innerHTML = `<table><thead><tr><th>Id</th><th>Parties</th><th>Matter</th><th>Urgency</th><th>State</th><th>Conflicts</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('audit').innerHTML = `<table><thead><tr><th>#</th><th>At</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead><tbody>${
+    q.audit.map((a) => `<tr><td>${a.seq}</td><td>${esc(a.at)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="notes">${esc(a.detail)}</td></tr>`).join('')
+  }</tbody></table>`;
+  for (const sel of [$('d-id'), $('l-id')]) {
+    sel.innerHTML = q.items.map((i) => `<option value="${esc(i.id)}">${esc(i.id)} — ${esc(i.state)}</option>`).join('');
+  }
+}
+
+$('run').addEventListener('click', () => {
+  const errEl = $('err'); errEl.style.display = 'none';
+  try { q = processQueue(JSON.parse($('input').value)); }
+  catch (e) { errEl.textContent = 'Input error: ' + e.message; errEl.style.display = 'block'; return; }
+  renderAll();
 });
+
+$('d-go').addEventListener('click', () => {
+  const errEl = $('d-err'); errEl.style.display = 'none';
+  if (!q) { errEl.textContent = 'Run the queue first (input JSON is invalid or not yet run).'; errEl.style.display = 'block'; return; }
+  const id = $('d-id').value, action = $('d-action').value, by = $('d-by').value, reason = $('d-reason').value;
+  const r = action === 'assign' ? assign(q, id, by) : decide(q, id, action, by, reason);
+  if (!r.ok) { errEl.textContent = 'Rejected: ' + r.error; errEl.style.display = 'block'; return; }
+  renderAll();
+});
+
+$('l-go').addEventListener('click', () => {
+  const out = $('letter');
+  if (!q) { out.hidden = true; return; }
+  try { out.textContent = renderLetter(q, $('l-id').value, $('l-kind').value); out.hidden = false; }
+  catch (e) { out.hidden = true; }
+});
+
+$('ics-go').addEventListener('click', () => {
+  if (!q) return;
+  const ics = toICS(q);
+  const out = $('ics-out');
+  out.textContent = ics;
+  out.hidden = false;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  a.download = 'intake-deadlines.ics';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('ing-go').addEventListener('click', () => {
+  const out = $('ing-out');
+  out.style.display = 'none';
+  let extracted;
+  try { extracted = JSON.parse($('ing-extracted').value); }
+  catch (e) { out.textContent = 'Extracted JSON error: ' + e.message; out.style.display = 'block'; return; }
+  const r = ingestSubmission(extracted, $('ing-source').value);
+  out.textContent = r.ok
+    ? `OK — names verified verbatim; submission is queue-ready (flags: none).`
+    : `REJECTED — ${r.issues.join(' | ')} (submission flagged “unverified-extraction”: ${r.submission.flags.join(', ')})`;
+  out.style.display = 'block';
+});
+
 $('run').click();
 </script>
 </body>

@@ -9,6 +9,8 @@ Speed target: 900s. Scores 0–100; blank = no data.
 | fallback_quality | 66.67 | 66.67 |
 | speed | 100 | 1.01 |
 | retention | 82 | — |
+| deadline_capture | — | — |
+| conflict_check | — | — |
 | composite | 90.63 | 67.97 |
 
 ## Missing required fields

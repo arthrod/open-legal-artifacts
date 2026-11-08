@@ -1,8 +1,8 @@
 {
   "name": "obligations-checker",
-  "tagline": "Contract obligations register: per-obligation compliance status from deadlines + satisfaction records, breach-risk flags, CSV export",
-  "category": "anthropic-built",
-  "anthropic_counterpart": "Contract obligations tracker (Claude for Legal gallery)",
+  "tagline": "Contract obligations register: per-obligation compliance status from deadlines + satisfaction records, recurrence + missed cycles, party exposure, ICS alerts, diffs, CSV export",
+  "category": "partner-built",
+  "anthropic_counterpart": "Obligations Checker — Foley & Lardner (Claude for Legal partner gallery)",
   "status": "shipped",
   "demo": "demo/index.html"
 }

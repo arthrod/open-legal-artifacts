@@ -1,10 +1,12 @@
 /** Tests for outside-counsel-spend core. Run: node --test "core/*.test.js" (from artifact root) */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   parseDate, toCents, toUsd, resolveRateCard,
   checkRateCompliance, computeBudgetVariance, flagWriteOffs,
   rollupByPeriod, runSpendAudit, auditToCsv, auditToJson, renderReport,
+  checkGuidelines, flagAnomalies, renderTalkingPoints,
 } from "./core.js";
 
 const RATE_CARDS = [
@@ -140,8 +142,8 @@ test("auditToCsv emits one row per actionable finding with header and escapes", 
   const a = runSpendAudit(INPUT);
   const csv = auditToCsv(a);
   const lines = csv.trim().split("\n");
-  // rate 4 + budget 2 (over + unbudgeted) + write_off 1 = 7 findings + header
-  assert.equal(lines.length, 8);
+  // rate 4 + budget 2 (over + unbudgeted) + write_off 1 + anomaly 2 (S. Ito rate_creep 2026-08→09 and hours_spike 3h→13h) = 9 findings + header
+  assert.equal(lines.length, 10);
   assert.match(lines[0], /^kind,ref,matterId/);
   assert.match(csv, /rate,L-003,.*over_rate/);
   assert.match(csv, /budget,M-210×HPL/);
@@ -170,4 +172,201 @@ test("parseDate rejects rollover dates; toCents/toUsd round-trip", () => {
   assert.ok(parseDate("2026-02-28"));
   assert.equal(toCents(445.1), 44510);
   assert.equal(toUsd(44510), 445.1);
+});
+
+/* ---------- billing-guideline rules engine ---------- */
+
+const GUIDELINES = [
+  { id: "BG-01", type: "block_billing", minPhrases: 2, maxWords: 45 },
+  { id: "DE-01", type: "disallowed_expense", category: "meals", capUsd: 75 },
+  { id: "HD-01", type: "max_hours_per_day", maxHours: 10 },
+  { id: "SR-01", type: "staffing_ratio", minRatio: 1.5 },
+];
+
+test("checkGuidelines flags block-billing narratives with the rule id and billed amount", () => {
+  const input = {
+    ledger: [
+      { id: "G-001", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-02", timekeeper: "T. Kay", level: "associate", hours: 2, rate: 400, narrative: "Draft brief; call with client; research." },
+    ],
+    guidelines: GUIDELINES,
+  };
+  const findings = checkGuidelines(input);
+  const bb = findings.find((f) => f.flag === "block_billing");
+  assert.ok(bb, "block_billing finding present");
+  assert.equal(bb.ruleId, "BG-01");
+  assert.equal(bb.entryId, "G-001");
+  assert.equal(bb.amountImpact, 800); // full billed amount of the non-compliant entry
+  assert.match(bb.detail, /3 activities/);
+});
+
+test("checkGuidelines block_billing also fires on word-count over the rule cap", () => {
+  const long = Array.from({ length: 50 }, (_, i) => `word${i}`).join(" ");
+  const input = {
+    ledger: [{ id: "G-002", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-03", timekeeper: "T. Kay", level: "associate", hours: 1, rate: 400, narrative: long }],
+    guidelines: [{ id: "BG-02", type: "block_billing", minPhrases: 2, maxWords: 45 }],
+  };
+  const bb = checkGuidelines(input).find((f) => f.flag === "block_billing");
+  assert.ok(bb);
+  assert.equal(bb.ruleId, "BG-02");
+  assert.match(bb.detail, /50 words/);
+});
+
+test("checkGuidelines flags meal disbursements over the category cap with the excess as impact", () => {
+  const input = {
+    ledger: [
+      { id: "G-010", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-20", type: "disbursement", category: "meals", amount: 214.75, narrative: "Team dinner during filing week." },
+      { id: "G-011", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-21", type: "disbursement", category: "meals", amount: 41.0, narrative: "Working lunch." },
+      { id: "G-012", matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-22", type: "disbursement", category: "printing", amount: 300, narrative: "Printing." },
+    ],
+    guidelines: GUIDELINES,
+  };
+  const f = checkGuidelines(input).filter((x) => x.flag === "disallowed_expense");
+  assert.equal(f.length, 1); // only the over-cap meal fires
+  assert.equal(f[0].entryId, "G-010");
+  assert.equal(f[0].ruleId, "DE-01");
+  assert.equal(f[0].amountImpact, 139.75); // 214.75 − 75 cap
+});
+
+test("checkGuidelines max_hours_per_day flags timekeeper-days over the cap with over-cap dollars", () => {
+  const mk = (id, date, hours) => ({ id, matterId: "M-1", firmId: "F", period: "2026-09", date, timekeeper: "T. Kay", level: "associate", hours, rate: 400, narrative: "Work." });
+  const input = {
+    ledger: [mk("G-020", "2026-09-02", 6), mk("G-021", "2026-09-02", 6), mk("G-022", "2026-09-03", 4)],
+    guidelines: GUIDELINES,
+  };
+  const f = checkGuidelines(input).filter((x) => x.flag === "max_hours_per_day");
+  assert.equal(f.length, 1); // one finding per timekeeper-day
+  assert.deepEqual(f[0].entryIds, ["G-020", "G-021"]);
+  assert.equal(f[0].totalHours, 12);
+  assert.equal(f[0].amountImpact, 800); // 2 hours beyond the 10h cap at $400/h
+});
+
+test("checkGuidelines staffing_ratio flags matters staffed below the minimum junior/senior ratio", () => {
+  const mk = (id, level, hours) => ({ id, matterId: "M-1", firmId: "F", period: "2026-09", date: "2026-09-04", timekeeper: "X", level, hours, rate: 400, narrative: "Work." });
+  const input = {
+    ledger: [mk("G-030", "partner", 10), mk("G-031", "associate", 5)],
+    guidelines: GUIDELINES,
+  };
+  const f = checkGuidelines(input).find((x) => x.flag === "staffing_ratio");
+  assert.ok(f);
+  assert.equal(f.ruleId, "SR-01");
+  assert.equal(f.matterId, "M-1");
+  assert.match(f.detail, /0.5/); // 5 junior hours / 10 senior hours
+  // an unknown rule type surfaces instead of being silently ignored
+  const bogus = checkGuidelines({ ledger: [], guidelines: [{ id: "X-1", type: "bogus" }] });
+  assert.equal(bogus[0].flag, "unknown_rule_type");
+});
+
+/* ---------- variance drivers ---------- */
+
+test("computeBudgetVariance attaches top-3 drivers to over-budget pairs only", () => {
+  const rows = computeBudgetVariance(INPUT);
+  const m210 = rows.find((r) => r.matterId === "M-210" && r.firmId === "HPL");
+  assert.equal(m210.status, "over");
+  assert.deepEqual(m210.drivers, [
+    { entryId: "L-001", amount: 3400 },
+    { entryId: "L-002", amount: 2892.5 },
+    { entryId: "L-003", amount: 1850 },
+  ]);
+  const m211 = rows.find((r) => r.matterId === "M-211" && r.firmId === "HPL");
+  assert.equal(m211.status, "within");
+  assert.equal(m211.drivers, undefined);
+});
+
+/* ---------- anomaly flags ---------- */
+
+const TREND_LEDGER = [
+  { id: "T-001", matterId: "M-1", firmId: "F1", period: "2026-01", date: "2026-01-10", timekeeper: "R. Voss", level: "associate", hours: 10, rate: 400, narrative: "Drafting." },
+  { id: "T-002", matterId: "M-1", firmId: "F1", period: "2026-02", date: "2026-02-10", timekeeper: "R. Voss", level: "associate", hours: 3, rate: 450, narrative: "Drafting." },
+  { id: "T-003", matterId: "M-1", firmId: "F1", period: "2026-03", date: "2026-03-10", timekeeper: "R. Voss", level: "associate", hours: 7, rate: 460, narrative: "Drafting." },
+];
+
+test("flagAnomalies raises rate_creep with periods, rates, and delta", () => {
+  const flags = flagAnomalies({ ledger: TREND_LEDGER });
+  const creep = flags.find((f) => f.flag === "rate_creep");
+  assert.ok(creep);
+  assert.equal(creep.timekeeper, "R. Voss");
+  assert.equal(creep.fromPeriod, "2026-01");
+  assert.equal(creep.toPeriod, "2026-02");
+  assert.equal(creep.fromRate, 400);
+  assert.equal(creep.toRate, 450);
+  assert.equal(creep.deltaPct, 12.5);
+  assert.deepEqual(creep.entryIds, ["T-001", "T-002"]);
+});
+
+test("flagAnomalies raises hours_spike beyond twice the prior period", () => {
+  const flags = flagAnomalies({ ledger: TREND_LEDGER });
+  const spike = flags.find((f) => f.flag === "hours_spike");
+  assert.ok(spike); // 7h in March > 2 × 3h in February
+  assert.equal(spike.fromHours, 3);
+  assert.equal(spike.toHours, 7);
+  assert.deepEqual(spike.entryIds, ["T-002", "T-003"]);
+  assert.equal(flags.filter((f) => f.flag === "rate_creep").length, 1); // 450→460 is +2.2%, no second creep
+});
+
+test("flagAnomalies thresholds are rules-as-data", () => {
+  const lenient = flagAnomalies({ ledger: TREND_LEDGER, settings: { rateCreepPct: 20, hoursSpikeFactor: 3 } });
+  assert.equal(lenient.length, 0);
+});
+
+/* ---------- talking points ---------- */
+
+test("renderTalkingPoints sections cite exactly each firm's finding ids and tie totals to the summary", () => {
+  const a = runSpendAudit(INPUT);
+  const md = renderTalkingPoints(a, {
+    firmNames: { HPL: "Hale & Prior LLP", MVL: "Merrick Vaughan LLP" },
+    matterNames: { "M-210": "Project Kite", "M-211": "Atlas IP", "M-212": "Dune merger" },
+  });
+  const sections = md.split("\n## ").slice(1).map((s) => s.split("\n")[0]);
+  assert.deepEqual(sections, ["Hale & Prior LLP", "Merrick Vaughan LLP"]); // sorted by firm id
+  const section = (name) => { const start = md.indexOf(`\n## ${name}`); const end = md.indexOf("\n## ", start + 1); return md.slice(start, end > -1 ? end : undefined); };
+  const hplIds = new Set([...section("Hale & Prior LLP").matchAll(/L-\d+/g)].map((m) => m[0]));
+  const mvlIds = new Set([...section("Merrick Vaughan LLP").matchAll(/L-\d+/g)].map((m) => m[0]));
+  // every HPL finding id appears in the HPL section; no MVL finding id leaks in
+  for (const id of ["L-003", "L-005", "L-010"]) assert.ok(hplIds.has(id), `${id} in HPL section`);
+  for (const id of ["L-006", "L-007"]) assert.ok(!hplIds.has(id), `${id} not in HPL section`);
+  for (const id of ["L-006", "L-007"]) assert.ok(mvlIds.has(id), `${id} in MVL section`);
+  // grand total ties to the audit summary
+  assert.ok(md.includes(`Total net spend: ${a.summary.netSpend}`));
+});
+
+test("renderTalkingPoints renders matter-wide staffing_ratio findings in a panel-wide section", () => {
+  const a = runSpendAudit({ ...INPUT, guidelines: GUIDELINES });
+  const md = renderTalkingPoints(a, {
+    firmNames: { HPL: "Hale & Prior LLP", MVL: "Merrick Vaughan LLP" },
+    matterNames: { "M-210": "Project Kite", "M-211": "Atlas IP", "M-212": "Dune merger" },
+  });
+  const panel = md.slice(md.indexOf("\n## Panel-wide"), md.indexOf("**Total net spend"));
+  assert.ok(panel.includes("staffing_ratio"), "panel section lists staffing_ratio");
+  assert.ok(panel.includes("SR-01"), "panel cites the rule id");
+  assert.ok(panel.includes("Atlas IP"), "matter name resolved (M-211 below ratio)");
+  assert.ok(panel.includes("Dune merger"), "matter name resolved (M-212 below ratio)");
+  // every guideline finding is rendered exactly once (firm-level in firm
+  // sections, matter-wide in the panel) — the count in the header must match
+  const rendered = (md.match(/rule `[^`]+`/g) ?? []).length;
+  assert.equal(rendered, a.summary.guidelineFlags);
+});
+
+/* ---------- audit integration + counterpart attribution ---------- */
+
+test("runSpendAudit and exports include guideline and anomaly findings", () => {
+  const a = runSpendAudit({ ...INPUT, guidelines: GUIDELINES });
+  assert.equal(a.summary.guidelineFlags, a.guidelineFindings.length);
+  assert.ok(a.summary.guidelineFlags > 0);
+  assert.equal(a.summary.anomalyFlags, a.anomalyFlags.length);
+  const csv = auditToCsv(a);
+  assert.match(csv, /guideline,L-010,M-211,HPL,2026-09,block_billing/); // L-010's multi-activity narrative trips BG-01
+  assert.match(csv, /BG-01/);
+  assert.match(csv, /anomaly,/);
+  const md = renderReport(a);
+  assert.match(md, /Billing-guideline flags/);
+  assert.match(md, /Anomaly flags/);
+});
+
+test("spec and README cite the verified counterpart description, not the unverified one", () => {
+  const spec = readFileSync(new URL("../spec.md", import.meta.url), "utf8");
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  for (const doc of [spec, readme]) {
+    assert.ok(!doc.includes("flag unusual billing patterns"), "unverified quote removed");
+    assert.ok(doc.includes("academy.claude.com/use-cases/outside-counsel-review"), "Academy citation present");
+  }
 });

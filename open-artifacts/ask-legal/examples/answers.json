@@ -16,6 +16,9 @@
     "escalate": false,
     "route": null,
     "auditId": "AUD-00001",
+    "provisional": false,
+    "label": null,
+    "suggestedEntry": null,
     "answerPreview": "Use the Mutual NDA (Form L-102) for all prospective vendors; do not sign the vendor's own paper. Exceptions (shorter ter"
   },
   {
@@ -35,6 +38,9 @@
     "escalate": false,
     "route": null,
     "auditId": "AUD-00002",
+    "provisional": false,
+    "label": null,
+    "suggestedEntry": null,
     "answerPreview": "Entertainment above $500 requires pre-approval from Finance and the responsible partner, logged in the matter file befor"
   },
   {
@@ -54,6 +60,9 @@
     "escalate": false,
     "route": null,
     "auditId": "AUD-00003",
+    "provisional": true,
+    "label": "Provisional guidance — confirm with Legal.",
+    "suggestedEntry": null,
     "answerPreview": "26 months per the 2024 retention schedule, then anonymize or delete (Privacy Policy §9)."
   },
   {
@@ -71,6 +80,9 @@
     "escalate": true,
     "route": "legal-intake",
     "auditId": "AUD-00004",
+    "provisional": false,
+    "label": null,
+    "suggestedEntry": null,
     "answerPreview": null
   },
   {
@@ -90,6 +102,9 @@
     "escalate": false,
     "route": null,
     "auditId": "AUD-00005",
+    "provisional": false,
+    "label": null,
+    "suggestedEntry": null,
     "answerPreview": "Email security-incidents@example.test within 1 hour of discovery and do not discuss externally. Privacy Counsel decides "
   }
 ]

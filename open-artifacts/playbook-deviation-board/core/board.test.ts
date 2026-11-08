@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseYaml } from './yaml';
-import { buildBoard, renderBoard } from './board';
+import { buildBoard, renderBoard, buildPortfolio, renderPortfolio } from './board';
 import type { Playbook, BoardInput } from './board';
+import { decide, diffBoards, boardHash } from './diff';
+import { detectDrift } from './drift';
+import type { DriftEntry } from './drift';
+import { numericTokens } from './textutil';
 
 const PLAYBOOK_YAML = `
 # fictional playbook for tests
@@ -145,6 +149,220 @@ rules:
   });
   assert.equal(out.rows[0].classification, 'deal_breaker');
   assert.ok(out.rows[0].reason.includes('uncapped'));
+});
+
+test('word-form number spans numeric-match after normalization ("eighteen months" ≡ "eighteen (18) months")', () => {
+  const [row] = board([{ id: 'C10', heading: 'Term', text: '3.1 This Agreement continues for eighteen months.' }]).rows;
+  assert.equal(row.classification, 'deviates');
+  assert.equal(row.matchedTier, 2);
+  assert.equal(row.routedTo, 'General Counsel');
+});
+
+test('number-word restatement collapses: "two (2)" counts once, bare "18" still matches "eighteen (18)"', () => {
+  const rows = board([
+    { id: 'C11', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+    { id: 'C12', heading: 'Term', text: 'This Agreement continues for 18 months.' },
+  ]).rows;
+  assert.equal(rows[0].matchedTier, 1);
+  assert.equal(rows[1].classification, 'deviates');
+  assert.equal(rows[1].matchedTier, 2);
+});
+
+test('playbook/contract side mismatch is flagged on the board and in every row reason', () => {
+  const playbook = { ...(parseYaml(PLAYBOOK_YAML) as unknown as Playbook), side: 'sales' as const };
+  const clause = { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' };
+  const bad = buildBoard({ playbook, contract: { name: 'T', side: 'purchasing', clauses: [clause] } });
+  assert.ok(bad.sideMismatch && bad.sideMismatch.includes('side mismatch'));
+  assert.ok(bad.rows.every((r) => r.reason.includes('side mismatch')));
+  assert.ok(renderBoard(bad).includes('side mismatch'));
+  const good = buildBoard({ playbook, contract: { name: 'T', side: 'sales', clauses: [clause] } });
+  assert.equal(good.sideMismatch, null);
+  assert.ok(good.rows.every((r) => !r.reason.includes('side mismatch')));
+});
+
+test('deviates rows carry a deterministic redline vs the preferred standard, rendered as −/+ diff lines', () => {
+  const [row] = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]).rows;
+  assert.equal(row.classification, 'deviates');
+  assert.ok(row.redline, 'deviates rows must carry a redline');
+  assert.equal(row.redline!.removals.join(' | '), 'two (2)');
+  assert.ok(row.redline!.additions.join(' | ').includes('three (3)'));
+  const md = renderBoard(board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]));
+  assert.ok(md.includes('```diff'));
+  assert.ok(md.includes('- two (2)'));
+  assert.ok(md.includes('+ three (3)'));
+});
+
+test('decide() records a decision log bound to a board hash; rejects unknown and duplicate clauseIds', () => {
+  const out = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]);
+  const log = decide(out, [{ clauseId: 'C2', decision: 'approve', by: 'Legal Operations', note: 'tier 1 acceptable for this deal' }]);
+  assert.equal(log.contractName, 'Test NDA');
+  assert.equal(log.playbookId, 'PB-TEST-1');
+  assert.equal(log.boardHash, boardHash(out));
+  assert.equal(log.decisions.length, 1);
+  assert.equal(log.decisions[0].by, 'Legal Operations');
+  assert.throws(() => decide(out, [{ clauseId: 'C99', decision: 'approve', by: 'X' }]), /C99/);
+  assert.throws(() => decide(out, [
+    { clauseId: 'C2', decision: 'approve', by: 'X' },
+    { clauseId: 'C2', decision: 'reject', by: 'Y' },
+  ]), /duplicate/);
+});
+
+test('diffBoards(): same clause moving tier 1 → tier 2 is changed, not new/resolved', () => {
+  const a = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for two (2) years.' }]);
+  const b = board([{ id: 'C2', heading: 'Term', text: '3.1 This Agreement continues for eighteen (18) months.' }]);
+  const d = diffBoards(a, b);
+  assert.deepEqual(d.summary, { new: 0, resolved: 0, changed: 1, unchanged: 0, dropped: 0 });
+  assert.equal(d.changedRows[0].clauseId, 'C2');
+  assert.ok(d.changedRows[0].changes.includes('matchedTier'));
+  assert.ok(d.changedRows[0].changes.includes('routedTo'));
+});
+
+test('diffBoards(): new, resolved, and unchanged rows are separated', () => {
+  const a = board([
+    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+    { id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+  ]);
+  const b = board([
+    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+    { id: 'C2', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+    { id: 'C3', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+  ]);
+  const d = diffBoards(a, b);
+  assert.deepEqual(d.summary, { new: 1, resolved: 1, changed: 0, unchanged: 1, dropped: 0 });
+  assert.equal(d.newRows[0].clauseId, 'C3');
+  assert.equal(d.resolvedRows[0].clauseId, 'C2');
+});
+
+test('diffBoards(): rows present only in v1 surface as droppedRows with a summary count', () => {
+  const a = board([
+    { id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+    { id: 'C4', heading: 'Term', text: 'This Agreement continues in perpetuity.' },
+  ]);
+  const b = board([{ id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' }]);
+  const d = diffBoards(a, b);
+  assert.deepEqual(d.summary, { new: 0, resolved: 0, changed: 0, unchanged: 1, dropped: 1 });
+  assert.equal(d.droppedRows.length, 1);
+  assert.equal(d.droppedRows[0].clauseId, 'C4');
+  assert.equal(d.droppedRows[0].classification, 'deal_breaker'); // a deleted deal-breaker must not vanish silently
+});
+
+test('numericTokens: bare number words in prose ("no one party") are not quantities', () => {
+  assert.deepEqual(numericTokens('No one party may assign this Agreement.'), []);
+  assert.deepEqual(numericTokens('either party may do one or more of the foregoing'), []);
+});
+
+test('numericTokens: word-form numbers normalize only next to a unit or a "(n)" restatement', () => {
+  assert.deepEqual(numericTokens('continues for eighteen (18) months'), ['18']); // restatement
+  assert.deepEqual(numericTokens('continues for eighteen months'), ['18']); // unit
+  assert.deepEqual(numericTokens('ninety days prior written notice'), ['90']); // unit
+  assert.deepEqual(numericTokens('successive one-year terms'), ['1']); // hyphenated unit
+});
+
+test('bare number words inside the matched span cannot flip the numeric guard ("one to three (3) years" stays compliant)', () => {
+  const [row] = board([{ id: 'C13', heading: 'Term', text: 'This Agreement continues for one to three (3) years.' }]).rows;
+  assert.equal(row.classification, 'compliant');
+  assert.equal(row.matchedTier, 'preferred');
+});
+
+test('beyond-playbook redline drops the leading heading tokens ("3.1 Term.") from removals', () => {
+  const [row] = board([{ id: 'C14', heading: 'Term', text: '3.1 Term. This Agreement continues for six (6) months.' }]).rows;
+  assert.equal(row.classification, 'deviates');
+  assert.equal(row.matchedTier, null); // beyond playbook
+  assert.ok(row.redline);
+  assert.ok(!row.redline!.removals.some((r) => r.includes('3.1') || r.includes('Term')));
+  assert.ok(row.redline!.removals.join(' | ').includes('six (6)'));
+});
+
+test('detectDrift(): ≥5 same-direction deviations in the window ⇒ Revise', () => {
+  const entries: DriftEntry[] = Array.from({ length: 6 }, (_, i) => ({
+    date: `2026-0${i + 1}-10`,
+    ruleId: 'term',
+    direction: 'term:shorter',
+  }));
+  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
+  assert.equal(r.rules.length, 1);
+  assert.equal(r.rules[0].count, 6);
+  assert.equal(r.rules[0].proposal, 'Revise');
+  assert.equal(r.rules[0].directions[0].direction, 'term:shorter');
+});
+
+test('detectDrift(): split directions at threshold ⇒ Clarify', () => {
+  const entries: DriftEntry[] = [
+    ...Array.from({ length: 3 }, (_, i) => ({ date: `2026-0${i + 1}-10`, ruleId: 'term', direction: 'term:shorter' })),
+    ...Array.from({ length: 3 }, (_, i) => ({ date: `2026-0${i + 4}-10`, ruleId: 'term', direction: 'term:longer' })),
+  ];
+  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
+  assert.equal(r.rules[0].proposal, 'Clarify');
+});
+
+test('detectDrift(): repeated avoid-language (deal_breaker kind) at threshold ⇒ Flag', () => {
+  const entries: DriftEntry[] = Array.from({ length: 5 }, (_, i) => ({
+    date: `2026-0${i + 1}-10`,
+    ruleId: 'term',
+    direction: 'term:perpetual',
+    kind: 'deal_breaker' as const,
+  }));
+  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
+  assert.equal(r.rules[0].proposal, 'Flag');
+});
+
+test('detectDrift(): rejects impossible calendar dates', () => {
+  assert.throws(() => detectDrift([{ date: '2026-99-99', ruleId: 'term', direction: 'term:shorter' }]), /2026-99-99/);
+  assert.throws(() => detectDrift([{ date: '2026-02-30', ruleId: 'term', direction: 'term:shorter' }]), /2026-02-30/);
+});
+
+test('detectDrift(): entries older than the lookback window are excluded', () => {
+  const entries: DriftEntry[] = [
+    ...Array.from({ length: 4 }, (_, i) => ({ date: `2024-0${i + 1}-10`, ruleId: 'term', direction: 'term:shorter' })),
+    { date: '2026-05-10', ruleId: 'term', direction: 'term:shorter' },
+    { date: '2026-06-10', ruleId: 'term', direction: 'term:shorter' },
+  ];
+  const r = detectDrift(entries, { threshold: 5, lookbackMonths: 12 });
+  assert.equal(r.asOf, '2026-06-10');
+  assert.equal(r.rules[0].count, 2);
+  assert.equal(r.rules[0].proposal, null);
+});
+
+test('buildPortfolio(): per-rule rollup sums deviation counts across contracts', () => {
+  const playbook = parseYaml(PLAYBOOK_YAML) as unknown as Playbook;
+  const p = buildPortfolio({
+    playbook,
+    contracts: [
+      {
+        name: 'NDA A',
+        clauses: [
+          { id: 'A1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+          { id: 'A2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+        ],
+      },
+      {
+        name: 'NDA B',
+        clauses: [{ id: 'B1', heading: 'Term', text: 'This Agreement continues for two (2) years.' }],
+      },
+    ],
+  });
+  assert.equal(p.boards.length, 2);
+  const term = p.rollup.find((r) => r.ruleId === 'term')!;
+  assert.equal(term.clauses, 3);
+  assert.equal(term.compliant, 1);
+  assert.equal(term.deviates, 2);
+  assert.equal(term.deviationRate, 2 / 3);
+  const md = renderPortfolio(p);
+  assert.ok(md.includes('| term |'));
+  assert.ok(md.includes('NDA A'));
+  assert.ok(md.includes('NDA B'));
+});
+
+test('renderBoard(): includes the per-rule deviation-frequency rollup table and resolved thresholds', () => {
+  const out = board([
+    { id: 'C1', heading: 'Term', text: 'This Agreement continues for three (3) years.' },
+    { id: 'C2', heading: 'Term', text: 'This Agreement continues for two (2) years.' },
+    { id: 'C3', heading: 'Boilerplate', text: 'Notice clause.' },
+  ]);
+  assert.deepEqual(out.thresholds, { preferred: 0.7, fallback: 0.7, topic: 0.3 });
+  const md = renderBoard(out);
+  assert.ok(md.includes('| term |'));
+  assert.ok(md.includes('—'));
 });
 
 test('summary counts and markdown board render', () => {

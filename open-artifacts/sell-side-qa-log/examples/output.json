@@ -8,7 +8,15 @@
     "draftOnly": 0,
     "open": 1,
     "pendingDrafts": 2,
-    "contradictions": 4
+    "contradictions": 5,
+    "overdue": 5
+  },
+  "aging": {
+    "asOf": "2026-10-23",
+    "sla": {
+      "warnDays": 3,
+      "breachDays": 5
+    }
   },
   "items": [
     {
@@ -20,9 +28,20 @@
       "status": "sent",
       "currentAnswer": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute.",
       "currentAnswerAt": "2026-10-03",
+      "citations": [
+        {
+          "docId": "DR-014",
+          "locator": "§2.1",
+          "quote": "Three actions pending: two employment, one commercial."
+        }
+      ],
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 2,
-      "contradicted": true
+      "daysOpen": 25,
+      "sla": "overdue",
+      "contradicted": true,
+      "blockers": []
     },
     {
       "id": "Q-002",
@@ -33,9 +52,20 @@
       "status": "sent",
       "currentAnswer": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target.",
       "currentAnswerAt": "2026-10-05",
+      "citations": [
+        {
+          "docId": "DR-014",
+          "locator": "§2.2",
+          "quote": "All 2024 matters settled and dismissed with prejudice."
+        }
+      ],
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 1,
-      "contradicted": true
+      "daysOpen": 13,
+      "sla": "overdue",
+      "contradicted": true,
+      "blockers": []
     },
     {
       "id": "Q-003",
@@ -46,9 +76,14 @@
       "status": "sent",
       "currentAnswer": "The target serves 1,200 active customers across 14 locations.",
       "currentAnswerAt": "2026-10-04",
+      "citations": null,
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 1,
-      "contradicted": true
+      "daysOpen": 7,
+      "sla": "overdue",
+      "contradicted": true,
+      "blockers": []
     },
     {
       "id": "Q-004",
@@ -59,9 +94,14 @@
       "status": "sent",
       "currentAnswer": "Approximately 950 active customers as of the latest quarter.",
       "currentAnswerAt": "2026-10-06",
+      "citations": null,
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 1,
-      "contradicted": true
+      "daysOpen": 4,
+      "sla": "due-soon",
+      "contradicted": true,
+      "blockers": []
     },
     {
       "id": "Q-005",
@@ -72,9 +112,29 @@
       "status": "draft-pending",
       "currentAnswer": "Revenue grew 12% in 2025.",
       "currentAnswerAt": "2026-10-02",
+      "citations": [
+        {
+          "docId": "DR-002",
+          "locator": "p. 7",
+          "quote": "FY2025 revenue growth of 12 percent."
+        }
+      ],
       "pendingDraft": "Revenue grew 12% in 2025, but EBITDA declined 4% year over year.",
+      "draftApproved": false,
       "answersCount": 2,
-      "contradicted": true
+      "daysOpen": 21,
+      "sla": "overdue",
+      "contradicted": true,
+      "blockers": [
+        {
+          "code": "unapproved",
+          "detail": "pending draft on Q-005 has no approval recorded — transition(item, { type: \"approve\", approver, at }) first"
+        },
+        {
+          "code": "number_conflict",
+          "detail": "number_conflict (financials) between Q-005 and Q-006 — disjoint \"%\" values: Q-005 (sent) says 12, Q-006 (sent) says 4 — 12 vs 4"
+        }
+      ]
     },
     {
       "id": "Q-006",
@@ -85,9 +145,20 @@
       "status": "sent",
       "currentAnswer": "EBITDA increased 4% year over year in 2025.",
       "currentAnswerAt": "2026-10-08",
+      "citations": [
+        {
+          "docId": "DR-002",
+          "locator": "p. 9",
+          "quote": "EBITDA increased 4 percent year over year in FY2025."
+        }
+      ],
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 1,
-      "contradicted": true
+      "daysOpen": 5,
+      "sla": "overdue",
+      "contradicted": true,
+      "blockers": []
     },
     {
       "id": "Q-007",
@@ -98,9 +169,14 @@
       "status": "open",
       "currentAnswer": null,
       "currentAnswerAt": null,
+      "citations": null,
       "pendingDraft": null,
+      "draftApproved": false,
       "answersCount": 0,
-      "contradicted": false
+      "daysOpen": 3,
+      "sla": "due-soon",
+      "contradicted": false,
+      "blockers": []
     },
     {
       "id": "Q-008",
@@ -111,9 +187,25 @@
       "status": "draft-pending",
       "currentAnswer": "The core patent portfolio is licensed exclusively to Meridian Manufacturing.",
       "currentAnswerAt": "2026-10-09",
+      "citations": [
+        {
+          "docId": "DR-021",
+          "locator": "Exhibit C",
+          "quote": "Core patent portfolio licensed exclusively to Meridian Manufacturing."
+        }
+      ],
       "pendingDraft": "The core patent portfolio is licensed exclusively to Meridian Manufacturing; two trademarks are non-exclusive.",
+      "draftApproved": false,
       "answersCount": 2,
-      "contradicted": false
+      "daysOpen": 1,
+      "sla": "on-track",
+      "contradicted": false,
+      "blockers": [
+        {
+          "code": "unapproved",
+          "detail": "pending draft on Q-008 has no approval recorded — transition(item, { type: \"approve\", approver, at }) first"
+        }
+      ]
     }
   ],
   "contradictions": [
@@ -192,28 +284,51 @@
         {
           "itemId": "Q-001",
           "answerStatus": "sent",
-          "quote": "Yes."
+          "quote": "Yes. There are 3 pending lawsuits: two employment matters and one commercial dispute."
         },
         {
           "itemId": "Q-002",
           "answerStatus": "sent",
-          "quote": "No."
+          "quote": "No. All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
+        }
+      ]
+    },
+    {
+      "category": "litigation",
+      "kind": "antonym_conflict",
+      "between": [
+        "Q-001",
+        "Q-002"
+      ],
+      "detail": "Q-001 says \"pending\" where Q-002 says \"settled\"",
+      "evidence": [
+        {
+          "itemId": "Q-001",
+          "answerStatus": "sent",
+          "quote": "There are 3 pending lawsuits: two employment matters and one commercial dispute."
+        },
+        {
+          "itemId": "Q-002",
+          "answerStatus": "sent",
+          "quote": "All 2 lawsuits from 2024 were settled and dismissed; there are no pending lawsuits against the target."
         }
       ]
     }
   ],
   "readiness": {
-    "score": 69,
+    "score": 67,
     "band": "nearly ready",
     "components": {
       "coverage": 0.875,
       "pipeline": 0.875,
-      "consistency": 0.25
+      "consistency": 0.25,
+      "provenance": 0.625
     },
     "weights": {
-      "coverage": 0.5,
-      "pipeline": 0.2,
-      "consistency": 0.3
+      "coverage": 0.4,
+      "pipeline": 0.15,
+      "consistency": 0.25,
+      "provenance": 0.2
     },
     "bands": {
       "nearly": 60,

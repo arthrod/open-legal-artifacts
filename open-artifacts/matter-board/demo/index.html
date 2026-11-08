@@ -66,12 +66,29 @@
     <div class="row">
       <button id="jsonBtn">Export diff JSON</button>
       <button id="csvBtn" class="ghost">Export diff CSV</button>
+      <button id="icsBtn" class="ghost">Export deadlines .ics</button>
     </div>
   </section>
 
   <section>
     <h2>Board (current snapshot)</h2>
     <div class="board" id="board"></div>
+  </section>
+
+  <section>
+    <h2>Your own snapshot</h2>
+    <p class="lede" style="font-size:13px">Paste snapshot JSON (schema in <code>spec.md</code>), optionally a previous snapshot
+      for the diff, and an <code>asOf</code> date. Everything renders client-side with the same <code>core.js</code> —
+      nothing is sent anywhere.</p>
+    <div class="row" style="align-items:flex-start">
+      <textarea id="currIn" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='{"capturedAt":"…","matters":[…]}'></textarea>
+      <textarea id="prevIn" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='previous snapshot (optional — enables the diff changelog)'></textarea>
+    </div>
+    <div class="row">
+      <label style="font-family:var(--font-mono);font-size:12px">asOf <input id="asOfIn" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)" /></label>
+      <button id="loadBtn">Load snapshots</button>
+      <span id="formMsg" style="font-family:var(--font-mono);font-size:12px;align-self:center"></span>
+    </div>
   </section>
 
   <footer class="disclaimer">
@@ -82,41 +99,74 @@
 </div>
 
 <script type="module">
-  import { diffSnapshots, buildBoard, diffToCsv, diffToJson } from "../core/core.js";
+  import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const diff = diffSnapshots(EXAMPLE.previous, EXAMPLE.current);
-  const board = buildBoard(EXAMPLE.current, EXAMPLE.asOf, { soonDays: 14 });
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const flagOf = (id) => board.flagged.find((f) => f.id === id);
-  const changedIds = new Set(diff.changed.filter((c) => c.severity === "critical").map((c) => c.id));
+  let diff = null, board = null;
 
-  document.getElementById("counts").innerHTML =
-    `<div><b>${diff.counts.changed}</b><span>field changes</span></div>` +
-    `<div><b>${diff.counts.critical}</b><span>critical</span></div>` +
-    `<div><b>${diff.counts.added}</b><span>matters added</span></div>` +
-    `<div><b>${diff.counts.removed}</b><span>matters removed</span></div>`;
+  function render() {
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    document.getElementById("counts").innerHTML =
+      `<div><b>${diff.counts.changed}</b><span>field changes</span></div>` +
+      `<div><b>${diff.counts.critical}</b><span>critical</span></div>` +
+      `<div><b>${diff.counts.added}</b><span>matters added</span></div>` +
+      `<div><b>${diff.counts.removed}</b><span>matters removed</span></div>`;
 
-  document.getElementById("changelog").innerHTML = [
-    ...diff.changed.map((c) =>
-      `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
-      `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
-      `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
-    ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
-    ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
-  ].join("");
+    const flagOf = (id) => board.flagged.find((f) => f.id === id);
+    const changedIds = new Set(diff.changed.filter((c) => c.severity === "critical").map((c) => c.id));
 
-  document.getElementById("board").innerHTML = board.stages.map((s) =>
-    `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
-    s.matters.map((m) => {
-      const fl = flagOf(String(m.id));
-      const dl = m.nextDeadline
-        ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
-      return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
-        `<div class="nm">${esc(m.name)}</div>` +
-        `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
-        `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
-    }).join("") + "</div>").join("");
+    const items = [
+      ...diff.changed.map((c) =>
+        `<li><span class="ts">${esc(c.changedAt)} · ${esc(c.source)}</span><br />` +
+        `<b>${esc(c.name)}</b> <code>${esc(c.id)}</code><span class="sev ${c.sev}">${c.severity}</span><br />` +
+        `${esc(c.field)}: <span class="from">${esc(String(c.from ?? "—"))}</span> → <span class="to">${esc(String(c.to ?? "—"))}</span></li>`),
+      ...diff.added.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>new matter</b> (stage: ${esc(m.stage ?? "?")})</li>`),
+      ...diff.removed.map((m) => `<li><span class="ts">${esc(diff.currCapturedAt)}</span><br /><b>${esc(m.name)}</b> <code>${esc(m.id)}</code> — <b>no longer in snapshot</b></li>`),
+    ];
+    document.getElementById("changelog").innerHTML = items.length
+      ? items.join("")
+      : `<li><span class="ts">no changes — paste a previous snapshot below to see a diff</span></li>`;
+
+    document.getElementById("board").innerHTML = board.stages.map((s) =>
+      `<div class="col"><h3>${esc(s.stage)} <span>(${s.matters.length})</span></h3>` +
+      s.matters.map((m) => {
+        const fl = flagOf(String(m.id));
+        const dl = m.nextDeadline
+          ? `<div class="dl ${fl ? fl.flag : ""}">${fl ? (fl.flag === "overdue" ? "OVERDUE " : "SOON ") : ""}${esc(m.nextDeadline)} (${fl ? (fl.days >= 0 ? "+" : "") + fl.days + "d" : "?"})</div>` : "";
+        return `<div class="card ${changedIds.has(String(m.id)) ? "critical" : ""}">` +
+          `<div class="nm">${esc(m.name)}</div>` +
+          `<div class="meta">${esc(m.client ?? "")} · ${esc(m.owner ?? "?")}</div>` +
+          `<div class="meta">${esc(m.nextStep ?? "")}</div>${dl}</div>`;
+      }).join("") + "</div>").join("");
+  }
+
+  function load(prev, curr, asOf, msg) {
+    diff = prev ? diffSnapshots(prev, curr) : diffSnapshots(curr, curr); // no prev → empty diff, board still renders
+    board = buildBoard(curr, asOf, { soonDays: 14 });
+    render();
+    document.getElementById("formMsg").textContent = msg ?? "";
+  }
+
+  function parseSnapshot(text, label) {
+    let snap;
+    try { snap = JSON.parse(text); }
+    catch (e) { throw new Error(`${label}: invalid JSON — ${e.message}`); }
+    if (!snap || !Array.isArray(snap.matters)) throw new Error(`${label}: expected { capturedAt, matters: [...] }`);
+    return snap;
+  }
+
+  document.getElementById("loadBtn").onclick = () => {
+    try {
+      const curr = parseSnapshot(document.getElementById("currIn").value, "current snapshot");
+      const prevText = document.getElementById("prevIn").value.trim();
+      const prev = prevText ? parseSnapshot(prevText, "previous snapshot") : null;
+      const asOf = document.getElementById("asOfIn").value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("asOf: expected YYYY-MM-DD");
+      load(prev, curr, asOf, prev ? "board + diff rendered from pasted snapshots" : "board rendered (no previous snapshot pasted — diff empty)");
+    } catch (e) {
+      document.getElementById("formMsg").textContent = e.message;
+    }
+  };
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
@@ -125,6 +175,9 @@
   }
   document.getElementById("jsonBtn").onclick = () => download("matter-diff.json", diffToJson(diff), "application/json");
   document.getElementById("csvBtn").onclick = () => download("matter-diff.csv", diffToCsv(diff), "text/csv");
+  document.getElementById("icsBtn").onclick = () => download("matter-deadlines.ics", flaggedToIcs(board), "text/calendar");
+
+  load(EXAMPLE.previous, EXAMPLE.current, EXAMPLE.asOf, "");
 </script>
 </body>
 </html>

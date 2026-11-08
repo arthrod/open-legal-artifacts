@@ -1,9 +1,10 @@
 # eviction-notice-check-board — specification
 
 Open artifact: checks an eviction notice's facts against jurisdiction
-rules-as-data (5 example US jurisdictions, editable JSON) and outputs a
-per-requirement PASS / FAIL / UNVERIFIED board — every row cites the rule
-it was checked against. The checker NEVER guesses.
+rules-as-data (10 example US jurisdictions + 1 fictional city overlay,
+editable JSON) and outputs a per-requirement PASS / FAIL / UNVERIFIED
+board — every row cites the rule it was checked against, optionally
+backed by a verbatim quote from the notice. The checker NEVER guesses.
 
 ## Design split: deterministic core vs. LLM
 
@@ -11,7 +12,10 @@ it was checked against. The checker NEVER guesses.
 |---|---|
 | Period check (stated days vs required; long-tenancy tiers) | core (deterministic) |
 | Elapsed-days check (service → filing) when dates supplied | core (deterministic) |
-| Required-contents check (attested true/false; absent = unverified) | core (deterministic) |
+| Deadline engine (earliest lawful filing + expiration; weekend/holiday exclusion) | core (deterministic) |
+| Ruleset provenance (version, asOf, stable hash) | core (deterministic) |
+| Paste-the-notice draft extraction (verbatim quotes, all nullable) | core (deterministic, `core/extract.js`) |
+| Required-contents check (attested true/false/{present,quote}; absent = unverified) | core (deterministic) |
 | Service-method check against authorized list | core (deterministic) |
 | Verdict aggregation (any fail → FAIL; any unverified → UNVERIFIED) | core (deterministic) |
 | Jurisdiction notice rules (periods, contents, service methods, cites) | **rules-as-data** (editable JSON) |
@@ -20,9 +24,14 @@ it was checked against. The checker NEVER guesses.
 
 Never-guesses guarantees (enforced in tests):
 - unattested content → UNVERIFIED, never assumed present;
+- `{present: true}` without a verbatim quote → UNVERIFIED (auditable
+  evidence missing);
 - missing period → UNVERIFIED, never inferred from dates alone;
 - unknown jurisdiction → refuses to approximate from another ruleset;
-- unknown notice type → UNVERIFIED with the known types listed.
+- unknown notice type → UNVERIFIED with the known types listed;
+- the extractor never emits `present: false` (a non-match is not
+  evidence of absence) and never maps a description onto a ruleset
+  service-method enum by inference.
 
 ## Input contract (JSON)
 
@@ -35,18 +44,30 @@ Never-guesses guarantees (enforced in tests):
   "serviceDate": "2026-10-01",              // optional ISO
   "filedDate": "2026-10-03",                // optional ISO
   "serviceMethod": "post-and-mail",
-  "contents": { "amount-due": true, "payment-methods": false }
-  // content keys absent from this map are UNVERIFIED
+  "contents": {
+    "amount-due": { "present": true, "quote": "Rent of $1,250.00 is now due" },
+    "payment-methods": false
+  },
+  "checklist": [
+    { "id": "utility-contact", "label": "…", "cite": "Fiction Clinic checklist (fictional)" }
+  ]
+  // content keys absent from this map are UNVERIFIED; plain true/false
+  // attestations still work, but {present:true} without a quote is UNVERIFIED
 }
 ```
 
 ## Output contract (JSON)
 
-`{ jurisdiction, noticeType, checks[], summary, disclaimer }` where each
+`{ jurisdiction, noticeType, checks[], summary, ruleset, deadlines, disclaimer }` where each
 check is `{ id, requirement, status: pass|fail|unverified, detail,
-ruleCite }`. `summary.verdict` is `fail` if any check failed, else
+ruleCite }`. `ruleset` is `{ version, asOf, hash }` (stable hash of the
+effective rules object); `deadlines` (when jurisdiction and notice type
+resolve and a valid serviceDate is given)
+is `{ earliestFiling, expires, counting, countedDays, skippedDays }`.
+`summary.verdict` is `fail` if any check failed, else
 `unverified` if any check is unverified, else `pass`. Exports:
-`renderBoard()` (Markdown, worst-first), `toCSV()`.
+`renderBoard()` (Markdown, worst-first), `toCSV()`, `computeDeadlines()`,
+`rulesetHash()`, and `extractDraft()` from `core/extract.js`.
 
 ## Rules-as-data shape
 
@@ -67,7 +88,13 @@ ruleCite }`. `summary.verdict` is `fail` if any check failed, else
 
 Bundled examples (all marked verify-locally): California (CCP §§ 1161–1162
 examples), Texas (Prop. Code § 24.005), New York (RPAPL § 733),
-Washington (RCW 59.18/59.12), Ohio (ORC 1923.04).
+Washington (RCW 59.18/59.12), Ohio (ORC 1923.04), Florida (§ 83.56),
+Georgia (§ 44-7-7), Arizona (§ 33-1368), Illinois (5/9-209), Oregon
+(ORS 90.427), plus `fiction-city-example` — a FICTIONAL city overlay
+(`extends: california-example`) adding a bilingual-notice requirement.
+A jurisdiction entry may set `extends` to inherit another's notice
+types (overlay content rows append), and `holidays: [ISO dates]`
+merged on top of the shared `HOLIDAYS` example data.
 
 ## Prompt schema for the LLM part (fact extraction only)
 

@@ -11,7 +11,9 @@
         "non_redundancy": 100,
         "fallback_quality": 66.67,
         "speed": 100,
-        "retention": 82
+        "retention": 82,
+        "deadline_capture": null,
+        "conflict_check": null
       },
       "composite": 90.63,
       "metrics": {
@@ -32,6 +34,7 @@
           "prior_counsel"
         ],
         "missing_fields": [],
+        "missing_critical": [],
         "total_latency_seconds": 750,
         "abandonment_rate": 0.18
       },
@@ -47,7 +50,9 @@
         "non_redundancy": 71.43,
         "fallback_quality": 66.67,
         "speed": 1.01,
-        "retention": null
+        "retention": null,
+        "deadline_capture": null,
+        "conflict_check": null
       },
       "composite": 67.97,
       "metrics": {
@@ -68,6 +73,7 @@
           "prior_counsel"
         ],
         "missing_fields": [],
+        "missing_critical": [],
         "total_latency_seconds": 89100,
         "abandonment_rate": null
       },
@@ -81,6 +87,8 @@
     "fallback_quality",
     "speed",
     "retention",
+    "deadline_capture",
+    "conflict_check",
     "composite"
   ],
   "warnings": []

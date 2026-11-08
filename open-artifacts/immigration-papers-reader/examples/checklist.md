@@ -21,7 +21,9 @@ Checked as of 2026-11-07. Readiness: **100%** (5/5 required valid).
 ## Key dates
 
 - I-485 interview (fictional): **2026-11-18** (11 day(s) away — URGENT)
-- EAD renewal deadline (fictional): **2026-12-01** (24 day(s) away)
+- EAD renewal deadline (fictional): **2026-12-01** (24 day(s) away) — Filing deadline
+
+**Next action:** I-485 interview (fictional) — 2026-11-18 (11 day(s) away) — Confirm what this date requires and act before it passes.
 
 ## Warnings
 

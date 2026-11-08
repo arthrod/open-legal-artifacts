@@ -1,0 +1,27 @@
+{
+  "contract": {
+    "name": "Evaluation agreement — Verdant Robotics / Halcyon Systems (draft v1, fictional)",
+    "clauses": [
+      {
+        "id": "E1",
+        "heading": "Term",
+        "text": "4.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety days prior written notice of non-renewal."
+      },
+      {
+        "id": "E2",
+        "heading": "Limitation of Liability",
+        "text": "9.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim."
+      },
+      {
+        "id": "E3",
+        "heading": "Term",
+        "text": "4.1 Term. This Agreement commences on the Effective Date and continues for eighteen months."
+      },
+      {
+        "id": "E4",
+        "heading": "Governing Law",
+        "text": "12.1 Governing Law. This Agreement is governed by the laws of the State of New York."
+      }
+    ]
+  }
+}

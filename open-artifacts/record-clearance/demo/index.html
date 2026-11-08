@@ -13,6 +13,10 @@
   h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
   p.lede { max-width: 62ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
+  select { font-family: var(--font-mono); font-size: 13px; background: #fff; color: var(--text);
+    border: var(--hairline); padding: 10px 12px; border-radius: var(--radius); cursor: pointer; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 32px; }
+  .tier { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; display: inline-block; background: var(--hover); border: var(--hairline); border-radius: var(--radius); }
   textarea { width: 100%; box-sizing: border-box; min-height: 300px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
     background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
@@ -32,6 +36,10 @@
   ul.ck li.met::before { content: "☒"; }
   ul.ck li.unknown::before { content: "？"; }
   .meta { font-family: var(--font-mono); font-size: 12px; margin-top: 8px; }
+  ol.steps { margin: 6px 0 0; padding-left: 22px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .auth { font-size: 12.5px; margin-top: 6px; }
+  .auth a { color: var(--text); }
+  .gnote { border: var(--hairline); border-left: var(--tile-stripe) solid var(--accent); background: #fff; padding: 12px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
   .ref { border: var(--hairline); background: #fff; padding: 10px 14px; font-size: 12.5px; margin-top: 10px; }
   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
@@ -46,7 +54,23 @@
   <p class="lede">Relief types live in editable per-jurisdiction rules-as-data. The engine turns a
   client record into a prerequisites checklist (met / not met / <strong>unknown — never guessed</strong>),
   computes earliest and last filing dates with plain date math, tracks matters already
-  filed, and raises referral flags for counsel-dependent relief. Example jurisdictions: CA, IL, NY.</p>
+  filed, and raises referral flags for counsel-dependent relief. Full-tier example
+  jurisdictions: CA, IL, NY — plus a <strong>guidance tier</strong> (TX): a generic screen with a
+  mandatory referral instead of a bare error. Every item carries filing guidance (forms,
+  steps, fee-waiver note) and an authority link (<code>[verify]</code>-tagged — illustrative).</p>
+
+  <div class="bar">
+    <div>
+      <label class="kicker" for="jur">Jurisdiction</label><br />
+      <select id="jur">
+        <option value="CA" selected>CA — full ruleset</option>
+        <option value="IL">IL — full ruleset</option>
+        <option value="NY">NY — full ruleset</option>
+        <option value="TX">TX — guidance tier</option>
+      </select>
+    </div>
+    <span class="tier" id="tier">coverage tier: full</span>
+  </div>
 
   <div class="cols">
     <div>
@@ -65,38 +89,73 @@
 <script type="module">
 import { trackClearance } from "../core/core.js";
 
-const EXAMPLE = {
-  jurisdiction: "CA",
-  asOf: "2026-11-07",
-  client: { id: "CL-0417", name: "Dana Whitfield (fictional)", probationStatus: "completed",
-            finesPaid: true, pendingCases: false, rapSheetObtained: true },
-  convictions: [
-    { id: "V1", offense: "Forgery (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
-      dispositionDate: "2018-05-04", sentenceCompletedDate: "2020-08-21", probationTerminatedDate: "2020-08-21" },
-    { id: "V2", offense: "Shoplifting (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
-      dispositionDate: "2016-11-17", sentenceCompletedDate: "2017-02-10", probationTerminatedDate: "2017-06-30" },
-  ],
-  filings: [ { reliefTypeId: "CA-dismissal-petition", convictionId: "V2", date: "2026-09-15", status: "filed" } ],
+const CLIENT = { id: "CL-0417", name: "Dana Whitfield (fictional)", probationStatus: "completed",
+  finesPaid: true, pendingCases: false, rapSheetObtained: true };
+const EXAMPLES = {
+  CA: {
+    jurisdiction: "CA", asOf: "2026-11-07", client: CLIENT,
+    convictions: [
+      { id: "V1", offense: "Forgery (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
+        dispositionDate: "2018-05-04", sentenceCompletedDate: "2020-08-21", probationTerminatedDate: "2020-08-21" },
+      { id: "V2", offense: "Shoplifting (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
+        dispositionDate: "2016-11-17", sentenceCompletedDate: "2017-02-10", probationTerminatedDate: "2017-06-30" },
+    ],
+    filings: [ { reliefTypeId: "CA-dismissal-petition", convictionId: "V2", date: "2026-09-15", status: "filed" } ],
+  },
+  IL: {
+    jurisdiction: "IL", asOf: "2026-11-07", client: CLIENT,
+    convictions: [
+      { id: "V1", offense: "Theft (fictional)", offenseCategory: "theft", offenseClass: "misdemeanor",
+        dispositionDate: "2018-02-02", sentenceCompletedDate: "2019-04-15", probationTerminatedDate: "2019-04-15" },
+    ],
+    filings: [],
+  },
+  NY: {
+    jurisdiction: "NY", asOf: "2026-11-07", client: { ...CLIENT, probationStatus: "terminated" },
+    convictions: [
+      { id: "V1", offense: "Fraud (fictional)", offenseCategory: "fraud", offenseClass: "felony_class_W",
+        dispositionDate: "2012-06-01", sentenceCompletedDate: "2014-09-30", probationTerminatedDate: "2016-03-01" },
+    ],
+    filings: [],
+  },
+  TX: {
+    jurisdiction: "TX", asOf: "2026-11-07", client: CLIENT,
+    convictions: [
+      { id: "V1", offense: "Burglary (fictional)", offenseCategory: "property", offenseClass: "felony_class_W",
+        dispositionDate: "2015-10-20", sentenceCompletedDate: "2018-01-05", probationTerminatedDate: "2018-01-05" },
+    ],
+    filings: [],
+  },
 };
 
 const $input = document.getElementById("input");
 const $out = document.getElementById("out");
 const $err = document.getElementById("err");
-$input.value = JSON.stringify(EXAMPLE, null, 2);
+const $jur = document.getElementById("jur");
+const $tier = document.getElementById("tier");
+$input.value = JSON.stringify(EXAMPLES.CA, null, 2);
+$jur.addEventListener("change", () => { $input.value = JSON.stringify(EXAMPLES[$jur.value], null, 2); run(); });
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
-document.getElementById("run").addEventListener("click", () => {
+function run() {
   $err.textContent = "";
   try {
     const r = trackClearance(JSON.parse($input.value));
-    if (r.errors?.length) { $err.textContent = r.errors.join(" "); return; }
+    $tier.textContent = `coverage tier: ${r.coverageTier ?? "—"}`;
+    if (r.errors?.length) { $err.textContent = r.errors.join(" "); $out.innerHTML = "<p class=\"lede\">No report.</p>"; return; }
     let html = "";
+    if (r.guidanceNote) html += `<div class="gnote">🧭 ${esc(r.guidanceNote)}</div>`;
     for (const it of r.items) {
       html += `<div class="item"><h3>${esc(it.reliefName)} · ${esc(it.offense)} <span class="badge ${esc(it.status)}">${esc(it.status)}</span></h3>`;
       html += `<div class="meta">${esc(it.convictionId)} · earliest filing <strong>${esc(it.earliestFilingDate ?? "unknown")}</strong>${it.lastFilingDate ? " · last " + esc(it.lastFilingDate) : ""} · <code>${esc(it.ruleId)}</code></div>`;
       html += `<ul class="ck">` + it.checklist.map((k) =>
         `<li class="${esc(k.status)}">${k.status === "met" ? "" : k.status === "unknown" ? "unknown · " : "not met · "}${esc(k.label)} — ${esc(k.detail)}</li>`).join("") + `</ul>`;
+      if (it.filingGuidance) {
+        html += `<ol class="steps">` + it.filingGuidance.steps.map((s) => `<li>${esc(s)}</li>`).join("") + `</ol>`;
+        html += `<div class="meta">Forms: ${esc(it.filingGuidance.forms.join(" · "))} · Fee waiver: ${esc(it.filingGuidance.feeWaiverNote)}</div>`;
+      }
+      if (it.authority) html += `<div class="auth">Authority: ${esc(it.authority.cite)} — <a href="${esc(it.authority.url)}" target="_blank" rel="noopener">${esc(it.authority.url)}</a></div>`;
       if (it.filing) html += `<div class="meta">Filed ${esc(it.filing.date)} — status <strong>${esc(it.filing.status)}</strong></div>`;
       html += `</div>`;
     }
@@ -108,7 +167,9 @@ document.getElementById("run").addEventListener("click", () => {
   } catch (e) {
     $err.textContent = "Input error: " + e.message;
   }
-});
+}
+
+document.getElementById("run").addEventListener("click", run);
 </script>
 </body>
 </html>

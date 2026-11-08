@@ -30,14 +30,34 @@
   .pill.unverified { background: var(--text); color: var(--bg); }
   .cell-answer { margin-bottom: 4px; }
   .cell-cite { color: var(--text-secondary); font-size: 11px; }
+  .cell-cite a { color: inherit; }
   .cell-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
   .cell-warn { font-family: var(--font-mono); font-size: 11px; margin-top: 4px; color: var(--text); }
   .unverified-cell { font-family: var(--font-mono); font-size: 11px; }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   button { font-family: var(--font-mono); font-size: 13px; padding: 10px 18px; border: 1px solid var(--text);
     background: var(--text); color: var(--bg); cursor: pointer; }
   button:hover { background: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); }
+  textarea { width: 100%; min-height: 220px; font-family: var(--font-mono); font-size: 12px; padding: 12px;
+    border: var(--hairline); background: #fff; box-sizing: border-box; }
+  input[type="date"] { font-family: var(--font-mono); font-size: 13px; padding: 8px 10px; border: 1px solid var(--text); background: #fff; }
+  input[type="file"] { font-family: var(--font-mono); font-size: 12px; }
+  .msgs { font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
+  .msgs .err { color: var(--text); background: var(--flag-tint); padding: 8px 12px; border: var(--hairline); }
+  .msgs .warn { padding: 4px 12px; }
+  .bars { border: var(--hairline); background: #fff; }
+  .bar-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: var(--hairline); }
+  .bar-row:last-child { border-bottom: none; }
+  .bar-label { font-family: var(--font-mono); font-size: 12px; font-weight: 500; width: 70px; flex: none; }
+  .bar-track { flex: 1; display: flex; height: 14px; border: 1px solid var(--text); }
+  .bar-seg { height: 100%; }
+  .bar-seg.verified { background: var(--text); }
+  .bar-seg.stale { background: var(--accent); }
+  .bar-seg.unverified { background: #fff; }
+  .bar-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); width: 130px; flex: none; }
+  .legend { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin: 8px 0 0; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--text); vertical-align: -1px; margin: 0 4px 0 12px; }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
 </style>
@@ -49,18 +69,33 @@
     <div class="rule"></div>
     <h1>Jurisdiction survey matrix</h1>
     <p class="lede">Jurisdictions × legal questions in one table — every populated cell carries a source
-      citation and a verification date, stale cells are flagged, and <b>unverified cells are never
-      guessed</b>. Open reimplementation of Anthropic's closed artifact.</p>
-    <p class="lede" style="font-size:13px">Worked example (fictional): breach-notification individual-notice rules,
+      citation, a <b>link to the underlying law</b>, and a verification date; stale cells are flagged, and
+      <b>unverified cells are never guessed</b>. Open reimplementation of Anthropic's closed artifact.</p>
+    <p class="lede" style="font-size:13px">Load your own survey below (paste or file) — everything renders
+      client-side; no data leaves the machine. Worked example (fictional): breach-notification rules,
       7 jurisdictions × 4 questions, 180-day re-verification policy.</p>
   </header>
 
   <section>
+    <h2>Load survey</h2>
+    <textarea id="inputJson" spellcheck="false" aria-label="Survey JSON"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="renderBtn">Render survey</button>
+      <input type="file" id="fileInput" accept=".json,application/json" aria-label="Load survey JSON file" />
+      <label style="font-family:var(--font-mono);font-size:12px">as of <input type="date" id="asOfInput" /></label>
+    </div>
+    <div class="msgs" id="msgs"></div>
+  </section>
+
+  <section>
     <h2>Coverage</h2>
     <div class="stats" id="stats"></div>
-    <div class="row">
+    <div class="bars" id="bars"></div>
+    <p class="legend">verified<i style="background:var(--text)"></i>stale<i style="background:var(--accent)"></i>unverified<i style="background:#fff"></i></p>
+    <div class="row" style="margin-top:24px">
       <button id="csvBtn">Export CSV</button>
       <button id="mdBtn" class="ghost">Export Markdown</button>
+      <button id="wlBtn" class="ghost">Export re-verification worklist</button>
     </div>
   </section>
 
@@ -73,55 +108,109 @@
   </section>
 
   <footer class="disclaimer">
-    Deterministic core: the matrix renders only what was researched and cited — an optional LLM may draft cell
+    Deterministic core: the matrix renders only what was researched, cited, and linked — an optional LLM may draft cell
     research (schema in spec.md) but its output is treated as <code>unverified</code> until a human records the
-    citation + verification date. All example data fictional. Not legal advice.
+    citation + verification date. All example data fictional; fictional source URLs use the reserved domain
+    fictional.example. Not legal advice.
     <code>anthropic counterpart: Jurisdiction survey matrix (closed)</code>
   </footer>
 </div>
 
 <script type="module">
-  import { buildMatrix, toCsv, toMarkdown } from "../core/core.js";
+  import { buildMatrix, toCsv, toMarkdown, toWorklist, worklistToMarkdown } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const m = buildMatrix(EXAMPLE.survey, EXAMPLE.asOf);
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  $("stats").innerHTML =
-    `<div class="stat"><b>${m.coverage.verified}/${m.coverage.total}</b><span>verified</span></div>` +
-    `<div class="stat"><b>${m.coverage.stale}</b><span>stale</span></div>` +
-    `<div class="stat"><b>${m.coverage.unverified}</b><span>unverified</span></div>` +
-    `<div class="stat"><b>${m.coverage.pctVerified}%</b><span>coverage</span></div>` +
-    `<div class="stat"><b>${m.policy.maxAgeDays}d</b><span>re-verify policy</span></div>`;
+  $("inputJson").value = JSON.stringify(EXAMPLE, null, 2);
+  $("asOfInput").value = EXAMPLE.asOf;
 
-  const tb = $("matrix").querySelector("tbody");
-  m.jurisdictions.forEach((j, r) => {
-    m.questions.forEach((q, c) => {
-      const cell = m.grid[r][c];
-      const tr = document.createElement("tr");
-      let cellHtml;
-      if (cell.status === "unverified") {
-        cellHtml = `<div class="unverified-cell">UNVERIFIED</div><div class="cell-warn">${esc(cell.reason)}</div>`;
-      } else {
-        cellHtml = `<div class="cell-answer">${esc(cell.answer)}</div>` +
-          `<div class="cell-cite">${esc(cell.citation)}</div>` +
-          `<div class="cell-date">verified ${esc(cell.verifiedDate)} · ${esc(cell.verifiedBy ?? "?")}</div>` +
-          (cell.status === "stale" ? `<div class="cell-warn">⚠ ${esc(cell.reason)}</div>` : "");
-      }
-      tr.innerHTML = `<td class="jur">${esc(j)}</td><td>${esc(q.text)}</td><td>${cellHtml}</td>` +
-        `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
-      tb.appendChild(tr);
+  let m = null; // current matrix
+
+  function render() {
+    $("msgs").innerHTML = "";
+    let input;
+    try {
+      input = JSON.parse($("inputJson").value);
+    } catch (e) {
+      $("msgs").innerHTML = `<div class="err">Invalid JSON: ${esc(e.message)}</div>`;
+      return;
+    }
+    if (!input || typeof input !== "object" || !input.survey) {
+      $("msgs").innerHTML = `<div class="err">Input must be a JSON object with a "survey" member (see the prefilled example).</div>`;
+      return;
+    }
+    const asOf = $("asOfInput").value || input.asOf || null;
+    m = buildMatrix(input.survey, asOf);
+
+    if (m.warnings.length) {
+      $("msgs").innerHTML = m.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
+    }
+
+    $("stats").innerHTML =
+      `<div class="stat"><b>${m.coverage.verified}/${m.coverage.total}</b><span>verified</span></div>` +
+      `<div class="stat"><b>${m.coverage.stale}</b><span>stale</span></div>` +
+      `<div class="stat"><b>${m.coverage.unverified}</b><span>unverified</span></div>` +
+      `<div class="stat"><b>${m.coverage.pctVerified}%</b><span>coverage</span></div>` +
+      `<div class="stat"><b>${m.policy.maxAgeDays}d</b><span>re-verify policy</span></div>`;
+
+    $("bars").innerHTML = m.jurisdictions.map((j) => {
+      const c = m.coverage.byJurisdiction[j];
+      const pct = (n) => c.total ? (n / c.total) * 100 : 0;
+      return `<div class="bar-row"><span class="bar-label">${esc(j)}</span>` +
+        `<span class="bar-track">` +
+        `<span class="bar-seg verified" style="width:${pct(c.verified)}%"></span>` +
+        `<span class="bar-seg stale" style="width:${pct(c.stale)}%"></span>` +
+        `<span class="bar-seg unverified" style="width:${pct(c.unverified)}%"></span></span>` +
+        `<span class="bar-count">${c.verified}/${c.total} verified · ${c.stale} stale</span></div>`;
+    }).join("");
+
+    const tb = $("matrix").querySelector("tbody");
+    tb.innerHTML = "";
+    m.jurisdictions.forEach((j, r) => {
+      m.questions.forEach((q, c) => {
+        const cell = m.grid[r][c];
+        const tr = document.createElement("tr");
+        let cellHtml;
+        if (cell.status === "unverified") {
+          cellHtml = `<div class="unverified-cell">UNVERIFIED</div><div class="cell-warn">${esc(cell.reason)}</div>`;
+        } else {
+          const cite = cell.sourceUrl
+            ? `<a href="${esc(cell.sourceUrl)}" target="_blank" rel="noopener">${esc(cell.citation)} ↗</a>`
+            : esc(cell.citation);
+          const warns = (cell.warnings ?? []).map((w) => `<div class="cell-warn">⚠ ${esc(w)}</div>`).join("");
+          cellHtml = `<div class="cell-answer">${esc(cell.answer)}</div>` +
+            `<div class="cell-cite">${cite}</div>` +
+            `<div class="cell-date">verified ${esc(cell.verifiedDate)} · ${esc(cell.verifiedBy ?? "?")}</div>` +
+            (cell.status === "stale" ? `<div class="cell-warn">⚠ ${esc(cell.reason)}</div>` : "") +
+            warns;
+        }
+        tr.innerHTML = `<td class="jur">${esc(j)}</td><td>${esc(q.text)}</td><td>${cellHtml}</td>` +
+          `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
+        tb.appendChild(tr);
+      });
     });
-  });
+  }
+
+  $("renderBtn").onclick = render;
+  $("asOfInput").onchange = render;
+  $("fileInput").onchange = () => {
+    const f = $("fileInput").files[0];
+    if (!f) return;
+    f.text().then((t) => { $("inputJson").value = t; render(); });
+  };
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = name; a.click();
   }
-  $("csvBtn").onclick = () => download("jurisdiction-survey.csv", toCsv(m), "text/csv");
-  $("mdBtn").onclick = () => download("jurisdiction-survey.md", toMarkdown(m), "text/markdown");
+  $("csvBtn").onclick = () => m && download("jurisdiction-survey.csv", toCsv(m), "text/csv");
+  $("mdBtn").onclick = () => m && download("jurisdiction-survey.md", toMarkdown(m), "text/markdown");
+  $("wlBtn").onclick = () => m && download("re-verification-worklist.md", worklistToMarkdown(m), "text/markdown");
+
+  render();
 </script>
 </body>
 </html>

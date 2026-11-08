@@ -1,0 +1,33 @@
+{
+  "scenario": {
+    "name": "Personal-injury intake (fictional firm: Bertram & Ozawa LLP) — run 2",
+    "required_fields": [
+      "full_name", "date_of_birth", "contact_email", "contact_phone",
+      "incident_date", "incident_location", "incident_description",
+      "injuries_claimed", "insurance_carrier", "prior_counsel"
+    ]
+  },
+  "config": { "latencyTargetSeconds": 900 },
+  "flows": [
+    {
+      "id": "guided-form",
+      "name": "Guided web form (Meridian Intake, fictional)",
+      "kind": "software",
+      "steps": [
+        { "id": "wf-1", "purpose": "single manual pass (autofill outage)", "fields": ["full_name", "date_of_birth", "contact_email", "contact_phone", "incident_date", "incident_location", "incident_description", "injuries_claimed", "insurance_carrier", "prior_counsel"], "latency_seconds": 7200, "fallback": null }
+      ],
+      "abandonment_rate": 0.55
+    },
+    {
+      "id": "paper-intake",
+      "name": "Human paper intake (legacy process)",
+      "kind": "human",
+      "steps": [
+        { "id": "pp-1", "purpose": "phone screening (broadened)", "fields": ["full_name", "contact_phone", "incident_date", "incident_description", "date_of_birth", "contact_email"], "latency_seconds": 1200, "fallback": "call back next business day; voicemail script" },
+        { "id": "pp-2", "purpose": "mail-out questionnaire (3-day turnaround)", "fields": ["incident_location", "injuries_claimed", "insurance_carrier", "prior_counsel"], "latency_seconds": 259200, "fallback": "second mailing after 14 days" },
+        { "id": "pp-3", "purpose": "paralegal data entry", "fields": ["full_name", "incident_date", "insurance_carrier"], "latency_seconds": 1500, "fallback": null }
+      ],
+      "abandonment_rate": 0.05
+    }
+  ]
+}

@@ -2,8 +2,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_ESCALATION_RULES, fromRecapPayload, escalate,
-  processFeed, stampSeenStore, toMarkdown,
+  DEFAULT_ESCALATION_RULES, DEADLINE_RULES, fromRecapPayload, escalate,
+  processFeed, stampSeenStore, toMarkdown, extractDeadlines, lintRule,
+  pruneSeenStore, toDeadlineFeed, SafeRuleError,
 } from './core.js';
 
 const entry = (over = {}) => ({
@@ -124,4 +125,118 @@ test('custom escalation rules replace defaults cleanly', () => {
   assert.deepEqual(e.map((x) => x.ruleId), ['cust']);
   assert.deepEqual(escalate(entry(), custom), []);
   assert.ok(DEFAULT_ESCALATION_RULES.length >= 6);
+});
+
+test('extractDeadlines: "response due within 14 days" → asOf+14d, needsVerification', () => {
+  const e = entry({ id: 'E-1', date: '2026-04-02', description: 'Order re motions; response due within 14 days of entry' });
+  const d = extractDeadlines(e, { asOf: '2026-04-02' });
+  assert.equal(d.length, 1);
+  assert.equal(d[0].date, '2026-04-16');
+  assert.equal(d[0].label, 'Response due');
+  assert.equal(d[0].basis, 'response-days');
+  assert.equal(d[0].confidence, 'medium');
+  assert.equal(d[0].needsVerification, true);
+  // no deadline basis in the text → no deadline, never a silent default
+  assert.deepEqual(
+    extractDeadlines(entry({ description: 'Stipulation extending discovery deadlines' }), { asOf: '2026-04-02' }),
+    [],
+  );
+});
+
+test('blank court → low confidence; non-empty court keeps rule tier; unusable anchor → []', () => {
+  const noCourt = entry({
+    description: 'answer due within 21 days',
+    case: { name: 'X v. Y', judge: null, parties: [], practiceArea: null, court: '' },
+  });
+  assert.equal(extractDeadlines(noCourt, { asOf: '2026-04-02' })[0].confidence, 'low');
+  // a non-empty court the core does not recognize still keeps the rule tier —
+  // the core keeps no court registry (jurisdiction tables out of scope)
+  const oddCourt = entry({
+    description: 'answer due within 21 days',
+    case: { name: 'X v. Y', judge: null, parties: [], practiceArea: null, court: 'Ct. of Exotic Fiction' },
+  });
+  assert.equal(extractDeadlines(oddCourt, { asOf: '2026-04-02' })[0].confidence, 'medium');
+  // asOf falls back to entry.date; when neither parses there is no anchor → no deadlines
+  const noDate = entry({ date: '', description: 'response due within 14 days' });
+  assert.deepEqual(extractDeadlines(noDate, {}), []);
+});
+
+test('processFeed threads escalationRules end-to-end through toMarkdown (no re-derive)', () => {
+  const custom = [{ id: 'arb', label: 'Arbitration watch', pattern: 'arbitrat', level: 'important' }];
+  const r = processFeed(
+    [entry({ id: 'E-7', description: 'Petition to compel arbitration filed' })],
+    [watcher], { ids: [] }, { escalationRules: custom },
+  );
+  assert.equal(r.escalatedNew.length, 1);
+  assert.equal(r.escalatedNew[0].escalations[0].ruleId, 'arb');
+  const md = toMarkdown(r);
+  assert.ok(md.includes('[IMPORTANT: Arbitration watch]'));
+  assert.ok(!md.includes('Sanctions'));
+});
+
+test('deadline horizon flags: 10d within default 14 → true; 20d → false; watcher override wins', () => {
+  const r = processFeed(
+    [
+      entry({ id: 'A', date: '2026-04-02', description: 'response due within 10 days' }),
+      entry({ id: 'B', date: '2026-04-02', description: 'response due within 20 days' }),
+    ],
+    [watcher], { ids: [] }, { asOf: '2026-04-02' },
+  );
+  const byId = Object.fromEntries(r.deadlinesNew.map((d) => [d.entry.id, d.deadlines]));
+  assert.equal(byId.A[0].withinHorizon, true);
+  assert.equal(byId.B[0].withinHorizon, false);
+  assert.equal(r.stats.deadlines, 2);
+  const tight = processFeed(
+    [entry({ id: 'A', date: '2026-04-02', description: 'response due within 10 days' })],
+    [{ ...watcher, deadlineHorizonDays: 5 }], { ids: [] }, { asOf: '2026-04-02' },
+  );
+  assert.equal(tight.deadlinesNew[0].deadlines[0].withinHorizon, false);
+});
+
+test('lintRule rejects unsafe patterns with SafeRuleError; shipped rule sets pass', () => {
+  const mk = (pattern) => ({ id: 'x', label: 'x', pattern, level: 'urgent' });
+  assert.throws(() => lintRule(mk('(a+)+$')), SafeRuleError);          // nested quantifier
+  assert.throws(() => lintRule(mk('a'.repeat(201))), SafeRuleError);   // >200 chars
+  assert.throws(() => lintRule(mk('one|two|three|four|five|six')), SafeRuleError); // >4 branches
+  assert.throws(() => lintRule(mk('(a|b)+c')), SafeRuleError);         // alternation in quantified group
+  assert.throws(() => lintRule(mk('(')), SafeRuleError);               // invalid regex
+  assert.throws(() => lintRule(mk('')), SafeRuleError);                // empty pattern
+  for (const rule of [...DEFAULT_ESCALATION_RULES, ...DEADLINE_RULES]) {
+    assert.doesNotThrow(() => lintRule(rule));
+  }
+  // escalate refuses to compile an unsafe rule over untrusted filer text
+  assert.throws(
+    () => escalate(entry(), [{ id: 'x', label: 'x', pattern: '(a+)+$', level: 'urgent' }]),
+    SafeRuleError,
+  );
+});
+
+test('pruneSeenStore caps ids while always keeping current feed ids', () => {
+  const ids = Array.from({ length: 100 }, (_, i) => `E-${String(i).padStart(3, '0')}`);
+  const store = { ids, updatedAt: '2026-04-03T09:00:00Z', count: 100 };
+  const pruned = pruneSeenStore(store, { keep: ['E-097', 'E-098', 'E-099'], maxIds: 50 });
+  assert.equal(pruned.ids.length, 50);
+  assert.equal(pruned.count, 50);
+  for (const k of ['E-097', 'E-098', 'E-099']) assert.ok(pruned.ids.includes(k));
+  assert.equal(pruned.updatedAt, '2026-04-03T09:00:00Z');
+  // keep ids win even over a smaller cap
+  const tiny = pruneSeenStore(store, { keep: ['E-001', 'E-002'], maxIds: 1 });
+  assert.deepEqual(tiny.ids, ['E-001', 'E-002']);
+});
+
+test('toDeadlineFeed emits a deduped iCal VEVENT with X-NEEDS-VERIFICATION', () => {
+  const r = processFeed(
+    [entry({ id: 'E-11', date: '2026-04-02', description: 'Order; response due within 14 days' })],
+    [watcher, { id: 'w2', name: 'Party watch', party: 'meridian' }],
+    { ids: [] }, { asOf: '2026-04-02' },
+  );
+  const ics = toDeadlineFeed(r);
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR'));
+  assert.ok(ics.includes('BEGIN:VEVENT'));
+  assert.ok(ics.includes('DTSTART;VALUE=DATE:20260416'));
+  assert.ok(ics.includes('X-NEEDS-VERIFICATION:TRUE'));
+  assert.ok(ics.includes('END:VCALENDAR'));
+  // same entry seen by two watchers → one VEVENT, not two
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
+  assert.ok(ics.endsWith('\r\n'));
 });

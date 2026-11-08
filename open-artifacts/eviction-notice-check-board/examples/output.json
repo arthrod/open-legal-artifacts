@@ -30,21 +30,21 @@
         "id": "elapsed",
         "requirement": "≥ 3 days between service and filing",
         "status": "fail",
-        "detail": "only 2 days elapsed (2026-10-01 → 2026-10-03)",
+        "detail": "only 1 lawful days elapsed (2026-10-01 → 2026-10-03); earliest lawful filing 2026-10-06",
         "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
       },
       {
         "id": "content:amount-due",
         "requirement": "Contents: Amount of rent due",
         "status": "pass",
-        "detail": "attested present on the notice",
+        "detail": "attested present — verbatim from the notice: “Rent of $1,250.00 is now due and unpaid”",
         "ruleCite": "CCP § 1161(2) (example)"
       },
       {
         "id": "content:payment-person",
         "requirement": "Contents: Name, telephone, and street address of person to pay",
         "status": "pass",
-        "detail": "attested present on the notice",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
         "ruleCite": "CCP § 1161(2) (example)"
       },
       {
@@ -58,7 +58,7 @@
         "id": "content:nonrent-fees-excluded",
         "requirement": "Contents: States notice is void if non-rent fees are included",
         "status": "pass",
-        "detail": "attested present on the notice",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
         "ruleCite": "CCP § 1161.3 (example)"
       },
       {
@@ -74,6 +74,27 @@
       "fail": 2,
       "unverified": 0,
       "verdict": "fail"
+    },
+    "ruleset": {
+      "version": "2.0.0",
+      "asOf": "2026-11-07",
+      "hash": "924b341c"
+    },
+    "deadlines": {
+      "serviceDate": "2026-10-01",
+      "requiredDays": 3,
+      "counting": "business",
+      "earliestFiling": "2026-10-06",
+      "expires": "2026-10-06",
+      "countedDays": [
+        "2026-10-02",
+        "2026-10-05",
+        "2026-10-06"
+      ],
+      "skippedDays": [
+        "2026-10-03",
+        "2026-10-04"
+      ]
     },
     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
   },
@@ -108,7 +129,7 @@
         "id": "content:amount-due",
         "requirement": "Contents: Amount of rent due",
         "status": "pass",
-        "detail": "attested present on the notice",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
         "ruleCite": "RPAPL § 733(1) (example)"
       },
       {
@@ -132,6 +153,12 @@
       "unverified": 1,
       "verdict": "unverified"
     },
+    "ruleset": {
+      "version": "2.0.0",
+      "asOf": "2026-11-07",
+      "hash": "924b341c"
+    },
+    "deadlines": null,
     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
   },
   {
@@ -181,6 +208,125 @@
       "fail": 2,
       "unverified": 0,
       "verdict": "fail"
+    },
+    "ruleset": {
+      "version": "2.0.0",
+      "asOf": "2026-11-07",
+      "hash": "924b341c"
+    },
+    "deadlines": null,
+    "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
+  },
+  {
+    "id": "E-1034",
+    "caption": "Roe v. Fiction Properties LLC (fictional, Fiction City overlay + clinic checklist)",
+    "jurisdiction": "fiction-city-example",
+    "noticeType": "pay-or-quit",
+    "checks": [
+      {
+        "id": "jurisdiction",
+        "requirement": "Jurisdiction ruleset loaded",
+        "status": "pass",
+        "detail": "Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city)",
+        "ruleCite": null
+      },
+      {
+        "id": "notice-type",
+        "requirement": "Notice type recognized under this ruleset",
+        "status": "pass",
+        "detail": "pay-or-quit (Fiction City (FICTIONAL overlay example — extends california-example; fork me for your city))",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "period",
+        "requirement": "Notice period ≥ 3 days",
+        "status": "pass",
+        "detail": "notice states 3 days; rule requires 3",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "elapsed",
+        "requirement": "≥ 3 days between service and filing",
+        "status": "pass",
+        "detail": "3 lawful days elapsed (2026-10-02 → 2026-10-07); earliest lawful filing 2026-10-07",
+        "ruleCite": "CCP §§ 1161(2), 1161.3 (example defaults)"
+      },
+      {
+        "id": "content:amount-due",
+        "requirement": "Contents: Amount of rent due",
+        "status": "pass",
+        "detail": "attested present — verbatim from the notice: “Rent of $980.00 is now due”",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:payment-person",
+        "requirement": "Contents: Name, telephone, and street address of person to pay",
+        "status": "pass",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:payment-methods",
+        "requirement": "Contents: Permitted payment methods (incl. at least one non-electronic during business hours)",
+        "status": "pass",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
+        "ruleCite": "CCP § 1161(2) (example)"
+      },
+      {
+        "id": "content:nonrent-fees-excluded",
+        "requirement": "Contents: States notice is void if non-rent fees are included",
+        "status": "pass",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
+        "ruleCite": "CCP § 1161.3 (example)"
+      },
+      {
+        "id": "content:bilingual-notice",
+        "requirement": "Contents: Notice also given in Spanish (Fiction City language requirement)",
+        "status": "pass",
+        "detail": "attested present on the notice (no verbatim quote recorded)",
+        "ruleCite": "Fiction City Mun. Code § 9.99 (FICTIONAL — illustrative only)"
+      },
+      {
+        "id": "content:utility-contact",
+        "requirement": "Contents: Landlord/utility contact printed on notice",
+        "status": "pass",
+        "detail": "attested present — verbatim from the notice: “Questions? Call Fiction Properties, (555) 010-1034”",
+        "ruleCite": "Fiction Clinic intake checklist v3 (fictional)"
+      },
+      {
+        "id": "service",
+        "requirement": "Service by an authorized method (personal, substituted-and-mail, post-and-mail, electronic-with-consent)",
+        "status": "pass",
+        "detail": "method \"personal\" is authorized",
+        "ruleCite": "CCP § 1162 (example)"
+      }
+    ],
+    "summary": {
+      "pass": 11,
+      "fail": 0,
+      "unverified": 0,
+      "verdict": "pass"
+    },
+    "ruleset": {
+      "version": "2.0.0",
+      "asOf": "2026-11-07",
+      "hash": "924b341c"
+    },
+    "deadlines": {
+      "serviceDate": "2026-10-02",
+      "requiredDays": 3,
+      "counting": "business",
+      "earliestFiling": "2026-10-07",
+      "expires": "2026-10-07",
+      "countedDays": [
+        "2026-10-05",
+        "2026-10-06",
+        "2026-10-07"
+      ],
+      "skippedDays": [
+        "2026-10-03",
+        "2026-10-04"
+      ]
     },
     "disclaimer": "Jurisdiction rulesets are editable example data with US defaults; notice periods, required contents, and service rules vary by state, city, and lease. Not legal advice — verify every cited rule against current law before acting."
   }

@@ -1,16 +1,18 @@
 {
   "summary": {
-    "entries": 11,
-    "fees": 52185,
-    "disbursements": 1840.25,
+    "entries": 17,
+    "fees": 57610,
+    "disbursements": 2055,
     "writeOffs": 1889,
-    "netSpend": 52136.25,
-    "hourlyChecked": 9,
-    "rateOk": 5,
+    "netSpend": 57776,
+    "hourlyChecked": 14,
+    "rateOk": 10,
     "rateExceptions": 4,
     "overBudget": 1,
-    "unbudgeted": 0,
-    "writeOffFlags": 1
+    "unbudgeted": 1,
+    "writeOffFlags": 1,
+    "guidelineFlags": 8,
+    "anomalyFlags": 4
   },
   "rateFindings": [
     {
@@ -91,6 +93,20 @@
       "status": "over",
       "budgetScopes": [
         "matter M-210 firm HPL"
+      ],
+      "drivers": [
+        {
+          "entryId": "L-001",
+          "amount": 3400
+        },
+        {
+          "entryId": "L-002",
+          "amount": 2892.5
+        },
+        {
+          "entryId": "L-003",
+          "amount": 1850
+        }
       ]
     },
     {
@@ -120,6 +136,18 @@
       "budgetScopes": [
         "matter M-212 firm MVL period 2026-10"
       ]
+    },
+    {
+      "matterId": "M-213",
+      "firmId": "HPL",
+      "gross": 5639.75,
+      "writeOffs": 0,
+      "net": 5639.75,
+      "approved": null,
+      "variance": null,
+      "variancePct": null,
+      "status": "unbudgeted",
+      "budgetScopes": []
     }
   ],
   "writeOffFlags": [
@@ -137,36 +165,250 @@
       "detail": "write-off 1800 is 25% of the 7200 bill (threshold 10%) — narrative: \"Opposition brief finalization; senior-partner review; partial write-off agreed with billing partner.\""
     }
   ],
+  "guidelineFindings": [
+    {
+      "kind": "guideline",
+      "ruleId": "BG-01",
+      "ruleType": "block_billing",
+      "flag": "block_billing",
+      "entryId": "L-001",
+      "entryIds": [
+        "L-001"
+      ],
+      "matterId": "M-210",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "amountImpact": 3400,
+      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (3400)"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "BG-01",
+      "ruleType": "block_billing",
+      "flag": "block_billing",
+      "entryId": "L-002",
+      "entryIds": [
+        "L-002"
+      ],
+      "matterId": "M-210",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "amountImpact": 2892.5,
+      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2892.5)"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "BG-01",
+      "ruleType": "block_billing",
+      "flag": "block_billing",
+      "entryId": "L-004",
+      "entryIds": [
+        "L-004"
+      ],
+      "matterId": "M-211",
+      "firmId": "HPL",
+      "period": "2026-08",
+      "amountImpact": 2475,
+      "detail": "2 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (2475)"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "BG-01",
+      "ruleType": "block_billing",
+      "flag": "block_billing",
+      "entryId": "L-010",
+      "entryIds": [
+        "L-010"
+      ],
+      "matterId": "M-211",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "amountImpact": 7200,
+      "detail": "3 activities in one entry (separator-joined) — rule BG-01 treats the entry as block-billed; impact is the full billed amount (7200)"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "DE-01",
+      "ruleType": "disallowed_expense",
+      "flag": "disallowed_expense",
+      "entryId": "L-017",
+      "entryIds": [
+        "L-017"
+      ],
+      "matterId": "M-213",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "amountImpact": 139.75,
+      "detail": "category \"meals\" billed 214.75 over the 75 cap (rule DE-01) — excess 139.75"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "HD-01",
+      "ruleType": "max_hours_per_day",
+      "flag": "max_hours_per_day",
+      "entryId": "L-015",
+      "entryIds": [
+        "L-015",
+        "L-016"
+      ],
+      "matterId": "M-213",
+      "firmId": "HPL",
+      "period": "2026-09",
+      "totalHours": 11.5,
+      "amountImpact": 277.5,
+      "detail": "D. Lindqvist billed 11.5h on 2026-09-15 across 2 entries (cap 10h, rule HD-01) — over-cap portion billed at entry rates is 277.5"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "SR-01",
+      "ruleType": "staffing_ratio",
+      "flag": "staffing_ratio",
+      "entryId": null,
+      "entryIds": [
+        "L-004",
+        "L-005",
+        "L-010"
+      ],
+      "matterId": "M-211",
+      "firmId": null,
+      "period": null,
+      "amountImpact": null,
+      "detail": "junior/senior staffing ratio 0 on matter M-211 is below the 1.5 minimum (rule SR-01) — 0 non-senior hours vs 16 senior hours"
+    },
+    {
+      "kind": "guideline",
+      "ruleId": "SR-01",
+      "ruleType": "staffing_ratio",
+      "flag": "staffing_ratio",
+      "entryId": null,
+      "entryIds": [
+        "L-006",
+        "L-007"
+      ],
+      "matterId": "M-212",
+      "firmId": null,
+      "period": null,
+      "amountImpact": null,
+      "detail": "junior/senior staffing ratio 0.6 on matter M-212 is below the 1.5 minimum (rule SR-01) — 1.5 non-senior hours vs 2.5 senior hours"
+    }
+  ],
+  "anomalyFlags": [
+    {
+      "kind": "anomaly",
+      "flag": "hours_spike",
+      "firmId": "HPL",
+      "timekeeper": "D. Lindqvist",
+      "fromPeriod": "2026-08",
+      "toPeriod": "2026-09",
+      "fromHours": 3,
+      "toHours": 11.5,
+      "entryIds": [
+        "L-014",
+        "L-015",
+        "L-016"
+      ],
+      "amountImpact": null,
+      "detail": "11.5h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period"
+    },
+    {
+      "kind": "anomaly",
+      "flag": "rate_creep",
+      "firmId": "HPL",
+      "timekeeper": "K. Kwan",
+      "fromPeriod": "2026-07",
+      "toPeriod": "2026-08",
+      "fromRate": 395,
+      "toRate": 445,
+      "deltaPct": 12.66,
+      "entryIds": [
+        "L-012",
+        "L-013"
+      ],
+      "amountImpact": null,
+      "detail": "realized rate rose from 395/h to 445/h (+12.66%, threshold 10%) between 2026-07 and 2026-08"
+    },
+    {
+      "kind": "anomaly",
+      "flag": "hours_spike",
+      "firmId": "HPL",
+      "timekeeper": "S. Ito",
+      "fromPeriod": "2026-08",
+      "toPeriod": "2026-09",
+      "fromHours": 3,
+      "toHours": 13,
+      "entryIds": [
+        "L-004",
+        "L-005",
+        "L-010"
+      ],
+      "amountImpact": null,
+      "detail": "13h in 2026-09 vs 3h in 2026-08 — more than 2× the prior period"
+    },
+    {
+      "kind": "anomaly",
+      "flag": "rate_creep",
+      "firmId": "HPL",
+      "timekeeper": "S. Ito",
+      "fromPeriod": "2026-08",
+      "toPeriod": "2026-09",
+      "fromRate": 825,
+      "toRate": 919.23,
+      "deltaPct": 11.42,
+      "entryIds": [
+        "L-004",
+        "L-005",
+        "L-010"
+      ],
+      "amountImpact": null,
+      "detail": "realized rate rose from 825/h to 919.23/h (+11.42%, threshold 10%) between 2026-08 and 2026-09"
+    }
+  ],
   "periodRollups": [
     {
-      "period": "2026-08",
-      "entries": 2,
-      "fees": 4412.5,
+      "period": "2026-07",
+      "entries": 1,
+      "fees": 1185,
       "disbursements": 0,
       "writeOffs": 0,
-      "net": 4412.5,
+      "net": 1185,
       "byFirm": {
-        "HPL": 2475,
+        "HPL": 1185
+      },
+      "byMatter": {
+        "M-213": 1185
+      }
+    },
+    {
+      "period": "2026-08",
+      "entries": 4,
+      "fees": 6525,
+      "disbursements": 0,
+      "writeOffs": 0,
+      "net": 6525,
+      "byFirm": {
+        "HPL": 4587.5,
         "MVL": 1937.5
       },
       "byMatter": {
         "M-211": 2475,
-        "M-212": 1937.5
+        "M-212": 1937.5,
+        "M-213": 2112.5
       }
     },
     {
       "period": "2026-09",
-      "entries": 6,
-      "fees": 20092.5,
-      "disbursements": 1840.25,
+      "entries": 9,
+      "fees": 22220,
+      "disbursements": 2055,
       "writeOffs": 1800,
-      "net": 20132.75,
+      "net": 22475,
       "byFirm": {
-        "HPL": 20132.75
+        "HPL": 22475
       },
       "byMatter": {
         "M-210": 9982.75,
-        "M-211": 10150
+        "M-211": 10150,
+        "M-213": 2342.25
       }
     },
     {

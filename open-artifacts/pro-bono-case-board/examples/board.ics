@@ -1,0 +1,37 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//pro-bono-case-board//open-artifact//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:PB-2026-010-dl1@pro-bono-case-board
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261112
+DTEND;VALUE=DATE:20261113
+SUMMARY:PB-2026-010 answer filing [court]
+DESCRIPTION:Fictional demo data. Case PB-2026-010 (C. Moreau (fictional)) — eviction defense. Severity: warn.
+END:VEVENT
+BEGIN:VEVENT
+UID:PB-2026-011-dl1@pro-bono-case-board
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261105
+DTEND;VALUE=DATE:20261106
+SUMMARY:PB-2026-011 custody hearing [court] (OVERDUE)
+DESCRIPTION:Fictional demo data. Case PB-2026-011 (J. Baptiste (fictional)) — custody modification. Severity: critical.
+END:VEVENT
+BEGIN:VEVENT
+UID:PB-2026-012-dl1@pro-bono-case-board
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261120
+DTEND;VALUE=DATE:20261121
+SUMMARY:PB-2026-012 appeal brief [administrative]
+DESCRIPTION:Fictional demo data. Case PB-2026-012 (S. Nakamura (fictional)) — benefits denial appeal. Severity: none.
+END:VEVENT
+BEGIN:VEVENT
+UID:PB-2026-013-dl1@pro-bono-case-board
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261110
+SUMMARY:PB-2026-013 TRO hearing [court]
+DESCRIPTION:Fictional demo data. Case PB-2026-013 (L. Osei-Bonsu (fictional)) — family law TRO. Severity: warn.
+END:VEVENT
+END:VCALENDAR

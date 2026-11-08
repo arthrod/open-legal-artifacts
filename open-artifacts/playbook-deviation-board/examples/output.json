@@ -1,6 +1,12 @@
 {
   "contractName": "Mutual NDA — Verdant Robotics / Northwind AI Labs (draft v2, fictional)",
   "playbookId": "PB-NDA-2026-v3",
+  "sideMismatch": null,
+  "thresholds": {
+    "preferred": 0.7,
+    "fallback": 0.7,
+    "topic": 0.3
+  },
   "summary": {
     "compliant": 1,
     "deviates": 4,
@@ -23,7 +29,8 @@
       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for three (3) years. Neither party may assign this Agreement without the other's prior written consent.",
       "reason": "matches preferred standard (3-year fixed term)",
       "routedTo": null,
-      "heading": "Term"
+      "heading": "Term",
+      "redline": null
     },
     {
       "clauseId": "C2",
@@ -40,7 +47,18 @@
       "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives ninety (90) days prior written notice of non-renewal.",
       "reason": "matches fallback tier 1 (Evergreen, 90-day exit), not the preferred standard",
       "routedTo": "Legal Operations",
-      "heading": "Term"
+      "heading": "Term",
+      "redline": {
+        "label": "3-year fixed term",
+        "removals": [
+          "renews automatically",
+          "successive one-year terms unless either party gives ninety (90) days prior written notice"
+        ],
+        "additions": [
+          "commences on the Effective Date and continues",
+          "three (3) years."
+        ]
+      }
     },
     {
       "clauseId": "C3",
@@ -57,7 +75,18 @@
       "clauseText": "3.1 Term. This Agreement renews automatically for successive one-year terms unless either party gives thirty (30) days prior written notice of non-renewal.",
       "reason": "matches fallback tier 2 (Evergreen, 30-day exit), not the preferred standard",
       "routedTo": "General Counsel",
-      "heading": "Term"
+      "heading": "Term",
+      "redline": {
+        "label": "3-year fixed term",
+        "removals": [
+          "renews automatically",
+          "successive one-year terms unless either party gives thirty (30) days prior written notice"
+        ],
+        "additions": [
+          "commences on the Effective Date and continues",
+          "three (3) years."
+        ]
+      }
     },
     {
       "clauseId": "C4",
@@ -74,7 +103,8 @@
       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues in perpetuity unless terminated by mutual written agreement.",
       "reason": "matches avoid rule \"perpetual-term\": contains \"in perpetuity\"",
       "routedTo": "General Counsel",
-      "heading": "Term"
+      "heading": "Term",
+      "redline": null
     },
     {
       "clauseId": "C5",
@@ -91,7 +121,8 @@
       "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the fees paid or payable in the twelve (12) months preceding the claim, excluding breaches of Section 4 (Confidentiality), for which the receiving party accepts unlimited liability.",
       "reason": "matches avoid rule \"uncapped-liability\": contains \"unlimited liability\"",
       "routedTo": "General Counsel",
-      "heading": "Limitation of Liability"
+      "heading": "Limitation of Liability",
+      "redline": null
     },
     {
       "clauseId": "C6",
@@ -108,7 +139,17 @@
       "clauseText": "8.1 Liability. Each party's aggregate liability arising out of this Agreement shall not exceed the total fees paid under this Agreement.",
       "reason": "matches fallback tier 1 (Mutual cap at total contract value), not the preferred standard",
       "routedTo": "Legal Operations",
-      "heading": "Limitation of Liability"
+      "heading": "Limitation of Liability",
+      "redline": {
+        "label": "Mutual cap at 12 months of fees",
+        "removals": [
+          "total",
+          "under this Agreement"
+        ],
+        "additions": [
+          "or payable in the twelve (12) months preceding the claim."
+        ]
+      }
     },
     {
       "clauseId": "C7",
@@ -121,7 +162,16 @@
       "clauseText": "3.1 Term. This Agreement commences on the Effective Date and continues for eighteen (18) months.",
       "reason": "no playbook tier matched: clause is beyond the playbook (neither preferred nor any fallback). standard requires [3] but matched span has []",
       "routedTo": "General Counsel",
-      "heading": "Term"
+      "heading": "Term",
+      "redline": {
+        "label": "3-year fixed term",
+        "removals": [
+          "eighteen (18) months."
+        ],
+        "additions": [
+          "three (3) years."
+        ]
+      }
     },
     {
       "clauseId": "C8",
@@ -134,7 +184,8 @@
       "clauseQuote": null,
       "clauseText": "11.1 Governing Law. This Agreement is governed by the laws of the State of Delaware, without regard to conflict-of-laws principles.",
       "reason": "no rule topic matches heading \"Governing Law\" (best similarity 0.00 < 0.3)",
-      "routedTo": "Legal Operations"
+      "routedTo": "Legal Operations",
+      "redline": null
     }
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "fromVersion": 1,
+  "toVersion": 2,
+  "added": [
+    "F8"
+  ],
+  "removed": [
+    "F11"
+  ],
+  "changed": [
+    {
+      "factId": "F4",
+      "fields": [
+        "text"
+      ]
+    }
+  ],
+  "summary": "+1 added (F8), -1 removed (F11), ~1 changed (F4: text)"
+}

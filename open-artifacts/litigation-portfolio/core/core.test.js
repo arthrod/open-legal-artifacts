@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildPortfolio, toCSV, renderDashboard, computeSol, addYears, addDays,
-  isValidIsoDate, DEFAULT_CLAIM_RULES,
+  isValidIsoDate, DEFAULT_CLAIM_RULES, detectAnomalies, applyFilters,
 } from './core.js';
 
 const AS_OF = '2026-11-07';
@@ -156,6 +156,147 @@ test('renderDashboard includes summary, band table, and sorted matters', () => {
   assert.match(md, /\| Band \| Matters \|/);
   // M0 (expired) listed before M1 (ok): sorted by days remaining
   assert.ok(md.indexOf('M0') < md.indexOf('M1'));
+});
+
+test('detectAnomalies fires each of the 8 checks with ids + severity', () => {
+  const anomalies = detectAnomalies(
+    matter({
+      nextDeadline: '2026-11-01',      // overdue-next-deadline
+      lastUpdated: '2026-09-01',        // stale-matter (67d > 30)
+      conflicts: { status: 'pending', override: true, overrideReason: 'partner sign-off (fictional)' }, // conflicts-open + conflicts-override
+      accrualDate: '2026-10-01',        // PI +2y -> 2028-10-01, ok
+      exposureHigh: 800000,             // high band
+      counsel: 'unassigned',            // high-risk-no-counsel (high band, no counsel)
+      reserve: { amount: 50000, asOf: '2026-08-01' }, // stale-reserve (98d > 60)
+      status: 'active',                 // hold-gap (no legalHold)
+      // venue absent -> missing-fields
+    }),
+    AS_OF,
+  );
+  assert.deepEqual(
+    anomalies.map((a) => a.id).sort(),
+    [
+      'conflicts-open', 'conflicts-override', 'high-risk-no-counsel',
+      'hold-gap', 'missing-fields', 'overdue-next-deadline',
+      'stale-matter', 'stale-reserve',
+    ],
+  );
+  for (const a of anomalies) assert.ok(['critical', 'high', 'medium', 'low'].includes(a.severity));
+});
+
+test('buildPortfolio attaches anomalies[] and summary.anomalies counts', () => {
+  const out = buildPortfolio({ asOf: AS_OF, matters: [matter({ lastUpdated: '2026-09-01' })] });
+  assert.ok(out.matters[0].anomalies.some((a) => a.id === 'stale-matter'));
+  const total = out.matters.reduce((s, m) => s + m.anomalies.length, 0);
+  assert.equal(out.summary.anomalies.total, total);
+  assert.equal(out.summary.anomalies.total, Object.values(out.summary.anomalies.bySeverity).reduce((s, n) => s + n, 0));
+  assert.ok(out.summary.anomalies.bySeverity.medium >= 1);
+});
+
+test('staleness: 45-day-old lastUpdated is stale; staleDays is configurable', () => {
+  const m = matter({ lastUpdated: '2026-09-23' }); // 45d before AS_OF
+  assert.ok(detectAnomalies(m, AS_OF).some((a) => a.id === 'stale-matter'));
+  assert.ok(!detectAnomalies(m, AS_OF, { staleDays: 60 }).some((a) => a.id === 'stale-matter'));
+  const fresh = detectAnomalies(
+    matter({ lastUpdated: '2026-11-05', venue: 'v', counsel: 'c', legalHold: true }),
+    AS_OF,
+  );
+  assert.ok(!fresh.some((a) => a.id === 'stale-matter'));
+});
+
+test('next-deadline horizon buckets: overdue / ≤14 / 15–30 / 31–60 / beyond', () => {
+  const mk = (d) => matter({ id: d, nextDeadline: d, lastUpdated: '2026-11-06', venue: 'v', counsel: 'c', legalHold: true });
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [mk('2026-11-01'), mk('2026-11-12'), mk('2026-11-27'), mk('2026-12-22'), mk('2027-03-01'), matter({ id: 'none' })],
+  });
+  const h = out.summary.nextDeadlines;
+  assert.equal(h.overdue, 1);
+  assert.equal(h.within14, 1);      // +5d
+  assert.equal(h.days15to30, 1);    // +20d
+  assert.equal(h.days31to60, 1);    // +45d
+  assert.equal(h.beyond60, 1);
+  assert.equal(h.none, 1);
+});
+
+test('applyFilters: closed matters excluded by default, kept with includeClosed', () => {
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [
+      matter({ id: 'OPEN', lastUpdated: '2026-11-06' }),
+      matter({ id: 'CLOSED', status: 'closed', lastUpdated: '2026-11-06' }),
+    ],
+  });
+  assert.deepEqual(applyFilters(out).matters.map((m) => m.id), ['OPEN']);
+  assert.equal(applyFilters(out).summary.total, 1);
+  assert.equal(applyFilters(out, { includeClosed: true }).matters.length, 2);
+});
+
+test('applyFilters: stale / band / claimType / counsel filters compose', () => {
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [
+      matter({ id: 'A', exposureHigh: 800000, counsel: 'X', lastUpdated: '2026-11-06' }),
+      matter({ id: 'B', exposureHigh: 10000, counsel: 'Y', lastUpdated: '2026-09-01', claimType: 'fraud', discoveryDate: '2026-01-01' }),
+    ],
+  });
+  assert.deepEqual(applyFilters(out, { stale: true }).matters.map((m) => m.id), ['B']);
+  assert.deepEqual(applyFilters(out, { band: 'high' }).matters.map((m) => m.id), ['A']);
+  assert.deepEqual(applyFilters(out, { claimType: 'fraud' }).matters.map((m) => m.id), ['B']);
+  assert.deepEqual(applyFilters(out, { counsel: 'X', band: 'low' }).matters.map((m) => m.id), []);
+});
+
+test('exposure provenance: exposureBasis + sourceDoc flow to output and CSV', () => {
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [matter({
+      exposureLow: 50000, exposureHigh: 100000,
+      exposureBasis: 'Counsel memo 2026-10-12: defense range $50k–$100k (fictional)',
+      sourceDoc: 'MEMO-2026-10-12',
+    })],
+  });
+  assert.equal(out.matters[0].exposure.basis, 'Counsel memo 2026-10-12: defense range $50k–$100k (fictional)');
+  assert.equal(out.matters[0].exposure.sourceDoc, 'MEMO-2026-10-12');
+  const csv = toCSV(out);
+  assert.ok(csv.includes('defense range'));
+  assert.ok(csv.includes('MEMO-2026-10-12'));
+});
+
+test('materiality rollup: rough midpoint totals per class', () => {
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [
+      matter({ id: 'R1', materiality: 'reserved', exposureLow: 100, exposureHigh: 300 }),
+      matter({ id: 'R2', materiality: 'reserved', exposureLow: 500, exposureHigh: 1500 }),
+      matter({ id: 'D1', materiality: 'disclosed', exposureLow: 100, exposureHigh: 100 }),
+      matter({ id: 'N1' }),
+    ],
+  });
+  assert.equal(out.summary.materiality.reserved.matters, 2);
+  assert.equal(out.summary.materiality.reserved.midpointTotal, 1200); // 200 + 1000
+  assert.equal(out.summary.materiality.disclosed.midpointTotal, 100);
+  assert.equal(out.summary.materiality.none.matters, 1);
+  assert.equal(out.matters[0].materiality, 'reserved');
+  assert.equal(out.matters[3].materiality, 'none');
+});
+
+test('renderDashboard: anomalies section with look-first, severity order, stage table, horizons', () => {
+  const out = buildPortfolio({
+    asOf: AS_OF,
+    matters: [
+      matter({ id: 'CRIT', conflicts: { status: 'pending', override: true }, lastUpdated: '2026-11-06' }),
+      matter({ id: 'MED', lastUpdated: '2026-09-01' }),
+    ],
+  });
+  const md = renderDashboard(out);
+  const iSummary = md.indexOf('## Summary');
+  const iAnom = md.indexOf('## ⚠️ Anomalies');
+  const iExp = md.indexOf('## Exposure bands');
+  assert.ok(iSummary >= 0 && iAnom > iSummary && iExp > iAnom);
+  assert.match(md, /Look first: \*\*/);
+  assert.ok(md.indexOf('conflicts-override') < md.indexOf('stale-matter')); // critical before medium
+  assert.match(md, /## Stage distribution/);
+  assert.match(md, /Next deadlines: overdue/);
 });
 
 test('isValidIsoDate rejects impossible dates', () => {

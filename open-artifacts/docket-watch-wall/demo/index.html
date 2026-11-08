@@ -28,6 +28,8 @@
   .tag { font-family:var(--font-mono); font-size: 11px; padding:1px 5px; margin-left:8px; white-space:nowrap; }
   .tag.urgent { background: var(--flag-tint); color: var(--warn); border-color: var(--warn);}
   .tag.important { border:1px solid var(--border); }
+  .tag.deadline { border:1px dashed var(--warn); color: var(--warn); }
+  pre.ics { font-family:var(--font-mono); font-size:11px; line-height:1.5; border:1px solid var(--border); background:#fff; padding:12px 14px; overflow:auto; margin:8px 0 0; white-space:pre; }
   .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
   .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
@@ -44,17 +46,19 @@
   <div class="row">
     <button id="run">Review wall</button>
     <button class="ghost" id="mark">Mark all seen (update store)</button>
+    <button class="ghost" id="ics">Deadline feed (.ics)</button>
     <span class="muted" id="status"></span>
   </div>
 
   <div class="stats" id="stats"></div>
   <div class="cols" id="wall"></div>
+  <pre class="ics" id="ical" style="display:none"></pre>
 
   <p class="muted">Deterministic core · <code>open-artifacts/docket-watch-wall/core/core.js</code> · no network calls · not legal advice.</p>
 </div>
 
 <script type="module">
-import { processFeed, stampSeenStore } from '../core/core.js';
+import { processFeed, stampSeenStore, toDeadlineFeed } from '../core/core.js';
 
 const watchers = [
   { id: 'w1', name: 'Judge Whitfield — commercial', judge: 'whitfield', practiceArea: 'commercial-litigation' },
@@ -80,32 +84,47 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 function run() {
   let entries;
   try { entries = JSON.parse($('feed').value); } catch (e) { $('status').textContent = 'bad JSON: ' + e.message; return; }
-  const r = processFeed(entries, watchers, seen);
+  const r = processFeed(entries, watchers, seen, { asOf: '2026-04-03' });
+  // stored escalations/deadlines only — no client-side re-derivation
+  window.__result = r;
   $('stats').innerHTML = `
     <span class="pill">feed<b>${r.stats.entriesInFeed}</b></span>
     <span class="pill">new (per watcher)<b>${r.stats.newEntries}</b></span>
     <span class="pill">escalated<b>${r.stats.escalated}</b></span>
+    <span class="pill">deadlines<b>${r.stats.deadlines}</b></span>
     <span class="pill">seen-store<b>${seen.count}</b></span>`;
   $('wall').innerHTML = r.wall.map((col) => `
     <div class="col-card">
       <div class="col-head"><span>${esc(col.watcher.name)}</span><span>${col.newEntries.length} new</span></div>
       ${col.newEntries.length ? col.newEntries.map((e) => `
         <div class="entry">
-          <div>${esc(e.description)}${escalateTags(e)}</div>
+          <div>${esc(e.description)}${escalateTags(col.watcher.id, e)}${deadlineTags(col.watcher.id, e)}</div>
           <div class="meta">${esc(e.date)} · ${esc(e.case.name)} · ${esc(e.case.court)}</div>
         </div>`).join('') : '<div class="entry muted">no new matching entries</div>'}
     </div>`).join('');
   window.__next = r.nextSeenStore;
-  $('status').textContent = `${r.stats.newEntries} new across ${r.stats.watchers} watchers · ${r.stats.escalated} escalated`;
+  $('status').textContent = `${r.stats.newEntries} new across ${r.stats.watchers} watchers · ${r.stats.escalated} escalated · ${r.stats.deadlines} deadline(s)`;
 }
 
-// client-side re-application of the core rules for tags (same data as core)
-import { escalate } from '../core/core.js';
-function escalateTags(e) {
-  return escalate(e).map((x) => `<span class="tag ${x.level}">${esc(x.label)}</span>`).join('');
+function escalateTags(watcherId, e) {
+  const row = window.__result.escalatedNew.find((x) => x.watcherId === watcherId && String(x.entry.id) === String(e.id));
+  return (row ? row.escalations : [])
+    .map((x) => `<span class="tag ${x.level}">${esc(x.label)}</span>`).join('');
+}
+function deadlineTags(watcherId, e) {
+  const row = window.__result.deadlinesNew.find((x) => x.watcherId === watcherId && String(x.entry.id) === String(e.id));
+  return (row ? row.deadlines : [])
+    .map((d) => `<span class="tag deadline">${esc(d.label)} ${esc(d.date)} · verify</span>`).join('');
 }
 
 $('run').addEventListener('click', run);
+$('ics').addEventListener('click', () => {
+  if (!window.__result) return;
+  const ics = toDeadlineFeed(window.__result);
+  $('ical').style.display = 'block';
+  $('ical').textContent = ics;
+  if (navigator.clipboard) navigator.clipboard.writeText(ics).catch(() => {});
+});
 $('mark').addEventListener('click', () => {
   seen = stampSeenStore(window.__next || { ids: [], updatedAt: null, count: 0 }, new Date().toISOString());
   $('status').textContent = `seen-store updated: ${seen.count} ids @ ${seen.updatedAt}`;

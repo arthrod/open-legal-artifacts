@@ -68,7 +68,9 @@
     "ruleId": "NY-SR-D"
   },
   "outcomeBands": {
-    "bandSource": "illustrative",
+    "bandSource": {
+      "kind": "illustrative"
+    },
     "dismissal": [
       6,
       18
@@ -92,6 +94,18 @@
       "label": "Detention status",
       "direction": "worsens",
       "note": "Pretrial detention correlates with higher plea rates and faster timelines in published research.",
+      "when": [
+        {
+          "field": "detained",
+          "equals": true,
+          "basis": "client.detained = true"
+        },
+        {
+          "field": "detained",
+          "equals": false,
+          "basis": "client.detained = false (factor may run the other way)"
+        }
+      ],
       "applies": true,
       "basis": "client.detained = true"
     },
@@ -100,6 +114,13 @@
       "label": "Prior convictions",
       "direction": "worsens",
       "note": "Prior record typically raises plea terms and lowers dismissal likelihood.",
+      "when": [
+        {
+          "field": "priorConvictions",
+          "gt": 0,
+          "basis": "client.priorConvictions = {value}"
+        }
+      ],
       "applies": true,
       "basis": "client.priorConvictions = 1"
     },
@@ -108,6 +129,13 @@
       "label": "Counsel at arraignment",
       "direction": "improves",
       "note": "Early representation correlates with better bail and discovery outcomes.",
+      "when": [
+        {
+          "field": "counselAtArraignment",
+          "equals": true,
+          "basis": "client.counselAtArraignment = true"
+        }
+      ],
       "applies": true,
       "basis": "client.counselAtArraignment = true"
     },
@@ -116,6 +144,13 @@
       "label": "Weak or circumstantial evidence",
       "direction": "improves",
       "note": "Proof problems raise dismissal and suppression prospects.",
+      "when": [
+        {
+          "field": "evidenceIssues",
+          "equals": true,
+          "basis": "client.evidenceIssues = true"
+        }
+      ],
       "applies": false,
       "basis": ""
     }
@@ -126,5 +161,44 @@
     "legalAdvice": false,
     "text": "STRONG DISCLAIMER: these are STATISTICAL HEURISTICS from illustrative example data — not a prediction of this case's outcome, not legal advice, and no substitute for a defense attorney. Bands describe typical ranges for comparable fictional cohorts; individual outcomes vary enormously. Nothing here should be communicated to a client as a likelihood for their case."
   },
-  "errors": []
+  "errors": [],
+  "release": {
+    "applies": true,
+    "ruleId": "NY-RP-1",
+    "note": "Illustrative advocacy sequence — not advice; verify every motion against current local rules.",
+    "anchoredOn": "2026-11-03",
+    "anchorBasis": "arraignment typical date (filing + 1 days)",
+    "steps": [
+      {
+        "step": "Custody interview: community ties, employment, family, treatment needs",
+        "motion": null,
+        "dayOffset": 0,
+        "date": "2026-11-03"
+      },
+      {
+        "step": "File written release application with a ties package",
+        "motion": "release application",
+        "dayOffset": 1,
+        "date": "2026-11-04"
+      },
+      {
+        "step": "Move for supervised release or non-monetary conditions",
+        "motion": "conditions motion",
+        "dayOffset": 3,
+        "date": "2026-11-06"
+      },
+      {
+        "step": "Request a source-of-funds hearing (fictional example procedure)",
+        "motion": "source hearing",
+        "dayOffset": 7,
+        "date": "2026-11-10"
+      },
+      {
+        "step": "Move for release review on changed circumstances",
+        "motion": "review motion",
+        "dayOffset": 14,
+        "date": "2026-11-17"
+      }
+    ]
+  }
 }

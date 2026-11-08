@@ -1,0 +1,37 @@
+{
+  "from": "2026-11-07",
+  "to": "2026-11-07",
+  "diff": {
+    "added": [
+      "PB-2026-014"
+    ],
+    "removed": [],
+    "stageChanged": [
+      {
+        "id": "PB-2026-012",
+        "from": "triage",
+        "to": "ready"
+      },
+      {
+        "id": "PB-2026-013",
+        "from": "placed",
+        "to": "active"
+      }
+    ],
+    "closed": [
+      {
+        "id": "PB-2026-010",
+        "from": "active",
+        "to": "closed"
+      }
+    ],
+    "deadlineMoved": [
+      {
+        "id": "PB-2026-011",
+        "label": "custody hearing",
+        "from": "2026-11-05",
+        "to": "2026-11-19"
+      }
+    ]
+  }
+}

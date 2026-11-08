@@ -27,6 +27,10 @@
   .sec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 4px; }
   .muted { color: var(--text-secondary); font-size: 13px; }
   .csv { width: 100%; min-height: 140px; font-family: var(--font-mono); font-size: 11px; border: var(--hairline); background: #fff; padding: 10px; }
+  select { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 6px 8px; margin-left: 8px; }
+  .badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 8px; border: var(--hairline); margin-top: 12px; }
+  .badge.robust { border-color: var(--good, #2a7); color: var(--good, #2a7); }
+  .badge.fragile { border-color: var(--bad); color: var(--bad); }
 </style>
 </head>
 <body>
@@ -39,7 +43,7 @@
 
 <div class="wrap"><main>
   <section>
-    <div class="sec">Runs JSON (editable)</div>
+    <div class="sec">Runs JSON (editable) <label>canon: <select id="canon"></select></label></div>
     <textarea id="input" spellcheck="false"></textarea>
     <button id="run">Compare flows →</button>
     <div id="err" class="err"></div>
@@ -48,7 +52,7 @@
 </main></div>
 
 <script type="module">
-import { benchmark, exportCsv } from '../core/core.js';
+import { benchmark, exportCsv, rankStability, listCanons, getCanon } from '../core/core.js';
 
 const SAMPLE = {
   scenario: {
@@ -77,6 +81,29 @@ $('input').value = JSON.stringify(SAMPLE, null, 2);
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 const fmt = (v) => v == null ? '—' : String(v);
 
+// Canon picker: swap the scenario for a shipped practice-area canon (fields
+// tagged core/deadline/conflict — the flows are then scored on deadline and
+// conflict capture too, and unasked critical fields are listed).
+const canonSel = $('canon');
+canonSel.appendChild(new Option('custom (as written)', ''));
+for (const id of listCanons()) canonSel.appendChild(new Option(getCanon(id).name, id));
+canonSel.addEventListener('change', () => {
+  const parsed = JSON.parse($('input').value);
+  if (canonSel.value) {
+    const c = getCanon(canonSel.value);
+    parsed.scenario = { name: `${c.name} (fictional demo flows)`, canon: c.id };
+  } else {
+    parsed.scenario = JSON.parse(JSON.stringify(SAMPLE.scenario));
+  }
+  $('input').value = JSON.stringify(parsed, null, 2);
+  run();
+});
+
+function run() {
+  $('err').textContent = '';
+  try { render(benchmark(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
+}
+
 function render(r) {
   let h = `<div class="sec">${esc(r.scenario)}</div>`;
   for (const f of r.flows) h += `<p class="rank">#${f.rank} · ${esc(f.name)} (${esc(f.kind)}) — composite <strong>${f.composite}</strong></p>`;
@@ -87,14 +114,21 @@ function render(r) {
   }
   h += `</table><div class="sec">Missing canon fields</div>`;
   for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_fields.length ? esc(f.metrics.missing_fields.join(', ')) : 'none'}</p>`;
+  const anyCritical = r.flows.some((f) => f.metrics.missing_critical.length);
+  if (anyCritical) {
+    h += `<div class="sec">Missing critical (deadline/conflict) fields</div>`;
+    for (const f of r.flows) h += `<p class="muted">${esc(f.name)}: ${f.metrics.missing_critical.length ? esc(f.metrics.missing_critical.join(', ')) : 'none'}</p>`;
+  }
+  // Rank-stability badge: does the winner survive perturbed rubric weights?
+  try {
+    const st = rankStability(JSON.parse($('input').value));
+    h += `<div class="sec">Rank stability</div><p><span class="badge ${st.verdict}">${st.verdict}</span> <span class="muted">winner unchanged in ${st.runs - st.flips}/${st.runs} perturbed weightings (dimension drops + ±${Math.round(st.jitter * 100)}% mixes)</span></p>`;
+  } catch { /* stability analysis is best-effort; the table above stands */ }
   if (r.warnings.length) h += `<div class="sec">Warnings</div>` + r.warnings.map((w) => `<p class="muted">⚠ ${esc(w)}</p>`).join('');
   h += `<div class="sec">CSV export</div><textarea class="csv" readonly>${esc(exportCsv(r))}</textarea>`;
   $('out').innerHTML = h;
 }
-$('run').addEventListener('click', () => {
-  $('err').textContent = '';
-  try { render(benchmark(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
-});
+$('run').addEventListener('click', run);
 render(benchmark(SAMPLE));
 </script>
 </body>

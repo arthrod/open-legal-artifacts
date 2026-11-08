@@ -17,19 +17,37 @@ is flagged with a timestamp, severity, and the timestamp's provenance.
    else the snapshot's `capturedAt` (provenance stated explicitly).
 2. **Severity classification** — rules-as-data field severity (deadline
    changes are `critical`, owner/stage `major`, …; configurable).
-3. **Board view** — stage columns, deadline-sorted, with overdue / due-soon
-   flags anchored to caller-supplied `asOf`.
-4. **Export JSON + CSV** — diff exports suitable for commit-to-git review or
-   pasting into status memos.
+3. **Board view** — stage columns (a custom `stageOrder` orders the front;
+   stages it omits are appended in first-appearance order, so every filtered
+   matter is shown), deadline-sorted, with overdue / due-soon
+   flags anchored to caller-supplied `asOf`; optional `owner` / `risk`
+   filters, and rollup counts (`counts.matters`, `counts.risk`,
+   `counts.conflictsOpen`) that always agree with what is shown.
+4. **Anomaly layer** — `detectAnomalies(snapshot, asOf)`: `stale` (no
+   `updatedAt` within `staleDays`, default 30), `missing-field` (required
+   field null/missing; `required` list is data), `closed-with-deadline`.
+   Rules-as-data and overridable per call (`staleDays`, `required`,
+   `closedStage`).
+5. **Ingest + exports** — `csvToSnapshot(csv, { capturedAt, source })`
+   ingests a spreadsheet export (RFC4180 subset: quotes, embedded commas,
+   CRLF) with zero LLM; diff exports as JSON or CSV; flagged deadlines
+   export as all-day ICS (`flaggedToIcs(board)`, `DTSTAMP` derived from
+   `asOf` — byte-stable, no hidden clocks).
 
 ## IO contract
 
 ```js
-import { diffSnapshots, buildBoard, diffToCsv, diffToJson } from "./core/core.js";
+import { diffSnapshots, buildBoard, diffToCsv, diffToJson, detectAnomalies, csvToSnapshot, flaggedToIcs } from "./core/core.js";
 
 const diff = diffSnapshots(previousSnapshot, currentSnapshot, fieldSeverity?);
 //   => { prevCapturedAt, currCapturedAt, added[], removed[], changed[{id,name,field,from,to,severity,changedAt,source}], counts }
-const board = buildBoard(currentSnapshot, asOfIso, { soonDays: 14, stageOrder? });
+const board = buildBoard(currentSnapshot, asOfIso, { soonDays: 14, stageOrder?, owner?, risk? });
+//   stageOrder orders the front; unlisted stages are appended (first-appearance order)
+//   => { capturedAt, asOf, stages[], flagged[], counts: { matters, risk: {high,medium,low}, conflictsOpen } }
+detectAnomalies(currentSnapshot, asOfIso, { staleDays?, required?, closedStage? }); // asOfIso must parse — throws otherwise
+//   => [{ id, name, anomaly: "stale"|"missing-field"|"closed-with-deadline", detail }]
+csvToSnapshot(csvText, { capturedAt: "…", source? });  // spreadsheet → snapshot (capturedAt required, never guessed)
+flaggedToIcs(board);                                    // all-day VEVENT per overdue/due-soon flag
 diffToCsv(diff); diffToJson(diff);
 ```
 
@@ -40,9 +58,9 @@ diffToCsv(diff); diffToJson(diff);
 
 | Layer | Who |
 |---|---|
-| Diffing, severity, timestamps, deadline flags, board, exports | **code** |
-| Turning emails/engagement letters/spreadsheets into snapshot JSON | optional LLM (extraction) |
-| Choosing stage vocabularies + severity policy | **firm** (rules-as-data) |
+| Diffing, severity, timestamps, deadline flags, anomalies, CSV parse, board, exports | **code** |
+| Turning emails/engagement letters into snapshot JSON | optional LLM (extraction) |
+| Choosing stage vocabularies + severity/anomaly policy (stale window, required fields) | **firm** (rules-as-data) |
 
 ### LLM prompt schema (extraction step, optional)
 
@@ -65,7 +83,15 @@ diffToCsv(diff); diffToJson(diff);
 - **Configurable severity** — firms can treat e.g. `owner` changes as
   critical for conflicts purposes by editing one data object.
 - **Reproducible exports** — JSON diff stable for version control; CSV for
-  status meetings; no platform lock-in.
+  status meetings; ICS so flagged deadlines land on a real calendar; no
+  platform lock-in.
+- **Anomaly rules as data, not prose.** The closed counterpart ships its
+  staleness/missing-field/conflicts rules inside prompt text; here they are
+  tested functions over caller-supplied data (`staleDays`, `required`,
+  `closedStage`), deterministic and auditable.
+- **Spreadsheets in, zero LLM.** A CSV export enters as a first-class
+  snapshot via `csvToSnapshot`; the capture time is always caller-supplied,
+  never guessed.
 
 ## Disclaimer
 

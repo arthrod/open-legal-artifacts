@@ -1,15 +1,17 @@
 {
   "case": "Harlow v. Vestra Dynamics Corp. (fictional)",
   "deadline": {
-    "dueDate": "2026-04-12",
+    "dueDate": "2026-04-26",
     "responseDays": 30,
     "extensionDays": 3,
+    "stipulatedDays": 14,
     "serviceMethod": "mail",
     "ruleBasis": "FRCP 33(b)(2)/34(b)(2) + FRCP 6(a),(d) — configurable defaults",
     "calculation": [
       "service 2026-03-10 (mail); day of service excluded (FRCP 6(a)(1))",
       "+ 30 days response period (FRCP default 30; configured: 30)",
-      "+ 3 days service-method extension (FRCP 6(d) default for method \"mail\")"
+      "+ 3 days service-method extension (FRCP 6(d) default for method \"mail\")",
+      "+ 14 days stipulated extension (FRCP 29(b) — agreed 2026-03-24: parties' stipulation extending responses to RFP set one)"
     ]
   },
   "counts": {
@@ -17,15 +19,20 @@
     "objectionAndResponse": 2,
     "responseOnly": 1,
     "withheldLogged": 1,
-    "privilegeFlags": 1
+    "privilegeFlags": 1,
+    "citationFlags": 1
   },
   "entries": [
     {
-      "id": "dr-001",
+      "id": "dr-rfp-1",
       "requestNo": "RFP 1",
       "type": "rfp",
       "requestText": "All documents concerning the design, testing, or manufacture of the VX-2 battery module.",
       "responseText": "Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order.",
+      "citations": [
+        "VEST 0001-3120"
+      ],
+      "citationFlags": [],
       "objections": [
         {
           "id": "trade-secret",
@@ -36,6 +43,7 @@
       ],
       "privilegeBasis": null,
       "status": "objection-and-response",
+      "reviewState": "draft",
       "privilegeSafe": true,
       "safetyFlags": [],
       "versions": [
@@ -48,7 +56,10 @@
               "overbroad",
               "trade-secret"
             ],
-            "privilegeBasis": null
+            "privilegeBasis": null,
+            "citations": [
+              "VEST 0001-3120"
+            ]
           },
           "changes": [
             "initial draft"
@@ -62,7 +73,10 @@
             "objectionIds": [
               "trade-secret"
             ],
-            "privilegeBasis": null
+            "privilegeBasis": null,
+            "citations": [
+              "VEST 0001-3120"
+            ]
           },
           "changes": [
             "responseText: \"After a diligent search, Vestra produces Bates VEST 0001-3120 responsive to this Request, subject to the objections stated below.\" → \"After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below.\"",
@@ -77,7 +91,10 @@
             "objectionIds": [
               "trade-secret"
             ],
-            "privilegeBasis": null
+            "privilegeBasis": null,
+            "citations": [
+              "VEST 0001-3120"
+            ]
           },
           "changes": [
             "responseText: \"After a diligent search, Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026), subject to the objections stated below.\" → \"Vestra produces Bates VEST 0001-3120 and 4001-4210 (modules shipped 2024-2026); trade-secret designation retained per the protective order.\""
@@ -86,11 +103,13 @@
       ]
     },
     {
-      "id": "dr-002",
+      "id": "dr-rfp-7",
       "requestNo": "RFP 7",
       "type": "rfp",
       "requestText": "All communications with counsel concerning the VX-2 thermal events.",
       "responseText": "",
+      "citations": [],
+      "citationFlags": [],
       "objections": [
         {
           "id": "privileged",
@@ -107,6 +126,7 @@
       ],
       "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log",
       "status": "withheld-logged",
+      "reviewState": "draft",
       "privilegeSafe": false,
       "safetyFlags": [
         "withholds on: attorney-client privilege and work product; items will be logged on the privilege log — must appear on the privilege log (FRCP 26(b)(5))"
@@ -121,7 +141,8 @@
               "privileged",
               "work-product"
             ],
-            "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log"
+            "privilegeBasis": "attorney-client privilege and work product; items will be logged on the privilege log",
+            "citations": []
           },
           "changes": [
             "initial draft"
@@ -130,14 +151,17 @@
       ]
     },
     {
-      "id": "dr-003",
+      "id": "dr-rog-3",
       "requestNo": "ROG 3",
       "type": "interrogatory",
       "requestText": "Identify every person with knowledge of the QC-14 test deviations.",
       "responseText": "Vestra identifies: (1) Priya Nair, QC Director; (2) Daniel Okafor, Line Supervisor; (3) Wei-Lin Sung, outside consultant.",
+      "citations": [],
+      "citationFlags": [],
       "objections": [],
       "privilegeBasis": null,
       "status": "response-only",
+      "reviewState": "draft",
       "privilegeSafe": true,
       "safetyFlags": [],
       "versions": [
@@ -147,7 +171,8 @@
           "fields": {
             "responseText": "Vestra identifies: (1) Priya Nair, QC Director; (2) Daniel Okafor, Line Supervisor; (3) Wei-Lin Sung, outside consultant.",
             "objectionIds": [],
-            "privilegeBasis": null
+            "privilegeBasis": null,
+            "citations": []
           },
           "changes": [
             "initial draft"
@@ -156,11 +181,18 @@
       ]
     },
     {
-      "id": "dr-004",
+      "id": "dr-rfa-12",
       "requestNo": "RFA 12",
       "type": "rfa",
       "requestText": "Admit that the QC-14 test log was altered after March 2025.",
-      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
+      "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
+      "citations": [
+        "VEST 2871-2904",
+        "VEST 6100-6142"
+      ],
+      "citationFlags": [
+        "cite \"VEST 6100-6142\" is outside every range in the production manifest — verify the production index"
+      ],
       "objections": [
         {
           "id": "vague-ambiguous",
@@ -177,6 +209,7 @@
       ],
       "privilegeBasis": null,
       "status": "objection-and-response",
+      "reviewState": "draft",
       "privilegeSafe": true,
       "safetyFlags": [],
       "versions": [
@@ -184,12 +217,16 @@
           "round": 0,
           "label": "initial draft",
           "fields": {
-            "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904.",
+            "responseText": "Vestra denies. The QC-14 log was migrated to a new LIMS system on 2025-04-02; the original entries are preserved and produced as Bates VEST 2871-2904, and the related QC-14 training materials as Bates VEST 6100-6142.",
             "objectionIds": [
               "vague-ambiguous",
               "assumes-facts"
             ],
-            "privilegeBasis": null
+            "privilegeBasis": null,
+            "citations": [
+              "VEST 2871-2904",
+              "VEST 6100-6142"
+            ]
           },
           "changes": [
             "initial draft"

@@ -26,8 +26,17 @@
         "low": 120000,
         "high": 340000,
         "band": "medium",
-        "bandBasis": "high estimate $340,000"
+        "bandBasis": "high estimate $340,000",
+        "basis": "Counsel memo 2026-10-12: defense-range estimate for breach damages (fictional)",
+        "sourceDoc": "MEMO-2026-10-12"
       },
+      "materiality": "disclosed",
+      "freshness": {
+        "lastUpdated": "2026-11-05",
+        "daysSinceUpdate": 2,
+        "isStale": false
+      },
+      "anomalies": [],
       "flags": []
     },
     {
@@ -55,8 +64,28 @@
         "low": 15000,
         "high": 48000,
         "band": "low",
-        "bandBasis": "high estimate $48,000"
+        "bandBasis": "high estimate $48,000",
+        "basis": "Claims memo 2026-08-18: settlement range after expert review (fictional)",
+        "sourceDoc": "CLAIMS-2026-08-18"
       },
+      "materiality": "reserved",
+      "freshness": {
+        "lastUpdated": "2026-09-01",
+        "daysSinceUpdate": 67,
+        "isStale": true
+      },
+      "anomalies": [
+        {
+          "id": "stale-matter",
+          "severity": "medium",
+          "detail": "last updated 67 days ago (>30)"
+        },
+        {
+          "id": "stale-reserve",
+          "severity": "medium",
+          "detail": "reserve $25,000 last reviewed 84 days ago (>60)"
+        }
+      ],
       "flags": []
     },
     {
@@ -84,8 +113,17 @@
         "low": 40000,
         "high": 210000,
         "band": "medium",
-        "bandBasis": "high estimate $210,000"
+        "bandBasis": "high estimate $210,000",
+        "basis": "Mediation brief 2026-10-15: repair-cost range (fictional)",
+        "sourceDoc": "MED-BRIEF-2026-10-15"
       },
+      "materiality": "disclosed",
+      "freshness": {
+        "lastUpdated": "2026-10-20",
+        "daysSinceUpdate": 18,
+        "isStale": false
+      },
+      "anomalies": [],
       "flags": []
     },
     {
@@ -113,8 +151,33 @@
         "low": null,
         "high": 95000,
         "band": "medium",
-        "bandBasis": "high estimate $95,000"
+        "bandBasis": "high estimate $95,000",
+        "basis": null,
+        "sourceDoc": null
       },
+      "materiality": "monitored",
+      "freshness": {
+        "lastUpdated": "2026-08-01",
+        "daysSinceUpdate": 98,
+        "isStale": true
+      },
+      "anomalies": [
+        {
+          "id": "conflicts-open",
+          "severity": "high",
+          "detail": "conflicts check pending"
+        },
+        {
+          "id": "stale-matter",
+          "severity": "medium",
+          "detail": "last updated 98 days ago (>30)"
+        },
+        {
+          "id": "missing-fields",
+          "severity": "low",
+          "detail": "missing: counsel, exposureBasis"
+        }
+      ],
       "flags": []
     },
     {
@@ -129,7 +192,7 @@
         "counsel": "S. Lindqvist (fictional)",
         "venue": "District Court, fictional county",
         "strategy": "No settlement communication without client sign-off",
-        "nextDeadline": null
+        "nextDeadline": "2026-11-12"
       },
       "sol": {
         "deadline": "2028-03-18",
@@ -142,8 +205,17 @@
         "low": 600000,
         "high": 1200000,
         "band": "high",
-        "bandBasis": "high estimate $1,200,000"
+        "bandBasis": "high estimate $1,200,000",
+        "basis": "Trial budget 2026-10-25: verdict exposure model (fictional)",
+        "sourceDoc": "BUDGET-2026-10-25"
       },
+      "materiality": "disclosed",
+      "freshness": {
+        "lastUpdated": "2026-10-30",
+        "daysSinceUpdate": 8,
+        "isStale": false
+      },
+      "anomalies": [],
       "flags": []
     },
     {
@@ -171,27 +243,97 @@
         "low": null,
         "high": null,
         "band": "unquantified",
-        "bandBasis": "no exposure estimate on file"
+        "bandBasis": "no exposure estimate on file",
+        "basis": null,
+        "sourceDoc": null
       },
+      "materiality": "monitored",
+      "freshness": {
+        "lastUpdated": null,
+        "daysSinceUpdate": null,
+        "isStale": true
+      },
+      "anomalies": [
+        {
+          "id": "stale-matter",
+          "severity": "medium",
+          "detail": "lastUpdated missing — freshness unknown"
+        },
+        {
+          "id": "missing-fields",
+          "severity": "low",
+          "detail": "missing: venue, counsel"
+        }
+      ],
       "flags": [
         "unknown claim type \"admiralty-collision\" — no limitation rule configured"
       ]
+    },
+    {
+      "id": "LIT-2023-090",
+      "name": "Rialto Cafe v. Ridgetop Rentals (fictional)",
+      "client": "Rialto Cafe LLC",
+      "claimType": "breach-of-oral-contract",
+      "claimLabel": "Breach of oral contract",
+      "status": "closed",
+      "stage": "dismissed with prejudice",
+      "rulesOfRoad": {
+        "counsel": "J. Okafor (fictional)",
+        "venue": "Superior Court, fictional county",
+        "strategy": "Closed — release executed",
+        "nextDeadline": null
+      },
+      "sol": {
+        "deadline": "2024-07-14",
+        "daysRemaining": -846,
+        "status": "expired",
+        "accrualUsed": "2022-07-14",
+        "ruleCite": "e.g. Cal. Code Civ. Proc. § 339 (2 yr) — US default, verify per state"
+      },
+      "exposure": {
+        "low": 8000,
+        "high": 12000,
+        "band": "low",
+        "bandBasis": "high estimate $12,000",
+        "basis": null,
+        "sourceDoc": null
+      },
+      "materiality": "none",
+      "freshness": {
+        "lastUpdated": "2026-01-10",
+        "daysSinceUpdate": 301,
+        "isStale": true
+      },
+      "anomalies": [
+        {
+          "id": "stale-matter",
+          "severity": "medium",
+          "detail": "last updated 301 days ago (>30)"
+        },
+        {
+          "id": "missing-fields",
+          "severity": "low",
+          "detail": "missing: exposureBasis"
+        }
+      ],
+      "flags": []
     }
   ],
   "summary": {
-    "total": 6,
+    "total": 7,
     "byStatus": {
       "active": 2,
       "settlement": 1,
       "assessing": 2,
-      "trial": 1
+      "trial": 1,
+      "closed": 1
     },
-    "solAlerts": 1,
+    "solAlerts": 2,
     "solUnverified": 1,
     "exposureByBand": {
       "low": {
-        "matters": 1,
-        "totalHighEstimate": 48000
+        "matters": 2,
+        "totalHighEstimate": 60000
       },
       "medium": {
         "matters": 3,
@@ -202,6 +344,47 @@
         "totalHighEstimate": 1200000
       },
       "unquantified": 1
+    },
+    "anomalies": {
+      "total": 9,
+      "bySeverity": {
+        "critical": 0,
+        "high": 1,
+        "medium": 5,
+        "low": 3
+      },
+      "byId": {
+        "stale-matter": 4,
+        "stale-reserve": 1,
+        "conflicts-open": 1,
+        "missing-fields": 3
+      }
+    },
+    "nextDeadlines": {
+      "overdue": 0,
+      "within14": 2,
+      "days15to30": 0,
+      "days31to60": 0,
+      "beyond60": 0,
+      "none": 5
+    },
+    "materiality": {
+      "reserved": {
+        "matters": 1,
+        "midpointTotal": 31500
+      },
+      "disclosed": {
+        "matters": 3,
+        "midpointTotal": 1255000
+      },
+      "monitored": {
+        "matters": 2,
+        "midpointTotal": 0
+      },
+      "none": {
+        "matters": 1,
+        "midpointTotal": 10000
+      }
     },
     "flagged": 1
   },

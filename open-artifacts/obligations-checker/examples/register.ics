@@ -1,0 +1,44 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//open-legal-artifacts//obligations-checker//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:OBL-1@obligations-checker
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261030
+DTEND;VALUE=DATE:20261031
+SUMMARY:overdue: OBL-1 (§ 4.1) — pay: pay the Phase 2 milestone fee of $48\,000
+DESCRIPTION:Party: Customer\nOwner: Finance (Customer)\nbreach risk: due 2026-10-30 — 8 days past with no satisfaction record
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-P7D
+DESCRIPTION:obligation OBL-1 due 2026-10-30
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:OBL-2@obligations-checker
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261112
+DTEND;VALUE=DATE:20261113
+SUMMARY:due-soon: OBL-2 (§ 5.2) — deliver: deliver the platform security audit report
+DESCRIPTION:Party: Supplier\nOwner: Security team (Supplier)\ndue in 5 days (≤ 14) with no satisfaction record yet
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-P7D
+DESCRIPTION:obligation OBL-2 due 2026-11-12
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:OBL-8@obligations-checker
+DTSTAMP:20261107T000000Z
+DTSTART;VALUE=DATE:20261231
+DTEND;VALUE=DATE:20270101
+SUMMARY:overdue: OBL-8 (§ 4.4) — pay: pay the quarterly platform license fee of $6\,000
+DESCRIPTION:Party: Customer\nOwner: Finance (Customer)\nsatisfied 5 days late for cycle due 2026-09-30\nbreach risk: 2 missed quarterly cycles — due 2026-03-31\, 2026-06-30 with no satisfaction record
+BEGIN:VALARM
+ACTION:DISPLAY
+TRIGGER:-P7D
+DESCRIPTION:obligation OBL-8 due 2026-12-31
+END:VALARM
+END:VEVENT
+END:VCALENDAR

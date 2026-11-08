@@ -1,6 +1,6 @@
 {
   "asOf": "2026-11-07",
-  "settings": { "staleDays": 30, "matchLimit": 3 },
+  "settings": { "staleDays": 30, "matchLimit": 3, "maxOpenPerVolunteer": 1 },
   "volunteers": [
     { "id": "V-01", "name": "D. Whitfield (fictional)", "skills": ["housing", "tenant-defense", "spanish"] },
     { "id": "V-02", "name": "M. Sandoval (fictional)", "skills": ["housing", "benefits", "spanish"] },
@@ -20,7 +20,10 @@
       "requiredSkills": ["housing", "tenant-defense"],
       "optionalSkills": ["spanish"],
       "volunteerId": "V-01",
-      "hours": 8
+      "hours": 8,
+      "deadlines": [
+        { "label": "answer filing", "dueDate": "2026-11-12", "kind": "court" }
+      ]
     },
     {
       "id": "PB-2026-011",
@@ -30,7 +33,10 @@
       "openedDate": "2026-11-02",
       "lastActivityDate": "2026-11-03",
       "requiredSkills": ["family"],
-      "optionalSkills": ["spanish", "immigration"]
+      "optionalSkills": ["spanish", "immigration"],
+      "deadlines": [
+        { "label": "custody hearing", "dueDate": "2026-11-05", "kind": "court" }
+      ]
     },
     {
       "id": "PB-2026-012",
@@ -40,7 +46,11 @@
       "openedDate": "2026-08-14",
       "lastActivityDate": "2026-09-20",
       "requiredSkills": ["benefits"],
-      "optionalSkills": ["consumer"]
+      "optionalSkills": ["consumer"],
+      "volunteerId": "V-04",
+      "deadlines": [
+        { "label": "appeal brief", "dueDate": "2026-11-20", "kind": "administrative" }
+      ]
     },
     {
       "id": "PB-2026-006",
@@ -75,7 +85,11 @@
       "state": "placed",
       "openedDate": "2026-11-05",
       "lastActivityDate": "2026-11-06",
-      "requiredSkills": ["family"]
+      "requiredSkills": ["family"],
+      "volunteerId": "V-04",
+      "deadlines": [
+        { "label": "TRO hearing", "dueDate": "2026-11-09", "kind": "court" }
+      ]
     }
   ]
 }

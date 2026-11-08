@@ -26,7 +26,7 @@
         {
           "id": "E-103",
           "date": "2026-04-02",
-          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
           "case": {
             "name": "Meridian Foods v. Bluecrest Logistics",
             "judge": "Hon. A. Whitfield",
@@ -65,7 +65,7 @@
         {
           "id": "E-103",
           "date": "2026-04-02",
-          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+          "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
           "case": {
             "name": "Meridian Foods v. Bluecrest Logistics",
             "judge": "Hon. A. Whitfield",
@@ -125,7 +125,7 @@
       "entry": {
         "id": "E-103",
         "date": "2026-04-02",
-        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
         "case": {
           "name": "Meridian Foods v. Bluecrest Logistics",
           "judge": "Hon. A. Whitfield",
@@ -151,7 +151,7 @@
       "entry": {
         "id": "E-103",
         "date": "2026-04-02",
-        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
         "case": {
           "name": "Meridian Foods v. Bluecrest Logistics",
           "judge": "Hon. A. Whitfield",
@@ -199,6 +199,64 @@
       ]
     }
   ],
+  "deadlinesNew": [
+    {
+      "watcherId": "w1",
+      "entry": {
+        "id": "E-103",
+        "date": "2026-04-02",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+        "case": {
+          "name": "Meridian Foods v. Bluecrest Logistics",
+          "judge": "Hon. A. Whitfield",
+          "parties": [
+            "Meridian Foods, Inc.",
+            "Bluecrest Logistics LLC"
+          ],
+          "practiceArea": "commercial-litigation",
+          "court": "N.D. Ill. (fictional)"
+        }
+      },
+      "deadlines": [
+        {
+          "date": "2026-04-17",
+          "label": "Response due",
+          "basis": "response-days",
+          "confidence": "medium",
+          "needsVerification": true,
+          "withinHorizon": true
+        }
+      ]
+    },
+    {
+      "watcherId": "w2",
+      "entry": {
+        "id": "E-103",
+        "date": "2026-04-02",
+        "description": "Motion for sanctions for discovery misconduct filed by plaintiffs; response due within 14 days",
+        "case": {
+          "name": "Meridian Foods v. Bluecrest Logistics",
+          "judge": "Hon. A. Whitfield",
+          "parties": [
+            "Meridian Foods, Inc.",
+            "Bluecrest Logistics LLC"
+          ],
+          "practiceArea": "commercial-litigation",
+          "court": "N.D. Ill. (fictional)"
+        }
+      },
+      "deadlines": [
+        {
+          "date": "2026-04-17",
+          "label": "Response due",
+          "basis": "response-days",
+          "confidence": "medium",
+          "needsVerification": true,
+          "withinHorizon": true
+        }
+      ]
+    }
+  ],
   "nextSeenStore": {
     "ids": [
       "E-100",
@@ -215,6 +273,7 @@
     "entriesInFeed": 5,
     "watchers": 3,
     "newEntries": 6,
-    "escalated": 3
+    "escalated": 3,
+    "deadlines": 2
   }
 }

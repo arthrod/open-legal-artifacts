@@ -225,10 +225,17 @@ export function resolveObjections(ids) {
  */
 export function trackResponse(facts) {
   const rule = facts.deadline_rule ?? {};
+  const classification = classifySubpoena(facts);
   const deadline = computeDeadline(facts.subpoena, rule);
+  const deadlinesAll = computeAllDeadlines(facts);
   const scope = analyzeScope(facts.responsive_scope, { thresholds: rule.thresholds });
+  const objectionMatrix = applyObjections(facts, scope);
+  const provenance = auditProvenance(facts);
 
   const warnings = [...scope.flags.map((f) => `${f.kind}: ${f.detail}`)];
+  warnings.push(...classification.escalation);
+  warnings.push(...deadlinesAll.escalation);
+  warnings.push(...provenance.warnings);
   let daysRemaining = null;
   if (facts.today && isIsoDate(facts.today)) {
     daysRemaining = diffDays(deadline.deadline, facts.today);
@@ -242,12 +249,18 @@ export function trackResponse(facts) {
 
   return {
     matter: facts.matter ?? {},
+    classification,
     deadline,
+    deadlines_all: deadlinesAll,
     deadline_math: { days_remaining: daysRemaining, status: daysRemaining == null ? 'unknown' : daysRemaining < 0 ? 'overdue' : daysRemaining <= 3 ? 'critical' : 'on_track' },
     scope,
+    objection_matrix: objectionMatrix,
     privilege: { state: privilegeState, progress },
     objections: resolveObjections(facts.objections_selected ?? []),
     legal_hold: Boolean(facts.legal_hold),
+    provenance,
+    compliance: buildCompliance(facts, scope),
+    today: facts.today ?? null,
     warnings,
   };
 }
@@ -259,8 +272,21 @@ export function trackResponse(facts) {
 export function exportChecklistMd(r) {
   const L = [];
   L.push(`# Subpoena response checklist — ${r.matter?.name ?? 'matter'}`, '');
+  if (r.classification?.stop) L.push(`- 🛑 **STOP — GRAND JURY SUBPOENA: escalate to criminal counsel before any substantive response. Standard civil triage does not apply.**`, '');
+  L.push(`- Subpoena type: **${r.classification?.type ?? 'unclassified'}** (${r.classification?.basis ?? 'n/a'}).`);
   L.push(`- [ ] Confirm service facts: served ${r.deadline.served_date} by ${r.deadline.service_method} (+${r.deadline.extension_days} extension day(s)).`);
   L.push(`- [ ] **Response deadline: ${r.deadline.deadline}** (${r.deadline.total_days} ${r.deadline.day_type === 'court' ? 'court' : 'calendar'} day(s)) — status: ${r.deadline_math.status}${r.deadline_math.days_remaining != null ? `, ${r.deadline_math.days_remaining} day(s) remaining` : ''}.`);
+  if (r.deadlines_all) {
+    L.push('', '## All deadlines (calendar all of them)', '');
+    for (const kind of ['response', 'objection', 'production', 'quash_window', 'meet_and_confer']) {
+      const e = r.deadlines_all[kind];
+      if (!e) continue;
+      L.push(`- [ ] **${e.label}: ${e.deadline}** — ${e.basis}.`);
+    }
+    const ed = r.deadlines_all.earliest_deadline;
+    L.push('', `Earliest: **${ed.label} ${ed.deadline}**${ed.days_remaining != null ? ` (${ed.days_remaining} day(s) from ${r.today})` : ''}.`);
+    for (const n of r.deadlines_all.notes) L.push(`- _${n}_`);
+  }
   L.push(`- [ ] Legal hold ${r.legal_hold ? 'already issued — verify scope covers new custodians' : 'NOT yet issued — issue before collection'}.`);
   L.push('', '## Responsive scope (structured)', '');
   L.push(`- Date range: ${r.scope.date_range.start} → ${r.scope.date_range.end} (${r.scope.date_range.span_years} yrs).`);
@@ -274,7 +300,376 @@ export function exportChecklistMd(r) {
     L.push('', '## Objection grounds (jurisdiction-dependent; verify against forum rules)', '');
     for (const o of r.objections) L.push(`- [ ] **${o.label}** — ${o.description} (Support: ${o.typical_support})`);
   }
+  if (r.objection_matrix?.length) {
+    L.push('', '## Objection application matrix (deterministic heuristics; not a legal conclusion)', '');
+    for (const m of r.objection_matrix) {
+      L.push(`- **${m.label}** — strength: **${m.strength}** (${m.strength_basis})`);
+      L.push(`  - applies to categories: ${m.categories.join(', ') || '—'}; custodians: ${m.custodians.length}`);
+    }
+  }
+  if (r.compliance) {
+    L.push('', '## Compliance plan (if responding)', '');
+    L.push(`- Scope of likely production: ${r.compliance.production_scope.join('; ') || '—'}.`);
+    L.push(`- Date range: ${r.compliance.date_range.start} → ${r.compliance.date_range.end}.`);
+    L.push(`- Custodians to search: ${r.compliance.custodians.join(', ') || '—'}.`);
+    L.push(`- Systems: ${r.compliance.systems.join('; ') || '—'}.`);
+    L.push(`- Production format: ${r.compliance.production_format}.`);
+    L.push(`- Review protocol: ${r.compliance.review_protocol}.`);
+    L.push(`- Privilege log fields: ${r.compliance.privilege_log_fields.join(', ')}.`);
+  }
+  if (r.provenance?.verify_first?.length) {
+    L.push('', '## Verify first (unverified sources)', '');
+    for (const v of r.provenance.verify_first) L.push(`- ⚠ ${v.field} — source: ${v.source} [verify]`);
+  }
   if (r.warnings.length) { L.push('', '## Warnings', ''); for (const w of r.warnings) L.push(`- ⚠ ${w}`); }
   L.push('', '---', '', '_Deterministic output of the open subpoena-response tracker. FRCP-style defaults are configurable rules-as-data, not legal advice; deadlines vary by forum — verify with counsel._');
   return L.join('\n');
+}
+
+/* ------------------------------------------------------------------ *
+ * Classification + grand-jury stop gate
+ * ------------------------------------------------------------------ */
+
+/**
+ * Subpoena taxonomy (mirrors common triage practice; ids are ours).
+ * @type {ReadonlyArray<string>}
+ */
+export const SUBPOENA_TYPES = Object.freeze(['third_party_documents', 'third_party_deposition', 'party', 'civil_investigative_demand', 'grand_jury']);
+
+/** @type {string} */
+export const GRAND_JURY_ESCALATION = 'GRAND JURY SUBPOENA: STOP — escalate to criminal counsel immediately before any substantive response; standard civil triage does not apply.';
+
+/**
+ * Classify a subpoena from keyword markers, with an explicit type override.
+ * The grand-jury keyword scan runs even when `type` is set; a conflict keeps
+ * `stop: true` — the gate cannot be suppressed by the override.
+ * Grand-jury classification sets `stop: true` — callers must gate on it.
+ *
+ * @param {object} facts
+ * @returns {{type: string, basis: string, stop: boolean, escalation: string[]}}
+ * @throws {Error} when facts.subpoena.type is set but not a known type id
+ */
+export function classifySubpoena(facts) {
+  const sub = facts?.subpoena ?? {};
+  // The grand-jury scan runs BEFORE the explicit-type branch and always wins:
+  // facts JSON is LLM-drafted, so a wrong/forgetful `type` must never be able
+  // to suppress the STOP gate. The gate is fail-closed by construction.
+  const text = [sub.caption, facts?.matter?.issuing_authority, facts?.matter?.name].filter(Boolean).join(' ').toLowerCase();
+  const grandJuryMarker = /grand\s+jur/.test(text);
+  if (sub.type != null) {
+    if (!SUBPOENA_TYPES.includes(sub.type)) throw new Error(`Unknown subpoena type ${JSON.stringify(sub.type)}; valid: ${SUBPOENA_TYPES.join(', ')}`);
+    if (sub.type === 'grand_jury')
+      return { type: sub.type, basis: 'explicit override (facts.subpoena.type)', stop: true, escalation: [GRAND_JURY_ESCALATION] };
+    if (grandJuryMarker)
+      return {
+        type: sub.type,
+        basis: `explicit override (facts.subpoena.type) contradicted by grand-jury marker in caption/authority text — STOP kept`,
+        stop: true,
+        escalation: [
+          GRAND_JURY_ESCALATION,
+          `facts.subpoena.type was "${sub.type}" but caption/authority text matches a grand-jury marker — resolve the conflict with counsel before any substantive response.`,
+        ],
+      };
+    return { type: sub.type, basis: 'explicit override (facts.subpoena.type)', stop: false, escalation: [] };
+  }
+  const role = String(facts?.matter?.role ?? '').toLowerCase();
+  if (grandJuryMarker) {
+    return { type: 'grand_jury', basis: `grand-jury marker in caption/authority text`, stop: true, escalation: [GRAND_JURY_ESCALATION] };
+  }
+  if (/civil investigative|\bcid\b|attorney general|\bftc\b|\bsec\b|state ag\b/.test(text)) {
+    return { type: 'civil_investigative_demand', basis: 'regulator/CID marker in caption/authority text', stop: false, escalation: ['Civil Investigative Demand: regulator-specific norms apply — recommend outside regulatory counsel.'] };
+  }
+  if (/deposition|testimon|30\(b\)\(6\)/.test(text)) {
+    return { type: 'third_party_deposition', basis: 'deposition/testimony marker in caption text', stop: false, escalation: [] };
+  }
+  if (/\bparty\b/.test(role) && !/non-?\s?party/.test(role)) {
+    return { type: 'party', basis: `matter role is a party role ("${facts.matter.role}")`, stop: false, escalation: ['Party subpoena: treat as discovery — map to the existing matter, not standalone inbound.'] };
+  }
+  return { type: 'third_party_documents', basis: 'document categories present; no other type marker matched', stop: false, escalation: [] };
+}
+
+/* ------------------------------------------------------------------ *
+ * Multi-deadline engine
+ * ------------------------------------------------------------------ */
+
+/**
+ * Default sub-deadline rules (rules-as-data; override per forum via
+ * `deadline_rule.deadlines.<kind> = { days }`, disable a kind with `null`).
+ * Objections default to the EARLIER-of rule many forums apply.
+ * @type {ReadonlyArray<{kind: string, label: string, days: number, earlier_of_compliance?: boolean}>}
+ */
+export const DEFAULT_SUB_DEADLINE_RULES = Object.freeze([
+  { kind: 'response', label: 'Response / compliance', days: 14 },
+  { kind: 'objection', label: 'Objections', days: 10, earlier_of_compliance: true },
+  { kind: 'production', label: 'Production', days: 30 },
+  { kind: 'quash_window', label: 'Motion-to-quash window (outer limit)', days: 14 },
+  { kind: 'meet_and_confer', label: 'Meet and confer', days: 7 },
+]);
+
+/** @type {string} */
+export const EARLIER_OF_NOTE = 'Objection deadlines often run from the EARLIER of the compliance date or a fixed number of days after service — this varies by forum; research the applicable rule before relying on any date here.';
+
+/**
+ * Compute all tracked deadlines from one facts JSON, plus the earliest of
+ * them for escalation. All dates use the same day_type / mail-extension /
+ * holidays configuration as the response rule.
+ *
+ * @param {object} facts see examples/input.json
+ * @returns {Record<string, {kind: string, label: string, deadline: string, basis: string,
+ *   total_days: number, day_type: string, candidates?: {compliance_date: string, fixed_days_after_service: string}}>
+ *   & {earliest_deadline: {kind: string, label: string, deadline: string, days_remaining: number|null},
+ *      escalation: string[], notes: string[]}}
+ * @throws {Error} on invalid served_date or rule (via computeDeadline)
+ */
+export function computeAllDeadlines(facts) {
+  if (!isIsoDate(facts?.subpoena?.served_date)) throw new Error(`subpoena.served_date must be an ISO date, got ${JSON.stringify(facts?.subpoena?.served_date)}`);
+  const rule = facts.deadline_rule ?? {};
+  const overrides = rule.deadlines ?? {};
+
+  const responseRule = { ...rule, ...(overrides.response?.days != null ? { days: overrides.response.days } : {}) };
+  const base = computeDeadline(facts.subpoena, responseRule);
+  const entries = {
+    response: {
+      kind: 'response', label: DEFAULT_SUB_DEADLINE_RULES[0].label, deadline: base.deadline, total_days: base.total_days, day_type: base.day_type,
+      basis: `${base.total_days} ${base.day_type} day(s) from service ${facts.subpoena.served_date} by ${base.service_method} (+${base.extension_days} ext.)`,
+    },
+  };
+
+  for (const d of DEFAULT_SUB_DEADLINE_RULES) {
+    if (d.kind === 'response') continue;
+    const ov = overrides[d.kind];
+    if (ov === null) continue; // explicitly disabled
+    const o = { ...d, ...(ov ?? {}) };
+    if (o.days == null) continue;
+    const fixed = computeDeadline(facts.subpoena, { ...rule, days: o.days });
+    if (o.earlier_of_compliance) {
+      const earlier = base.deadline <= fixed.deadline ? base.deadline : fixed.deadline;
+      entries[d.kind] = {
+        kind: d.kind, label: d.label, deadline: earlier, total_days: fixed.total_days, day_type: fixed.day_type,
+        basis: `earlier of compliance date (${base.deadline}) and ${o.days} day(s) after service (${fixed.deadline}) → ${earlier}`,
+        candidates: { compliance_date: base.deadline, fixed_days_after_service: fixed.deadline },
+      };
+    } else {
+      entries[d.kind] = {
+        kind: d.kind, label: d.label, deadline: fixed.deadline, total_days: fixed.total_days, day_type: fixed.day_type,
+        basis: `${fixed.total_days} ${fixed.day_type} day(s) from service ${facts.subpoena.served_date} (incl. ${fixed.extension_days} ext.)`,
+      };
+    }
+  }
+
+  const ordered = Object.values(entries).filter((e) => e.deadline).sort((a, b) => (a.deadline < b.deadline ? -1 : a.deadline > b.deadline ? 1 : 0));
+  const first = ordered[0];
+  let daysRemaining = null;
+  const escalation = [];
+  if (facts.today && isIsoDate(facts.today)) {
+    daysRemaining = diffDays(first.deadline, facts.today);
+    if (daysRemaining < 0) escalation.push(`EARLIEST DEADLINE PASSED: ${first.label} was ${first.deadline} (${-daysRemaining} day(s) ago) — escalate immediately.`);
+    else if (daysRemaining <= 3) escalation.push(`Earliest deadline (${first.label}) is ${first.deadline} — only ${daysRemaining} day(s) remain.`);
+  }
+  return { ...entries, earliest_deadline: { kind: first.kind, label: first.label, deadline: first.deadline, days_remaining: daysRemaining }, escalation, notes: [EARLIER_OF_NOTE] };
+}
+
+/* ------------------------------------------------------------------ *
+ * Objection application matrix
+ * ------------------------------------------------------------------ */
+
+/**
+ * Apply each triggered objection ground to the actual scope: which data
+ * categories and custodians it reaches, and a deterministic strength rating
+ * from the scope heuristics (≥2× threshold = strong, >1× = moderate; grounds
+ * without a numeric heuristic are 'unrated' — manual assessment, no fake
+ * confidence). Covers suggested ∪ selected grounds.
+ *
+ * @param {object} facts
+ * @param {ReturnType<analyzeScope>} [scope] precomputed scope (optional)
+ * @returns {Array<{id: string, label: string, strength: 'strong'|'moderate'|'unrated', strength_basis: string, categories: string[], custodians: string[]}>}
+ * @throws {Error} on unknown objection ids (via resolveObjections)
+ */
+export function applyObjections(facts, scope) {
+  const s = scope ?? analyzeScope(facts.responsive_scope, { thresholds: facts.deadline_rule?.thresholds });
+  const th = { ...SCOPE_THRESHOLDS, ...facts.deadline_rule?.thresholds };
+  const ids = [...new Set([...s.suggested_objections, ...(facts.objections_selected ?? [])])];
+  resolveObjections(ids); // validate ids → throws on unknown
+  const allCategories = s.data_types.map((d) => d.type);
+  const allCustodians = s.custodians.map((c) => c.name);
+  const rows = [];
+  for (const id of ids) {
+    const g = OBJECTION_GROUNDS.find((x) => x.id === id);
+    let strength = 'unrated';
+    let basis = 'No numeric heuristic for this ground — strength is a manual assessment.';
+    let categories = [];
+    let custodians = [];
+    if (id === 'overbroad_time') {
+      const ratio = s.date_range.span_years / th.overbroad_years;
+      strength = ratio >= 2 ? 'strong' : 'moderate';
+      basis = `${s.date_range.span_years}-year range is ${ratio.toFixed(1)}× the ${th.overbroad_years}-year threshold.`;
+      categories = allCategories; custodians = allCustodians;
+    } else if (id === 'overbroad_custodians') {
+      const ratio = s.custodian_count / th.overbroad_custodians;
+      strength = ratio >= 2 ? 'strong' : ratio > 1 ? 'moderate' : 'unrated';
+      basis = `${s.custodian_count} custodians is ${ratio.toFixed(1)}× the ${th.overbroad_custodians}-custodian threshold.`;
+      categories = allCategories; custodians = allCustodians;
+    } else if (id === 'pii_privacy') {
+      categories = allCategories.filter((t) => /personal|mobile|text|sms|private/i.test(t));
+      custodians = allCustodians;
+      strength = 'moderate';
+      basis = `Personal/sensitive categories requested (${categories.join(', ') || 'none matched'}); strength depends on applicable privacy law.`;
+    } else if (id === 'privilege') {
+      categories = allCategories.filter((t) => /mail|text|message|chat|memo|communication/i.test(t));
+      if (!categories.length) categories = allCategories;
+      custodians = allCustodians;
+      strength = 'moderate';
+      basis = 'Privilege review always runs; strength depends on counsel involvement in the implicated categories.';
+    }
+    rows.push({ id: g.id, label: g.label, strength, strength_basis: basis, categories, custodians });
+  }
+  return rows;
+}
+
+/* ------------------------------------------------------------------ *
+ * Provenance trail
+ * ------------------------------------------------------------------ */
+
+/**
+ * Critical fact fields that must carry a source tag. A missing tag is a
+ * warning (never silently trusted); a tag with status 'verify' is listed
+ * verify-first in exports.
+ * @type {ReadonlyArray<string>}
+ */
+export const PROVENANCE_FIELDS = Object.freeze([
+  'subpoena.served_date',
+  'subpoena.service_method',
+  'subpoena.caption',
+  'responsive_scope.date_range.start',
+  'responsive_scope.date_range.end',
+]);
+
+/** @param {object} o @param {string} path */
+function getField(o, path) { return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), o); }
+
+/**
+ * Audit source tags on critical fact fields.
+ * @param {object} facts facts with optional `provenance` map: field path → { source: string, status: 'verified'|'verify' }
+ * @returns {{entries: Array<{field: string, status: 'verified'|'verify'|'untagged'|'invalid'|'not_present', source: string|null}>,
+ *   verify_first: Array<{field: string, source: string}>, warnings: string[]}}
+ */
+export function auditProvenance(facts) {
+  const prov = facts?.provenance ?? {};
+  const entries = [];
+  const verifyFirst = [];
+  const warnings = [];
+  for (const f of PROVENANCE_FIELDS) {
+    if (getField(facts, f) == null) { entries.push({ field: f, status: 'not_present', source: null }); continue; }
+    const tag = prov[f];
+    if (tag == null) {
+      entries.push({ field: f, status: 'untagged', source: null });
+      warnings.push(`provenance: ${f} has no source tag — verify against the subpoena before relying on it.`);
+    } else if (typeof tag === 'object' && tag != null && typeof tag.source === 'string') {
+      const status = tag.status === 'verified' ? 'verified' : 'verify';
+      entries.push({ field: f, status, source: tag.source });
+      if (status === 'verify') verifyFirst.push({ field: f, source: tag.source });
+    } else {
+      entries.push({ field: f, status: 'invalid', source: null });
+      warnings.push(`provenance: "${f}" tag must be { source, status } — got ${JSON.stringify(tag)}.`);
+    }
+  }
+  for (const k of Object.keys(prov)) {
+    if (!PROVENANCE_FIELDS.includes(k)) warnings.push(`provenance: unknown field key "${k}" — not a tracked field.`);
+  }
+  return { entries, verify_first: verifyFirst, warnings };
+}
+
+/* ------------------------------------------------------------------ *
+ * Portfolio cross-check
+ * ------------------------------------------------------------------ */
+
+/** @param {string|undefined|null} s */
+function normCaption(s) { return String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+/**
+ * Cross-check this subpoena against a portfolio of other inbound matters.
+ * A caption match flags coordinated issuance; a party-only overlap flags a
+ * related matter.
+ *
+ * @param {object} facts
+ * @param {Array<{caption?: string, parties?: string[], status?: string}>} [portfolio]
+ * @returns {{matches: Array<{entry_index: number, caption: string|null, caption_match: boolean, party_overlap: string[]}>,
+ *   coordinated_issuance: boolean, warnings: string[]}}
+ */
+export function crossCheckPortfolio(facts, portfolio = []) {
+  const caption = normCaption(facts?.subpoena?.caption);
+  const ours = new Set([facts?.matter?.client, facts?.matter?.opposing].filter(Boolean).map(normCaption));
+  const matches = [];
+  let coordinated = false;
+  portfolio.forEach((entry, i) => {
+    const captionMatch = Boolean(caption) && Boolean(entry?.caption) && normCaption(entry.caption) === caption;
+    const overlap = (entry?.parties ?? []).filter((p) => ours.has(normCaption(p)));
+    if (captionMatch || overlap.length) {
+      if (captionMatch) coordinated = true;
+      matches.push({ entry_index: i, caption: entry.caption ?? null, caption_match: captionMatch, party_overlap: overlap });
+    }
+  });
+  const warnings = [];
+  if (coordinated) warnings.push('Coordinated issuance: another subpoena in the portfolio matches this caption — consider a single coordinated response strategy.');
+  else if (matches.length) warnings.push(`Related matter(s) found by party overlap (${matches.flatMap((m) => m.party_overlap).join(', ')}).`);
+  return { matches, coordinated_issuance: coordinated, warnings };
+}
+
+/* ------------------------------------------------------------------ *
+ * Compliance plan + ICS export
+ * ------------------------------------------------------------------ */
+
+/**
+ * Privilege-log fields we plan to populate (rules-as-data; forum rules vary).
+ * @type {ReadonlyArray<string>}
+ */
+export const PRIVILEGE_LOG_FIELDS = Object.freeze(['date', 'author', 'recipients', 'subject/matter', 'privilege_basis', 'withheld_in_part']);
+
+/**
+ * Compliance-plan data (production scope, custodians/systems, format,
+ * review protocol, privilege-log fields) from facts + scope.
+ * @param {object} facts @param {ReturnType<analyzeScope>} scope
+ */
+function buildCompliance(facts, scope) {
+  return {
+    production_scope: scope.data_types.map((d) => d.type),
+    date_range: { start: scope.date_range.start, end: scope.date_range.end },
+    custodians: scope.custodians.map((c) => c.name),
+    systems: [...new Set(scope.data_types.flatMap((d) => d.systems))],
+    production_format: String(facts.production_format ?? 'per the subpoena or a negotiated protocol (unspecified — confirm before production)'),
+    review_protocol: String(facts.review_protocol ?? 'unassigned'),
+    privilege_log_fields: [...PRIVILEGE_LOG_FIELDS],
+  };
+}
+
+/**
+ * ICS calendar export of every tracked deadline (RFC 5545-style plain text,
+ * CRLF line endings, no dependencies). Deterministic: DTSTAMP derives from
+ * facts.today (fallback: served date), never from clock time.
+ *
+ * @param {ReturnType<trackResponse>} r
+ * @returns {string}
+ * @throws {Error} when r has no deadlines_all
+ */
+export function exportIcs(r) {
+  if (!r?.deadlines_all) throw new Error('exportIcs needs a trackResponse result containing deadlines_all');
+  const stampDate = (r.today && /^\d{4}-\d{2}-\d{2}$/.test(r.today) ? r.today : r.deadline.served_date).replace(/-/g, '');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//open-legal-artifacts//subpoena-response//EN', 'CALSCALE:GREGORIAN'];
+  /** RFC 5545 §3.3.11 TEXT escaping: backslash, semicolon, comma, newline. @param {string} s */
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  for (const kind of ['response', 'objection', 'production', 'quash_window', 'meet_and_confer']) {
+    const e = r.deadlines_all[kind];
+    if (!e?.deadline) continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${e.kind}-${e.deadline}@open-legal-artifacts-subpoena-response`,
+      `DTSTAMP:${stampDate}T000000Z`,
+      `DTSTART;VALUE=DATE:${e.deadline.replace(/-/g, '')}`,
+      `SUMMARY:${esc(`${r.matter?.name ?? 'Subpoena matter'} — ${e.label} (${e.deadline})`)}`,
+      `DESCRIPTION:${esc('open subpoena-response tracker; verify deadline against forum rules before relying on it')}`,
+      'END:VEVENT',
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n') + '\r\n';
 }

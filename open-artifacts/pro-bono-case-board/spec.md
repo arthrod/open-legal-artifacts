@@ -12,6 +12,11 @@ matching, stale-case flags, and impact rollups.
 | Volunteer matching: tag matching with 0–100 score, eligibility on required tags | core (deterministic) |
 | Ranking (eligible first, score desc, id-asc tie-break) | core (deterministic, stable) |
 | Stale flags (no activity > staleDays, open cases only) | core (deterministic) |
+| Deadline severity (overdue court = critical, overdue/dues<7d = warn) + ICS export | core (deterministic) |
+| Tolerant CSV intake parsing with per-row issues | core (deterministic) |
+| Volunteer capacity rollup (open/hours/staleOwned vs maxOpenPerVolunteer) | core (deterministic) |
+| Per-stage SLA aging + aging buckets | core (deterministic) |
+| Board diff (added / removed / stage-changed / deadline-moved / closed) | core (deterministic) |
 | Data-integrity flags (placed w/o volunteer, unknown volunteer, closed w/o outcome) | core (deterministic) |
 | Impact rollups (hours, outcomes, placement counts) | core (deterministic) |
 | Reading skills off a volunteer profile, drafting problem summaries | LLM / coordinator (prompt below) |
@@ -30,7 +35,8 @@ Ranking: eligible > score > volunteer id ascending.
 ```jsonc
 {
   "asOf": "2026-11-07",
-  "settings": { "staleDays": 30, "matchLimit": 3 },
+  "settings": { "staleDays": 30, "matchLimit": 3, "maxOpenPerVolunteer": 5,
+               "stageSla": { "intake": 7, "triage": 7, "ready": 14, "placed": 21, "active": 90, "closing": 21 } },
   "volunteers": [ { "id": "V-01", "name": "…", "skills": ["housing", "spanish"] } ],
   "cases": [ {
     "id": "PB-2026-010", "client": "…", "problem": "eviction defense",
@@ -38,18 +44,33 @@ Ranking: eligible > score > volunteer id ascending.
     "openedDate": "ISO", "lastActivityDate": "ISO",
     "requiredSkills": ["housing"], "optionalSkills": ["spanish"],
     "volunteerId": "V-01|null", "hours": 8,
-    "outcome": "favorable-settlement|represented|advice-only|unfavorable|null"
+    "outcome": "favorable-settlement|represented|advice-only|unfavorable|null",
+    "deadlines": [ { "label": "answer filing", "dueDate": "ISO", "kind": "court|administrative|internal" } ]
   } ]
 }
 ```
 
+`parseRows(text)` accepts the same fields as CSV columns (header row
+required; skills cells use `;` or `|` separators) and returns
+`{ cases: drafts, issues: [{row, id, issues[]}] }` — never throws.
+
+SLA note: days in state are approximated by days since `openedDate`
+(the contract carries no state-entry history); the approximation is
+documented here and flagged as such nowhere else needed.
+
 ## Output contract (JSON)
 
-Per case: `state`, `stale`, `staleFor`, `flags[]`, `matches[]`
+Per case: `state`, `stale`, `staleFor`, `daysOpen`, `slaDays`,
+`slaBreached`, `deadlines[]` (`{label, dueDate, kind, valid, daysTo,
+overdue, severity}`), `flags[]`, `matches[]`
 (`{volunteerId, score, eligible, missingRequired, matched}`).
 Plus `impact { openCases, closedCases, withdrawnCases, placedCases,
-totalHours, byOutcome, staleCases, flaggedCases }`. Exports: CSV row per
-case, Markdown board (impact + case table sorted by workflow stage).
+totalHours, byOutcome, staleCases, flaggedCases, overdueDeadlines,
+slaBreaches, aging, byVolunteer }`. Exports: CSV row per case,
+Markdown board (impact + capacity + case table sorted by workflow
+stage), ICS calendar (one all-day VEVENT per deadline, DTSTAMP pinned
+to asOf), and `diffBoards(a, b)` change log
+(`{added, removed, stageChanged, closed, deadlineMoved}`, sorted).
 
 ## Prompt schema for the LLM part (input prep only)
 

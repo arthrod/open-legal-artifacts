@@ -6,6 +6,7 @@
     "name": "California (example ruleset)",
     "version": "2026-11-example"
   },
+  "coverageTier": "full",
   "items": [
     {
       "convictionId": "V1",
@@ -44,6 +45,23 @@
         }
       ],
       "filing": null,
+      "filingGuidance": {
+        "steps": [
+          "Obtain a certified copy of the rap sheet (illustrative step — verify locally).",
+          "Complete the dismissal petition for each conviction and attach disposition documents.",
+          "File at the court of conviction and serve the prosecuting attorney.",
+          "Comply with any local notice-to-probation requirement before the hearing."
+        ],
+        "forms": [
+          "Dismissal petition (illustrative form name — verify locally)",
+          "Declaration in support (illustrative)"
+        ],
+        "feeWaiverNote": "A fee-waiver application is available from the clerk on request (illustrative — verify locally)."
+      },
+      "authority": {
+        "cite": "Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify]",
+        "url": "https://selfhelp.courts.ca.gov/record-clearance"
+      },
       "earliestFilingDate": "2020-08-21",
       "lastFilingDate": null,
       "status": "ready_to_file",
@@ -90,6 +108,23 @@
         "convictionId": "V2",
         "date": "2026-09-15",
         "status": "filed"
+      },
+      "filingGuidance": {
+        "steps": [
+          "Obtain a certified copy of the rap sheet (illustrative step — verify locally).",
+          "Complete the dismissal petition for each conviction and attach disposition documents.",
+          "File at the court of conviction and serve the prosecuting attorney.",
+          "Comply with any local notice-to-probation requirement before the hearing."
+        ],
+        "forms": [
+          "Dismissal petition (illustrative form name — verify locally)",
+          "Declaration in support (illustrative)"
+        ],
+        "feeWaiverNote": "A fee-waiver application is available from the clerk on request (illustrative — verify locally)."
+      },
+      "authority": {
+        "cite": "Cal. Penal Code § 1203.4 (dismissal) — illustrative [verify]",
+        "url": "https://selfhelp.courts.ca.gov/record-clearance"
       },
       "earliestFilingDate": "2017-06-30",
       "lastFilingDate": null,
@@ -141,6 +176,23 @@
         }
       ],
       "filing": null,
+      "filingGuidance": {
+        "steps": [
+          "Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).",
+          "Assemble the rehabilitation declaration and supporting letters.",
+          "File the petition in the county of residence and serve as the court directs.",
+          "Attend the hearing with counsel or the legal aid clinic."
+        ],
+        "forms": [
+          "Certificate of Rehabilitation petition (illustrative — verify locally)",
+          "Live-scan receipt (illustrative)"
+        ],
+        "feeWaiverNote": "A fee-waiver request may accompany the petition (illustrative — verify locally)."
+      },
+      "authority": {
+        "cite": "Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify]",
+        "url": "https://selfhelp.courts.ca.gov/record-clearance"
+      },
       "earliestFilingDate": "2027-08-21",
       "lastFilingDate": null,
       "status": "waiting",
@@ -191,6 +243,23 @@
         }
       ],
       "filing": null,
+      "filingGuidance": {
+        "steps": [
+          "Obtain a certified rap sheet and live-scan fingerprinting receipt (illustrative).",
+          "Assemble the rehabilitation declaration and supporting letters.",
+          "File the petition in the county of residence and serve as the court directs.",
+          "Attend the hearing with counsel or the legal aid clinic."
+        ],
+        "forms": [
+          "Certificate of Rehabilitation petition (illustrative — verify locally)",
+          "Live-scan receipt (illustrative)"
+        ],
+        "feeWaiverNote": "A fee-waiver request may accompany the petition (illustrative — verify locally)."
+      },
+      "authority": {
+        "cite": "Cal. Penal Code § 4852.17 (certificate of rehabilitation) — illustrative [verify]",
+        "url": "https://selfhelp.courts.ca.gov/record-clearance"
+      },
       "earliestFilingDate": "2024-02-10",
       "lastFilingDate": null,
       "status": "ready_to_file",
@@ -227,6 +296,23 @@
         }
       ],
       "filing": null,
+      "filingGuidance": {
+        "steps": [
+          "Obtain the certified rap sheet and court records for every conviction (illustrative).",
+          "Prepare the application narrative and letters of support.",
+          "Submit through the governor's office portal or by mail (illustrative).",
+          "Coordinate with counsel before submission."
+        ],
+        "forms": [
+          "Governor's pardon application (illustrative — verify locally)",
+          "Letters of support (illustrative)"
+        ],
+        "feeWaiverNote": "No filing fee is charged for pardon applications in this example ruleset (illustrative — verify)."
+      },
+      "authority": {
+        "cite": "Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify]",
+        "url": "https://www.gov.ca.gov/"
+      },
       "earliestFilingDate": "2030-08-21",
       "lastFilingDate": null,
       "status": "waiting",
@@ -263,6 +349,23 @@
         }
       ],
       "filing": null,
+      "filingGuidance": {
+        "steps": [
+          "Obtain the certified rap sheet and court records for every conviction (illustrative).",
+          "Prepare the application narrative and letters of support.",
+          "Submit through the governor's office portal or by mail (illustrative).",
+          "Coordinate with counsel before submission."
+        ],
+        "forms": [
+          "Governor's pardon application (illustrative — verify locally)",
+          "Letters of support (illustrative)"
+        ],
+        "feeWaiverNote": "No filing fee is charged for pardon applications in this example ruleset (illustrative — verify)."
+      },
+      "authority": {
+        "cite": "Cal. Const. art. V § 8 (governor's pardon) — illustrative [verify]",
+        "url": "https://www.gov.ca.gov/"
+      },
       "earliestFilingDate": "2027-02-10",
       "lastFilingDate": null,
       "status": "waiting",

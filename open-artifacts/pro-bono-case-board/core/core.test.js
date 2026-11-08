@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBoard, transition, matchScore, rankVolunteers, toCSV, renderBoard, WORKFLOW } from './core.js';
+import { readFileSync } from 'node:fs';
+import { buildBoard, transition, matchScore, rankVolunteers, toCSV, renderBoard, toICS, parseRows, diffBoards, WORKFLOW } from './core.js';
 
 const AS_OF = '2026-11-07';
 
@@ -172,4 +173,163 @@ test('renderBoard shows rollup, stale marker, and top match', () => {
 
 test('invalid asOf throws instead of computing nonsense', () => {
   assert.throws(() => buildBoard({ asOf: 'Nov 7', cases: [], volunteers: [] }), /ISO/);
+});
+
+// --------------------------------------------------------- deadlines
+
+test('deadline due within 7 days is warn with daysTo computed', () => {
+  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
+    case_({ id: 'D1', deadlines: [{ label: 'answer filing', dueDate: '2026-11-10', kind: 'court' }] }),
+  ] });
+  const dl = b.cases[0].deadlines[0];
+  assert.equal(dl.daysTo, 3);
+  assert.equal(dl.overdue, false);
+  assert.equal(dl.severity, 'warn');
+  assert.match(b.cases[0].flags.join(' | '), /due in 3 d/);
+});
+
+test('overdue court deadline is critical and counted in impact.overdueDeadlines (open cases only)', () => {
+  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
+    case_({ id: 'D1', state: 'active', deadlines: [
+      { label: 'hearing', dueDate: '2026-11-05', kind: 'court' },        // 2 d overdue, court
+      { label: 'report', dueDate: '2026-11-04', kind: 'administrative' }, // 3 d overdue, non-court
+    ] }),
+    case_({ id: 'D2', state: 'closed', outcome: 'advice-only', lastActivityDate: '2026-11-01',
+      deadlines: [{ label: 'old hearing', dueDate: '2026-11-01', kind: 'court' }] }),
+  ] });
+  const [hearing, report] = b.cases[0].deadlines;
+  assert.equal(hearing.severity, 'critical');
+  assert.equal(hearing.overdue, true);
+  assert.equal(hearing.daysTo, -2);
+  assert.equal(report.severity, 'warn'); // overdue non-court = warn, not critical
+  assert.equal(b.impact.overdueDeadlines, 2); // closed case D2 not counted
+  assert.match(b.cases[0].flags.join(' | '), /OVERDUE court deadline "hearing" \(2 d overdue\)/);
+});
+
+test('toICS emits one all-day VEVENT per deadline, escaped, deterministic', () => {
+  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
+    case_({ id: 'D1', deadlines: [
+      { label: 'hearing, part 1; pm session', dueDate: '2026-11-10', kind: 'court' },
+      { label: 'report', dueDate: '2026-11-20', kind: 'administrative' },
+    ] }),
+  ] });
+  const ics = toICS(b);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
+  assert.match(ics, /VERSION:2\.0/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20261110/);
+  assert.match(ics, /DTEND;VALUE=DATE:20261111/); // all-day: end is exclusive next day
+  assert.match(ics, /SUMMARY:D1 hearing\\, part 1\\; pm session \[court\]/); // comma/semicolon escaped
+  assert.match(ics, /DTSTAMP:20261107T000000Z/); // deterministic stamp from asOf
+  assert.equal(ics, toICS(b));
+});
+
+// ------------------------------------------------------- intake parse
+
+test('parseRows: messy CSV flags per-row issues and drafts still build a board', () => {
+  const messy = [
+    'id,client,problem,state,openedDate,lastActivityDate,requiredSkills,volunteerId',
+    'PB-1,Ann X (fictional),eviction defense,intake,2026-11-01,2026-11-02,housing;spanish,V-01',
+    'PB-1,Dup Id (fictional),wage theft,intake,11/3/2026,2026-11-03,consumer,',
+    'PB-2,Bo Y (fictional),custody,mystery,2026-11-01,2026-11-05,family,V-02',
+  ].join('\n');
+  const parsed = parseRows(messy);
+  assert.equal(parsed.cases.length, 3);
+  const rowIssues = parsed.issues.map((i) => `row ${i.row}: ${i.issues.join(' | ')}`).join(' ;; ');
+  assert.match(rowIssues, /row 3: .*duplicate id "PB-1"/);
+  assert.match(rowIssues, /row 3: .*openedDate "11\/3\/2026" is not an ISO date/);
+  assert.match(rowIssues, /row 4: .*unknown state "mystery"/);
+  const board = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: parsed.cases });
+  assert.equal(board.cases.length, 3); // tolerant: flagged rows still board-buildable
+  assert.match(board.cases[1].flags.join(' | '), /openedDate missing or not ISO — SLA aging unverified/); // bad date carried as flag
+});
+
+test('parseRows: never throws — empty, whitespace, non-string, missing header columns', () => {
+  assert.deepEqual(parseRows(''), { cases: [], issues: [] });
+  assert.deepEqual(parseRows('   \n  \n'), { cases: [], issues: [] });
+  assert.equal(parseRows(null).cases.length, 0);
+  const noHeader = parseRows('id,state\nPB-1,intake');
+  assert.match(noHeader.issues.map((i) => i.issues.join(' ')).join(' '),
+    /header missing required column\(s\): client, problem, openedDate, lastActivityDate/);
+  assert.equal(noHeader.cases[0].state, 'intake');
+});
+
+// ---------------------------------------------------------- capacity
+
+test('volunteer capacity rollup: 6 open > default maxOpen 5 → at capacity, with hours and staleOwned', () => {
+  const six = Array.from({ length: 6 }, (_, i) =>
+    case_({ id: `S-${i + 1}`, state: 'active', volunteerId: 'V-01', hours: 2,
+      lastActivityDate: i === 0 ? '2026-09-01' : '2026-11-06' })); // S-1 stale
+  const b = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: six });
+  const v = b.impact.byVolunteer['V-01'];
+  assert.equal(v.openCases, 6);
+  assert.equal(v.hours, 12);
+  assert.equal(v.staleOwned, 1);
+  assert.equal(v.atCapacity, true);
+  assert.equal(buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS,
+    cases: six.slice(0, 4) }).impact.byVolunteer['V-01'].atCapacity, false); // 4 ≤ 5 default
+  assert.equal(buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS,
+    cases: six.slice(0, 5), settings: { maxOpenPerVolunteer: 4 } }).impact.byVolunteer['V-01'].atCapacity, true); // 5 > 4
+});
+
+// ---------------------------------------------------------- stage SLA
+
+test('stage SLA: intake case open 10 d breaches the 7 d SLA and lands in aging buckets', () => {
+  const b = buildBoard({ asOf: AS_OF, volunteers: [], cases: [
+    case_({ id: 'SL-1', state: 'intake', openedDate: '2026-10-28', lastActivityDate: '2026-11-06' }), // fresh but stuck
+    case_({ id: 'SL-2', state: 'ready', openedDate: '2026-11-05', lastActivityDate: '2026-11-06' }),
+  ] });
+  const sl = b.cases[0];
+  assert.equal(sl.daysOpen, 10);
+  assert.equal(sl.slaBreached, true);
+  assert.match(sl.flags.join(' | '), /in intake 10 d > SLA 7 d/);
+  assert.equal(b.cases[1].slaBreached, false);
+  assert.equal(b.impact.slaBreaches, 1);
+  assert.deepEqual(b.impact.aging, { '0-7': 1, '8-30': 1, '31-90': 0, '>90': 0 });
+  const custom = buildBoard({ asOf: AS_OF, volunteers: [], settings: { stageSla: { intake: 30 } },
+    cases: [case_({ id: 'SL-1', state: 'intake', openedDate: '2026-10-28', lastActivityDate: '2026-11-06' })] });
+  assert.equal(custom.cases[0].slaBreached, false); // configurable per stage
+});
+
+// ---------------------------------------------------------- board diff
+
+test('diffBoards: exact added / stage-changed / deadline-moved / closed diff on fixtures', () => {
+  const base = (over = {}) => [
+    case_({ id: 'X', state: over.X ?? 'intake', openedDate: '2026-11-01', lastActivityDate: '2026-11-06' }),
+    case_({ id: 'Y', state: 'ready', openedDate: '2026-11-01', lastActivityDate: '2026-11-06',
+      deadlines: [{ label: 'hearing', dueDate: over.hearing ?? '2026-12-01', kind: 'court' }] }),
+    case_({ id: 'Z', state: over.Z ?? 'active', outcome: over.Z === 'closed' ? 'favorable-settlement' : undefined,
+      volunteerId: 'V-01', openedDate: '2026-10-01', lastActivityDate: '2026-11-06' }),
+  ];
+  const bA = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: base() });
+  const bC = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: [...base({ X: 'triage', hearing: '2026-12-15', Z: 'closed' }),
+    case_({ id: 'W', state: 'intake', openedDate: '2026-11-07', lastActivityDate: '2026-11-07' })] });
+  assert.deepEqual(diffBoards(bA, bC), {
+    added: ['W'],
+    removed: [],
+    stageChanged: [{ id: 'X', from: 'intake', to: 'triage' }],
+    closed: [{ id: 'Z', from: 'active', to: 'closed' }],
+    deadlineMoved: [{ id: 'Y', label: 'hearing', from: '2026-12-01', to: '2026-12-15' }],
+  });
+  assert.deepEqual(diffBoards(bA, bC), diffBoards(bA, bC)); // deterministic across runs
+  assert.deepEqual(diffBoards(bA, bA), { added: [], removed: [], stageChanged: [], closed: [], deadlineMoved: [] });
+});
+
+// -------------------------------------------------------- render/demo
+
+test('renderBoard shows deadline severity, SLA breaches, and volunteer capacity', () => {
+  const b = buildBoard({ asOf: AS_OF, volunteers: VOLUNTEERS, cases: [
+    case_({ id: 'PB-1', volunteerId: 'V-01', state: 'active',
+      deadlines: [{ label: 'hearing', dueDate: '2026-11-05', kind: 'court' }] }),
+    case_({ id: 'PB-2', state: 'intake', openedDate: '2026-10-20', lastActivityDate: '2026-11-06' }),
+  ] });
+  const md = renderBoard(b);
+  assert.match(md, /## Volunteer capacity/);
+  assert.match(md, /hearing .*2026-11-05.*critical/);
+  assert.match(md, /SLA breaches: \*\*1\*\*/);
+});
+
+test('demo stays self-contained: no external src= or href="http links', () => {
+  const html = readFileSync(new URL('../demo/index.html', import.meta.url), 'utf8');
+  assert.equal(/src\s*=\s*["']https?:/.test(html), false);
+  assert.equal(/href\s*=\s*["']https?:/.test(html), false);
 });

@@ -15,8 +15,8 @@
     "tax_returns": { "present": false }
   },
   "key_dates": {
-    "I-485 interview (fictional)": "2026-11-18",
-    "EAD renewal deadline (fictional)": "2026-12-01"
+    "I-485 interview (fictional)": { "date": "2026-11-18", "type": "other" },
+    "EAD renewal deadline (fictional)": { "date": "2026-12-01", "type": "filing_deadline" }
   },
   "complexity": ["prior_denial"]
 }

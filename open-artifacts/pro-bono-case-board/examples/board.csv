@@ -1,7 +1,7 @@
 id,client,problem,state,volunteerId,stale,staleFor,hours,outcome,flags
-PB-2026-010,C. Moreau (fictional),eviction defense,active,V-01,false,10,8,,
-PB-2026-011,J. Baptiste (fictional),custody modification,ready,,false,4,0,,
-PB-2026-012,S. Nakamura (fictional),benefits denial appeal,triage,,true,48,0,,no activity for 48 days (> 30)
+PB-2026-010,C. Moreau (fictional),eviction defense,active,V-01,false,10,8,,"deadline ""answer filing"" due in 5 d (< 7)"
+PB-2026-011,J. Baptiste (fictional),custody modification,ready,,false,4,0,,"OVERDUE court deadline ""custody hearing"" (2 d overdue)"
+PB-2026-012,S. Nakamura (fictional),benefits denial appeal,triage,V-04,true,48,0,,no activity for 48 days (> 30); in triage 85 d > SLA 7 d
 PB-2026-006,A. Ferro (fictional),wage theft consultation,closed,V-05,false,,6.5,advice-only,
 PB-2025-044,P. Vargas (fictional),eviction defense,closed,V-04,false,,41,favorable-settlement,
-PB-2026-013,L. Osei-Bonsu (fictional),family law TRO,placed,,false,1,0,,state is placed but no volunteerId set
+PB-2026-013,L. Osei-Bonsu (fictional),family law TRO,placed,V-04,false,1,0,,"deadline ""TRO hearing"" due in 2 d (< 7)"

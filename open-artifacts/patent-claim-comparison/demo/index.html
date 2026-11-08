@@ -45,6 +45,7 @@
   </div>
   <div class="row">
     <button id="run">Compare sets</button>
+    <button id="csv">Download CSV + _sources</button>
     <span class="muted" id="status"></span>
   </div>
 
@@ -55,7 +56,7 @@
 </div>
 
 <script type="module">
-import { compareClaimSets } from '../core/core.js';
+import { compareClaimSets, toCSV, toSourcesCSV } from '../core/core.js';
 
 const SET_A = `1. A thermal management system for a battery module, the system comprising:
 a coolant channel defined through a stack of prismatic cells;
@@ -77,8 +78,18 @@ const $ = (id) => document.getElementById(id);
 $('setA').value = SET_A; $('setB').value = SET_B;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+let lastResult = null;
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function run() {
   const res = compareClaimSets($('setA').value, $('setB').value);
+  lastResult = res;
   const t = res.totals;
   $('totals').innerHTML = `
     <span class="pill">matched<b>${t.matched}</b></span>
@@ -87,10 +98,11 @@ function run() {
     <span class="pill">added<b>${t.added}</b></span>
     <span class="pill">claims only in A<b>${t.claimsOnlyInA}</b></span>
     <span class="pill">claims only in B<b>${t.claimsOnlyInB}</b></span>
+    <span class="pill">renumbered<b>${t.renumbered}</b></span>
     <span class="pill">no-teaching rows<b>${res.noTeachingFound}</b></span>`;
   let html = '';
   for (const c of res.claims) {
-    html += `<p class="claimhdr">Claim ${c.claimNo ?? '(unnumbered)'} — ${esc(c.result)}${c.dependencyChanged ? ' <span class="pill">dependency changed</span>' : ''}</p>`;
+    html += `<p class="claimhdr">Claim ${c.claimNo ?? '(unnumbered)'} — ${esc(c.result)}${c.renumberedTo ? ` (now claim ${c.renumberedTo})` : ''}${c.dependencyChanged ? ' <span class="pill">dependency changed</span>' : ''}${c.transitionalChanged ? ` <span class="pill">transitional scope changed</span>` : ''}</p>`;
     if (!c.comparison) { html += `<p class="note">${esc((c.aClaim || c.bClaim || '').slice(0, 160))}…</p>`; continue; }
     html += `<table>
       <tr><th>#</th><th>Set A limitation</th><th>Relation</th><th>Set B limitation</th><th>Sim</th><th>Note</th></tr>
@@ -105,6 +117,11 @@ function run() {
   $('chart').innerHTML = html;
   $('status').textContent = `${res.claims.length} claims compared`;
 }
+$('csv').addEventListener('click', () => {
+  if (!lastResult) run();
+  download('claim-chart.csv', toCSV(lastResult) + '\n');
+  download('claim-chart_sources.csv', toSourcesCSV(lastResult) + '\n');
+});
 $('run').addEventListener('click', run);
 run();
 </script>

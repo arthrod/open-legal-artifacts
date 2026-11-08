@@ -102,3 +102,43 @@ export function similarity(a: string, b: string): number {
   for (const [t, c] of ma) inter += Math.min(c, mb.get(t) ?? 0);
   return inter / (ta.length + tb.length - inter);
 }
+
+/** Numeric token: digits with an optional interior decimal point ("90", "5.2"). */
+export function isNumericToken(t: string): boolean {
+  return /^\d+(?:\.\d+)?$/.test(t);
+}
+
+export interface NumericMismatch {
+  /** numeric tokens present in both sides but with different values, paired in order */
+  paired: Array<{ quote: string; source: string }>;
+  /** numeric tokens in the quote with no numeric counterpart in the source window */
+  quoteOnly: string[];
+  /** numeric tokens in the source window with no counterpart in the quote */
+  sourceOnly: string[];
+}
+
+/**
+ * Deterministic number guard: multiset-diff the numeric tokens of quote vs.
+ * the located source span. Any difference is potential material alteration
+ * ("90" -> "120") and must never pass as near-verbatim.
+ */
+export function numericMismatches(quote: string[], source: string[]): NumericMismatch {
+  const qNums = quote.filter(isNumericToken);
+  const sNums = source.filter(isNumericToken);
+  const qCounts = multiset(qNums);
+  const sCounts = multiset(sNums);
+  const qDiff: string[] = [];
+  const sDiff: string[] = [];
+  for (const [t, c] of qCounts) {
+    const extra = c - (sCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) qDiff.push(t);
+  }
+  for (const [t, c] of sCounts) {
+    const extra = c - (qCounts.get(t) ?? 0);
+    for (let k = 0; k < extra; k++) sDiff.push(t);
+  }
+  const pairedCount = Math.min(qDiff.length, sDiff.length);
+  const paired: Array<{ quote: string; source: string }> = [];
+  for (let k = 0; k < pairedCount; k++) paired.push({ quote: qDiff[k], source: sDiff[k] });
+  return { paired, quoteOnly: qDiff.slice(pairedCount), sourceOnly: sDiff.slice(pairedCount) };
+}
