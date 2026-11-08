@@ -41,8 +41,6 @@
   --flag-tint: #f2e9d0;
 
   /* ----- Focus ----- */
-  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
@@ -135,6 +133,10 @@ a {
 
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
+
+/* ----- Focus (top-level) ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
 
 </style>
 <style>

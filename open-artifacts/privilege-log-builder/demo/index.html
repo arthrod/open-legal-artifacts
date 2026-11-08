@@ -41,8 +41,6 @@
   --flag-tint: #f2e9d0;
 
   /* ----- Focus ----- */
-  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
@@ -136,11 +134,15 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
 
+/* ----- Focus (top-level) ----- */
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
 </style>
 <style>
   body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 64px var(--pad-x-mobile) 96px; }
-  @media (min-width: var(--bp-mobile)) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
+  @media (min-width: 768px) { .wrap { padding: 88px var(--pad-x-desktop) 120px; } }
   .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
   h1 { font-size: clamp(28px, 5vw, 44px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; margin: 12px 0 0; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 24px 0; }
@@ -151,7 +153,7 @@ a {
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
   button:hover { background: #333; }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
-  @media (min-width: var(--bp-mobile)) { .cols { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); vertical-align: top; }
   th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
