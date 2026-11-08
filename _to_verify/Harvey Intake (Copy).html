@@ -1,0 +1,1288 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Harvey Intake (Copy)</title>
+<script>(() => {
+  // artifact.json
+  var key = "legal-request-portal";
+  var monitoring = {
+    alertChannel: "appifacts-alerts",
+    coreActions: []
+  };
+
+  // ../../packages/appifact-health/src/vocabulary.ts
+  var CORE_ACTIONS = [
+    "save",
+    "open",
+    "render",
+    "edit",
+    "sync",
+    "export",
+    "import",
+    "present",
+    "navigate",
+    "search",
+    "submit",
+    "upload",
+    "download",
+    "generate",
+    "connect",
+    "insert",
+    "delete",
+    "reorder"
+  ];
+  var OUTCOMES = ["success", "failure", "aborted"];
+  var ERROR_TYPE_RE = /^[a-z][a-z0-9_]{0,31}$/;
+  var ERROR_TYPES = [
+    "conflict",
+    "read_only",
+    "too_large",
+    "invalid_content",
+    "backpressure",
+    "transient",
+    "network",
+    "timeout",
+    "first_result_timeout",
+    "validation",
+    "capability_denied",
+    "capability_error",
+    "render",
+    "internal",
+    "user_error",
+    "helper_timeout",
+    "helper_error",
+    "helper_start_timeout",
+    "helper_init_timeout",
+    "dom_encoding_error",
+    "dom_operation_error",
+    "dom_not_supported_error",
+    "dom_invalid_state_error",
+    "dom_quota_exceeded_error",
+    "dom_security_error",
+    "unknown"
+  ];
+  var KNOWN_ERROR_TYPES = new Set([
+    "boot_4xx",
+    "boot_5xx",
+    "iframe_timeout",
+    "iframe_error",
+    "kernel_missing",
+    "csp_violation",
+    "cap_load_error",
+    "timeout",
+    "threw_before_ready",
+    "uncaught_error",
+    "unhandled_rejection",
+    "chunk_load",
+    "unsupported_browser",
+    ...ERROR_TYPES,
+    "malformed"
+  ]);
+  var SHELL_RESERVED_ERROR_TYPE = "malformed";
+  var RESERVED_VALUES = new Set([
+    "invalid",
+    "none",
+    "overflow"
+  ]);
+  var APP_KEY_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+  var CHANNEL_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
+  var READY_TIMEOUT_S = { min: 5, max: 120, default: 20 };
+  var WINDOW_MS = 15000;
+  var MAX_REPORTS_PER_ACTION_PER_WINDOW = 1000;
+  var SENTINEL = "appifact-health:v2";
+  var HEALTH_GLOBAL = "__appifact_health";
+
+  // ../../packages/appifact-health/src/health.ts
+  var UNSUPPORTED_FALLBACK_MS = 8000;
+  function awaitsUnsupportedVerdict(page, fileHref) {
+    try {
+      if (!page.watched)
+        return false;
+      const ver = /^\/_f\/([^/]{1,128})\//.exec(page.pathname)?.[1];
+      if (ver === undefined)
+        return false;
+      const url = new URL(fileHref);
+      return url.origin === page.origin && url.pathname.startsWith(`/_f/${ver}/`);
+    } catch {
+      return false;
+    }
+  }
+  function failedLinkIsCrash(link, origin) {
+    if (/(^|\s)(stylesheet|modulepreload)(\s|$)/i.test(link.rel))
+      return true;
+    if (!/(^|\s)preload(\s|$)/i.test(link.rel) || link.as !== "font")
+      return false;
+    try {
+      return new URL(link.href).origin === origin;
+    } catch {
+      return false;
+    }
+  }
+  function createVerdictGate(crash, env, fallbackMs = UNSUPPORTED_FALLBACK_MS) {
+    let decided = null;
+    let pending = false;
+    let timer = null;
+    let stopWatching = () => {};
+    const decide = (type) => {
+      if (decided === type || decided === "unsupported_browser")
+        return;
+      decided = type;
+      pending = false;
+      try {
+        if (timer !== null)
+          env.clearTimeout(timer);
+        if (type === "unsupported_browser")
+          stopWatching();
+      } catch {}
+      timer = null;
+      crash(type);
+    };
+    const settle = () => {
+      if (pending)
+        decide(env.marked() ? "unsupported_browser" : "chunk_load");
+    };
+    try {
+      env.onHide(settle);
+    } catch {}
+    return {
+      fail(awaitsVerdict) {
+        if (!awaitsVerdict) {
+          crash("chunk_load");
+          return;
+        }
+        if (decided !== null) {
+          crash(decided);
+          return;
+        }
+        if (pending)
+          return;
+        if (env.marked()) {
+          decide("unsupported_browser");
+          return;
+        }
+        pending = true;
+        try {
+          stopWatching = env.onMark(() => {
+            if (env.marked())
+              decide("unsupported_browser");
+          });
+        } catch {}
+        timer = env.setTimeout(settle, fallbackMs);
+      }
+    };
+  }
+  var MAX_WARNINGS = 10;
+  var READY_RESUME_FLOOR_MS = 1000;
+  var APPIFACT_ERROR_TYPES = new Map([
+    ["conflict", "conflict"],
+    ["read-only", "read_only"],
+    ["too-large", "too_large"],
+    ["invalid-content", "invalid_content"],
+    ["backpressure", "backpressure"],
+    ["transient", "transient"]
+  ]);
+  function errorTypeOf(error) {
+    if (typeof error === "object" && error !== null && "code" in error) {
+      const code = error.code;
+      if (typeof code === "string") {
+        const mapped = APPIFACT_ERROR_TYPES.get(code);
+        if (mapped !== undefined)
+          return mapped;
+      }
+    }
+    return "unknown";
+  }
+  var CHUNK_LOAD_MESSAGE = /dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading (CSS )?chunk|ChunkLoadError|Unable to preload/i;
+  var BENIGN_WINDOW_ERROR = /^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)/;
+  function isBenignWindowError(message) {
+    return typeof message === "string" && BENIGN_WINDOW_ERROR.test(message);
+  }
+  function looksLikeChunkLoad(reason) {
+    if (typeof reason !== "object" || reason === null)
+      return false;
+    const r = reason;
+    return r.name === "ChunkLoadError" || typeof r.message === "string" && CHUNK_LOAD_MESSAGE.test(r.message);
+  }
+  function isCoreAction(value) {
+    return typeof value === "string" && CORE_ACTIONS.includes(value);
+  }
+  function isOutcome(value) {
+    return typeof value === "string" && OUTCOMES.includes(value);
+  }
+  function manifestProblem(manifest) {
+    if (typeof manifest !== "object" || manifest === null) {
+      return "init() takes the parsed artifact.json (an object with key and monitoring)";
+    }
+    const m = manifest;
+    if (typeof m.key !== "string" || !APP_KEY_RE.test(m.key) || RESERVED_VALUES.has(m.key)) {
+      return "artifact.json key is not a reportable app key";
+    }
+    const mon = m.monitoring;
+    if (typeof mon !== "object" || mon === null) {
+      return "artifact.json has no monitoring block";
+    }
+    if (typeof mon.alertChannel !== "string" || !CHANNEL_RE.test(mon.alertChannel) || RESERVED_VALUES.has(mon.alertChannel)) {
+      return 'monitoring.alertChannel is not a Slack channel name (no "#")';
+    }
+    if (!Array.isArray(mon.coreActions) || !mon.coreActions.every(isCoreAction)) {
+      return "monitoring.coreActions must list verbs from CORE_ACTIONS";
+    }
+    if (mon.readyTimeoutS !== undefined && !(Number.isInteger(mon.readyTimeoutS) && mon.readyTimeoutS >= READY_TIMEOUT_S.min && mon.readyTimeoutS <= READY_TIMEOUT_S.max)) {
+      return `monitoring.readyTimeoutS must be a whole number from ${READY_TIMEOUT_S.min} to ${READY_TIMEOUT_S.max}`;
+    }
+    return null;
+  }
+  function inertHealth() {
+    return {
+      version: SENTINEL,
+      ready() {},
+      report() {},
+      crash() {},
+      replay() {},
+      track: runTracked(() => {})
+    };
+  }
+  function runTracked(report) {
+    return async (action, operation, classify = errorTypeOf) => {
+      let result;
+      try {
+        result = await operation();
+      } catch (error) {
+        let errorType = "unknown";
+        try {
+          errorType = classify(error);
+        } catch {}
+        report(action, "failure", errorType);
+        throw error;
+      }
+      report(action, "success");
+      return result;
+    };
+  }
+  function createHealth(manifest, env) {
+    const appKey = manifest.key;
+    const alertChannel = manifest.monitoring.alertChannel;
+    const declared = new Set(manifest.monitoring.coreActions);
+    const readyTimeoutMs = (manifest.monitoring.readyTimeoutS ?? READY_TIMEOUT_S.default) * 1000;
+    let warnings = 0;
+    const warned = new Set;
+    const warnOnce = (key, message) => {
+      if (warnings >= MAX_WARNINGS || warned.has(key))
+        return;
+      warned.add(key);
+      warnings += 1;
+      try {
+        env.warn(message);
+      } catch {}
+    };
+    let windowCounts = new Map;
+    let windowTimer = null;
+    const send = (action, outcome, errorType, replayed) => {
+      try {
+        if (action !== "load" && action !== "ready" && action !== "crash") {
+          const count = windowCounts.get(action) ?? 0;
+          if (count >= MAX_REPORTS_PER_ACTION_PER_WINDOW) {
+            warnOnce(`flood:${action}`, `"${action}" was reported more than ${MAX_REPORTS_PER_ACTION_PER_WINDOW} times in ${WINDOW_MS / 1000} s; the rest of this window's "${action}" reports are dropped — report once per user-level operation, not per element or frame`);
+            return;
+          }
+          windowCounts.set(action, count + 1);
+          if (windowTimer === null) {
+            windowTimer = env.setTimeout(() => {
+              windowTimer = null;
+              windowCounts = new Map;
+            }, WINDOW_MS);
+          }
+        }
+        env.post({
+          __frame_health: true,
+          report: {
+            appKey,
+            alertChannel,
+            action,
+            outcome,
+            ...errorType !== undefined && { errorType },
+            ...replayed && { replayed }
+          }
+        });
+      } catch {}
+    };
+    let readyOutcome = null;
+    const crashes = new Set;
+    let readyTimer = null;
+    let readyLeftMs = readyTimeoutMs;
+    let readyArmedAt = 0;
+    const settleReady = (outcome, errorType) => {
+      readyOutcome = { outcome, ...errorType !== undefined && { errorType } };
+      send("ready", outcome, errorType);
+    };
+    const onReadyTimeout = () => {
+      readyTimer = null;
+      if (readyOutcome !== null)
+        return;
+      settleReady("failure", crashes.size > 0 ? "threw_before_ready" : "timeout");
+    };
+    const armReadyTimer = () => {
+      if (readyOutcome !== null || readyTimer !== null)
+        return;
+      readyArmedAt = env.now();
+      readyTimer = env.setTimeout(onReadyTimeout, readyLeftMs);
+    };
+    const pauseReadyTimer = () => {
+      if (readyTimer === null)
+        return;
+      env.clearTimeout(readyTimer);
+      readyTimer = null;
+      readyLeftMs = Math.max(READY_RESUME_FLOOR_MS, readyLeftMs - (env.now() - readyArmedAt));
+    };
+    try {
+      env.onVisibilityChange(() => {
+        try {
+          if (env.visible())
+            armReadyTimer();
+          else
+            pauseReadyTimer();
+        } catch {}
+      });
+      if (env.visible())
+        armReadyTimer();
+    } catch {
+      try {
+        armReadyTimer();
+      } catch {}
+    }
+    const report = (action, outcome, errorType) => {
+      if (!isCoreAction(action)) {
+        warnOnce(`action:${String(action).slice(0, 32)}`, `report() dropped: "${String(action).slice(0, 32)}" is not one of the generic verbs (${CORE_ACTIONS.join(", ")})`);
+        return;
+      }
+      if (!declared.has(action)) {
+        warnOnce(`undeclared:${action}`, `report() dropped: "${action}" is not declared in artifact.json monitoring.coreActions for "${appKey}" — add it there so the schema, this module and the monitors agree`);
+        return;
+      }
+      if (!isOutcome(outcome)) {
+        warnOnce(`outcome:${action}`, `report("${action}", …) dropped: outcome must be one of ${OUTCOMES.join(", ")}`);
+        return;
+      }
+      if (outcome !== "failure") {
+        send(action, outcome);
+        return;
+      }
+      let type = errorType ?? "unknown";
+      if (typeof type !== "string" || !ERROR_TYPE_RE.test(type) || RESERVED_VALUES.has(type)) {
+        warnOnce(`errorType:${action}`, `report("${action}", "failure", …): errorType must be a short snake_case token from ERROR_TYPES (never an error message); sent as "unknown"`);
+        type = "unknown";
+      } else if (type === SHELL_RESERVED_ERROR_TYPE) {
+        warnOnce(`errorType!:${action}`, `report("${action}", "failure", "${type}"): "${type}" is the viewer shell's own label for an unusable error type, not one an app reports; sent as "unknown"`);
+        type = "unknown";
+      } else if (!KNOWN_ERROR_TYPES.has(type)) {
+        warnOnce(`errorType?:${type}`, `report("${action}", "failure", "${type}"): "${type}" is not an error type Frame's page-health route knows (choose from ERROR_TYPES: ${ERROR_TYPES.join(", ")}); it is sent and counts as a failure, but Frame files it under "invalid" until its list gains it`);
+      }
+      send(action, "failure", type);
+    };
+    send("load", "success");
+    return {
+      version: SENTINEL,
+      ready() {
+        if (readyOutcome !== null)
+          return;
+        if (readyTimer !== null) {
+          try {
+            env.clearTimeout(readyTimer);
+          } catch {}
+          readyTimer = null;
+        }
+        settleReady("success");
+      },
+      report,
+      track: runTracked(report),
+      crash(errorType) {
+        if (crashes.has(errorType))
+          return;
+        crashes.add(errorType);
+        send("crash", "failure", errorType);
+        if (errorType === "unsupported_browser" && readyOutcome === null) {
+          if (readyTimer !== null) {
+            try {
+              env.clearTimeout(readyTimer);
+            } catch {}
+            readyTimer = null;
+          }
+          settleReady("failure", "unsupported_browser");
+        }
+      },
+      replay() {
+        send("load", "success", undefined, true);
+        for (const type of crashes)
+          send("crash", "failure", type, true);
+        if (readyOutcome !== null) {
+          send("ready", readyOutcome.outcome, readyOutcome.errorType, true);
+        }
+      }
+    };
+  }
+
+  // ../../packages/appifact-health/src/index.ts
+  var installed = null;
+  var installedKey = null;
+  var warnedSecondInit = false;
+  function init(manifest) {
+    const handle = install(manifest);
+    try {
+      globalThis[HEALTH_GLOBAL] = handle;
+    } catch {}
+    return handle;
+  }
+  function install(manifest) {
+    if (installed !== null) {
+      if (installedKey !== manifest?.key && !warnedSecondInit) {
+        warnedSecondInit = true;
+        warn(`init() was already called for "${installedKey}"; the call for "${String(manifest?.key).slice(0, 32)}" returns that first handle`);
+      }
+      return installed;
+    }
+    const problem = manifestProblem(manifest);
+    if (problem !== null) {
+      warn(`not reporting — ${problem}`);
+      installed = inertHealth();
+      installedKey = typeof manifest?.key === "string" ? manifest.key : null;
+      return installed;
+    }
+    installedKey = manifest.key;
+    if (!inReportingContext()) {
+      installed = inertHealth();
+      return installed;
+    }
+    const engine = createHealth(manifest, {
+      post,
+      setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+      clearTimeout: (handle) => window.clearTimeout(handle),
+      now: () => performance.now(),
+      visible: () => document.visibilityState !== "hidden",
+      onVisibilityChange: (listener) => document.addEventListener("visibilitychange", listener),
+      warn
+    });
+    wireCrashes((type) => engine.crash(type));
+    wirePoke(() => engine.replay());
+    installed = engine;
+    return installed;
+  }
+  function inReportingContext() {
+    try {
+      return typeof window !== "undefined" && typeof location !== "undefined" && window.parent !== window && location.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+  function post(message) {
+    window.parent.postMessage(message, "*");
+  }
+  function wirePoke(replay) {
+    try {
+      window.addEventListener("message", (event) => {
+        try {
+          if (event.source !== window.parent)
+            return;
+          const data = event.data;
+          if (typeof data === "object" && data !== null && data.__frame_health_poke === true) {
+            replay();
+          }
+        } catch {}
+      });
+    } catch {}
+  }
+  function warn(message) {
+    try {
+      if (typeof console !== "undefined")
+        console.warn(`[${SENTINEL}] ${message}`);
+    } catch {}
+  }
+  var WATCH_ATTR = "data-frame-refused-watch";
+  var UNSUPPORTED_ATTR = "data-frame-unsupported";
+  function wireCrashes(crash) {
+    try {
+      const html = document.documentElement;
+      const gate = createVerdictGate(crash, {
+        setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+        clearTimeout: (handle) => window.clearTimeout(handle),
+        marked: () => html.hasAttribute(UNSUPPORTED_ATTR),
+        onMark: (listener) => {
+          const observer = new MutationObserver(listener);
+          observer.observe(html, { attributes: true, attributeFilter: [UNSUPPORTED_ATTR] });
+          return () => observer.disconnect();
+        },
+        onHide: (listener) => window.addEventListener("pagehide", listener)
+      });
+      const page = () => ({
+        watched: html.hasAttribute(WATCH_ATTR),
+        origin: location.origin,
+        pathname: location.pathname
+      });
+      window.addEventListener("error", (event) => {
+        try {
+          if (event instanceof ErrorEvent) {
+            if (isBenignWindowError(event.message))
+              return;
+            crash(looksLikeChunkLoad(event.error) ? "chunk_load" : "uncaught_error");
+            return;
+          }
+          const target = event.target;
+          if (target instanceof HTMLScriptElement || target instanceof HTMLLinkElement && failedLinkIsCrash(target, location.origin)) {
+            const href = target instanceof HTMLScriptElement ? target.src : target.href;
+            gate.fail(awaitsUnsupportedVerdict(page(), href));
+          }
+        } catch {}
+      }, true);
+      window.addEventListener("unhandledrejection", (event) => {
+        try {
+          crash(looksLikeChunkLoad(event.reason) ? "chunk_load" : "unhandled_rejection");
+        } catch {}
+      });
+    } catch {}
+  }
+
+  // ../../packages/appifact-type-entry/ready.ts
+  function onRuntimeMounted(cb, doc = document, id = "root") {
+    const mounted = (root) => Array.from(root.children).some((c) => !c.hasAttribute("data-placeholder"));
+    const watch = () => {
+      const root = doc.getElementById(id);
+      if (root === null)
+        return;
+      if (mounted(root))
+        return cb();
+      const mo = new MutationObserver(() => {
+        if (!mounted(root))
+          return;
+        mo.disconnect();
+        cb();
+      });
+      mo.observe(root, { childList: true });
+    };
+    if (doc.readyState === "loading")
+      doc.addEventListener("DOMContentLoaded", watch);
+    else
+      watch();
+  }
+
+  // src/health.ts
+  var health = init({ key, monitoring });
+  onRuntimeMounted(() => health.ready(), document, "view");
+})();</script><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: Harvey requester shell — black top bar, white page, My Requests grouped Open / Completed, a request page with Activity and Details, and a New request dialog. Live data comes from the viewer's Harvey connector. */
+:root{
+  --bar:#0E0E0C; --on-bar:#FFFFFF;
+  --bg:#FFFFFF; --soft:#F7F7F6; --card:#F6F5F3; --chip:#F2F0ED; --line:#ECEAE6; --ring:#E4E1DD;
+  --fg:#1B1A18; --fg2:#6A6660; --fg3:#8F8B85;
+  --ink:#1A1917; --on-ink:#F7F6F4; --ghost:rgba(50,33,0,.04); --off:#F1EFEC; --off-fg:#B8B5B0;
+  --wait:#7449DA; --wait-soft:#E8E2FD;
+  --done:#14764D; --done-soft:#D1F5DD;
+  --warn:#9A5413; --warn-soft:#F8ECC9;
+  --me:#8C5671; --legal:#385650;
+  --shadow:0 16px 32px rgba(0,0,0,.2),0 0 0 1px rgba(27,26,24,.12);
+  --font-serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141412; --soft:#1C1B19; --card:#1F1E1B; --chip:#2A2825; --line:#2C2A27; --ring:#3A3834;
+  --fg:#F2F1EF; --fg2:#B5B1AA; --fg3:#8F8B85;
+  --ink:#F2F1EF; --on-ink:#141412; --ghost:rgba(255,255,255,.06); --off:#2A2825; --off-fg:#6E6A64;
+  --wait:#B7A2F2; --wait-soft:#2F2747; --done:#7FD4A5; --done-soft:#173226; --warn:#E8B871; --warn-soft:#3A2D17;
+  --shadow:0 16px 32px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141412; --soft:#1C1B19; --card:#1F1E1B; --chip:#2A2825; --line:#2C2A27; --ring:#3A3834;
+  --fg:#F2F1EF; --fg2:#B5B1AA; --fg3:#8F8B85;
+  --ink:#F2F1EF; --on-ink:#141412; --ghost:rgba(255,255,255,.06); --off:#2A2825; --off-fg:#6E6A64;
+  --wait:#B7A2F2; --wait-soft:#2F2747; --done:#7FD4A5; --done-soft:#173226; --warn:#E8B871; --warn-soft:#3A2D17;
+  --shadow:0 16px 32px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08); color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:20px;-webkit-font-smoothing:antialiased}
+button,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid color-mix(in srgb,var(--fg) 50%,transparent);outline-offset:2px}
+.gut{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+@media (min-width:760px){.gut{padding-left:max(48px,env(safe-area-inset-left,0px));padding-right:max(48px,env(safe-area-inset-right,0px))}}
+
+/* Top bar */
+.bar{background:var(--bar);color:var(--on-bar)}
+.barin{min-height:64px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding-block:8px}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+/* The wordmark's box includes the y's descender, so nudge it down to center its letters on the name. */
+.hv{height:20px;width:auto;display:block;color:var(--on-bar);transform:translateY(2px)}
+.slash{font-family:Georgia,serif;font-size:30px;line-height:1;font-weight:300;opacity:.9}
+.org{font-size:18px;font-weight:500;line-height:27px;white-space:nowrap}
+.user{display:flex;align-items:center;gap:10px;font-size:14px;color:color-mix(in srgb,var(--on-bar) 75%,transparent)}
+.user .sq{width:18px;height:18px;border-radius:3px;background:var(--on-bar);color:var(--bar);display:grid;place-items:center;font-family:var(--font-serif);font-size:12px}
+.user .dot{width:7px;height:7px;border-radius:50%;background:#5FD29A}
+.barlink{border:0;background:none;padding:0;margin-left:4px;color:var(--on-bar);font-size:13px;text-decoration:underline;text-underline-offset:3px;opacity:.85;cursor:pointer}
+.barlink:hover{opacity:1}
+
+/* Page */
+.page{padding-block:48px 72px}
+.ph{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+h1{font-family:var(--font-serif);font-weight:400;font-size:36px;line-height:44px;letter-spacing:-.8px;margin:0;text-wrap:balance}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:8px;background:var(--ink);color:var(--on-ink);font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:disabled{background:var(--off);color:var(--off-fg);cursor:default}
+.btn.ghost{background:var(--ghost);color:var(--fg)}
+.btn.line{background:var(--bg);color:var(--fg);box-shadow:inset 0 0 0 1px var(--ring)}
+.btn svg{width:14px;height:14px}
+.btn.line:disabled{box-shadow:none}
+
+.banner{display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;justify-content:space-between;margin:0 0 32px;padding:14px 16px;border-radius:10px;background:var(--soft);font-size:13px;line-height:20px;color:var(--fg)}
+.banner>p,.banner>div:first-child{margin:0;flex:1 1 320px;min-width:0}
+.banner p{margin:0}
+.banner p span{color:var(--fg2)}
+.banner.intake{align-items:flex-start;background:var(--card);padding:16px 18px}
+.banner.intake p+p{margin-top:4px}
+.banner.intake a.btn{text-decoration:none}
+.banner .ecode{font-size:11.5px;font-family:ui-monospace,"SF Mono",Menlo,monospace;opacity:.8}
+.banner.warn{background:var(--warn-soft);color:var(--warn)}
+.banner.warn p span{color:inherit;opacity:.85}
+.banner .acts{display:flex;flex:none;gap:8px}
+.toast{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;margin:0 0 20px;padding:10px 14px;border-radius:10px;background:var(--done-soft);color:var(--done);font-size:13px}
+.toast button,.toast a{border:0;background:none;padding:0;color:inherit;font-weight:500;text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-size:13px}
+.synced{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--fg2)}
+.synced button{border:0;background:none;padding:0;color:var(--fg);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-size:12px}
+
+/* Grouped table */
+.tbl{display:grid;gap:12px}
+.grp{display:grid}
+.ghead,.row{display:grid;grid-template-columns:minmax(0,1fr) 150px 150px 110px;align-items:center;column-gap:12px}
+.ghead{min-height:44px;background:var(--soft);border-radius:8px;padding:0 12px;font-size:12px;color:var(--fg2)}
+.ghead button{display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:0;cursor:pointer;text-align:left}
+.ghead button b{font-size:14px;font-weight:400;color:var(--fg)}
+.ghead svg{width:14px;height:14px;color:var(--fg);transition:transform .15s}
+.grp[data-collapsed] .ghead svg{transform:rotate(-90deg)}
+.grp[data-collapsed] .rows{display:none}
+.rows{display:grid}
+/* Rows start under the group label (past its chevron), with one unbroken divider between them. */
+.row{width:calc(100% - 22px);margin-left:22px;border:0;border-top:1px solid var(--line);background:none;text-align:left;cursor:pointer;padding:0 12px}
+.row:first-child{border-top-color:transparent}
+.row>*{padding-block:15px;min-width:0}
+.row:hover .rt{text-decoration:underline;text-underline-offset:3px}
+.rt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell{color:var(--fg);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.row.fresh>*{animation:fresh 2.4s ease-out}
+@keyframes fresh{from{background:var(--done-soft)}to{background:transparent}}
+.row.skel>*{color:transparent}
+.row.skel .rt::before,.row.skel .cell::before{content:"";display:block;height:10px;border-radius:5px;background:var(--chip);width:70%}
+@media (max-width:720px){
+  .ghead,.row{grid-template-columns:minmax(0,1fr) auto}
+  .ghead .c3,.ghead .c4,.row .c3,.row .c4{display:none}
+  .row{width:100%;margin-left:0}
+}
+
+.status{display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%;padding:2px 8px;border-radius:8px;font-size:12px;line-height:20px;background:var(--wait-soft);color:var(--wait);white-space:nowrap}
+.status::before{content:"";flex:none;width:4px;height:4px;border-radius:50%;background:currentColor}
+.status.done{background:var(--done-soft);color:var(--done)}
+.status.warn{background:var(--warn-soft);color:var(--warn)}
+
+/* Request page */
+.crumbbar{border-bottom:1px solid var(--line);background:var(--bg)}
+.crumbs{min-height:56px;display:flex;align-items:center;gap:10px;font-size:14px;color:var(--fg2)}
+.crumbs button{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;color:var(--fg2);cursor:pointer}
+.crumbs button:hover{color:var(--fg)}
+.crumbs svg{width:14px;height:14px}
+.crumbs .cur{color:var(--fg);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48ch}
+.detail{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:56px;max-width:1080px;padding-block:40px 72px}
+.detail>*{min-width:0}
+.dtitle{font-size:clamp(26px,3.2vw,32px);line-height:1.2;overflow-wrap:anywhere}
+.detail aside{padding:18px 20px;border:1px solid var(--line);border-radius:12px;align-self:start}
+@media (max-width:860px){.detail{grid-template-columns:minmax(0,1fr);gap:36px}}
+.sub{margin:10px 0 0;font-size:13px;color:var(--fg2)}
+h2{margin:0 0 14px;font-size:16px;line-height:24px;font-weight:500}
+.activity{margin-top:32px}
+.ahead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-bottom:14px}
+.ahead h2{margin:0}
+.btn.sm{height:28px;padding:0 10px;font-size:13px;font-weight:450}
+.feed{display:grid;gap:14px;margin:0;padding:0;list-style:none}
+.av{flex:none;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;background:var(--me)}
+.av.legal{background:var(--legal)}
+.av.sm{width:18px;height:18px;font-size:9px;background:var(--chip);color:var(--fg2)}
+.sys{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--fg2)}
+.sys b{font-weight:500;color:var(--fg)}
+.msg{background:var(--card);border-radius:12px;padding:12px}
+.mh{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-width:0}
+.mh b{font-weight:500}
+.mh .d{font-size:12px;color:var(--fg2)}
+.mh .tag{margin-left:auto;font-size:12px;font-weight:500;color:var(--fg2)}
+.mb{padding-left:31px;white-space:pre-wrap;overflow-wrap:anywhere}
+.mb a{color:inherit;text-underline-offset:2px}
+.lnk{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 8px 2px 6px;margin:2px 0;border-radius:6px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--ring);color:var(--fg);text-decoration:none;font-size:13px;line-height:20px;vertical-align:middle}
+.mb .lnk{text-decoration:none}
+.lnk:hover{box-shadow:inset 0 0 0 1px var(--fg2)}
+.lnk svg{width:13px;height:13px;flex:none;color:var(--fg2)}
+.lnk span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pending{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--fg2)}
+.pending i{width:18px;display:grid;place-items:center}
+.pending i::before{content:"";width:7px;height:7px;border-radius:50%;border:1.5px solid var(--fg3)}
+.check{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
+.check span{font-size:12px;color:var(--fg2)}
+dl.facts{display:grid;grid-template-columns:90px minmax(0,1fr);gap:14px 12px;align-items:center;margin:0}
+dl.facts dt{font-size:12px;line-height:16px;font-weight:500;color:var(--fg2)}
+dl.facts dd{margin:0;display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+dl.facts a{color:var(--fg);text-underline-offset:3px}
+.idchip{padding:2px 6px;border-radius:6px;background:var(--chip);font-size:11.5px;font-family:ui-monospace,"SF Mono",Menlo,monospace;overflow-wrap:anywhere}
+.skelblock{height:72px;border-radius:12px;background:var(--card)}
+
+/* Dialog */
+.scrim{position:fixed;inset:0;z-index:20;background:rgba(14,14,12,.35);display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.dlg{width:min(560px,100%);max-height:100%;overflow:auto;background:var(--bg);border-radius:16px;box-shadow:var(--shadow);position:relative}
+.dlg form{display:grid;gap:18px;padding:24px}
+.dlg h2{margin:0;font-size:16px;line-height:20px}
+.dlg .lead{margin:4px 0 0;color:var(--fg2)}
+.x{position:absolute;top:14px;right:14px;width:28px;height:28px;border:0;border-radius:8px;background:none;color:var(--fg2);cursor:pointer;display:grid;place-items:center}
+.x:hover{background:var(--ghost)}
+.x svg{width:14px;height:14px}
+.field{display:grid;gap:8px}
+.field label{font-size:14px;font-weight:500}
+.field textarea{width:100%;min-height:150px;resize:vertical;border:0;border-radius:10px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--ring);padding:10px 12px;line-height:20px;outline:none}
+.field textarea:focus{box-shadow:inset 0 0 0 1px var(--fg2)}
+.field textarea::placeholder{color:var(--fg3)}
+.field .hint{font-size:12px;color:var(--fg2)}
+.next{border-radius:12px;background:var(--card);padding:12px 14px}
+.next b{display:block;font-size:12px;font-weight:500;color:var(--fg2);margin-bottom:6px}
+.next ol{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
+.next li{display:grid;grid-template-columns:16px minmax(0,1fr);gap:10px;align-items:start}
+.next svg{width:15px;height:15px;margin-top:2px;color:var(--fg2)}
+.reply{margin-top:14px}
+.rbox{display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 12px;border-radius:12px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--ring)}
+.rbox:focus-within{box-shadow:inset 0 0 0 1px var(--fg2)}
+.rbox textarea{flex:1;min-width:0;border:0;background:transparent;resize:vertical;outline:none;padding:4px 0;line-height:20px;min-height:44px;max-height:240px}
+.send{flex:none;width:28px;height:28px;border:0;border-radius:8px;background:var(--ink);color:var(--on-ink);display:grid;place-items:center;cursor:pointer}
+.send:disabled{background:var(--off);color:var(--off-fg);cursor:default}
+.send svg{width:14px;height:14px}
+.rhint{margin:6px 0 0 12px;font-size:12px;color:var(--fg2)}
+.rerr{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:13px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.dlgerr{margin:0;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:13px}
+.dfoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.dfoot .mode{margin-right:auto;font-size:12px;color:var(--fg2)}
+@media (prefers-reduced-motion:reduce){.row.fresh>*{animation:none}.ghead svg{transition:none}}
+</style>
+</head><body>
+<header class="bar gut">
+  <div class="barin">
+    <div class="brand"><span data-icon="logo"></span><span class="slash" aria-hidden="true">/</span><span class="org" id="org">Acme Legal Intake</span></div>
+    <div class="user" id="user"></div>
+  </div>
+</header>
+
+<div id="crumbWrap" class="crumbbar gut" hidden><nav class="crumbs" aria-label="Breadcrumb">
+  <button type="button" data-back><span data-icon="back"></span>My Requests</button>
+  <span aria-hidden="true">›</span><span class="cur" id="crumbId"></span></nav></div>
+
+<div class="gut"><main id="view"></main></div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <button class="x" type="button" id="closeDlg" aria-label="Close"><span data-icon="close"></span></button>
+    <form id="askForm" novalidate>
+      <div><h2 id="dlgTitle">New request</h2><p class="lead">Tell Legal what you need help with.</p></div>
+      <div class="field">
+        <label for="q">What do you need help with?</label>
+        <textarea id="q" placeholder="Include the goal, timing, and links to any documents."></textarea>
+        <span class="hint">Only you and the legal team can see this request.</span>
+      </div>
+      <div class="next">
+        <b>What happens next</b>
+        <ol>
+          <li><span data-icon="mail"></span><span>Your request goes straight to the legal team in Harvey.</span></li>
+          <li><span data-icon="people"></span><span>You receive an answer, or legal reviews the findings before it comes back.</span></li>
+          <li><span data-icon="home"></span><span>Every update stays with your request in My Requests.</span></li>
+        </ol>
+      </div>
+      <p class="dlgerr" id="dlgErr" role="alert" hidden></p>
+      <div class="dfoot"><span class="mode" id="dlgMode"></span><button class="btn ghost" type="button" id="cancelDlg">Cancel</button><button class="btn" type="submit" id="sendBtn" disabled>Submit request</button></div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* The page-script lint refuses <svg> in the page's HTML, so each data-icon span is replaced here with its icon. */
+const ICONS = {
+  logo: "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"hv\" aria-label=\"Harvey\" role=\"img\" viewBox=\"0 0 3022 908\" fill=\"none\"> <path d=\"M 511 639 L 427 696 L 427 700 L 693 700 L 693 696 L 609 639 L 609 61 L 693 4 L 693 0 L 427 0 L 427 4 L 511 61 L 511 315 L 182 315 L 182 61 L 266 4 L 266 0 L 0 0 L 0 4 L 84 61 L 84 639 L 0 696 L 0 700 L 266 700 L 266 696 L 182 639 L 182 359 L 511 359 L 511 639 Z M 882 710 C 935 710 988 679 1025 636 L 1025 700 L 1193 700 L 1193 696 L 1117 637 L 1117 351 C 1117 254 1049 206 940 206 C 883 206 805 225 755 245 L 755 369 L 759 369 C 819 287 876 246 933 246 C 990 246 1025 286 1025 361 L 1025 411 L 901 440 C 789 465 739 509 739 578 C 739 654 801 710 882 710 Z M 914 646 C 869 646 836 613 836 568 C 836 523 866 487 925 474 L 1025 451 L 1025 601 C 983 631 946 646 914 646 Z M 1587 310 L 1787 714 L 1805 714 L 2001 281 L 2061 222 L 2061 218 L 1878 218 L 1878 221 L 1954 276 L 1819 573 L 1671 276 L 1745 221 L 1745 218 L 1589 218 C 1494 218 1431 247 1381 304 L 1381 211 L 1213 250 L 1213 255 L 1289 299 L 1289 637 L 1213 696 L 1213 700 L 1477 700 L 1477 696 L 1381 637 L 1381 351 C 1416 312 1458 294 1502 294 C 1530 294 1556 298 1587 310 Z M 2278 710 C 2370 710 2420 653 2472 597 L 2447 574 C 2396 622 2357 643 2306 643 C 2208 643 2135 553 2135 427 L 2469 427 L 2469 412 C 2469 294 2399 206 2284 206 C 2156 206 2051 321 2051 463 C 2051 606 2151 710 2278 710 Z M 2369 384 L 2138 384 C 2150 297 2205 247 2268 247 C 2331 247 2370 292 2370 364 C 2370 373 2370 380 2369 384 Z M 2540 281 L 2747 694 L 2597 908 L 2710 908 L 2962 281 L 3022 222 L 3022 218 L 2839 218 L 2839 221 L 2916 276 L 2791 579 L 2639 276 L 2713 221 L 2713 218 L 2476 218 L 2476 222 L 2540 281 Z\" fill=\"currentColor\" fill-rule=\"nonzero\"/> </svg>",
+  back: "<svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M13 8H3M7 4L3 8l4 4\"/></svg>",
+  close: "<svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg>",
+  mail: "<svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.5\" y=\"3\" width=\"13\" height=\"10\" rx=\"1.5\"/><path d=\"M1.5 4.5L8 8.5l6.5-4\"/></svg>",
+  people: "<svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"5.5\" r=\"2.3\"/><path d=\"M1.8 13.5c0-2.3 1.9-4.1 4.2-4.1s4.2 1.8 4.2 4.1\"/><path d=\"M10.5 3.3a2.3 2.3 0 0 1 0 4.4M12 9.6c1.4.5 2.3 1.9 2.3 3.9\"/></svg>",
+  home: "<svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2 7.2L8 2l6 5.2\"/><path d=\"M3.5 6.2v7.3h9V6.2\"/></svg>"
+};
+for(const el of document.querySelectorAll("[data-icon]")){
+  // oxlint-disable-next-line appifacts/no-html-sink -- each value is a constant in ICONS above
+  el.outerHTML = ICONS[el.dataset.icon];
+}
+
+/* ---------- Template settings ---------- */
+const CONFIG = {
+  org: "Acme",                       // shows as "Acme Legal Intake"
+  servers: ["Harvey"],             // the Harvey connector's name in claude.ai
+  intakeUrl: "https://www.harvey.ai/platform/intake",
+  tools: { list:"list_legal_requests", get:"get_legal_request", create:"create_legal_request", reply:"update_legal_request" },
+  example: { name:"Maya Sterling", email:"msterling@acme.com" }
+};
+
+/* Example requests: shown only when Harvey isn't connected (for example, in a preview). */
+const EXAMPLES = [
+  { id:"REQ-7662", status:"IN_PROGRESS", assignee:"Sam Rivera", created:"2026-10-21T09:12", updated:"2026-10-22T15:40",
+    title:"Review the Galactic Master Services Agreement",
+    description:"Can we get a review of the Galactic Master Services Agreement? We want to wrap it up by the end of next month because the project kicks off in early December. I’m mainly worried about the data usage and liability terms.\n\nhttps://drive.example.com/galactic-msa",
+    timeline:[{kind:"comment", who:"Sam Rivera", at:"2026-10-22T15:40", text:"Reviewed. The liability cap is fine as drafted. I’ve tightened the data usage clause so Galactic can’t train on our data, and sent the redline to their counsel. I’ll update you when they respond."}] },
+  { id:"REQ-7671", status:"TODO", assignee:"", created:"2026-10-23T08:05", updated:"2026-10-23T08:05",
+    title:"Harbor Assist wants a 3x liability cap in the renewal", description:"Harbor Assist wants to raise the liability cap to 3x fees in the renewal. Can we accept?", timeline:[] },
+  { id:"REQ-7668", status:"READY_FOR_REVIEW", assignee:"Alex Bennett", created:"2026-10-22T13:20", updated:"2026-10-22T13:20",
+    title:"Naming Northwind in the webinar invitation", description:"Do we need customer approval to name Northwind in the webinar invitation?", timeline:[] },
+  { id:"REQ-7640", status:"DONE", assignee:"Alex Bennett", created:"2026-10-16T10:30", updated:"2026-10-16T11:02",
+    title:"NDA before the Cedarwood discovery call", description:"Do we need an NDA before the Cedarwood discovery call?",
+    timeline:[{kind:"comment", who:"Alex Bennett", at:"2026-10-16T11:02", text:"Not for a first call. Keep it to public information, and use our standard mutual NDA before any roadmap or pricing discussion."},{kind:"status_change", who:"Alex Bennett", at:"2026-10-16T11:02", status:"DONE"}] }
+];
+
+/* ---------- State ---------- */
+let mcp = null, perms = null;
+let S = { mode:"example", conn:null, live:[], liveAt:null, loading:false, openId:null, details:{}, detailErr:{}, collapsed:{}, checked:{}, fresh:null, toast:null, sending:false, drafts:{}, replying:null, replyErr:{}, posted:{} };
+let schemas = {};
+/* True when Harvey is allowed for this page and the viewer can use it: a grant, or a list that succeeded. Until then a new request stays in the browser. */
+let connected = false;
+const KEY = "harvey-intake:examples-v5";
+let mine = [];
+try { mine = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e) { mine = []; }
+const saveMine = () => { try { localStorage.setItem(KEY, JSON.stringify(mine)); } catch(e) {} };
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+/* Show links by what they are ("Google Doc"), not as raw URLs. */
+function linkLabel(u){
+  let h = ""; try { h = new URL(u).hostname.replace(/^www\./,""); } catch(e) { return "Link"; }
+  if(h === "docs.google.com") return /\/spreadsheets\//.test(u) ? "Google Sheet" : /\/presentation\//.test(u) ? "Google Slides" : /\/forms\//.test(u) ? "Google Form" : "Google Doc";
+  if(h === "drive.google.com") return "Google Drive file";
+  if(/(^|\.)sharepoint\.com$/.test(h)) return "SharePoint file";
+  if(/(^|\.)(onedrive\.live\.com|1drv\.ms)$/.test(h)) return "OneDrive file";
+  if(/(^|\.)box\.com$/.test(h)) return "Box file";
+  if(/(^|\.)dropbox\.com$/.test(h)) return "Dropbox file";
+  if(/(^|\.)notion\.(so|site|com)$/.test(h)) return "Notion page";
+  if(/(^|\.)harvey\.ai$/.test(h)) return "Harvey";
+  return h;
+}
+const LINK_ICON = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l3-3"/><path d="M7.5 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1"/><path d="M8.5 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1"/></svg>`;
+/* URLs are found in the raw text, so a quote or bracket after one stays outside the link. */
+const linkify = s => { const t = String(s ?? ""); let out = "", at = 0;
+  for(const m of t.matchAll(/https?:\/\/[^\s<>"]+[^\s<>"'.,;:!?)\]]/g)){ const u = esc(m[0]);
+    out += esc(t.slice(at, m.index)) + `<a class="lnk" href="${u}" target="_blank" rel="noopener" title="${u}">${LINK_ICON}<span>${esc(linkLabel(m[0]))}</span></a>`; at = m.index + m[0].length; }
+  return out + esc(t.slice(at)); };
+/* Titles can arrive with a pasted (often cut-off) URL in them; show the words, not the link. */
+function displayTitle(t){
+  const raw = String(t||"").trim();
+  let x = raw.replace(/https?:\/\/\S*/g, "").replace(/\s{2,}/g," ").replace(/[\s:,\-–—]+$/,"").trim();
+  if(!x){ const m = raw.match(/https?:\/\/\S+/); return m ? `Request about a ${linkLabel(m[0].replace(/…$/,""))}` : "Untitled request"; }
+  return x.charAt(0).toUpperCase() + x.slice(1);
+}
+const initials = n => String(n||"?").split(/[\s@.]+/).filter(Boolean).map(p=>p[0]).slice(0,2).join("").toUpperCase() || "?";
+const pick = (o, keys) => { if(!o || typeof o !== "object") return undefined; for(const k of keys){ const v = o[k]; if(v !== undefined && v !== null && v !== "") return v; } };
+const safeUrl = u => { try { const x = new URL(String(u ?? "")); return x.protocol === "https:" && !x.username && !x.password ? x.href : ""; } catch(e) { return ""; } };
+const nameOf = v => !v ? "" : typeof v === "string" ? v : (pick(v,["name","display_name","full_name","email"]) || "");
+function toDate(v){ if(v==null||v==="") return null; if(typeof v==="number") return new Date(v < 1e12 ? v*1000 : v);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v)); if(m) return new Date(+m[1], +m[2]-1, +m[3]); /* a date with no time is a local calendar day */
+  const d = new Date(v); return isNaN(d) ? null : d; }
+function day(v){ const d = toDate(v); if(!d) return "—"; const t = new Date(); if(d.toDateString()===t.toDateString()) return "Today"; return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+function stamp(v){ const d = toDate(v); if(!d) return ""; return `${day(v)}, ${d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`; }
+const nowISO = () => new Date().toISOString();
+/* Legal Hub statuses: TODO, IN_PROGRESS, READY_FOR_REVIEW, DONE, CANCELLED. */
+const STATUS_LABELS = { TODO:"Submitted", IN_PROGRESS:"In progress", READY_FOR_REVIEW:"Ready for review", DONE:"Completed", CANCELLED:"Cancelled" };
+const statusLabel = s => { const k = String(s||"TODO").toUpperCase(); if(STATUS_LABELS[k]) return STATUS_LABELS[k]; const t = String(s).replace(/[_-]+/g," ").trim().toLowerCase(); return t.charAt(0).toUpperCase()+t.slice(1); };
+const isDone = s => /complet|resolv|clos|done|cancel|declin|reject|withdraw/i.test(String(s||""));
+const statusHTML = s => `<span class="status ${isDone(s)?"done":/review/i.test(String(s||""))?"warn":""}">${esc(statusLabel(s))}</span>`;
+/* create_legal_request needs a title; Harvey's own surfaces write one. Here the first sentence stands in for it. */
+const titleFrom = q => { const f = displayTitle(q.trim().split("\n")[0].split(/(?<=[?.!])\s/)[0]); return f.length > 80 ? f.slice(0,77).trimEnd()+"…" : f; };
+const CHEV = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>`;
+const PLUS = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>`;
+const REFRESH = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>`;
+
+/* ---------- Reading Harvey's answers ---------- */
+function findArray(p, keys){
+  if(Array.isArray(p)) return p;
+  if(!p || typeof p !== "object") return null;
+  for(const k of keys) if(Array.isArray(p[k])) return p[k];
+  for(const v of Object.values(p)) if(Array.isArray(v) && v.every(x => x && typeof x === "object")) return v;
+  for(const v of Object.values(p)) if(v && typeof v === "object" && !Array.isArray(v)){ const a = findArray(v, keys); if(a) return a; }
+  return null;
+}
+function normRequest(o){
+  if(!o || typeof o !== "object") return null;
+  /* get_legal_request answers {request, timeline}; list_legal_requests items are the request itself. */
+  const r = o.request && typeof o.request === "object" ? {...o, ...o.request} : o;
+  const timeline = (Array.isArray(r.timeline) ? r.timeline : (findArray(r,["timeline","timeline_items","events","comments"]) || [])).map(normItem).filter(Boolean);
+  const created = timeline.find(t => t.event === "task_created");
+  const requestedBy = nameOf(pick(r,["requested_by","requester","created_by","submitter"]));
+  return {
+    id: String(pick(r,["id","request_id","task_id"]) ?? ""),
+    title: pick(r,["title","name","subject"]) || "Untitled request",
+    status: pick(r,["status","state"]) || "",
+    assignee: nameOf(pick(r,["assignee","assignee_name","assigned_to"])),
+    requester: (created && created.who) || requestedBy,
+    requesterIds: [requestedBy, created && created.who, created && created.email].filter(Boolean),
+    created: pick(r,["created_at","created"]),
+    updated: pick(r,["updated_at","updated","created_at"]),
+    due: pick(r,["due_at","due_date"]),
+    description: typeof r.description === "string" ? r.description : "",
+    url: safeUrl(pick(r,["url","link","harvey_url"])),
+    timeline
+  };
+}
+const humanize = k => String(k||"").replace(/^task_/,"").replace(/_/g," ");
+function normItem(t){
+  if(!t || typeof t !== "object") return null;
+  const kind = String(pick(t,["kind","type"]) || "comment").toLowerCase();
+  const at = pick(t,["occurred_at","created_at","at"]);
+  if(kind === "comment"){
+    const a = t.author && typeof t.author === "object" ? t.author : {};
+    return { kind:"comment", at, who: nameOf(a) || nameOf(t.who) || "", email: a.email || "", role: String(a.type || t.role || ""),
+      agent: String(a.agent_type || ""), text: typeof t.body === "string" ? t.body : (typeof t.text === "string" ? t.text : "") };
+  }
+  if(kind === "activity" && t.activity){
+    const a = t.activity, actor = a.actor || {}, pl = a.payload || {};
+    const ev = String(pl.kind || a.action || "");
+    let text = "";
+    if(ev === "task_assigned"){ const n = nameOf(pl.new_assignee && (pl.new_assignee.user || pl.new_assignee)); text = n ? `assigned the request to ${n}` : "changed the assignee"; }
+    else if(/status/.test(ev)){ const to = pick(pl,["to_status","new_status","to","status"]); text = to ? `changed the status to ${statusLabel(to)}` : "changed the status"; }
+    else if(/due/.test(ev)){ const d = pick(pl,["to_due_at","due_at","to"]); text = d ? `set the due date to ${day(d)}` : "changed the due date"; }
+    else text = humanize(ev) || "updated the request";
+    return { kind:"activity", event: ev, at, who: nameOf(actor), email: actor.email || "", text };
+  }
+  /* Example data and anything unrecognized. */
+  return { kind, at, who: nameOf(pick(t,["who","author","actor"])) || "", role: String(t.role||""), text: typeof t.text === "string" ? t.text : "", status: t.status };
+}
+
+/* ---------- Harvey calls ---------- */
+/* The same directory connector can carry a different name in different organizations. */
+let SERVER = null;
+const server = () => SERVER || CONFIG.servers[0];
+/* True when the viewer's linked Harvey connector is connected but doesn't offer the intake tools. */
+async function lacksIntake(name){
+  try {
+    const { servers } = await mcp.listTools(name);
+    const x = (servers||[]).find(v => v.server === name);
+    return !!(x && x.authStatus === "connected" && (x.tools||[]).length && !(x.tools||[]).some(t => t.name === CONFIG.tools.list));
+  } catch(e){ return false; }
+}
+const isNoIntake = e => !!e && (e.code === "blocked_by_policy" || (e.code === "tool_error" && /unknown tool|not found|no such tool|not available|not enabled|intake|legal hub|permission/i.test(String(e.message||""))));
+async function connectedServer(){
+  try {
+    const { servers } = await mcp.listTools();
+    const hit = (servers||[]).find(x => CONFIG.servers.includes(x.server) && x.authStatus === "connected" && (x.tools||[]).length);
+    return hit ? hit.server : null;
+  } catch(e){ return null; }
+}
+async function schemaProps(tool){
+  if(schemas[tool] !== undefined) return schemas[tool];
+  try { const d = await mcp.describeTool(server(), tool); schemas[tool] = (d && d.inputSchema && d.inputSchema.properties) || null; }
+  catch(e){ schemas[tool] = null; }
+  return schemas[tool];
+}
+const propLike = (props, re, fallback) => !props || Object.hasOwn(props, fallback) ? fallback : (Object.keys(props).find(k => re.test(k)) || fallback);
+async function listInput(){
+  /* Always the viewer's own requests, never everything they can read. */
+  return { scope:"requested_by_me", limit:50 };
+}
+async function getInput(id){ const p = await schemaProps(CONFIG.tools.get); return { [propLike(p, /id$|^id|request/i, "request_id")]: id }; }
+async function createInput(text){
+  const p = await schemaProps(CONFIG.tools.create);
+  return { [propLike(p, /title|subject/i, "title")]: titleFrom(text), [propLike(p, /desc|body|detail|text|message/i, "description")]: text };
+}
+/* A reply is a comment only: requesters can't change a request's status. */
+async function replyInput(id, text){
+  const p = await schemaProps(CONFIG.tools.reply);
+  return { [propLike(p, /id$|^id|request/i, "request_id")]: id, [propLike(p, /comment|body|message|text|reply/i, "comment")]: text };
+}
+
+async function loadLive(opts = {}){
+  const wasExample = S.mode !== "live";
+  S.loading = true; S.conn = null; render();
+  try {
+    let res, lastErr;
+    const tryNames = SERVER ? [SERVER] : [ (await connectedServer()), ...CONFIG.servers ].filter((n,i,a) => n && a.indexOf(n) === i);
+    for(const name of tryNames){
+      if(await lacksIntake(name)) throw { code:"no_intake", server:name };
+      try { res = await mcp.callTool(name, CONFIG.tools.list, await listInput(), { cache:false }); SERVER = name; break; }
+      catch(e){ lastErr = e; if(isNoIntake(e)) throw { code:"no_intake", server:name, message:e.message }; if(!(e && ["server_not_connected","server_not_found"].includes(e.code))) throw e; }
+    }
+    if(!res) throw lastErr;
+    /* Harvey only offers the intake tools to workspaces with Intake. */
+    const arr = findArray(res.payload, ["requests","legal_requests","items","results","data","tasks"]);
+    if(!arr) throw { code:"unreadable", message:"Harvey returned something this page couldn't read." };
+    S.live = arr.map(normRequest).filter(r => r && r.id);
+    if(S.mode !== "live" && !S.toast) S.toast = { text:"Connected to Harvey. The sample requests are gone, and these are your own requests." };
+    S.mode = "live"; S.liveAt = new Date(); if(wasExample) S.openId = null; connected = true;
+  } catch(e){ S.conn = e && e.code ? e : { code:"upstream_error" }; if(S.mode !== "live" && connCopy(S.conn).intake) connected = false; }
+  S.loading = false; render();
+}
+async function loadDetail(id, fresh){
+  S.detailErr[id] = null;
+  try {
+    const res = await mcp.callTool(server(), CONFIG.tools.get, await getInput(id), { cache:false });
+    const p = res.payload;
+    const r = typeof p === "string" ? { id, harveyText:p } : normRequest(p);
+    const base = S.live.find(x => x.id === id) || {};
+    S.details[id] = { ...base, ...Object.fromEntries(Object.entries(r).filter(([k,v]) => v !== "" && v != null && !(Array.isArray(v) && !v.length && base[k]))), id };
+    if(fresh) S.checked[id] = `Checked ${new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`;
+  } catch(e){ S.detailErr[id] = e && e.code ? e : { code:"upstream_error" }; }
+  if(S.openId === id) render();
+}
+
+/* What to tell the viewer for each failure. */
+function connCopy(e){
+  const s = "Harvey";
+  switch(e.code){
+    case "server_not_connected": case "server_not_found": return { intake:"none", t:"This page requires Harvey Intake.", d:"If your company already uses it, add the Harvey connector in Settings → Connectors, then try again." };
+    case "no_intake": return { intake:"off", t:"This page requires Harvey Intake.", d:"Harvey Intake isn’t turned on for your Harvey workspace. To add it, talk to your Harvey account team." };
+    case "needs_reauth": return { t:"Your Harvey connection has expired.", d:`Reconnect ${s} in claude.ai Settings → Connectors, then try again.`, retry:true };
+    case "selection_required": return { t:"Choose which Harvey connector to use.", d:"You have more than one connector with this name. Pick one when claude.ai asks, then try again.", retry:true };
+    case "not_in_manifest": case "consent_required": case "approval_required": return { t:"Harvey isn’t allowed on this page yet.", d:"Allow Harvey for this page to see your requests.", retry:true, manage:true };
+    case "blocked_by_policy": return { intake:"off", t:"This page requires Harvey Intake.", d:"It may not be turned on for your Harvey workspace, or your organization may block it. Ask your Harvey or Claude admin to check." };
+    case "server_unavailable": return { t:"Harvey isn’t responding.", d:"Try again in a minute.", retry:true };
+    case "tool_error": case "unreadable": return { t:"Harvey couldn’t return your requests.", d:`${e.message ? e.message+" " : ""}If this keeps happening, requests from Claude may not be turned on for your Harvey workspace yet.`, retry:true };
+    case "not_granted": case "capability_disabled": case "capability_removed": return { t:"This view can’t reach Harvey.", d:"Choose Make it yours, then connect Harvey to see your requests." };
+    case "upstream_error": if(e.retryable && !connected) return { t:"Claude hasn’t confirmed Harvey for this page yet.", d:"Choose Try again and allow Harvey when Claude asks, or allow it from this page’s Permissions menu.", retry:true, manage:true };
+    default: return { t:"Couldn’t reach Harvey.", d:e.message || "Try again.", retry:true, manage:true };
+  }
+}
+
+/* ---------- Rendering ---------- */
+const requests = () => S.mode === "live" ? S.live : [...mine, ...EXAMPLES];
+const current = id => (S.mode === "live" ? (S.details[id] || S.live.find(r => r.id === id)) : requests().find(r => r.id === id));
+const lastAt = r => r.updated || r.created;
+
+function render(){
+  $("#org").textContent = `${CONFIG.org} Legal Intake`;
+  syncMode();
+  // oxlint-disable-next-line appifacts/no-html-sink -- the text here is constant
+  $("#user").innerHTML = S.mode === "live" ? `<span class="dot" aria-hidden="true"></span><span>Connected to Harvey</span>${perms ? `<button class="barlink" type="button" data-manage>Manage access</button>` : ""}` : "";
+  $("#crumbWrap").hidden = !S.openId;
+  S.openId ? renderDetail() : renderList();
+}
+
+/* "none": no Harvey connector linked, so the viewer may not use Harvey at all. "off": linked to Harvey, but the workspace doesn't have Intake. */
+const INTAKE_COPY = {
+  none: "Harvey Intake sends your requests to your legal team in Harvey and brings their replies back here. To use this page with your own legal team, your company needs Harvey Intake. Book a demo or talk to your Harvey account team to get started. If your company already uses Harvey Intake, add the Harvey connector in Settings → Connectors, then try again.",
+  off: "You’re connected to Harvey, but Harvey Intake isn’t turned on for your Harvey workspace. Harvey Intake sends your requests to your legal team in Harvey and brings their replies back here. To add it, book a demo or talk to your Harvey account team."
+};
+const INTAKE_BANNER = kind => `<div class="banner intake" role="status"><div><p><b>This page requires Harvey Intake.</b></p>
+  <p><span>${INTAKE_COPY[kind] || INTAKE_COPY.none}</span></p>${S.mode==="live"?"":`<p><span>Until then, you’re seeing sample requests.</span></p>`}</div>
+  <div class="acts"><a class="btn" href="${CONFIG.intakeUrl}" target="_blank" rel="noopener">Learn about Harvey Intake</a>${mcp?`<button class="btn line" type="button" data-connect>Try again</button>`:""}</div></div>`;
+function bannerHTML(){
+  if(S.loading) return `<div class="banner" role="status"><p>Loading your requests from Harvey…</p></div>`;
+  if(S.conn && connCopy(S.conn).intake) return INTAKE_BANNER(connCopy(S.conn).intake);
+  if(S.conn){ const c = connCopy(S.conn); return `<div class="banner warn" role="alert"><p><b>${esc(c.t)}</b> <span>${esc(c.d)}</span>${S.mode==="live"?"":" <span>Showing example requests for now.</span>"}<br><span class="ecode">Error code: ${esc(S.conn.code)}${S.conn.server?` · connector: ${esc(S.conn.server)}`:""}</span></p><div class="acts">${c.manage&&perms?`<button class="btn line" type="button" data-manage>Manage permissions</button>`:""}${c.retry&&mcp?`<button class="btn line" type="button" data-connect>Try again</button>`:""}</div></div>`; }
+  if(S.mode === "live") return "";
+  if(mcp) return `<div class="banner"><p><b>This is a demo with sample requests.</b> <span>Connect Harvey and the samples are replaced with your own requests and Legal’s replies.</span></p><div class="acts"><button class="btn" type="button" data-connect>Connect Harvey</button></div></div>`;
+  return `<div class="banner"><p><b>This is a demo with sample requests.</b> <span>Choose Make it yours, then connect Harvey, and the samples are replaced with your own requests.</span></p></div>`;
+}
+
+function group(key, label, items){
+  const c = S.collapsed[key];
+  const rows = S.loading && !items.length
+    ? [1,2,3].map(()=>`<div class="row skel" aria-hidden="true"><span class="rt">.</span><span class="cell">.</span><span class="cell c3">.</span><span class="cell c4">.</span></div>`).join("")
+    : items.map(r=>`<button class="row ${S.fresh===r.id?"fresh":""}" type="button" data-open="${esc(r.id)}">
+      <span class="rt">${esc(displayTitle(r.title))}</span><span>${statusHTML(r.status)}</span>
+      <span class="cell c3">${r.assignee ? `<span class="who"><span class="av sm">${esc(initials(r.assignee))}</span>${esc(r.assignee)}</span>` : `<span style="color:var(--fg2)">Unassigned</span>`}</span>
+      <span class="cell c4">${day(lastAt(r))}</span></button>`).join("")
+      || `<div class="row" style="cursor:default"><span style="color:var(--fg2)">${S.mode==="live" && S.conn ? "Couldn’t load your requests." : key==="open" && S.mode==="live" ? "No open requests. Use New request to ask Legal something." : "Nothing here yet."}</span></div>`;
+  return `<section class="grp" ${c?"data-collapsed":""}>
+    <div class="ghead"><button type="button" data-toggle="${key}" aria-expanded="${!c}">${CHEV}<b>${label}</b><span>${S.loading&&!items.length?"":`${items.length} request${items.length===1?"":"s"}`}</span></button>
+      <span>Status</span><span class="c3">Assignee</span><span class="c4">Last activity</span></div>
+    <div class="rows">${rows}</div></section>`;
+}
+
+function renderList(){
+  const sorted = requests().slice().sort((a,b) => (toDate(lastAt(b))||0) - (toDate(lastAt(a))||0));
+  const open = sorted.filter(r => !isDone(r.status)), done = sorted.filter(r => isDone(r.status));
+  $("#view").className = "page";
+  // oxlint-disable-next-line appifacts/no-html-sink -- values from Harvey or the viewer go through esc() or linkify(), or are dates formatted by day() or stamp()
+  $("#view").innerHTML = `
+    ${bannerHTML()}
+    <div class="ph"><h1>My Requests</h1><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      ${S.mode==="live"&&S.liveAt?`<span class="synced">Updated ${esc(S.liveAt.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}))}<button type="button" data-connect ${S.loading?"disabled":""}>Refresh</button></span>`:""}
+      <button class="btn" type="button" id="newBtn">${PLUS}New request</button></div></div>
+    ${S.toast ? `<div class="toast" role="status"><span>${esc(S.toast.text)}</span><span style="display:flex;gap:14px">${S.toast.id?`<button type="button" data-open="${esc(S.toast.id)}">View request</button>`:""}${S.toast.url?`<a href="${esc(S.toast.url)}" target="_blank" rel="noopener">Open in Harvey</a>`:""}</span></div>` : ""}
+    <div class="tbl">${group("open","Open",open)}${group("done","Completed",done)}</div>`;
+  S.fresh = null;
+}
+
+/* Whether a comment came from the person who sent the request. */
+const isMine = (t, r) => t.kind === "comment" && t.role !== "AGENT" && (
+  (r.requesterIds||[]).some(x => x && (x === t.who || x === t.email)) || (S.mode !== "live" && t.who === CONFIG.example.name) || (S.posted[r.id]||[]).includes((t.text||"").trim()));
+/* Harvey's routing agent comments are internal notes for Legal, so they stay off the requester's view. */
+const hidden = t => (t.kind === "comment" && t.role === "AGENT" && /rout/i.test(t.agent||"")) || t.event === "task_created";
+function feedHTML(r){
+  const requester = r.requester || (S.mode === "live" ? "You" : CONFIG.example.name);
+  const items = [`<li class="msg"><div class="mh"><span class="av">${esc(initials(requester))}</span><b>${esc(requester)}</b><span class="d">${stamp(r.created)}</span><span class="tag">Request</span></div><div class="mb">${linkify(r.description || r.title)}</div></li>`];
+  const shown = (r.timeline || []).filter(t => !hidden(t));
+  for(const t of shown){
+    if(t.kind === "activity") items.push(`<li class="sys"><span class="av sm">${esc(initials(t.who||"H"))}</span><span><b>${esc(t.who||"Harvey")}</b> ${esc(t.text)} · ${day(t.at)}</span></li>`);
+    else if(/status/.test(t.kind)) items.push(`<li class="sys"><span class="av sm">${esc(initials(t.who||"H"))}</span><span><b>${esc(t.who||"Harvey")}</b> changed the status to ${esc(statusLabel(t.status||t.text))} · ${day(t.at)}</span></li>`);
+    else if(t.text){ const mine = isMine(t, r), agent = t.role === "AGENT";
+      items.push(`<li class="msg"><div class="mh"><span class="av ${mine?"":"legal"}">${esc(initials(t.who||(mine?requester:"L")))}</span><b>${esc(t.who||(mine?requester:"Legal"))}</b><span class="d">${stamp(t.at)}</span><span class="tag">${mine?"You":agent?"Harvey":"Legal"}</span></div><div class="mb">${linkify(t.text)}</div></li>`); }
+  }
+  if(r.harveyText) items.push(`<li class="msg"><div class="mh"><b>Harvey</b></div><div class="mb">${linkify(r.harveyText)}</div></li>`);
+  if(!shown.some(t => t.kind === "comment" && t.text && !isMine(t, r))) items.push(`<li class="pending"><i></i><span>With the legal team. Their reply will appear here.</span></li>`);
+  return items.join("");
+}
+
+function renderDetail(){
+  const id = S.openId, r = current(id) || { id, title:"Request", timeline:[] };
+  const loaded = S.mode !== "live" || S.details[id], err = S.detailErr[id];
+  $("#crumbId").textContent = displayTitle(r.title);
+  $("#view").className = "detail";
+  // oxlint-disable-next-line appifacts/no-html-sink -- values from Harvey or the viewer go through esc() or linkify(), or are dates formatted by day() or stamp()
+  $("#view").innerHTML = `
+    <div>
+      <h1 class="dtitle">${esc(displayTitle(r.title))}</h1>
+      ${S.mode==="live" ? "" : `<p class="sub">Example request</p>`}
+      <section class="activity"><div class="ahead"><h2>Activity</h2>${S.mode==="live" && loaded ? `<span class="check"><span id="checkMsg">${esc(S.checked[id]||"")}</span><button class="btn ghost sm" type="button" data-check="${esc(id)}">${REFRESH}Check for updates</button></span>` : ""}</div>
+        ${err ? `<div class="banner warn" role="alert"><p><b>${esc(connCopy(err).t.replace("your requests","this request"))}</b> <span>${esc(connCopy(err).d)}</span></p><div class="acts"><button class="btn line" type="button" data-check="${esc(id)}">Try again</button></div></div>` : ""}
+        ${loaded ? `<ol class="feed">${feedHTML(r)}</ol>` : (err ? "" : `<div class="skelblock" role="status" aria-label="Loading activity"></div>`)}
+        ${loaded ? `<form class="reply" id="replyForm" data-id="${esc(id)}" novalidate>
+          <label for="replyText" class="sr">Reply to Legal</label>
+          <div class="rbox"><textarea id="replyText" rows="2" placeholder="Reply to Legal" ${S.replying===id?"disabled":""}>${esc(S.drafts[id]||"")}</textarea>
+            <button class="send" type="submit" aria-label="Send reply" ${S.replying===id||!(S.drafts[id]||"").trim()?"disabled":""}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4"/></svg></button></div>
+          ${S.replyErr[id] ? `<p class="rerr" role="alert">${esc(S.replyErr[id])}</p>` : `<p class="rhint">${S.replying===id ? "Sending your reply…" : S.mode==="live" ? "Your reply will be shared with the legal team." : "Example mode: replies stay in this browser."}</p>`}
+        </form>` : ""}
+      </section>
+    </div>
+    <aside><h2>Details</h2>
+      <dl class="facts">
+        <dt>Status</dt><dd>${statusHTML(r.status)}</dd>
+        <dt>Assignee</dt><dd>${r.assignee ? `<span class="av sm">${esc(initials(r.assignee))}</span>${esc(r.assignee)}` : "Unassigned"}</dd>
+        ${r.created ? `<dt>Created on</dt><dd>${day(r.created)}</dd>` : ""}
+        ${r.due ? `<dt>Due date</dt><dd>${day(r.due)}</dd>` : ""}
+        <dt>Last activity</dt><dd>${day(lastAt(r))}</dd>
+        <dt>Request ID</dt><dd><span class="idchip">${esc(id)}</span></dd>
+        ${r.url ? `<dt>In Harvey</dt><dd><a href="${esc(r.url)}" target="_blank" rel="noopener">Open request</a></dd>` : ""}
+      </dl>
+    </aside>`;
+}
+
+/* ---------- Dialog ---------- */
+const q = $("#q"); let lastFocus = null;
+const syncMode = () => { $("#dlgMode").textContent = connected ? "" : "Example mode: this request stays in your browser."; };
+function openDlg(){
+  lastFocus = document.activeElement; $("#dlgErr").hidden = true;
+  syncMode();
+  $("#scrim").hidden = false; q.focus();
+}
+function closeDlg(){ if(S.sending) return; $("#scrim").hidden = true; if(lastFocus && document.contains(lastFocus)) lastFocus.focus(); }
+const syncSend = () => { $("#sendBtn").disabled = S.sending || !q.value.trim(); $("#sendBtn").textContent = S.sending ? "Sending…" : "Submit request"; };
+q.addEventListener("input", syncSend);
+$("#scrim").addEventListener("click", e => { if(e.target.id === "scrim") closeDlg(); });
+document.addEventListener("keydown", e => { if(e.key === "Escape" && !$("#scrim").hidden) closeDlg(); });
+
+$("#askForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const text = q.value.trim(); if(!text || S.sending) return;
+  if(!connected){
+    const id = `REQ-${7700 + mine.length}`, now = nowISO();
+    mine.unshift({ id, status:"open", assignee:"", created:now, updated:now, title:titleFrom(text), description:text, timeline:[] }); saveMine();
+    q.value = ""; syncSend(); $("#scrim").hidden = true;
+    S.fresh = id; S.toast = { id, text:`Saved as an example. ${id} stays in this browser.` }; S.openId = null; render(); return;
+  }
+  S.sending = true; syncSend(); $("#dlgErr").hidden = true;
+  try {
+    const res = await mcp.callTool(server(), CONFIG.tools.create, await createInput(text), { cache:false });
+    const p = res.payload, r = (p && typeof p === "object") ? normRequest(p.legal_request || p.request || p) : null;
+    S.sending = false; q.value = ""; syncSend(); $("#scrim").hidden = true;
+    S.toast = { id: r && r.id || null, url: r && safeUrl(r.url) || "", text: r && r.id ? `Sent to Legal. ${r.id} is with the legal team.` : "Sent to Legal." };
+    S.fresh = r && r.id; S.openId = null; S.collapsed.open = false; S.mode = "live";
+    await loadLive();
+  } catch(err){
+    S.sending = false; syncSend();
+    const code = err && err.code;
+    const ambiguous = ["server_unavailable","upstream_error","cancelled"].includes(code) || !code;
+    $("#dlgErr").textContent = ambiguous
+      ? "Harvey didn’t confirm this request. It may still have arrived, so check My Requests before sending it again."
+      : code === "tool_error" ? `Harvey didn’t accept this request. ${err.message || ""}`.trim()
+      : `${connCopy(err).t} ${connCopy(err).d}`;
+    $("#dlgErr").hidden = false;
+    if(ambiguous) loadLive();
+  }
+});
+
+/* ---------- Replies ---------- */
+document.addEventListener("input", e => {
+  if(e.target.id !== "replyText") return;
+  const id = e.target.closest("form").dataset.id;
+  S.drafts[id] = e.target.value; S.replyErr[id] = null;
+  const btn = e.target.closest("form").querySelector(".send");
+  btn.disabled = S.replying === id || !e.target.value.trim();
+});
+document.addEventListener("keydown", e => {
+  if(e.target.id === "replyText" && e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); e.target.closest("form").requestSubmit(); }
+});
+document.addEventListener("submit", async e => {
+  if(e.target.id !== "replyForm") return;
+  e.preventDefault();
+  const id = e.target.dataset.id, text = (S.drafts[id]||"").trim();
+  if(!text || S.replying) return;
+  if(S.mode !== "live"){
+    const r = current(id), now = nowISO();
+    if(!r) return;
+    r.timeline = [...(r.timeline||[]), { kind:"comment", who:CONFIG.example.name, at:now, text }]; r.updated = now;
+    if(mine.includes(r)) saveMine();
+    S.drafts[id] = ""; render(); return;
+  }
+  S.replying = id; S.replyErr[id] = null; render();
+  try {
+    await mcp.callTool(server(), CONFIG.tools.reply, await replyInput(id, text), { cache:false });
+    (S.posted[id] = S.posted[id] || []).push(text);
+    S.drafts[id] = ""; S.replying = null;
+    await loadDetail(id);
+  } catch(err){
+    S.replying = null;
+    const code = err && err.code, ambiguous = ["server_unavailable","upstream_error","cancelled"].includes(code) || !code;
+    S.replyErr[id] = ambiguous
+      ? "Harvey didn’t confirm your reply. It may still have posted, so check the activity before sending it again."
+      : code === "tool_error" ? `Harvey didn’t accept this reply. ${err.message || ""}`.trim()
+      : `${connCopy(err).t} ${connCopy(err).d}`;
+    if(ambiguous){ (S.posted[id] = S.posted[id] || []).push(text); await loadDetail(id); } else render();
+  }
+});
+
+/* ---------- Clicks ---------- */
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  if(b.id === "newBtn") openDlg();
+  else if(b.id === "closeDlg" || b.id === "cancelDlg") closeDlg();
+  else if(b.hasAttribute("data-connect")){
+    S.toast = null;
+    /* Ask for Harvey up front, in one dialog, before the first call. */
+    const ask = perms && !SERVER ? perms.request(CONFIG.servers.map(n => `mcp:${n}`)).catch(() => null) : Promise.resolve(null);
+    ask.then(st => { if(st){ const ok = CONFIG.servers.find(n => st[`mcp:${n}`] === "granted"); if(ok){ SERVER = ok; connected = true; } } loadLive(); });
+  }
+  else if(b.hasAttribute("data-manage")){
+    /* After the Permissions panel closes: still allowed, refresh; turned off, go back to the demo. */
+    perms.manage().then(async () => {
+      const st = await perms.state(`mcp:${server()}`).catch(() => "unavailable");
+      if(st !== "denied") return loadLive();
+      SERVER = null; connected = false; S.mode = "example"; S.live = []; S.details = {}; S.detailErr = {}; S.conn = null; S.openId = null; S.liveAt = null;
+      S.toast = { text:"Harvey is disconnected from this page. Showing sample requests." }; render();
+    }).catch(() => { S.toast = { text:"The Permissions panel didn’t open. Use the Permissions option in this artifact’s menu in claude.ai." }; render(); });
+  }
+  else if(b.dataset.toggle){ S.collapsed[b.dataset.toggle] = !S.collapsed[b.dataset.toggle]; render(); }
+  else if(b.dataset.open){ S.openId = b.dataset.open; S.toast = null; render(); window.scrollTo(0,0); if(S.mode === "live") loadDetail(S.openId); }
+  else if(b.hasAttribute("data-back")){ S.openId = null; render(); }
+  else if(b.dataset.check){ const id = b.dataset.check; b.disabled = true; loadDetail(id, true); }
+});
+
+/* ---------- Start ---------- */
+render();
+(async () => {
+  try { mcp = await window.claude?.use?.("mcp"); } catch(e) { mcp = null; }
+  try { perms = await window.claude?.use?.("permissions"); } catch(e) { perms = null; }
+  if(mcp && mcp.available === false) mcp = null;
+  if(perms && perms.available === false) perms = null;
+  render();
+  if(!mcp) return;
+  for(const name of CONFIG.servers){
+    const st = perms ? await perms.state(`mcp:${name}`).catch(() => "unavailable") : "unavailable";
+    if(st === "granted"){ SERVER = name; connected = true; loadLive(); break; }
+  }
+})();
+</script>
+</body></html>
