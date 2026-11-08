@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Charge Reality Check — open legal artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -179,7 +181,7 @@ textarea { max-width: 100%; }
   .pl { border: 2px dashed var(--text); background: #fff; padding: 14px 16px; font-size: 14px; line-height: 1.65; margin-bottom: 18px; }
   table { width: 100%; border-collapse: collapse; background: #fff; border: var(--hairline); font-size: 12.5px; margin-bottom: 16px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: var(--hairline); }
-  th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
   td.mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
   .band { height: 8px; background: var(--border); position: relative; width: 120px; }
   .band i { position: absolute; top: 0; bottom: 0; background: var(--text); }
@@ -189,7 +191,7 @@ textarea { max-width: 100%; }
   .unset { font-family: var(--font-mono); font-size: 12px; background: #fff; border: var(--hairline); padding: 10px 12px; margin-bottom: 14px; }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
   <div class="kicker">Open legal artifact · deterministic core · rules-as-data</div>
   <h1>Criminal charge reality check</h1>
@@ -203,7 +205,7 @@ textarea { max-width: 100%; }
   <div class="cols">
     <div>
       <div class="kicker">Charge facts (JSON)</div>
-      <textarea id="input" spellcheck="false"></textarea>
+      <textarea id="input" aria-label="Charge facts (JSON)" spellcheck="false"></textarea>
       <p class="btnrow">
         <button id="run">Run reality check</button>
         <select id="example" aria-label="Prefilled example"></select>
@@ -212,7 +214,7 @@ textarea { max-width: 100%; }
     </div>
     <div>
       <div class="kicker">Expectations (heuristics)</div>
-      <div id="out"><p class="lede">Press “Run reality check”.</p></div>
+      <div id="out" aria-live="polite"><p class="lede">Press “Run reality check”.</p></div>
     </div>
   </div>
 </div>

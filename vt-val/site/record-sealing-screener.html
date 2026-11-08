@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Record Sealing Screener — open legal artifact</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -172,18 +174,18 @@ textarea { max-width: 100%; }
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
   .case { border: var(--hairline); background: #fff; padding: 18px 18px 14px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
   .case h3 { margin: 0 0 6px; font-size: 15px; }
-  .badge { font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; padding: 3px 8px; display: inline-block; }
+  .badge { font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; padding: 3px 8px; display: inline-block; }
   .badge.potentially_eligible { background: var(--flag-tint); }
   .badge.ineligible, .badge.insufficient_data { background: var(--text); color: var(--bg); }
   .badge.needs_more_time { background: var(--border); }
   .case ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
-  .case code { font-family: var(--font-mono); font-size: 11px; background: var(--hover); padding: 1px 4px; }
+  .case code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   .gate { border: var(--hairline); background: #fff; padding: 16px 18px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
   .summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 18px; }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
   <div class="kicker">Open legal artifact · deterministic core · rules-as-data</div>
   <h1>Record sealing screener</h1>
@@ -202,20 +204,20 @@ textarea { max-width: 100%; }
       </p>
       <div id="json-pane">
         <div class="kicker">Case facts (JSON)</div>
-        <textarea id="input" spellcheck="false"></textarea>
+        <textarea id="input" aria-label="Case facts (JSON)" spellcheck="false"></textarea>
       </div>
       <div id="rap-pane" style="display:none">
         <div class="kicker">Rap sheet (documented paste format — see spec.md)</div>
-        <textarea id="rap" spellcheck="false"></textarea>
+        <textarea id="rap" aria-label="Rap sheet paste" spellcheck="false"></textarea>
         <div class="kicker" style="margin-top:12px">Screening date (as of)</div>
-        <input id="asof" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
+        <input id="asof" aria-label="Screening date (as of)" type="date" value="2026-11-07" style="font-family:var(--font-mono);font-size:13px;padding:8px 10px;border:var(--hairline);border-radius:var(--radius);background:#fff" />
       </div>
       <p><button id="run">Run screen</button></p>
       <div class="err" id="err"></div>
     </div>
     <div>
       <div class="kicker">Determinations</div>
-      <div id="out"><p class="lede">Press “Run screen”.</p></div>
+      <div id="out" aria-live="polite"><p class="lede">Press “Run screen”.</p></div>
     </div>
   </div>
 </div>

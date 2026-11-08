@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI use-case inventory — open legal artifacts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
    Arthur Rodrigues — Personal Site Design Tokens
@@ -11,7 +12,8 @@
    ========================================================================= */
 
 /* ---------- Webfonts ---------- */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
 
 /* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
@@ -35,7 +37,7 @@
 
   /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
 
   /* ----- Layout constants ----- */
   --max-width: 1100px;
@@ -125,7 +127,7 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -170,26 +172,26 @@ textarea { max-width: 100%; }
   .bar { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
   .bar b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
   table { width:100%; border-collapse:collapse; font-size:13px; background:#fff; }
-  th { font-family:var(--font-mono); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
+  th { font-family:var(--font-mono); font-weight:400; font-size:12px; text-transform:uppercase; letter-spacing:0.1em; text-align:left; color:var(--text-secondary); border-bottom:1px solid var(--border); padding:8px 10px; }
   td { border-bottom:1px solid var(--border); padding:9px 10px; vertical-align:top; }
-  .tier { font-family:var(--font-mono); font-size:11px; white-space:nowrap; padding:1px 5px; }
+  .tier { font-family:var(--font-mono); font-size:12px; white-space:nowrap; padding:1px 5px; }
   .tier.prohibited { background: var(--flag-tint); color: var(--bad); border-color: var(--bad);}
   .tier.high { background: var(--flag-tint); opacity:0.85; color: var(--warn); border-color: var(--warn);}
   .tier.limited { border:1px solid var(--border); }
   .tier.minimal { border:1px solid var(--border); color:var(--text-secondary); }
-  .gap { font-family:var(--font-mono); font-size:11px; margin:2px 0; }
+  .gap { font-family:var(--font-mono); font-size:12px; margin:2px 0; }
   .gap.blocker { background: var(--flag-tint); display:inline-block; padding:0 4px; color: var(--bad); border-color: var(--bad);}
-  .basis { color:var(--text-secondary); font-size:11.5px; font-family:var(--font-mono); }
+  .basis { color:var(--text-secondary); font-size:12px; font-family:var(--font-mono); }
 </style>
 </head>
-<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
+<body><a href="/" style="position:sticky;top:0;z-index:99;display:block;background:#0a0a0a;color:#fafaf8;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:8px 20px;text-decoration:none;border-bottom:1px solid #e8e8e5;">← Open Legal Artifacts</a>
 <div class="wrap">
   <h1>AI use-case inventory</h1>
   <p class="tagline">EU AI Act-ish rubric as rules-as-data · explainable tiers with matched-keyword evidence · gap flags · CSV. Fictional data.</p>
   <hr class="rule">
 
   <h2>Use-case records (JSON)</h2>
-  <textarea id="input" spellcheck="false"></textarea>
+  <textarea id="input" aria-label="Use-case records (JSON)" spellcheck="false"></textarea>
   <div class="row">
     <button id="run">Tier &amp; audit</button>
     <button class="ghost2" id="csv" style="font-family:var(--font-mono);font-size:13px;background:transparent;color:var(--text);border:1px solid var(--border);padding:10px 20px;cursor:pointer;">Copy CSV</button>
@@ -200,13 +202,13 @@ textarea { max-width: 100%; }
   <div class="bars" id="bars"></div>
   <div class="row">
     <span class="muted">filters:</span>
-    <select id="f-tier"><option value="">tier: all</option></select>
-    <select id="f-status"><option value="">status: all</option></select>
-    <select id="f-nexus"><option value="">nexus: all</option><option value="in-scope">in EU scope</option><option value="out-of-scope">out of EU scope</option></select>
+    <select id="f-tier" aria-label="Filter by tier"><option value="">tier: all</option></select>
+    <select id="f-status" aria-label="Filter by status"><option value="">status: all</option></select>
+    <select id="f-nexus" aria-label="Filter by EU scope"><option value="">nexus: all</option><option value="in-scope">in EU scope</option><option value="out-of-scope">out of EU scope</option></select>
   </div>
   <h2>Review clock (≤30d due · stale &gt;1y)</h2>
   <div id="review"></div>
-  <div id="table"></div>
+  <div id="table" aria-live="polite"></div>
 
   <p class="muted">Deterministic core · <code>open-artifacts/ai-use-case-inventory/core/core.js</code> · first-pass screen, not a compliance determination · not legal advice.</p>
 </div>
