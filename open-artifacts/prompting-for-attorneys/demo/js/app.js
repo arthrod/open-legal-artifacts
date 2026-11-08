@@ -14,7 +14,11 @@ applySize(localStorage.getItem(SIZE) || 'normal');
 document.querySelectorAll('.sizes button').forEach(b => b.onclick = () => { localStorage.setItem(SIZE, b.dataset.size); applySize(b.dataset.size); });
 
 function renderProg(cur) {
-  document.getElementById('prog').innerHTML = L.map(l => `<b class="${done(l.slug)?'on':''}${l.slug===cur?' cur':''}" title="${pad(L.indexOf(l)+1)} ${esc(l.title)}"></b>`).join('');
+  document.getElementById('prog').innerHTML = L.map(l => {
+    const i = L.indexOf(l), d = done(l.slug);
+    const st = d ? 'complete' : (l.slug === cur ? 'current' : 'not started');
+    return `<b class="${d?'on':''}${l.slug===cur?' cur':''}" role="img" title="Lesson ${pad(i+1)} — ${esc(l.title)}" aria-label="Lesson ${i+1} of ${L.length}: ${esc(l.title)} — ${st}"></b>`;
+  }).join('');
 }
 
 // [[text|n]] → <mark>

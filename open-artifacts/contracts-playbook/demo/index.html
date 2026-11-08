@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Playbook from agreement — open artifact demo</title>
+<title>Playbook from agreement, open artifact demo</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
 /* =========================================================================
@@ -207,7 +207,7 @@ textarea { max-width: 100%; }
   .scroll { overflow-x: auto; }
 </style>
 </head>
-<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/contracts-playbook" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
+<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/contracts-playbook" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <header>
     <div class="kicker">open-legal-artifacts · deterministic core</div>
@@ -216,8 +216,8 @@ textarea { max-width: 100%; }
     <p class="lede">Paste an agreement → clause splitter → match each clause against a bundled ACC-style
       playbook (<b>preferred / ordered fallbacks / avoid</b>, with rationale) → verify every position's source
       quote against the pasted text (exact / normalized / fuzzy / not_found) → deviation table, RYG risk summary,
-      and an exportable Markdown playbook draft. Clauses no rule covers stay <b>uncovered — never guessed</b>.
-      <span class="sim accent">deterministic simulation of the live app</span> — no LLM, no network; all data fictional.</p>
+      and an exportable Markdown playbook draft. Clauses no rule covers stay <b>uncovered, never guessed</b>.
+      <span class="sim accent">deterministic simulation of the live app</span>, no LLM, no network; all data fictional.</p>
   </header>
 
   <section>
@@ -238,12 +238,12 @@ textarea { max-width: 100%; }
   </section>
 
   <section>
-    <h2>3 · Deviation table — clause → classification → position → verified quote</h2>
+    <h2>3 · Deviation table, clause → classification → position → verified quote</h2>
     <div class="scroll"><table id="results" aria-live="polite"></table></div>
   </section>
 
   <section>
-    <h2>4 · Evidence — source quotes &amp; verification</h2>
+    <h2>4 · Evidence, source quotes &amp; verification</h2>
     <div id="evidence"></div>
   </section>
 
@@ -316,7 +316,7 @@ textarea { max-width: 100%; }
       const a = r.quote.anchor ?? r.quote.bestCandidate;
       return `<div class="ev"><b><code>${esc(r.clause.label ?? r.clause.id)} · ${esc(r.clause.heading)}</code></b> ` +
         `<span class="pill ${r.classification.startsWith("fallback") ? "fallback" : r.classification}">${esc(r.classification)}</span>` +
-        ` — <b>${esc(r.topic)}</b>` +
+        `, <b>${esc(r.topic)}</b>` +
         `<div class="q" style="margin-top:8px">source quote → <span class="pill q ${r.quote.classification}">${r.quote.classification}</span>` +
         ` · similarity ${r.quote.similarity.toFixed(2)} · coverage ${r.quote.coverage.toFixed(2)}</div>` +
         `<blockquote>“${esc(r.sourceQuote)}”</blockquote>` +
@@ -341,7 +341,7 @@ textarea { max-width: 100%; }
   $("mdBtn").onclick = () => download("playbook-draft.md", renderPlaybookMd(report), "text/markdown");
   $("jsonBtn").onclick = () => download("results.json", JSON.stringify(report, null, 2) + "\n", "application/json");
 
-  // prefilled worked example — auto-renders the deviation table on load
+  // prefilled worked example, auto-renders the deviation table on load
   $("agreement").value = EXAMPLE.agreementText;
   run();
 </script>
