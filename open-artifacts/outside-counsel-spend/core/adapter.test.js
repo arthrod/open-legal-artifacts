@@ -139,7 +139,7 @@ function runRebuildWiring(document, setLedger) {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, input section with mount + ledger box + LEDES paste-box, parseLedes statically imported", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('import { parseLedes } from "../core/ledes.js";'), "the tested LEDES parser is wired into the page (static import, inlined by build)");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   const section = HTML.indexOf("Import ledger");

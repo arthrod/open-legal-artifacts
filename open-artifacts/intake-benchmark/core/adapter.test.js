@@ -174,7 +174,7 @@ const previewNoteHtml = (dom) => { const p = dom.mount.querySelector(".docx-impo
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, mount inside the Flows section above the builder, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   const flowsHeading = HTML.indexOf('id="flows-h"');
   assert.ok(flowsHeading > 0, "Flows section present");

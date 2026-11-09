@@ -539,7 +539,7 @@ if (restored) toast('Restored your last working session from this browser.');
   if (!mount) return;
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
     const chip = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
       '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";

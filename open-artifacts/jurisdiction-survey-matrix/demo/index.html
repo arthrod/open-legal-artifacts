@@ -768,7 +768,7 @@
     })();
   };
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     if (typeof M.readDocxText !== "function") throw new Error("docx-import: readDocxText missing");
     shared = M;
   } catch { hint(); }

@@ -30,7 +30,7 @@ th{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-s
 tr.flag td{background:var(--flag-tint)}
 tr.sel td{border-bottom:1.5px solid var(--text);background:var(--hover)}
 tr.attention td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
-.pill{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;padding:1px 6px;border:1px solid var(--text);white-space:nowrap}
+.pill{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;padding:1px 6px;border:1px solid var(--text);white-space:normal;max-width:100%;overflow-wrap:anywhere}
 .pill.exact,.pill.normalized{color:var(--ok);border:var(--hairline)}
 .pill.fuzzy{color:var(--warn);border:1.5px solid var(--warn)}
 .pill.mismatch,.pill.not_found{background:var(--text);color:var(--bg);border-color:var(--text)}
@@ -1348,7 +1348,7 @@ else if(Object.keys(decisions).length||store.entries('audit').length)toast("Rest
   const mount = document.getElementById("docxImportMount");
   if (!mount) return;
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
     M.wireDocxImport(mount, {
       title: "Import DOCX",

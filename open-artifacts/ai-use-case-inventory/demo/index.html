@@ -223,7 +223,7 @@ function invTableToRecords(rows) {
 
 (async () => {
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     M.wireDocxImport(invMount, {
       title: 'Import inventory table',
       hint: 'Reads a .docx table into records JSON — review the flags, then Apply',

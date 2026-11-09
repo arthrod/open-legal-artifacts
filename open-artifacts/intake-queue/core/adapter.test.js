@@ -112,7 +112,7 @@ async function importAndPreview(shared) {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, mount inside paste-&-verify above the source box, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   const section = HTML.indexOf("New enquiry");
   assert.ok(section > 0, "paste-&-verify section present");

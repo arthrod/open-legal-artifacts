@@ -446,7 +446,7 @@ if (!AUDIT.length) auditAdd('boot', 'Session state restored / initialized.');
    control and the page keeps working. ---- */
 (async () => {
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     M.wireDocxImport($('docx-import'), {
       title: 'Import DOCX',
       hint: 'Loads term-sheet text from a .docx into the paste box — “Capture into form →” then works as usual',

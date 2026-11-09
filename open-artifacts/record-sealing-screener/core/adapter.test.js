@@ -127,7 +127,7 @@ async function importPreviewOnly() {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic-import line, additive mount beside the input panes, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   assert.ok(HTML.indexOf('id="docxImportMount"') < HTML.indexOf(`id="${TARGET_ID}"`), "control sits above the rap paste box");
   assert.ok(!/import\s[^;]*from\s*"[^"]*docx-import\.js"/.test(HTML), "the shared module is never statically imported (build must not inline it)");

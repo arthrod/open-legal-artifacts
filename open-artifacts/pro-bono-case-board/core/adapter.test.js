@@ -159,7 +159,7 @@ async function importAndPreview(shared, handler = okExtract) {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, additive mount above the board input, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   const section = HTML.indexOf("Board input (JSON)");
   assert.ok(section > 0, "board-input section present");

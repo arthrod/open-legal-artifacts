@@ -5,10 +5,11 @@
 //   vt-val/site/index.html      <- app/dist (landing catalog), fully inlined
 //   vt-val/site/<artifact>.html <- open-artifacts/<a>/demo/index.html, inlined
 
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, copyFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { execSync } from "node:child_process";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = join(ROOT, "vt-val", "site");
@@ -51,12 +52,28 @@ function inlineJs(html, base) {
 // whole-page minify pass, so unminified comments/indentation would ride into
 // every page at 4/3x. Same recipe as the page-level pass (line comments only
 // stripped when the line STARTS with //, so URLs in strings survive).
+// PARSE GUARD (Code Review R-2): if the minified module fails node --check
+// (e.g. a future module carries comment-like content inside a string/template),
+// fall back to the UNMINIFIED source — worst case is a bigger page, never a
+// silently corrupted module.
+const _modCheckDir = mkdtempSync(join(tmpdir(), "ola-modcheck-"));
+function moduleParses(code) {
+  const p = join(_modCheckDir, "m.js");
+  writeFileSync(p, code);
+  try {
+    execSync(`${process.execPath} --check ${p}`, { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 function minifyModuleSource(code) {
-  return code
+  const min = code
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|\n)\s*\/\/[^\n]*/g, "$1")
     .replace(/\n\s*\n/g, "\n")
     .replace(/(\n)\s+/g, "$1");
+  return moduleParses(min) ? min : code;
 }
 
 function inlineModuleImports(html, base) {

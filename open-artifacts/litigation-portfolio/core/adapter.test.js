@@ -106,7 +106,7 @@ async function pickFile(mount, file) {
 /* ---------- static: additive control; existing inputs untouched ---------- */
 
 test("static: D1-pinned dynamic import, additive mount above the matter input, no static docx-import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   assert.ok(HTML.indexOf('id="docxImportMount"') < HTML.indexOf('id="input"'), "control sits above the matter textarea");
   assert.ok(HTML.indexOf('id="docxImportMount"') > HTML.indexOf("Matter input (JSON)"), "control sits inside the matter-input section");

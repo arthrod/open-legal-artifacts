@@ -119,7 +119,7 @@ async function pickFile(mount, file) {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, new Input section with mount + JSON box, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the new Input section");
   for (const id of ["calInput", "calRun", "calMsg"]) assert.ok(HTML.includes(`id="${id}"`), `input-section element ${id} present`);
   assert.ok(HTML.indexOf('id="docxImportMount"') < HTML.indexOf('id="calInput"'), "import control sits above the calendar JSON box");

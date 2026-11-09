@@ -118,7 +118,7 @@ function runRebuildWiring(document, setEntities) {
 /* ---------- tests ---------- */
 
 test("static: D1-pinned dynamic import, input section with mount above the entities box, no static import", () => {
-  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}");`), "the exact pinned D1 import line");
+  assert.ok(HTML.includes(`const M = await import("${SPECIFIER}").catch(() => import("/open-artifacts/_shared/docx-import.js"));`), "the exact pinned D1 import line");
   assert.ok(HTML.includes('id="docxImportMount"'), "mount element present in the page");
   const section = HTML.indexOf("Import entities");
   assert.ok(section > 0, "the new input section is present");
