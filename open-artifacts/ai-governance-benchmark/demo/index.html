@@ -398,7 +398,7 @@ run();
   const mount = $('docx-import');
   if (!mount) return;
   try {
-    const M = await import("../../_shared/docx-import.js");
+    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
     if (typeof M.wireDocxImport !== 'function') throw new Error('docx-import: wireDocxImport missing');
     const escT = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const agovFail = (msg, text) =>

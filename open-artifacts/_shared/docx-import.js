@@ -1,9 +1,11 @@
 // docx-import.js — canonical _shared DOCX import: guarded reader + mountable UI.
-// Pure ESM with ZERO imports (fleet rule) so deploy/build-site.mjs can inline
-// it into every demo page as a base64 module — a data:-URI module cannot
-// resolve relative imports of its own, so docio.js's docx READ path is vendored
-// below BYTE-VERBATIM (parity-tested in docx-import.test.js: edit docio.js,
-// then re-vendor the block; never "fix" the vendored code here).
+// Pure ESM with ZERO imports (fleet rule) so it stays a valid standalone module.
+// Served same-origin at /open-artifacts/_shared/docx-import.js (val + gh-pages
+// mirror + repo static servers); demo pages load it via DYNAMIC import with a
+// fallback chain — see deploy/build-site.mjs and the plan's Addendum 2 (D1).
+// docio.js's docx READ path is vendored below BYTE-VERBATIM (parity-tested in
+// docx-import.test.js: edit docio.js, then re-vendor the block; never "fix"
+// the vendored code here).
 // API:
 //   await readDocxText(buf, opts?) -> { text, paragraphs, error: null }
 //                                   | { error, code } — codes:
