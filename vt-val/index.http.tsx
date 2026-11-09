@@ -4,18 +4,20 @@
 //   /a/<artifact>                          → one self-contained page per artifact
 //   /course/*                              → prompting-for-attorneys static course files
 //   /open-artifacts/<n>/demo/index.html    → gh-pages-compatible alias
-//   POST /api/ask-legal|/api/triage|/api/prop-support → live-AI routes (see api/)
+//   POST /api/ask-legal|/api/triage|/api/prop-support|/api/extract → live-AI routes (see api/)
 import { readFile } from "https://esm.town/v/std/utils/index.ts";
 import { notFoundHtml } from "./notfound.ts";
 import { handleAskLegal } from "./api/ask-legal.ts";
 import { handleTriage } from "./api/triage.ts";
 import { handlePropSupport } from "./api/prop-support.ts";
+import { handleExtract } from "./api/extract.ts";
 
 /** Live-AI POST routes — shared 10 req/min/IP budget, strict validation, safe errors. */
 const API_ROUTES: Record<string, (req: Request) => Promise<Response>> = {
   "/api/ask-legal": handleAskLegal,
   "/api/triage": handleTriage,
   "/api/prop-support": handlePropSupport,
+  "/api/extract": handleExtract,
 };
 
 /** HTML 404 — the on-brand not-found page with proper content-type. */
@@ -128,6 +130,21 @@ export default async function (req: Request): Promise<Response> {
       const body = await readFile(`/course/${target}`, import.meta.url);
       return new Response(body, {
         headers: { "content-type": COURSE_TYPES[ext] ?? "application/octet-stream" },
+      });
+    } catch {
+      return html404(p);
+    }
+  }
+
+  // shared browser modules (DOCX import helper etc.) — same-origin so demo
+  // pages can dynamic-import them without inflating each page past the VT cap.
+  if (p.startsWith("/open-artifacts/_shared/")) {
+    const rel = p.slice("/open-artifacts/_shared/".length).replace(/\.\./g, "");
+    const ext = rel.split(".").pop() ?? "";
+    try {
+      const body = await readFile(`/site/open-artifacts/_shared/${rel}`, import.meta.url);
+      return new Response(body, {
+        headers: { "content-type": ext === "js" ? "text/javascript; charset=utf-8" : "application/octet-stream" },
       });
     } catch {
       return html404(p);

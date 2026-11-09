@@ -2,7 +2,9 @@
 import React, { useState } from "https://esm.sh/react@18.2.0?deps=react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?deps=react@18.2.0,react-dom@18.2.0";
 import { applyElicitAnswers } from "../shared/catalog.ts";
-import { type Redaction, redactSensitive, restoreRuleFields } from "../shared/redact.ts";
+import { prepareElicitation } from "../shared/elicit_redaction.ts";
+import { type Redaction, redactSensitive } from "../shared/redact.ts";
+import { restoreExtractResponse } from "../shared/extract_redaction.ts";
 import {
   buildRecord,
   callElicitBrief,
@@ -16,6 +18,7 @@ import {
 import { Card, ErrorBox, GhostButton, PrimaryButton, Shell } from "./ui.tsx";
 import { DocumentStep, ElicitStep, IntentStep, ProcessingStep } from "./steps_intake.tsx";
 import { ConfirmStep, ReviewStep, SavedStep } from "./steps_review.tsx";
+import { DEMO_FAMILY_ID } from "../shared/demo_playbook.ts";
 import { LibraryScreen } from "./library.tsx";
 import { CounterReviewScreen } from "./counter.tsx";
 import type {
@@ -56,6 +59,8 @@ function App() {
   const [session, setSession] = useState<ClientSession>(() => loadSession());
   // "My playbooks" library is a self-contained overlay, not a persisted stage.
   const [libraryOpen, setLibraryOpen] = useState(false);
+  // Access token stays only in component memory; it is never persisted with drafts.
+  const [libraryToken, setLibraryToken] = useState("");
   // Counterparty-review overlay: a saved playbook whose rules we check a draft
   // against. Held transiently (not persisted) — it is a review tool, not a draft.
   const [counterRecord, setCounterRecord] = useState<PlaybookRecord | null>(null);
@@ -90,7 +95,8 @@ function App() {
   // Duplicate a saved playbook into a fresh, editable session (review stage),
   // threading family_id so a later Save continues that lineage as a new version.
   function onDuplicate(record: PlaybookRecord, familyId: string, version: number) {
-    const next = sessionFromRecord(record, familyId, version);
+    const lineage = familyId === DEMO_FAMILY_ID ? null : familyId;
+    const next = sessionFromRecord(record, lineage, lineage ? version : null);
     setSession(next);
     persist(next);
     setLibraryOpen(false);
@@ -115,7 +121,8 @@ function App() {
       elicit_answers: {},
     });
     try {
-      const elicitation = await callElicitBrief(brief, text);
+      const prepared = prepareElicitation(text, redact ?? session.redact_before_send, collectParties(session));
+      const elicitation = prepared.restore(await callElicitBrief(brief, prepared.text));
       const answers: Record<string, string> = {};
       for (const f of elicitation.fields) {
         answers[f.id] = f.recommended || "";
@@ -155,10 +162,8 @@ function App() {
         text = out.redacted;
         redactions = out.redactions;
       }
-      const res = await callExtract(brief, text, filename);
-      const rules = redactions.length
-        ? res.rules.map((r) => restoreRuleFields(r, redactions))
-        : res.rules;
+      const res = restoreExtractResponse(await callExtract(brief, text, filename), redactions);
+      const rules = res.rules;
       const selections: Record<string, RuleSelection> = {};
       for (const r of rules) selections[r.id] = "selected";
       update({
@@ -209,6 +214,8 @@ function App() {
   if (libraryOpen) {
     return (
       <LibraryScreen
+        token={libraryToken}
+        onTokenChange={setLibraryToken}
         onClose={() => setLibraryOpen(false)}
         onDuplicate={onDuplicate}
         onReviewCounter={(record) => setCounterRecord(record)}

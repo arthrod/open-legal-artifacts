@@ -5,7 +5,7 @@
 //   vt-val/site/index.html      <- app/dist (landing catalog), fully inlined
 //   vt-val/site/<artifact>.html <- open-artifacts/<a>/demo/index.html, inlined
 
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -153,3 +153,16 @@ for (const OA of demoRoots) {
   }
 }
 console.log(`site: ${n} artifact pages${oversized ? ` (${oversized} oversized)` : ""}`);
+
+// 3) shared browser modules — served same-origin at /open-artifacts/_shared/*
+// (demo pages load them via dynamic import; keeps pages under the VT 80KB cap).
+const SHARED_DIR = join(ROOT, "open-artifacts", "_shared");
+const SITE_SHARED = join(SITE, "open-artifacts", "_shared");
+if (existsSync(SHARED_DIR)) {
+  mkdirSync(SITE_SHARED, { recursive: true });
+  for (const f of readdirSync(SHARED_DIR)) {
+    if (!f.endsWith(".js") || f.endsWith(".test.js")) continue; // runtime modules only; tests stay repo-side
+    copyFileSync(join(SHARED_DIR, f), join(SITE_SHARED, f));
+    console.log(`shared: open-artifacts/_shared/${f} (${(statSync(join(SITE_SHARED, f)).size / 1024).toFixed(1)} KB)`);
+  }
+}

@@ -22,7 +22,7 @@ function IntentStep({
   const [intent, setIntent] = useState(brief.intent);
   const [focus, setFocus] = useState(brief.focus);
 
-  // Public demo (no ADMIN_TOKEN on the server): say plainly that nothing is stored.
+  // Public demo (no ADMIN_TOKEN): the full library is closed. Saves still go to SQLite.
   const [demo, setDemo] = useState(false);
   useEffect(() => {
     fetch("/api/mode")
@@ -36,7 +36,9 @@ function IntentStep({
       {demo && (
         <p className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
           Public demo. Do not enter real names or confidential facts. What you type is sent to
-          OpenAI through Val Town to generate suggestions. Nothing is stored on this server.
+          OpenAI through Val Town to generate suggestions. A confirmed playbook is stored in
+          this val’s SQLite database. The library opens a sample playbook and does not list
+          other records.
         </p>
       )}
       <div className="flex items-start justify-between gap-3 mb-1">
@@ -65,8 +67,9 @@ function IntentStep({
               key={o.id}
               type="button"
               onClick={() => setIntent(o.id)}
+              aria-pressed={active}
               className={
-                "w-full text-left rounded-lg border px-4 py-3 transition " +
+                "intent-choice w-full text-left rounded-lg border px-4 py-3 transition " +
                 (active
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white hover:border-slate-400")
@@ -95,7 +98,7 @@ function IntentStep({
                 : "e.g. Vendor sent their MSA and I don't know where to start"
             }
             value={focus}
-            onChange={(e: any) => setFocus(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFocus(e.target.value)}
           />
         </div>
       )}
@@ -271,7 +274,7 @@ function ElicitStep({
                       : "Or write your own"
                   }
                   value={customVal}
-                  onChange={(e: any) => {
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
                     const v = e.target.value;
                     setCustom((prev) => ({ ...prev, [f.id]: v }));
                     if (v.trim()) {
@@ -295,7 +298,7 @@ function ElicitStep({
                       : "Or write your own"
                   }
                   value={customVal}
-                  onChange={(e: any) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const v = e.target.value;
                     setCustom((prev) => ({ ...prev, [f.id]: v }));
                     if (v.trim()) {
@@ -353,7 +356,7 @@ function ElicitStep({
             className="w-full border-2 border-dashed border-slate-300 focus:border-indigo-500 rounded px-3 py-2 text-sm bg-slate-50"
             placeholder="Or type a jurisdiction (e.g. Singapore, Ontario, Germany)"
             value={govLawCustom}
-            onChange={(e: any) => {
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               const v = e.target.value;
               setGovLawCustom(v);
               // Mirror the elicited-field custom fix: clearing the custom text
@@ -542,7 +545,7 @@ function DocumentStep({
         className="w-full border border-slate-300 rounded px-3 py-2 text-sm mb-4"
         placeholder="e.g. Term loan positions v1 · NDA review guide"
         value={name}
-        onChange={(e: any) => setName(e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
       />
 
       <div
@@ -550,12 +553,12 @@ function DocumentStep({
           "border-2 border-dashed rounded-lg px-4 py-6 text-center mb-4 transition " +
           (dragging ? "border-slate-900 bg-slate-50" : "border-slate-300 bg-slate-50/50")
         }
-        onDragOver={(e: any) => {
+        onDragOver={(e: React.DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e: any) => {
+        onDrop={(e: React.DragEvent<HTMLDivElement>) => {
           e.preventDefault();
           setDragging(false);
           const f = e.dataTransfer?.files?.[0];
@@ -606,7 +609,7 @@ function DocumentStep({
           type="file"
           accept=".docx,.pdf,.txt,.md,.rtf,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
           className="hidden"
-          onChange={(e: any) => {
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
             const f = e.target.files?.[0];
             if (f) void readFile(f);
           }}
@@ -624,7 +627,7 @@ function DocumentStep({
         value={text}
         // Clamp typed/pasted text to the same ceiling the file-attach path
         // enforces, so a huge paste can't slip past MAX_UPLOAD_CHARS.
-        onChange={(e: any) => setText(e.target.value.slice(0, MAX_UPLOAD_CHARS))}
+        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value.slice(0, MAX_UPLOAD_CHARS))}
       />
       <div className="mt-1 text-xs text-slate-400">
         {text.length.toLocaleString()} characters
@@ -636,7 +639,7 @@ function DocumentStep({
           type="checkbox"
           data-testid="redact-toggle"
           checked={redact}
-          onChange={(e: any) => setRedact(e.target.checked)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRedact(e.target.checked)}
           aria-label="Redact party names and sensitive details before sending to AI"
           className="mt-0.5 h-4 w-4 accent-slate-900"
         />

@@ -28,7 +28,7 @@ cd <directory> && vt push        # vt status first shows what uploads
 
 ```sh
 # contracts-playbook (no GitHub mirror; remix straight from the val)
-vt remix arthrod/playbook-from-doc <your-val-name> <directory>
+vt remix arthrod/playbook-generator-jandira <your-val-name> <directory>
 cd <directory> && vt push
 ```
 

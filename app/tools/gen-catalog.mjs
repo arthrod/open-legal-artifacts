@@ -53,7 +53,7 @@ const ORIGINALS = [
     links: [
       { label: "Interactive demo", url: "open-artifacts/contracts-playbook/demo/index.html" },
       { label: "Live app", url: "https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/" },
-      { label: "Val Town source", url: "https://www.val.town/x/arthrod/playbook-from-doc" },
+      { label: "Val Town source", url: "https://www.val.town/x/arthrod/playbook-generator-jandira" },
     ],
   },
   {

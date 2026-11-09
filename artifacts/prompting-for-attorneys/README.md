@@ -57,3 +57,15 @@ optionally `aside`). In `strong`, wrap highlighted text as `[[text|n]]`, where
 - Fonts are the Latin subsets from `@fontsource-variable` 5.3.0 (Libre Franklin,
   Roboto Mono), not the byte-identical files from the design system. Same
   families, same variable weight axes.
+
+## Why there is no DOCX import
+
+The other artifacts in this collection accept document imports because they
+are document processors — text goes in, a verified legal work product comes
+out. This artifact is a **course**, not a data tool: its input is a person
+learning to prompt, and its output is skill. There is no pipeline stage a
+.docx could feed, and bolting a file input onto it would be import theater —
+exactly the dummy pattern this collection refuses. Learners who want to
+practice on their own documents can paste excerpts into the try-it boxes,
+where the ten lessons already use real contract and filing language as
+worked material.

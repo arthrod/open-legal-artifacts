@@ -5,7 +5,7 @@ agreement into an ACC-style **contracts playbook draft**:
 preferred positions, ordered fallbacks, and deal-breakers — then **confirm**
 before save.
 
-[Open the live demo](https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/)
+[Open the live demo](https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/) · [Val Town project](https://www.val.town/x/arthrod/playbook-generator-jandira)
 
 Inspired by:
 
@@ -42,8 +42,10 @@ flowchart LR
 ```
 
 1. **Intent** — full / format / single clause / counter paper / unsure (gates later fields)  
-2. **Document** — name + paste text, or upload `.docx` / `.pdf` / `.txt` / `.md`
-   (parsed **in your browser** — files are never uploaded server-side)  
+2. **Document** — name + paste text, or upload a file. `.docx` and text-based `.pdf` are
+   parsed **in your browser** (the file binary never leaves it); `.txt`, `.md`, `.markdown`,
+   `.rtf`, and `.csv` are read as text. Scanned or protected PDFs may require pasting text
+   instead. File limit is 15 MB.  
 3. **AI elicit** — model proposes `our_side` (free-form + chips), audience,
    contract type, focus/granularity **only when intent needs them**  
 4. **Extract** — `gpt-5-nano` → ACC-style rules  
@@ -60,37 +62,57 @@ Topic | Preferred | Alternates (ordered) | Avoid | Risk (RYG) | Escalate | Sampl
 
 Plus `raise_mode` (proactive vs reactive), `source_quote`, `rationale`, `confidence`.
 
+## Data and demo mode
+
+Confirmed playbooks are stored in the val-scoped SQLite database (`playbooks_v2`), including on the public demo. The browser also keeps the in-progress draft in `localStorage`. Model requests send text to Val Town's OpenAI integration. Clear browser site data to remove the local draft; that does not delete the SQLite row.
+
+`GET /api/demo-playbook` returns one fictional sample, inserted once under the family id `demo-sample-nda`. The public library opens that sample and does not list other rows. A duplicate of the sample starts a new family, so a visitor cannot append a version onto the sample.
+
+With `ADMIN_TOKEN` unset, every other stored-record GET returns 503. Setting a strong `ADMIN_TOKEN` opens the full library. Those routes require `Authorization: Bearer <ADMIN_TOKEN>` and fail closed when the bearer does not match. The browser library asks for the token, keeps it only in page memory, and lets you forget it; reloading clears it. Submissions themselves are not authenticated. Do not treat this demo as a multi-user private document service.
+
+File binaries are parsed in the browser, but extracted text is sent to the server for AI processing. The optional redaction masks recognized patterns in document text before elicitation and extraction, restores matched placeholders for display, and is best effort: it can miss sensitive data. Brief fields and other inputs are separate from the redacted document. Counterparty review and help are separate model calls. Avoid using confidential documents unless your deployment and data handling are appropriate for them.
+
+Model input is truncated (about 14,000 characters); stored source excerpts are limited to 8,000 characters unless discarded. This can omit relevant clauses. Model traffic is rate-limited in memory per isolate, so limits are approximate across multiple isolates. Val Town model quota is shared with other vals on the account.
+
 ## Files
 
 | Path | Role |
 |---|---|
-| `backend/index.http.tsx` | Hono: static + `/api/elicit-brief` + `/api/extract` + `/api/review-counter` + `/api/submit` + `/api/help` + `/api/playbooks*` |
+| `backend/index.http.tsx` | Hono: static + `/api/elicit-brief` + `/api/extract` + `/api/review-counter` + `/api/submit` + `/api/help` + `/api/mode` + `/api/demo-playbook` + `/api/playbooks*` |
 | `backend/llm.ts` | `std/openai` (`gpt-5-nano`): elicit + extract + review-counter + help |
 | `backend/db.ts` | Val-scoped SQLite `playbooks_v2` (family lineage + versions) |
+| `backend/seed.ts` | Inserts the public sample playbook once (`/api/demo-playbook`) |
 | `shared/types.ts` | Shared types (browser + Deno) |
 | `shared/catalog.ts` | Intent catalogs, `EXTRACT_SCHEMA`, prompts, repair |
+| `shared/demo_playbook.ts` | The fictional sample record + the demo-lineage guard |
+| `shared/elicit_redaction.ts` | Masks sensitive spans before elicitation; restores the model’s answers |
+| `shared/extract_redaction.ts` | Restores placeholders in extract responses; flags leftover markers |
 | `frontend/index.tsx` | Multi-step UI |
-| `frontend/index.html` | Twind + catch |
+| `frontend/index.html` | Shell + fonts + `design.css` |
+| `frontend/design.css`, `DESIGN.md` | Design tokens (paper / ink / highlighter) |
 
 ## API
 
 | Method | Path | Body / params |
 |---|---|---|
+| `GET` | `/api/mode` | `{ demo: boolean }` — whether the full library is closed (no `ADMIN_TOKEN`) |
+| `GET` | `/api/demo-playbook` | the public sample playbook (no auth) |
 | `POST` | `/api/elicit-brief` | `{ brief, document_text }` → AI proposes context fields (our_side, audience, …) with alternatives before extract |
 | `POST` | `/api/extract` | `{ brief, document_text, source_filename? }` |
 | `POST` | `/api/review-counter` | `{ rules, counterparty_text, party_vocabulary? }` → clause-by-clause redline of the other side's draft against a playbook (no DB write) |
 | `POST` | `/api/submit` | `{ playbook: PlaybookRecord, family_id? }` |
 | `POST` | `/api/help` | `{ brief?, question }` |
-| `GET` | `/api/playbooks` | list (latest per family); `?vault=exclude` hides private-vault ones |
-| `GET` | `/api/playbooks/family/:familyId` | version history for a family, newest first, with a clause-level diff against the prior version |
-| `GET` | `/api/playbooks/:id` | full payload |
+| `GET` | `/api/playbooks` | list (latest per family); `?vault=exclude` hides private-vault ones; needs the admin token |
+| `GET` | `/api/playbooks/family/:familyId` | version history for a family, newest first, with a clause-level diff against the prior version; needs the admin token |
+| `GET` | `/api/playbooks/:id` | full payload; needs the admin token |
 
 ## Run locally
 
-Requirements: Deno 2.
+Requirements: Deno 2 (Node 24 also runs the suite).
 
 ```sh
 deno task test   # test task (env stubbed for offline mode)
+node --test      # the same suite under Node
 ```
 
 The backend entry point is `backend/index.http.tsx` (Hono). A standalone local
@@ -109,30 +131,53 @@ and counterparty-review flows.
 ## Deploy
 
 ```sh
-cd playbook-from-doc
-vt create playbook-from-doc   # once
-vt push                       # or: vt watch
+cd artifacts/contracts-playbook
+vt create my-playbook   # once — creates local .vt state (git-ignored)
+vt push                 # or: vt watch
 ```
+
+This tree tracks the deployed val
+[arthrod/playbook-generator-jandira](https://www.val.town/x/arthrod/playbook-generator-jandira).
+To take an independent copy instead, `vt remix` that val into your own
+directory, copy this source into the checkout, and push from there.
+
+**Check `vt status` before pushing**: `.vt/state.json` identifies the target
+val and is excluded from Git (see `.gitignore`). Do not push a source clone
+without first changing the target; doing so would update the original.
+Configure `ADMIN_TOKEN` in the new val's environment only if you want the full
+library to be readable; never commit it. Confirmed playbooks are stored either
+way. Each val has its own database, so cloning code does not copy saved
+playbooks. The sample row is created on the first request to
+`/api/demo-playbook`.
 
 Uses free Val Town OpenAI — **no API key**. Model: `gpt-5-nano`.
 
 ## Live
 
 - demo:     <https://arthrod--cdf728ae-d937-11f1-a239-1607ee4eb77e.web.val.run/>
-- code:     <https://www.val.town/x/arthrod/playbook-from-doc/code/>
-- endpoint (unlisted): <https://arthrod--7569f630800e11f1ad4a1607ee4eb77e.web.val.run/>
+- code:     <https://www.val.town/x/arthrod/playbook-generator-jandira>
 
 ## Local notes
 
-- Session drafts live in `localStorage` (`playbook-from-doc.session.v1`).
+- Session drafts live in `localStorage` (`playbook-from-doc.session.v3`).
 - Long documents are truncated (~14k chars) before the model call.
-- Reading stored playbooks (`GET /api/playbooks`, `/api/playbooks/:id`, `/api/playbooks/family/:familyId`) needs `Authorization: Bearer $ADMIN_TOKEN`. With `ADMIN_TOKEN` unset those routes answer 503 (fails closed); see `backend/auth.ts`.
-- `.docx` and `.pdf` are parsed client-side (mammoth / pdfjs, dynamically imported); the file never leaves the browser. Pasting text always works as the fallback.
+- Reading stored playbooks (`GET /api/playbooks`, `/api/playbooks/:id`, `/api/playbooks/family/:familyId`) requires the admin bearer token — with `ADMIN_TOKEN` unset those routes answer 503 (fails closed); see `backend/auth.ts`.
+- `.docx` and `.pdf` are parsed client-side (mammoth / pdfjs, dynamically imported); the file binary never leaves the browser. Pasting text always works as the fallback.
 
 ## Lineage
 
 `elicitation` (an MCP `elicitation/create` form lab, March 2026; no model, no storage) →
 `legal-intake` (first model-backed intake, for in-house requests; retired) →
-`playbook-from-doc` (the engine with tests, redaction and versioning) →
-`client-intake` (the same engine, for law-firm intake). Stored records on all three model-backed
-vals are readable only with `ADMIN_TOKEN` (`backend/auth.ts`).
+`playbook-from-doc` ([the engine with tests, redaction and versioning](https://www.val.town/x/arthrod/playbook-from-doc)) →
+`playbook-generator-jandira` (this deployed demo) →
+`client-intake` (the same engine, for law-firm intake). Stored records on every
+model-backed val are readable only with `ADMIN_TOKEN` (`backend/auth.ts`).
+
+## Design reference
+
+The interface adapts the Arthur Souza Rodrigues design archive's Contracts
+Playbook demo: paper, ink, square panels and a yellow highlighter. See
+[DESIGN.md](DESIGN.md) for the tokens and `frontend/design.css` for the
+implementation. The archive's example is a scripted mock; this app connects the
+controls to the real elicitation, extraction, review and save workflow. Fonts
+load from Google Fonts, with system fallbacks.

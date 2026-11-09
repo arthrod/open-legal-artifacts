@@ -19,6 +19,7 @@ in this core, ever.
 | `processFeed(entries, watchers, seenStore?, options?)` | `{wall, escalatedNew, deadlinesNew, nextSeenStore, stats}` — `options`: `{escalationRules?, asOf?, horizonDays?}` |
 | `stampSeenStore(store, isoTs)` | Caller clocks the snapshot (keeps core deterministic) |
 | `fromRecapPayload(recap)` | Pure RECAP → internal-entry normalizer (future hook seam) |
+| `normalizeParties(parties)` | Party-shape normalizer used by `fromRecapPayload`: accepts a `;`/`,` delimited string, an array of `string\|{name}`, or anything else (→ `[]`); always returns `string[]` |
 | `toMarkdown(result)` | Wall rendering for email/commit digest — renders *stored* escalations, no re-derivation |
 | `DEADLINE_RULES` + `extractDeadlines(entry, {asOf}?)` | Candidate deadlines from entry text: `{date, label, basis, confidence, needsVerification}` |
 | `pruneSeenStore(store, {keep, maxIds})` | Cap the seen-store; `keep` (current feed ids) always survive |

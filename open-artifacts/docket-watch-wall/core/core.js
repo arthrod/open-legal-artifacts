@@ -169,6 +169,27 @@ export function extractDeadlines(entry, { asOf } = {}) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Normalize a `parties` value from a CourtListener RECAP payload into
+ * `string[]`. The API returns different shapes across endpoints: a
+ * `;`/`,`-separated string (split, trim, drop empties), an array of party
+ * names or `{name}` records, or nothing at all → []. Fail-closed: any other
+ * shape normalizes to [] instead of throwing.
+ * @param {string|Array<string|{name: string}>|undefined} parties
+ * @returns {string[]}
+ */
+export function normalizeParties(parties) {
+  if (typeof parties === 'string') {
+    return parties.split(/[;,]/).map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+  if (Array.isArray(parties)) {
+    return parties
+      .map((p) => (typeof p === 'string' ? p : p && p.name))
+      .filter((name) => typeof name === 'string' && name.length > 0);
+  }
+  return [];
+}
+
+/**
  * Normalize a CourtListener RECAP docket-entry payload (as documented at
  * https://www.courtlistener.com/api/rest/v3/) into the internal entry shape.
  * Pure mapping only — fetching from the API is intentionally NOT implemented
@@ -188,7 +209,7 @@ export function fromRecapPayload(recap) {
     case: {
       name: d.case_name || '',
       judge: (d.assigned_to && (d.assigned_to.name_override || d.assigned_to.name)) || null,
-      parties: (recap.parties || d.parties || []).map((p) => (typeof p === 'string' ? p : p.name)),
+      parties: normalizeParties(recap.parties || d.parties),
       practiceArea: null, // RECAP has no practice-area field; watchers supply their own taxonomy
       court: d.court && (d.court.short_name || d.court.name) || recap.court || '',
     },

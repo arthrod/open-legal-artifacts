@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_ESCALATION_RULES, DEADLINE_RULES, fromRecapPayload, escalate,
   processFeed, stampSeenStore, toMarkdown, extractDeadlines, lintRule,
-  pruneSeenStore, toDeadlineFeed, SafeRuleError,
+  pruneSeenStore, toDeadlineFeed, SafeRuleError, normalizeParties,
 } from './core.js';
 
 const entry = (over = {}) => ({
@@ -99,6 +99,46 @@ test('fromRecapPayload normalizes a RECAP-shaped payload without network', () =>
   assert.deepEqual(e.case.parties, ['Orr', 'Talos Systems']);
   assert.equal(e.case.practiceArea, null);
   assert.equal(escalate(e)[0].ruleId, 'injunction');
+});
+
+test('fromRecapPayload: string parties (RECAP feed shape) normalize instead of crashing', () => {
+  // regression — coordinator repro: a CourtListener payload whose `parties` is
+  // a ';'-separated string used to throw
+  // "TypeError: (recap.parties || d.parties || []).map is not a function"
+  const e = fromRecapPayload({
+    case_name: 'X',
+    parties: 'Test Plaintiff; Test Defendant',
+    docket_entries: [],
+    id: 8842,
+    date_filed: '2026-04-01',
+    description: 'Complaint filed',
+    docket: { case_name: 'X', court: { short_name: 'C.D. Cal.' } },
+  });
+  assert.deepEqual(e.case.parties, ['Test Plaintiff', 'Test Defendant']);
+  // array-of-strings and absent-parties shapes keep working end-to-end
+  const arr = fromRecapPayload({ id: 8843, date_filed: '2026-04-01', description: 'x', parties: ['Plaintiff A', 'Defendant B'] });
+  assert.deepEqual(arr.case.parties, ['Plaintiff A', 'Defendant B']);
+  assert.deepEqual(fromRecapPayload({ id: 8844, date_filed: '2026-04-01', description: 'x' }).case.parties, []);
+  // d.parties fallback (recap.parties absent) still maps {name} objects
+  const viaDocket = fromRecapPayload({
+    id: 8845, date_filed: '2026-04-01', description: 'Answer filed',
+    docket: { case_name: 'Y', parties: [{ name: 'Plain' }, { name: 'Def' }] },
+  });
+  assert.deepEqual(viaDocket.case.parties, ['Plain', 'Def']);
+});
+
+test('normalizeParties: string split on ; and , (trim, drop empties); arrays; undefined', () => {
+  // string — split on both ';' and ',', trim each segment, drop empties
+  assert.deepEqual(normalizeParties('Test Plaintiff; Test Defendant'), ['Test Plaintiff', 'Test Defendant']);
+  assert.deepEqual(normalizeParties(' Alpha , Beta; , ;Gamma ,, '), ['Alpha', 'Beta', 'Gamma']);
+  assert.deepEqual(normalizeParties(';;;,'), []);
+  assert.deepEqual(normalizeParties('Solo Party'), ['Solo Party']);
+  // array of strings / array of {name} objects (RECAP party records)
+  assert.deepEqual(normalizeParties(['Plaintiff A', 'Defendant B']), ['Plaintiff A', 'Defendant B']);
+  assert.deepEqual(normalizeParties([{ name: 'Orr' }, { name: 'Talos Systems' }]), ['Orr', 'Talos Systems']);
+  // undefined / empty → [], never a throw (fail-closed on unknown shapes)
+  assert.deepEqual(normalizeParties(undefined), []);
+  assert.deepEqual(normalizeParties([]), []);
 });
 
 test('determinism: identical inputs → identical result JSON', () => {
