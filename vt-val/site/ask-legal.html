@@ -6,19 +6,40 @@
 <title>ask legal — open artifact</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23ffd400'/%3E%3C/svg%3E" />
 <style>
+/* =========================================================================
+   Arthur Rodrigues — Personal Site Design Tokens
+   Refined minimal · editorial-technical · signage-adjacent
+   ========================================================================= */
+
+/* ---------- Webfonts ---------- */
+/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+
+
+/* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
+
+
 :root {
-  --bg: #fafaf8; 
-  --text: #0a0a0a; 
-  --text-secondary: #6b6b6b; 
-  --accent: #ffd400; 
-  --border: #e8e8e5; 
-  --hover: #f0f0ee; 
+  /* ----- Color tokens (the only colors permitted on the site) ----- */
+  --bg: #fafaf8; /* near-white, warmth-shifted */
+  --text: #0a0a0a; /* near-black, warmth-shifted */
+  --text-secondary: #6b6b6b; /* neutral mid-grey */
+  --accent: #ffd400; /* highlighter yellow — structural, never textual */
+  --border: #e8e8e5; /* hairline */
+  --hover: #f0f0ee; /* tile hover state */
+
+  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
   --ok: #1b6b2f;
   --warn: #8a6d00;
   --bad: #b3261e;
   --flag-tint: #f2e9d0;
+
+  /* ----- Focus ----- */
+
+  /* ----- Type stacks ----- */
   --font-body: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
+
+  /* ----- Layout constants ----- */
   --max-width: 1100px;
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
@@ -28,14 +49,20 @@
   --hero-pad-mobile: 64px;
   --hero-max-width: 780px;
   --bp-mobile: 768px;
+
+  /* ----- Borders & rules ----- */
   --hairline: 1px solid var(--border);
   --rule-yellow-h: 2px;
   --rule-yellow-w: 56px;
   --tile-stripe: 4px;
-  --radius: 0; 
+  --radius: 0; /* never go above 0 */
+
+  /* ----- Motion ----- */
   --t-fast: 0.15s ease;
   --t-base: 0.2s ease;
 }
+
+/* ---------- Base resets ---------- */
 *,
 *::before,
 *::after {
@@ -43,7 +70,8 @@
   margin: 0;
   padding: 0;
 }
-  html,
+
+html,
 body {
   background: var(--bg);
   color: var(--text);
@@ -55,20 +83,30 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
-  ::selection {
+
+::selection {
   background: var(--accent);
   color: var(--text);
 }
-  a {
+
+a {
   color: inherit;
   text-decoration: none;
 }
+
+/* =========================================================================
+   Semantic type classes — apply directly OR copy properties into elements
+   ========================================================================= */
+
+/* Wordmark (mono, dot in secondary grey) */
 .t-wordmark {
   font-family: var(--font-mono);
   font-size: 15px;
   letter-spacing: 0.04em;
   line-height: 1;
 }
+
+/* Nav link */
 .t-nav {
   font-family: var(--font-body);
   font-size: 13px;
@@ -76,6 +114,8 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+/* Hero positioning paragraph */
 .t-positioning {
   font-family: var(--font-body);
   font-size: 30px;
@@ -83,6 +123,8 @@ body {
   letter-spacing: -0.018em;
   line-height: 1.35;
 }
+
+/* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -90,7 +132,8 @@ body {
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-  .t-eyebrow::before {
+
+.t-eyebrow::before {
   content: "";
   display: inline-block;
   width: 24px;
@@ -99,14 +142,19 @@ body {
   vertical-align: middle;
   margin-right: 12px;
 }
+
+/* ----- Focus (top-level) ----- */
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* ----- Mobile (390px) ----- */
 img, svg, video, canvas { max-width: 100%; }
 textarea { max-width: 100%; }
 @media (max-width: 480px) {
   table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
-  </style>
+
+</style>
 <style>
   .wrap { max-width: var(--max-width); margin: 0 auto; padding: 40px var(--pad-x-mobile) 96px; }
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 20px 0 24px; }
@@ -116,18 +164,19 @@ textarea { max-width: 100%; }
   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
   h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
   h3 { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  /* desk tabs */
   .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
   .tabs button[role="tab"] { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em; padding: 8px 14px;
-  border: var(--hairline); background: #fff; color: var(--text); cursor: pointer; }
+    border: var(--hairline); background: #fff; color: var(--text); cursor: pointer; }
   .tabs button[role="tab"][aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
   .ask { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field label { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
   input[type="text"], select, textarea { font-family: var(--font-mono); font-size: 13px; padding: 10px;
-  border: var(--hairline); background: #fff; color: var(--text); }
+    border: var(--hairline); background: #fff; color: var(--text); }
   #q { min-width: 260px; flex: 1; }
   button { font-family: var(--font-mono); font-size: 12.5px; padding: 9px 16px; border: 1px solid var(--text);
-  background: var(--text); color: var(--bg); cursor: pointer; }
+    background: var(--text); color: var(--bg); cursor: pointer; }
   button:hover { background: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); border: var(--hairline); }
   button.chip { font-size: 12px; padding: 6px 10px; border: var(--hairline); background: #fff; color: var(--text); }
@@ -135,7 +184,7 @@ textarea { max-width: 100%; }
   .card { border: var(--hairline); background: #fff; padding: 16px; margin-top: 14px; position: relative; }
   .card .q { font-weight: 600; margin-bottom: 8px; padding-right: 92px; }
   .lvl { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 12px;
-  text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--text); }
+    text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--text); }
   .lvl-high { background: var(--flag-tint); color: var(--warn); border-color: var(--warn); }
   .lvl-medium { background: #fff; }
   .lvl-low { background: var(--text); color: var(--bg); }
@@ -146,18 +195,20 @@ textarea { max-width: 100%; }
   .reasons li::before { content: "· "; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: var(--hairline); }
   th[scope="col"] { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; text-align: left;
-  border-bottom: 2px solid var(--text); padding: 6px 8px; }
+    border-bottom: 2px solid var(--text); padding: 6px 8px; }
   td { border-bottom: var(--hairline); padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; vertical-align: top; }
   tr:hover td { background: var(--hover); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   button.kbcite { border: none; background: none; color: var(--text); font-family: var(--font-mono); font-size: 12px;
-  text-decoration: underline; padding: 0 2px; cursor: pointer; }
+    text-decoration: underline; padding: 0 2px; cursor: pointer; }
   button.kbcite:hover { background: var(--accent); }
+  /* counts strip */
   .counts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
   .counts span { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: #fff; padding: 6px 10px; }
   .counts b { font-weight: 400; }
   .counts .bad { border-color: var(--bad); color: var(--bad); }
   .counts .warn { border-color: var(--warn); color: var(--warn); }
+  /* register rows */
   .reg { border: var(--hairline); background: #fff; padding: 12px 14px; margin-top: 8px; }
   .reg .rh { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-family: var(--font-mono); font-size: 12px; }
   .reg .rh .idr { font-weight: 700; }
@@ -167,528 +218,600 @@ textarea { max-width: 100%; }
   .reg .ra { font-size: 13px; color: var(--text); }
   .reg .rmeta { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
   .flash { outline: 3px solid var(--accent); outline-offset: 2px; }
+  /* approvals + queue actions */
   .rowbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .sla { font-family: var(--font-mono); font-size: 12px; padding: 1px 7px; border: 1px solid var(--text); }
   .sla.overdue { background: var(--text); color: var(--bg); }
   .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+  /* drawer */
   #scrim { position: fixed; inset: 0; background: rgba(10,10,10,0.35); z-index: 40; }
   #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 94vw); background: var(--bg);
-  border-left: 2px solid var(--text); z-index: 50; padding: 20px; overflow-y: auto; }
+    border-left: 2px solid var(--text); z-index: 50; padding: 20px; overflow-y: auto; }
   #drawer .d-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   #drawer pre { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 10px;
-  overflow-x: auto; white-space: pre-wrap; word-break: break-word; border: var(--hairline); }
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word; border: var(--hairline); }
   #drawer dl { font-size: 13px; } #drawer dt { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
   #drawer dd { margin: 2px 0 0; }
+  /* toasts */
   #toasts { position: fixed; left: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; }
   #toasts div { font-family: var(--font-mono); font-size: 12px; background: var(--text); color: var(--bg);
-  padding: 8px 12px; max-width: 76vw; }
+    padding: 8px 12px; max-width: 76vw; }
   .disclaimer { margin-top: 56px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   .note { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 8px; }
+  /* mobile: stacked table cards */
   @media (max-width: 480px) {
-  table.stackable, table.stackable tbody, table.stackable tr, table.stackable td { display: block; }
-  table.stackable thead { display: none; }
-  table.stackable tr { border: var(--hairline); background: #fff; margin: 8px 0; }
-  table.stackable td { display: flex; justify-content: space-between; gap: 12px; text-align: right; border: none; }
-  table.stackable td::before { content: attr(data-l); font-family: var(--font-mono); font-size: 12px;
-  color: var(--text-secondary); text-align: left; }
+    table.stackable, table.stackable tbody, table.stackable tr, table.stackable td { display: block; }
+    table.stackable thead { display: none; }
+    table.stackable tr { border: var(--hairline); background: #fff; margin: 8px 0; }
+    table.stackable td { display: flex; justify-content: space-between; gap: 12px; text-align: right; border: none; }
+    table.stackable td::before { content: attr(data-l); font-family: var(--font-mono); font-size: 12px;
+      color: var(--text-secondary); text-align: left; }
   }
+  .docx-chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 1px 7px; margin: 0 6px 4px 0; display: inline-block; background: #fff; }
+  .docx-chip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .docx-err { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin: 8px 0; }
+  .docx-fallback, .docx-extract-json { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); border-radius: 0; background: #fff; padding: 10px; color: var(--text); resize: vertical; }
+  .xnote { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin: 6px 0; }
 </style>
 </head>
 <body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/ask-legal" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <header>
-  <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
-  <div class="rule"></div>
-  <h1>ask legal</h1>
-  <p class="lede">Guidance Q&amp;A with teeth: every answer carries a confidence level and written reasons,
-  low confidence escalates instead of guessing, an optional LLM may only rephrase approved answers — never
-  generate legal content — and every question lands in an append-only audit log that survives reload.</p>
-  <p class="lede" style="font-size:12.5px">KB: Meridian Software Co. (fictional) · freshness window 365d ·
-  thresholds high ≥ 9, medium ≥ 5 · fixed demo clock <code>2026-11-07</code> · sample data, nothing is sent anywhere.</p>
-  <div class="tabs" role="tablist" aria-label="Desk">
-  <button role="tab" id="tabAsk" aria-selected="true" aria-controls="deskAsk">Colleague desk — ask</button>
-  <button role="tab" id="tabLegal" aria-selected="false" aria-controls="deskLegal">Legal desk — review &amp; approve</button>
-  </div>
+    <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+    <div class="rule"></div>
+    <h1>ask legal</h1>
+    <p class="lede">Guidance Q&amp;A with teeth: every answer carries a confidence level and written reasons,
+      low confidence escalates instead of guessing, an optional LLM may only rephrase approved answers — never
+      generate legal content — and every question lands in an append-only audit log that survives reload.</p>
+    <p class="lede" style="font-size:12.5px">KB: Meridian Software Co. (fictional) · freshness window 365d ·
+      thresholds high ≥ 9, medium ≥ 5 · fixed demo clock <code>2026-11-07</code> · sample data, nothing is sent anywhere.</p>
+    <div class="tabs" role="tablist" aria-label="Desk">
+      <button role="tab" id="tabAsk" aria-selected="true" aria-controls="deskAsk">Colleague desk — ask</button>
+      <button role="tab" id="tabLegal" aria-selected="false" aria-controls="deskLegal">Legal desk — review &amp; approve</button>
+    </div>
   </header>
+
   <section id="deskAsk" role="tabpanel" aria-labelledby="tabAsk">
-  <h2>Ask a question</h2>
-  <div class="ask">
-  <div class="field" style="flex:1">
-  <label for="q">Your question</label>
-  <input type="text" id="q" placeholder="e.g. Which NDA template do I use for a new analytics vendor?" />
-  </div>
-  <div class="field">
-  <label for="asker">Asking as</label>
-  <select id="asker">
-  <option>j.moreau@example.test</option>
-  <option>s.okafor@example.test</option>
-  <option>t.nguyen@example.test</option>
-  <option>demo@example.test</option>
-  </select>
-  </div>
-  <button id="askBtn">Ask</button>
-  </div>
-  <div class="examples">
-  <button class="chip" data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
-  <button class="chip" data-q="How long do we retain website visitor data?">stale guidance → provisional</button>
-  <button class="chip" data-q="What is our data-retention approach?">weak match → escalate</button>
-  <button class="chip" data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
-  </div>
-  <div id="answer" role="region" aria-live="polite" aria-label="Answer"></div>
+    <h2>Ask a question</h2>
+    <div class="ask">
+      <div class="field" style="flex:1">
+        <label for="q">Your question</label>
+        <input type="text" id="q" placeholder="e.g. Which NDA template do I use for a new analytics vendor?" />
+      </div>
+      <div class="field">
+        <label for="asker">Asking as</label>
+        <select id="asker">
+          <option>j.moreau@example.test</option>
+          <option>s.okafor@example.test</option>
+          <option>t.nguyen@example.test</option>
+          <option>demo@example.test</option>
+        </select>
+      </div>
+      <button id="askBtn">Ask</button>
+    </div>
+    <div class="examples">
+      <button class="chip" data-q="Which NDA template do I use for a new analytics vendor?">NDA for vendor</button>
+      <button class="chip" data-q="How long do we retain website visitor data?">stale guidance → provisional</button>
+      <button class="chip" data-q="What is our data-retention approach?">weak match → escalate</button>
+      <button class="chip" data-q="Do we need a license to launch a satellite for the marketing team?">no match → escalate</button>
+    </div>
+    <div id="answer" role="region" aria-live="polite" aria-label="Answer"></div>
   </section>
+
   <section id="deskLegal" role="tabpanel" aria-labelledby="tabLegal" hidden>
-  <h2>Legal desk</h2>
-  <div class="counts" id="counts" aria-label="Queue counts"></div>
-  <h3 style="margin-top:24px">Escalation queue — routed asks, SLA state</h3>
-  <div class="note" id="slaNote"></div>
-  <div style="overflow-x:auto"><table class="stackable" id="queueTable">
-  <thead><tr><th scope="col">id</th><th scope="col">opened</th><th scope="col">asker</th><th scope="col">question</th><th scope="col">route</th><th scope="col">SLA</th><th scope="col">actions</th></tr></thead>
-  <tbody id="queueBody"></tbody>
-  </table></div>
-  <h3 style="margin-top:28px">Pending approvals — corrections are invisible to colleagues until approved</h3>
-  <div id="approvals"></div>
-  <div class="field" style="margin-top:10px; max-width:420px">
-  <label for="approver">Approving as</label>
-  <input type="text" id="approver" value="A. Fern, Deputy GC (fictional)" />
-  </div>
-  <h3 style="margin-top:28px">Guidance register — the served source text</h3>
-  <div id="register"></div>
-  <h3 style="margin-top:28px">Governance decisions</h3>
-  <ul class="reasons" id="actionsList"></ul>
-  <div id="corrCard" class="card" hidden>
-  <div class="q">Draft correction <span id="corrFor" style="font-weight:400"></span></div>
-  <div class="field" style="margin-top:6px"><label for="corrAnswer">Approved-answer wording</label>
-  <textarea id="corrAnswer" rows="3" placeholder="What Legal would answer to this question…"></textarea></div>
-  <div class="filters" style="margin-top:8px">
-  <div class="field"><label for="corrTags">Tags (comma-separated)</label><input type="text" id="corrTags" /></div>
-  <div class="field"><label for="corrJur">Jurisdiction</label>
-  <select id="corrJur"><option value="">—</option><option>US</option><option>EU</option></select></div>
-  <div class="field"><label for="corrUpdated">Updated (YYYY-MM-DD)</label><input type="text" id="corrUpdated" /></div>
-  <div class="field"><label for="corrBy">Submitted by</label><input type="text" id="corrBy" value="R. Castellan, Privacy Counsel (fictional)" /></div>
-  </div>
-  <div class="rowbtns">
-  <button id="corrSubmit">Draft → pending approval</button>
-  <button id="corrCancel" class="ghost">Cancel</button>
-  </div>
-  </div>
+    <h2>Legal desk</h2>
+    <div class="counts" id="counts" aria-label="Queue counts"></div>
+
+    <h3 style="margin-top:24px">Escalation queue — routed asks, SLA state</h3>
+    <div class="note" id="slaNote"></div>
+    <div style="overflow-x:auto"><table class="stackable" id="queueTable">
+      <thead><tr><th scope="col">id</th><th scope="col">opened</th><th scope="col">asker</th><th scope="col">question</th><th scope="col">route</th><th scope="col">SLA</th><th scope="col">actions</th></tr></thead>
+      <tbody id="queueBody"></tbody>
+    </table></div>
+
+    <h3 style="margin-top:28px">Import a policy / guidance document (.docx)</h3>
+    <div id="docxImportMount"></div>
+    <p class="note" id="kbxStatus" role="status"></p>
+
+    <h3 style="margin-top:28px">Pending approvals — corrections are invisible to colleagues until approved</h3>
+    <div id="approvals"></div>
+    <div class="field" style="margin-top:10px; max-width:420px">
+      <label for="approver">Approving as</label>
+      <input type="text" id="approver" value="A. Fern, Deputy GC (fictional)" />
+    </div>
+
+    <h3 style="margin-top:28px">Guidance register — the served source text</h3>
+    <div id="register"></div>
+
+    <h3 style="margin-top:28px">Governance decisions</h3>
+    <ul class="reasons" id="actionsList"></ul>
+
+    <div id="corrCard" class="card" hidden>
+      <div class="q">Draft correction <span id="corrFor" style="font-weight:400"></span></div>
+      <div class="field" style="margin-top:6px"><label for="corrAnswer">Approved-answer wording</label>
+        <textarea id="corrAnswer" rows="3" placeholder="What Legal would answer to this question…"></textarea></div>
+      <div class="filters" style="margin-top:8px">
+        <div class="field"><label for="corrTags">Tags (comma-separated)</label><input type="text" id="corrTags" /></div>
+        <div class="field"><label for="corrJur">Jurisdiction</label>
+          <select id="corrJur"><option value="">—</option><option>US</option><option>EU</option></select></div>
+        <div class="field"><label for="corrUpdated">Updated (YYYY-MM-DD)</label><input type="text" id="corrUpdated" /></div>
+        <div class="field"><label for="corrBy">Submitted by</label><input type="text" id="corrBy" value="R. Castellan, Privacy Counsel (fictional)" /></div>
+      </div>
+      <div class="rowbtns">
+        <button id="corrSubmit">Draft → pending approval</button>
+        <button id="corrCancel" class="ghost">Cancel</button>
+      </div>
+    </div>
   </section>
+
   <section>
-  <h2>Audit log — every question, append-only, survives reload</h2>
-  <div class="filters">
-  <div class="field"><label for="fConf">Confidence</label>
-  <select id="fConf"><option value="">all</option><option>high</option><option>medium</option><option>low</option></select></div>
-  <div class="field" style="flex:1"><label for="fSearch">Search</label>
-  <input type="text" id="fSearch" placeholder="question, asker, route…" /></div>
-  <button id="exportJsonl" class="ghost">Export JSONL</button>
-  <button id="exportCsv" class="ghost">Export CSV</button>
-  <button id="exportMd" class="ghost">Export digest (MD)</button>
-  <button id="resetData" class="ghost">Reset demo data</button>
-  </div>
-  <div class="note" id="storeNote"></div>
-  <div style="overflow-x:auto"><table class="stackable" id="logTable">
-  <thead><tr><th scope="col">id</th><th scope="col">ts</th><th scope="col">asked by</th><th scope="col">question</th><th scope="col">matched</th><th scope="col">conf.</th><th scope="col">escalated</th><th scope="col">route</th></tr></thead>
-  <tbody id="auditBody"></tbody>
-  </table></div>
+    <h2>Audit log — every question, append-only, survives reload</h2>
+    <div class="filters">
+      <div class="field"><label for="fConf">Confidence</label>
+        <select id="fConf"><option value="">all</option><option>high</option><option>medium</option><option>low</option></select></div>
+      <div class="field" style="flex:1"><label for="fSearch">Search</label>
+        <input type="text" id="fSearch" placeholder="question, asker, route…" /></div>
+      <button id="exportJsonl" class="ghost">Export JSONL</button>
+      <button id="exportCsv" class="ghost">Export CSV</button>
+      <button id="exportMd" class="ghost">Export digest (MD)</button>
+      <button id="resetData" class="ghost">Reset demo data</button>
+    </div>
+    <div class="note" id="storeNote"></div>
+    <div style="overflow-x:auto"><table class="stackable" id="logTable">
+      <thead><tr><th scope="col">id</th><th scope="col">ts</th><th scope="col">asked by</th><th scope="col">question</th><th scope="col">matched</th><th scope="col">conf.</th><th scope="col">escalated</th><th scope="col">route</th></tr></thead>
+      <tbody id="auditBody"></tbody>
+    </table></div>
   </section>
+
   <footer class="disclaimer">
-  Deterministic retrieval + gating — an optional LLM may only rephrase approved answers (schema in spec.md),
-  never generate new legal content. All data fictional. Not legal advice; guidance must be approved by your legal team.
-  <code>persistence: localStorage, append-only via core saveAudit/loadAudit</code>
+    Deterministic retrieval + gating — an optional LLM may only rephrase approved answers (schema in spec.md),
+    never generate new legal content. All data fictional. Not legal advice; guidance must be approved by your legal team.
+    <code>persistence: localStorage, append-only via core saveAudit/loadAudit</code>
   </footer>
 </div>
-  <div id="scrim" hidden></div>
+
+<div id="scrim" hidden></div>
 <aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
   <div class="d-head"><h3 id="drawerTitle">Escalation ticket</h3>
-  <button id="closeDrawer" class="ghost" aria-label="Close escalation ticket drawer">✕ close</button></div>
+    <button id="closeDrawer" class="ghost" aria-label="Close escalation ticket drawer">✕ close</button></div>
   <div id="drawerBody"></div>
   <div class="rowbtns" style="margin-top:12px"><button id="copyTicket">Copy ticket JSON</button></div>
   <pre id="ticketJson" aria-label="Ticket JSON"></pre>
 </aside>
-  <div id="toasts" role="status" aria-live="polite"></div>
-  <script type="module">
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script type="module">
   import {
-  answerQuestion, createAuditLog, exportAuditLog, saveAudit, loadAudit,
-  gaugeConfidence, escalationTicket, applyCorrection, approveEntry,
-  overdueEscalations, parseDate,
-  } from "data:text/javascript;base64,LyoqCiAqIGFzay1sZWdhbCDigJQgZGV0ZXJtaW5pc3RpYyBjb3JlLgogKgogKiBHdWlkYW5jZS1iYXNlIFEmQSBvdmVyIGEgbG9jYWwgSlNPTiBrbm93bGVkZ2UgYmFzZTogcmV0cmlldmFsIGJ5IHRvcGljCiAqIHRhZ3MgKyB0b2tlbiBvdmVybGFwLCBwZXItYW5zd2VyIGNvbmZpZGVuY2UgZ2F0aW5nIChoaWdoL21lZGl1bS9sb3cgd2l0aAogKiByZWFzb25zKSwgZXNjYWxhdGlvbiBmbGFnIHdoZW4gY29uZmlkZW5jZSBpcyBsb3csIGFuZCBhIGZ1bGwgYXVkaXQgbG9nIG9mCiAqIGV2ZXJ5IHF1ZXN0aW9uIGFza2VkLiBObyBuZXR3b3JrLCBubyBMTE0gcmVxdWlyZWQgZm9yIHRoZSBkZXRlcm1pbmlzdGljCiAqIHBhdGg7IGFuIG9wdGlvbmFsIExMTSBzdGVwIChwcm9tcHQgc2NoZW1hIGluIHNwZWMubWQpIG1heSBvbmx5IHJlcGhyYXNlCiAqIHRoZSByZXRyaWV2ZWQgYXBwcm92ZWQgYW5zd2VyLCBuZXZlciBnZW5lcmF0ZSBuZXcgbGVnYWwgY29udGVudC4KICoKICogRGVwZW5kZW5jeS1mcmVlIHBsYWluLUphdmFTY3JpcHQgRVMgbW9kdWxlOyBicm93c2VyICsgTm9kZSBjb21wYXRpYmxlLgogKiBObyBoaWRkZW4gY2xvY2tzOiBmcmVzaG5lc3MgbWF0aCBhbmNob3JzIHRvIGNhbGxlci1zdXBwbGllZCBgYXNPZmAuCiAqIEBtb2R1bGUgY29yZQogKi8KCi8qIC0tLS0tLS0tLS0gaGVscGVycyAtLS0tLS0tLS0tICovCgpjb25zdCBTVE9QV09SRFMgPSBuZXcgU2V0KAogICJhIGFuIHRoZSBpcyBhcmUgd2FzIHdlcmUgYmUgYmVlbiBiZWluZyBvZiBmb3IgdG8gaW4gb24gYXQgYnkgd2l0aCBhYm91dCBpbnRvIGZyb20gYXMgdGhhdCB0aGlzIGl0IGl0cyBkbyBkb2VzIGRpZCBjYW4gY291bGQgc2hvdWxkIHdvdWxkIHdpbGwgc2hhbGwgbWF5IG1pZ2h0IG11c3QgbmVlZCBuZWVkcyBpIHdlIHlvdSBvdXIgeW91ciB0aGVpciB3aGF0IHdoZW4gd2hlcmUgd2hvIHdob20gaG93IHdoaWNoIGFuZCBvciBpZiBub3Qgbm8geWVzIi5zcGxpdCgiICIpCik7CgovKiogVG9rZW5pemUgYSBzdHJpbmcgaW50byBtZWFuaW5nZnVsIGxvd2VyY2FzZSB0ZXJtcyAoc3RvcHdvcmRzIHJlbW92ZWQpLgogKiBAcGFyYW0ge3N0cmluZ30gcwogKiBAcmV0dXJucyB7c3RyaW5nW119ICovCmV4cG9ydCBmdW5jdGlvbiB0b2tlbml6ZShzKSB7CiAgcmV0dXJuIFN0cmluZyhzID8/ICIiKQogICAgLnRvTG93ZXJDYXNlKCkKICAgIC5yZXBsYWNlKC9bXmEtejAtOVxzLV0vZywgIiAiKQogICAgLnNwbGl0KC9ccysvKQogICAgLmZpbHRlcigodCkgPT4gdC5sZW5ndGggPiAxICYmICFTVE9QV09SRFMuaGFzKHQpKTsKfQoKLyoqIERldGVybWluaXN0aWMgcGx1cmFsIGZvbGRpbmcgc28gInZlbmRvcnMiIG1hdGNoZXMgInZlbmRvciIgKGFuZCBiYWNrKS4KICogQ29uc2VydmF0aXZlOiBzdHJpcHMgYSByZWd1bGFyIHBsdXJhbCAicyIsIHN0cmlwcyAiZXMiIG9ubHkgYWZ0ZXIgYSBzaWJpbGFudAogKiBzdGVtIGVuZGluZyBpbiB4L3ovY2gvc2ggb3IgYSBkb3VibGUgInMiICgiYm94ZXMiIOKGkiAiYm94IiwgImNsYXNzZXMiIOKGkiAiY2xhc3MiKSwKICogYW5kIG1hcHMgIuKApmllcyIg4oaSICLigKZ5Ii4gQSB0cmFpbGluZyAiZXMiIGFmdGVyIGFueSBvdGhlciBzdGVtIGlzIGEgcmVndWxhciAtZQogKiBiYXNlIHRha2luZyBwbGFpbiAtcywgc28gb25seSB0aGUgInMiIGdvZXM6ICJsaWNlbnNlcyIg4oaSICJsaWNlbnNlIiwKICogImNsYXVzZXMiIOKGkiAiY2xhdXNlIi4gTmV2ZXIgdG91Y2hlcyAic3MiIHdvcmRzIChjbGFzcywgYnVzaW5lc3MpLiBLbm93bgogKiBsaW1pdDogIi1zZXMiIGFmdGVyIGEgc2luZ2xlLXMgc3RlbSBpcyBhbWJpZ3VvdXMgd2l0aG91dCBhIGxleGljb24KICogKCJidXNlcyIgZm9sZHMgdG8gImJ1c2UiLCBub3QgImJ1cyIpLgogKiBAcGFyYW0ge3N0cmluZ30gdAogKiBAcmV0dXJucyB7c3RyaW5nfSAqLwpleHBvcnQgZnVuY3Rpb24gZm9sZFRva2VuKHQpIHsKICBpZiAodC5lbmRzV2l0aCgiaWVzIikgJiYgdC5sZW5ndGggPiA0KSByZXR1cm4gdC5zbGljZSgwLCAtMykgKyAieSI7CiAgaWYgKHQubGVuZ3RoID4gNCAmJiAvKD86eHx6fGNofHNofHNzKWVzJC8udGVzdCh0KSkgcmV0dXJuIHQuc2xpY2UoMCwgLTIpOwogIGlmICh0LmVuZHNXaXRoKCJzIikgJiYgIXQuZW5kc1dpdGgoInNzIikgJiYgdC5sZW5ndGggPiAzKSByZXR1cm4gdC5zbGljZSgwLCAtMSk7CiAgcmV0dXJuIHQ7Cn0KCi8qKiBTeW5vbnltIGdyb3VwcyBhcyBydWxlcy1hcy1kYXRhOiBrZXkgYW5kIHZhbHVlcyBhcmUgb25lIGVxdWl2YWxlbmNlIGNsYXNzCiAqIChxdWVyeSB2b2NhYnVsYXJ5IGV4cGFuZHMgYWNyb3NzIHRoZSBncm91cDsgb3ZlcnJpZGUgcGVyIGRlcGxveW1lbnQpLgogKiBAdHlwZSB7UmVjb3JkPHN0cmluZywgc3RyaW5nW10+fSAqLwpleHBvcnQgY29uc3QgREVGQVVMVF9TWU5PTllNUyA9IHsKICBjb25maWRlbnRpYWxpdHk6IFsibmRhIl0sCiAgc3VwcGxpZXI6IFsidmVuZG9yIl0sCiAgc3RhZmY6IFsiZW1wbG95ZWUiXSwKICBzcGVuZDogWyJleHBlbnNlIl0sCn07CgovKiogRXhwYW5kIHRva2VucyB3aXRoIHRoZWlyIHN5bm9ueW0tZ3JvdXAgbWVtYmVycyAobm8gc2VsZi1kdXBsaWNhdGVzKS4KICogQHBhcmFtIHtJdGVyYWJsZTxzdHJpbmc+fSB0b2tlbnMKICogQHBhcmFtIHtSZWNvcmQ8c3RyaW5nLCBzdHJpbmdbXT58bnVsbH0gc3lub255bXMKICogQHJldHVybnMge3N0cmluZ1tdfSAqLwpleHBvcnQgZnVuY3Rpb24gZXhwYW5kVG9rZW5zKHRva2Vucywgc3lub255bXMpIHsKICBjb25zdCBncm91cHMgPSBPYmplY3QuZW50cmllcyhzeW5vbnltcyA/PyB7fSkubWFwKChbaywgdiA9IFtdXSkgPT4gW2ssIC4uLnZdKTsKICBjb25zdCBleHRyYSA9IFtdOwogIGZvciAoY29uc3QgdCBvZiB0b2tlbnMpIGZvciAoY29uc3QgZyBvZiBncm91cHMpIGlmIChnLmluY2x1ZGVzKHQpKSBleHRyYS5wdXNoKC4uLmcuZmlsdGVyKCh4KSA9PiB4ICE9PSB0KSk7CiAgcmV0dXJuIGV4dHJhOwp9CgovKiogUGFyc2UgIllZWVktTU0tREQiIHRvIFVUQyBEYXRlOyBudWxsIHdoZW4gdW5wYXJzZWFibGUgKG5ldmVyIGd1ZXNzZWQpLgogKiBAcGFyYW0ge3N0cmluZ3xudWxsfHVuZGVmaW5lZH0gZAogKiBAcmV0dXJucyB7RGF0ZXxudWxsfSAqLwpleHBvcnQgZnVuY3Rpb24gcGFyc2VEYXRlKGQpIHsKICBpZiAoIWQgfHwgdHlwZW9mIGQgIT09ICJzdHJpbmciKSByZXR1cm4gbnVsbDsKICBjb25zdCBtID0gL14oXGR7NH0pLShcZHsyfSktKFxkezJ9KSQvLmV4ZWMoZC50cmltKCkpOwogIGlmICghbSkgcmV0dXJuIG51bGw7CiAgY29uc3QgZHQgPSBuZXcgRGF0ZShEYXRlLlVUQygrbVsxXSwgK21bMl0gLSAxLCArbVszXSkpOwogIHJldHVybiBOdW1iZXIuaXNOYU4oZHQuZ2V0VGltZSgpKSA/IG51bGwgOiBkdDsKfQoKLyogLS0tLS0tLS0tLSByZXRyaWV2YWwgLS0tLS0tLS0tLSAqLwoKLyoqCiAqIERldGVybWluaXN0aWMgcmV0cmlldmFsOiBzY29yZSBlYWNoIEtCIGVudHJ5IGJ5CiAqICAgMyDDlyBleGFjdCB0YWcga2V5d29yZCBoaXQgKyAyIMOXIHF1ZXN0aW9uLXRpdGxlIHRva2VuIG92ZXJsYXAgKyBhbnN3ZXIgdG9rZW4gb3ZlcmxhcC4KICogVG9rZW5zIGNvbXBhcmUgcGx1cmFsLWZvbGRlZCAoInZlbmRvcnMiIOKJoSAidmVuZG9yIikgYW5kIHF1ZXJpZXMgZXhwYW5kIGFjcm9zcwogKiB0aGUgc3lub255bSBtYXA7IHRhZyBzdWJzdHJpbmcgbWF0Y2hpbmcgcmVxdWlyZXMgYm90aCBzaWRlcyDiiaUgNCBjaGFycyBzbyBhCiAqIHF1ZXJ5IGxpa2UgInRpcHMiIGNhbm5vdCBoaXQgYSBzaG9ydCB0YWcgbGlrZSAiaXAiLgogKiBFbnRyaWVzIHdpdGggYSBzdGF0dXMgb3RoZXIgdGhhbiAiYXBwcm92ZWQiIChlLmcuIHBlbmRpbmctYXBwcm92YWwgY29ycmVjdGlvbnMpCiAqIGFyZSBuZXZlciByZXRyaWV2ZWQgb3Igc2VydmVkLgogKiBAcGFyYW0ge0FycmF5PGFueT59IGtiIOKAlCBbeyBpZCwgcXVlc3Rpb24sIGFuc3dlciwgdGFnczogc3RyaW5nW10sIGp1cmlzZGljdGlvbiwgdXBkYXRlZCwgYXBwcm92ZWRCeSwgc3RhdHVzPyB9XQogKiBAcGFyYW0ge3N0cmluZ30gcXVlc3Rpb24KICogQHBhcmFtIHtSZWNvcmQ8c3RyaW5nLCBzdHJpbmdbXT58bnVsbH0gW3N5bm9ueW1zXSDigJQgZGVmYXVsdHMgdG8gREVGQVVMVF9TWU5PTllNUzsgcGFzcyBudWxsIHRvIGRpc2FibGUKICogQHJldHVybnMge0FycmF5PHsgZW50cnk6IGFueSwgc2NvcmU6IG51bWJlciwgbWF0Y2hlZFRhZ3M6IHN0cmluZ1tdLCBtYXRjaGVkVGVybXM6IHN0cmluZ1tdIH0+fSByYW5rZWQsIGJlc3QgZmlyc3Q7IG1hdGNoZWRUZXJtcyBhcmUgcmVjb3JkZWQgcGx1cmFsLWZvbGRlZCAoInZlbmRvcnMiIOKGkiAidmVuZG9yIikKICovCmV4cG9ydCBmdW5jdGlvbiByZXRyaWV2ZShrYiwgcXVlc3Rpb24sIHN5bm9ueW1zID0gREVGQVVMVF9TWU5PTllNUykgewogIGNvbnN0IHFCYXNlID0gdG9rZW5pemUocXVlc3Rpb24pOwogIGNvbnN0IHFTZXQgPSBuZXcgU2V0KFsuLi5xQmFzZSwgLi4uZXhwYW5kVG9rZW5zKHFCYXNlLCBzeW5vbnltcyldKTsKICBjb25zdCBxRm9sZGVkID0gbmV3IFNldChbLi4ucVNldF0ubWFwKGZvbGRUb2tlbikpOwogIGNvbnN0IHJlc3VsdHMgPSAoa2IgPz8gW10pLmZsYXRNYXAoKGVudHJ5KSA9PiB7CiAgICBpZiAoZW50cnkgJiYgZW50cnkuc3RhdHVzICYmIGVudHJ5LnN0YXR1cyAhPT0gImFwcHJvdmVkIikgcmV0dXJuIFtdOyAvLyBwZW5kaW5nIGNvcnJlY3Rpb25zIGFyZSBpbnZpc2libGUKICAgIC8qKiBAdHlwZSB7c3RyaW5nW119ICovIGNvbnN0IG1hdGNoZWRUYWdzID0gW107CiAgICBmb3IgKGNvbnN0IHRhZyBvZiBlbnRyeT8udGFncyA/PyBbXSkgewogICAgICBjb25zdCB0ID0gU3RyaW5nKHRhZykudG9Mb3dlckNhc2UoKTsKICAgICAgY29uc3Qgc3Vic3RyaW5nSGl0ID0gWy4uLnFTZXRdLnNvbWUoCiAgICAgICAgKHF0KSA9PiBxdC5sZW5ndGggPj0gNCAmJiB0Lmxlbmd0aCA+PSA0ICYmICh0LmluY2x1ZGVzKHF0KSB8fCBxdC5pbmNsdWRlcyh0KSkKICAgICAgKTsKICAgICAgaWYgKHFTZXQuaGFzKHQpIHx8IHFGb2xkZWQuaGFzKGZvbGRUb2tlbih0KSkgfHwgc3Vic3RyaW5nSGl0KSBtYXRjaGVkVGFncy5wdXNoKFN0cmluZyh0YWcpKTsKICAgIH0KICAgIGNvbnN0IGVGb2xkZWQgPSB0b2tlbml6ZShlbnRyeT8ucXVlc3Rpb24gPz8gIiIpLm1hcChmb2xkVG9rZW4pOwogICAgY29uc3QgYUZvbGRlZCA9IHRva2VuaXplKGVudHJ5Py5hbnN3ZXIgPz8gIiIpLm1hcChmb2xkVG9rZW4pOwogICAgY29uc3QgbWF0Y2hlZFRlcm1zID0gWy4uLnFTZXRdLmZpbHRlcigodCkgPT4gZUZvbGRlZC5pbmNsdWRlcyhmb2xkVG9rZW4odCkpKS5tYXAoZm9sZFRva2VuKTsKICAgIGNvbnN0IGFuc3dlckhpdHMgPSBbLi4ucVNldF0uZmlsdGVyKCh0KSA9PiBhRm9sZGVkLmluY2x1ZGVzKGZvbGRUb2tlbih0KSkpLm1hcChmb2xkVG9rZW4pOwogICAgY29uc3Qgc2NvcmUgPSBtYXRjaGVkVGFncy5sZW5ndGggKiAzICsgbWF0Y2hlZFRlcm1zLmxlbmd0aCAqIDIgKyBhbnN3ZXJIaXRzLmxlbmd0aDsKICAgIHJldHVybiBbeyBlbnRyeSwgc2NvcmUsIG1hdGNoZWRUYWdzLCBtYXRjaGVkVGVybXM6IFsuLi5uZXcgU2V0KFsuLi5tYXRjaGVkVGVybXMsIC4uLmFuc3dlckhpdHNdKV0gfV07CiAgfSk7CiAgcmV0dXJuIHJlc3VsdHMuZmlsdGVyKChyKSA9PiByLnNjb3JlID4gMCkuc29ydCgKICAgIChhLCBiKSA9PiBiLnNjb3JlIC0gYS5zY29yZSB8fCBTdHJpbmcoYS5lbnRyeS5pZCkubG9jYWxlQ29tcGFyZShTdHJpbmcoYi5lbnRyeS5pZCkpCiAgKTsKfQoKLyogLS0tLS0tLS0tLSBjb25maWRlbmNlIGdhdGluZyAtLS0tLS0tLS0tICovCgovKiogRGVmYXVsdCBnYXRpbmcgdGhyZXNob2xkcyAocnVsZXMtYXMtZGF0YTsgb3ZlcnJpZGUgcGVyIGRlcGxveW1lbnQpLgogKiBAdHlwZSB7eyBoaWdoOiBudW1iZXIsIG1lZGl1bTogbnVtYmVyLCBmcmVzaG5lc3NEYXlzOiBudW1iZXIgfX0gKi8KZXhwb3J0IGNvbnN0IERFRkFVTFRfVEhSRVNIT0xEUyA9IHsgaGlnaDogOSwgbWVkaXVtOiA1LCBmcmVzaG5lc3NEYXlzOiAzNjUgfTsKCi8qKgogKiBTY29yZS1iYXNlZCBjb25maWRlbmNlIHdpdGggd3JpdHRlbiByZWFzb25zLiBGcmVzaG5lc3MgcGVuYWxpemVzIHN0YWxlCiAqIGd1aWRhbmNlIGRvd24gb25lIHRpZXI7IGEganVyaXNkaWN0aW9uIG1pc21hdGNoIGJldHdlZW4gdGhlIHF1ZXN0aW9uIGFuZCB0aGUKICogbWF0Y2hlZCBndWlkYW5jZSBhbHNvIGRvd25ncmFkZXMgb25lIHRpZXIgKHdpdGggYSByZWNlaXB0KTsgemVybyByZXRyaWV2YWwgaXMKICogYWx3YXlzICJsb3ciLgogKiBAcGFyYW0ge0FycmF5PGFueT59IGtiCiAqIEBwYXJhbSB7c3RyaW5nfSBxdWVzdGlvbgogKiBAcGFyYW0ge3sgaGlnaD86IG51bWJlciwgbWVkaXVtPzogbnVtYmVyLCBmcmVzaG5lc3NEYXlzPzogbnVtYmVyIH19IFt0aHJlc2hvbGRzXQogKiBAcGFyYW0ge3N0cmluZ30gW2FzT2ZJc29dIOKAlCBhbmNob3IgZm9yIGZyZXNobmVzczsgb21pdCB0byBza2lwIGZyZXNobmVzcyBjaGVjawogKiBAcGFyYW0ge3sganVyaXNkaWN0aW9uPzogc3RyaW5nLCBzeW5vbnltcz86IFJlY29yZDxzdHJpbmcsIHN0cmluZ1tdPnxudWxsIH19IFtvcHRzXQogKiBAcmV0dXJucyB7eyBsZXZlbDogImhpZ2gifCJtZWRpdW0ifCJsb3ciLCByZWFzb25zOiBzdHJpbmdbXSwgdG9wOiBudWxsfGFueSwgcmFua2VkOiBBcnJheTxhbnk+IH19CiAqLwpleHBvcnQgZnVuY3Rpb24gZ2F1Z2VDb25maWRlbmNlKGtiLCBxdWVzdGlvbiwgdGhyZXNob2xkcyA9IHt9LCBhc09mSXNvLCBvcHRzID0ge30pIHsKICBjb25zdCB0aCA9IHsgLi4uREVGQVVMVF9USFJFU0hPTERTLCAuLi50aHJlc2hvbGRzIH07CiAgY29uc3QgcmFua2VkID0gcmV0cmlldmUoa2IsIHF1ZXN0aW9uLCBvcHRzLnN5bm9ueW1zID8/IERFRkFVTFRfU1lOT05ZTVMpOwogIC8qKiBAdHlwZSB7c3RyaW5nW119ICovIGNvbnN0IHJlYXNvbnMgPSBbXTsKCiAgaWYgKHJhbmtlZC5sZW5ndGggPT09IDApIHsKICAgIHJldHVybiB7IGxldmVsOiAibG93IiwgcmVhc29uczogWyJubyBrbm93bGVkZ2UtYmFzZSBlbnRyeSBtYXRjaGVkIGFueSBxdWVzdGlvbiB0ZXJtIG9yIHRhZyJdLCB0b3A6IG51bGwsIHJhbmtlZDogW10gfTsKICB9CiAgY29uc3QgdG9wID0gcmFua2VkWzBdOwogIGNvbnN0IG1hcmdpbiA9IHJhbmtlZFsxXSA/IHRvcC5zY29yZSAtIHJhbmtlZFsxXS5zY29yZSA6IHRvcC5zY29yZTsKICByZWFzb25zLnB1c2goYGJlc3QgbWF0Y2ggIiR7dG9wLmVudHJ5LnF1ZXN0aW9ufSIgc2NvcmVkICR7dG9wLnNjb3JlfSAodGFnczogJHt0b3AubWF0Y2hlZFRhZ3Muam9pbigiLCAiKSB8fCAibm9uZSJ9OyB0ZXJtczogJHt0b3AubWF0Y2hlZFRlcm1zLmpvaW4oIiwgIikgfHwgIm5vbmUifSlgKTsKCiAgbGV0IGxldmVsID0gdG9wLnNjb3JlID49IHRoLmhpZ2ggPyAiaGlnaCIgOiB0b3Auc2NvcmUgPj0gdGgubWVkaXVtID8gIm1lZGl1bSIgOiAibG93IjsKICBpZiAobGV2ZWwgIT09ICJsb3ciKSByZWFzb25zLnB1c2goYHNjb3JlICR7dG9wLnNjb3JlfSAke3RvcC5zY29yZSA+PSB0aC5oaWdoID8gIuKJpSIgOiAiPCJ9IGhpZ2ggdGhyZXNob2xkICR7dGguaGlnaH1gKTsKICBpZiAobGV2ZWwgPT09ICJsb3ciKSByZWFzb25zLnB1c2goYHNjb3JlICR7dG9wLnNjb3JlfSBiZWxvdyBtZWRpdW0gdGhyZXNob2xkICR7dGgubWVkaXVtfWApOwoKICBpZiAobGV2ZWwgPT09ICJoaWdoIiAmJiBtYXJnaW4gPCAyICYmIHJhbmtlZFsxXSkgewogICAgbGV2ZWwgPSAibWVkaXVtIjsKICAgIHJlYXNvbnMucHVzaChgZG93bmdyYWRlZDogcnVubmVyLXVwICIke3JhbmtlZFsxXS5lbnRyeS5xdWVzdGlvbn0iIGlzIGNsb3NlIChtYXJnaW4gJHttYXJnaW59KSDigJQgYW1iaWd1aXR5IGJldHdlZW4gZW50cmllc2ApOwogIH0KCiAgY29uc3QgYXNPZiA9IHBhcnNlRGF0ZShhc09mSXNvID8/IG51bGwpOwogIGNvbnN0IHVwZGF0ZWQgPSBwYXJzZURhdGUodG9wLmVudHJ5LnVwZGF0ZWQgPz8gbnVsbCk7CiAgaWYgKGFzT2YgJiYgdXBkYXRlZCkgewogICAgY29uc3QgYWdlRGF5cyA9IE1hdGgucm91bmQoKGFzT2YuZ2V0VGltZSgpIC0gdXBkYXRlZC5nZXRUaW1lKCkpIC8gODY0MDAwMDApOwogICAgaWYgKGFnZURheXMgPiB0aC5mcmVzaG5lc3NEYXlzKSB7CiAgICAgIHJlYXNvbnMucHVzaChgZ3VpZGFuY2UgaXMgJHthZ2VEYXlzfWQgb2xkICg+ICR7dGguZnJlc2huZXNzRGF5c31kIGZyZXNobmVzcyB3aW5kb3cpIOKAlCBkb3duZ3JhZGVkIG9uZSB0aWVyYCk7CiAgICAgIGxldmVsID0gbGV2ZWwgPT09ICJoaWdoIiA/ICJtZWRpdW0iIDogImxvdyI7CiAgICB9IGVsc2UgewogICAgICByZWFzb25zLnB1c2goYGd1aWRhbmNlIHZlcmlmaWVkICR7YWdlRGF5c31kIGFnbyAod2l0aGluICR7dGguZnJlc2huZXNzRGF5c31kIHdpbmRvdylgKTsKICAgIH0KICB9CgogIGNvbnN0IGFza2VkSnVyID0gb3B0cy5qdXJpc2RpY3Rpb24gPyBTdHJpbmcob3B0cy5qdXJpc2RpY3Rpb24pLnRvTG93ZXJDYXNlKCkgOiBudWxsOwogIGNvbnN0IGVudHJ5SnVyID0gdG9wLmVudHJ5Lmp1cmlzZGljdGlvbiA/IFN0cmluZyh0b3AuZW50cnkuanVyaXNkaWN0aW9uKS50b0xvd2VyQ2FzZSgpIDogbnVsbDsKICBpZiAoYXNrZWRKdXIgJiYgZW50cnlKdXIgJiYgYXNrZWRKdXIgIT09IGVudHJ5SnVyKSB7CiAgICByZWFzb25zLnB1c2goYGp1cmlzZGljdGlvbiBtaXNtYXRjaDogZ3VpZGFuY2UgY292ZXJzICR7dG9wLmVudHJ5Lmp1cmlzZGljdGlvbn0gYnV0IHF1ZXN0aW9uIGlzIHVuZGVyICR7b3B0cy5qdXJpc2RpY3Rpb259IOKAlCBkb3duZ3JhZGVkIG9uZSB0aWVyOyBjb25maXJtIHdpdGggbG9jYWwgY291bnNlbGApOwogICAgbGV2ZWwgPSBsZXZlbCA9PT0gImhpZ2giID8gIm1lZGl1bSIgOiAibG93IjsKICB9CiAgcmV0dXJuIHsgbGV2ZWwsIHJlYXNvbnMsIHRvcDogdG9wLmVudHJ5LCByYW5rZWQgfTsKfQoKLyogLS0tLS0tLS0tLSBhbnN3ZXJpbmcgKyBlc2NhbGF0aW9uIC0tLS0tLS0tLS0gKi8KCi8qKgogKiBSb3V0ZSB0YWJsZSByZXNvbHV0aW9uOiB0b3BpYyDihpIgb3duaW5nIHRlYW0gKHJ1bGVzLWFzLWRhdGEpLiBWYWx1ZXMgbWF5IGJlIGEKICogcGxhaW4gdGVhbSBzdHJpbmcgb3IgYHsgdGVhbSwgc2xhRGF5cyB9YCAocGVyLXRvcGljIFNMQTsgc2VlIG92ZXJkdWVFc2NhbGF0aW9ucykuCiAqIEBwYXJhbSB7YW55fSBlbnRyeSDigJQgS0IgZW50cnkgKG1heSBiZSBudWxsKQogKiBAcGFyYW0ge1JlY29yZDxzdHJpbmcsc3RyaW5nfHt0ZWFtOnN0cmluZyxzbGFEYXlzOm51bWJlcn0+fSByb3V0aW5nIOKAlCB7IFt0YWdPclRvcGljXTogdGVhbSB9CiAqIEByZXR1cm5zIHtzdHJpbmd9ICovCmV4cG9ydCBmdW5jdGlvbiByb3V0ZVRvKGVudHJ5LCByb3V0aW5nID0ge30pIHsKICBjb25zdCBwaWNrID0gKHIpID0+IChyID09IG51bGwgPyBudWxsIDogdHlwZW9mIHIgPT09ICJzdHJpbmciID8gciA6IHIudGVhbSk7CiAgaWYgKCFlbnRyeSkgcmV0dXJuIHBpY2socm91dGluZ1siZGVmYXVsdCJdKSA/PyAibGVnYWwtaW50YWtlIjsKICBmb3IgKGNvbnN0IHRhZyBvZiBlbnRyeS50YWdzID8/IFtdKSB7CiAgICBjb25zdCByID0gcGljayhyb3V0aW5nW3RhZ10pOwogICAgaWYgKHIpIHJldHVybiByOwogIH0KICByZXR1cm4gcGljayhyb3V0aW5nWyJkZWZhdWx0Il0pID8/ICJsZWdhbC1pbnRha2UiOwp9CgovKioKICogVmFsaWRhdGUgYSBrbm93bGVkZ2UgYmFzZSBiZWZvcmUgc2VydmluZy4gRXZlcnkgc2VydmFibGUgZW50cnkgKG5vIHN0YXR1cywgb3IKICogc3RhdHVzICJhcHByb3ZlZCIpIG11c3QgaGF2ZTogdW5pcXVlIGlkLCBhbnN3ZXIgdGV4dCwgYW4gYXBwcm92ZXIsIGFuZCBhCiAqIHBhcnNlYWJsZSBZWVlZLU1NLUREIHVwZGF0ZWQgZGF0ZS4gYHBlbmRpbmctYXBwcm92YWxgIGVudHJpZXMgYXJlIHNraXBwZWQg4oCUCiAqIHRoZXkgYXJlIGFuIGV4cGVjdGVkIGxpZmVjeWNsZSBzdGF0ZSBhbmQgYXJlIG5ldmVyIHNlcnZlZC4KICogQHBhcmFtIHtBcnJheTxhbnk+fSBrYgogKiBAcmV0dXJucyB7QXJyYXk8eyBlbnRyeUlkOiBzdHJpbmd8bnVsbCwgZmllbGQ6IHN0cmluZywgaXNzdWU6IHN0cmluZyB9Pn0gaXNzdWVzIChlbXB0eSA9IHZhbGlkKQogKi8KZXhwb3J0IGZ1bmN0aW9uIHZhbGlkYXRlS2Ioa2IpIHsKICAvKiogQHR5cGUge0FycmF5PHsgZW50cnlJZDogc3RyaW5nfG51bGwsIGZpZWxkOiBzdHJpbmcsIGlzc3VlOiBzdHJpbmcgfT59ICovIGNvbnN0IGlzc3VlcyA9IFtdOwogIGNvbnN0IHNlZW4gPSBuZXcgU2V0KCk7CiAgZm9yIChjb25zdCBlbnRyeSBvZiBrYiA/PyBbXSkgewogICAgaWYgKGVudHJ5Py5zdGF0dXMgPT09ICJwZW5kaW5nLWFwcHJvdmFsIikgY29udGludWU7CiAgICBjb25zdCBpZCA9IGVudHJ5ICYmIGVudHJ5LmlkICE9IG51bGwgPyBTdHJpbmcoZW50cnkuaWQpIDogbnVsbDsKICAgIGNvbnN0IHJlZiA9IGlkID8/ICIoZW50cnkgd2l0aG91dCBpZCkiOwogICAgaWYgKCFpZCkgaXNzdWVzLnB1c2goeyBlbnRyeUlkOiBudWxsLCBmaWVsZDogImlkIiwgaXNzdWU6ICJtaXNzaW5nIGlkIiB9KTsKICAgIGVsc2UgaWYgKHNlZW4uaGFzKGlkKSkgaXNzdWVzLnB1c2goeyBlbnRyeUlkOiBpZCwgZmllbGQ6ICJpZCIsIGlzc3VlOiAiZHVwbGljYXRlIGlkIiB9KTsKICAgIGlmIChpZCkgc2Vlbi5hZGQoaWQpOwogICAgaWYgKCFlbnRyeSB8fCB0eXBlb2YgZW50cnkuYW5zd2VyICE9PSAic3RyaW5nIiB8fCAhZW50cnkuYW5zd2VyLnRyaW0oKSkgewogICAgICBpc3N1ZXMucHVzaCh7IGVudHJ5SWQ6IHJlZiwgZmllbGQ6ICJhbnN3ZXIiLCBpc3N1ZTogIm1pc3NpbmcgYW5zd2VyIHRleHQiIH0pOwogICAgfQogICAgaWYgKCFlbnRyeSB8fCAhZW50cnkuYXBwcm92ZWRCeSkgewogICAgICBpc3N1ZXMucHVzaCh7IGVudHJ5SWQ6IHJlZiwgZmllbGQ6ICJhcHByb3ZlZEJ5IiwgaXNzdWU6ICJtaXNzaW5nIGFwcHJvdmVyIOKAlCB1bmFwcHJvdmVkIGd1aWRhbmNlIG11c3Qgbm90IGJlIHNlcnZlZCIgfSk7CiAgICB9CiAgICBpZiAoIWVudHJ5IHx8ICFwYXJzZURhdGUoZW50cnkudXBkYXRlZCkpIHsKICAgICAgaXNzdWVzLnB1c2goeyBlbnRyeUlkOiByZWYsIGZpZWxkOiAidXBkYXRlZCIsIGlzc3VlOiAibWlzc2luZyBvciB1bnBhcnNlYWJsZSBZWVlZLU1NLUREIHVwZGF0ZWQgZGF0ZSIgfSk7CiAgICB9CiAgfQogIHJldHVybiBpc3N1ZXM7Cn0KCi8qKgogKiBBbnN3ZXIgYSBxdWVzdGlvbiBhZ2FpbnN0IHRoZSBLQiB3aXRoIGNvbmZpZGVuY2UgZ2F0aW5nLCBlc2NhbGF0aW9uLCBhbmQKICogYW4gYXVkaXQtbG9nIGVudHJ5IGFwcGVuZGVkIHRvIGBhdWRpdExvZ2AuCiAqCiAqIFJ1bGVzOiB0aGUgS0IgbXVzdCBwYXNzIHZhbGlkYXRlS2IgKGludmFsaWQgS0JzIGFyZSByZWZ1c2VkIOKAlCB1bmFwcHJvdmVkCiAqIGd1aWRhbmNlIGlzIG5ldmVyIHNlcnZlZCk7IG9ubHkgImhpZ2giIGFuZCAibWVkaXVtIiBjb25maWRlbmNlIHJldHVybgogKiBndWlkYW5jZSB0ZXh0OyAibWVkaXVtIiBpcyBmbGFnZ2VkIHByb3Zpc2lvbmFsIHdpdGggYSBsYWJlbDsgImxvdyIKICogZXNjYWxhdGVzIGFuZCByZXR1cm5zIG5vIGFuc3dlciAoTkVWRVIgZ3Vlc3NlcyksIGNhcnJ5aW5nIGEgc3VnZ2VzdGVkCiAqIGVudHJ5IHNuYXBzaG90IGZvciB0aGUgbGF3eWVyLiBBIGp1cmlzZGljdGlvbiBtaXNtYXRjaCAob3B0cy5qdXJpc2RpY3Rpb24KICogdnMgdGhlIG1hdGNoZWQgZW50cnkncyBqdXJpc2RpY3Rpb24pIGRvd25ncmFkZXMgY29uZmlkZW5jZSBvbmUgdGllci4KICogQHBhcmFtIHtBcnJheTxhbnk+fSBrYgogKiBAcGFyYW0ge3N0cmluZ30gcXVlc3Rpb24KICogQHBhcmFtIHt7IHRocmVzaG9sZHM/OiBvYmplY3QsIGFzT2Y/OiBzdHJpbmcsIGFza2VkQnk/OiBzdHJpbmcsIHJvdXRpbmc/OiBSZWNvcmQ8c3RyaW5nLGFueT4sIGp1cmlzZGljdGlvbj86IHN0cmluZywgc3lub255bXM/OiBSZWNvcmQ8c3RyaW5nLCBzdHJpbmdbXT58bnVsbCB9fSBbb3B0c10KICogQHBhcmFtIHtBcnJheTxhbnk+fSBbYXVkaXRMb2ddIOKAlCBtdXRhdGVkIGluIHBsYWNlOyBjYWxsZXIgcGVyc2lzdHMgaXQKICogQHJldHVybnMge3sgYW5zd2VyZWQ6IGJvb2xlYW4sIGFuc3dlcjogc3RyaW5nfG51bGwsIHNvdXJjZUlkOiBzdHJpbmd8bnVsbCwgY29uZmlkZW5jZTogeyBsZXZlbDogc3RyaW5nLCByZWFzb25zOiBzdHJpbmdbXSB9LCBlc2NhbGF0ZTogYm9vbGVhbiwgcm91dGU6IHN0cmluZ3xudWxsLCBhdWRpdElkOiBzdHJpbmcsIHByb3Zpc2lvbmFsOiBib29sZWFuLCBsYWJlbDogc3RyaW5nfG51bGwsIHN1Z2dlc3RlZEVudHJ5OiB7IGlkOiBzdHJpbmcsIHF1ZXN0aW9uOiBzdHJpbmcgfXxudWxsIH19CiAqIEB0aHJvd3Mge0Vycm9yfSB3aGVuIHRoZSBrbm93bGVkZ2UgYmFzZSBmYWlscyB2YWxpZGF0aW9uCiAqLwpleHBvcnQgZnVuY3Rpb24gYW5zd2VyUXVlc3Rpb24oa2IsIHF1ZXN0aW9uLCBvcHRzID0ge30sIGF1ZGl0TG9nID0gW10pIHsKICBjb25zdCBpc3N1ZXMgPSB2YWxpZGF0ZUtiKGtiKTsKICBpZiAoaXNzdWVzLmxlbmd0aCkgewogICAgY29uc3QgZGV0YWlsID0gaXNzdWVzLm1hcCgoaSkgPT4gYCR7aS5lbnRyeUlkID8/ICI/In0uJHtpLmZpZWxkfTogJHtpLmlzc3VlfWApLmpvaW4oIjsgIik7CiAgICB0aHJvdyBuZXcgRXJyb3IoYGtub3dsZWRnZSBiYXNlIGZhaWxlZCB2YWxpZGF0aW9uICgke2lzc3Vlcy5sZW5ndGh9IGlzc3VlJHtpc3N1ZXMubGVuZ3RoID09PSAxID8gIiIgOiAicyJ9KTogJHtkZXRhaWx9YCk7CiAgfQogIGNvbnN0IHsgbGV2ZWwsIHJlYXNvbnMsIHRvcCwgcmFua2VkIH0gPSBnYXVnZUNvbmZpZGVuY2Uoa2IsIHF1ZXN0aW9uLCBvcHRzLnRocmVzaG9sZHMsIG9wdHMuYXNPZiwgewogICAganVyaXNkaWN0aW9uOiBvcHRzLmp1cmlzZGljdGlvbiwKICAgIHN5bm9ueW1zOiBvcHRzLnN5bm9ueW1zLAogIH0pOwogIGNvbnN0IGVzY2FsYXRlID0gbGV2ZWwgPT09ICJsb3ciOwogIGNvbnN0IHJvdXRlID0gZXNjYWxhdGUgPyByb3V0ZVRvKHRvcCwgb3B0cy5yb3V0aW5nKSA6IG51bGw7CiAgY29uc3QgYXVkaXRJZCA9IGBBVUQtJHtTdHJpbmcoYXVkaXRMb2cubGVuZ3RoICsgMSkucGFkU3RhcnQoNSwgIjAiKX1gOwogIGNvbnN0IHByb3Zpc2lvbmFsID0gIWVzY2FsYXRlICYmIGxldmVsID09PSAibWVkaXVtIjsKICBjb25zdCByZXN1bHQgPSB7CiAgICBhbnN3ZXJlZDogIWVzY2FsYXRlLAogICAgYW5zd2VyOiBlc2NhbGF0ZSA/IG51bGwgOiB0b3AuYW5zd2VyLAogICAgc291cmNlSWQ6IGVzY2FsYXRlID8gbnVsbCA6IHRvcC5pZCwKICAgIGNvbmZpZGVuY2U6IHsgbGV2ZWwsIHJlYXNvbnMgfSwKICAgIGVzY2FsYXRlLAogICAgcm91dGU6IGVzY2FsYXRlID8gcm91dGUgOiBudWxsLAogICAgYXVkaXRJZCwKICAgIHByb3Zpc2lvbmFsLAogICAgbGFiZWw6IHByb3Zpc2lvbmFsID8gIlByb3Zpc2lvbmFsIGd1aWRhbmNlIOKAlCBjb25maXJtIHdpdGggTGVnYWwuIiA6IG51bGwsCiAgICBzdWdnZXN0ZWRFbnRyeTogZXNjYWxhdGUgJiYgdG9wID8geyBpZDogdG9wLmlkLCBxdWVzdGlvbjogdG9wLnF1ZXN0aW9uIH0gOiBudWxsLAogIH07CiAgYXVkaXRMb2cucHVzaCh7CiAgICBhdWRpdElkLAogICAgdHM6IG9wdHMuYXNPZiA/PyBudWxsLCAvLyBkZXRlcm1pbmlzdGljIHRpbWVzdGFtcCBzdXBwbGllZCBieSBjYWxsZXIgKG9yIG51bGwgZm9yIGNhbGxlci1zaWRlIHN0YW1waW5nKQogICAgYXNrZWRCeTogb3B0cy5hc2tlZEJ5ID8/ICJhbm9ueW1vdXMiLAogICAgcXVlc3Rpb24sCiAgICBtYXRjaGVkOiByYW5rZWQubWFwKChyKSA9PiByLmVudHJ5LmlkKSwKICAgIGNvbmZpZGVuY2VMZXZlbDogbGV2ZWwsCiAgICBlc2NhbGF0ZWQ6IGVzY2FsYXRlLAogICAgcm91dGU6IHJlc3VsdC5yb3V0ZSwKICB9KTsKICByZXR1cm4gcmVzdWx0Owp9CgovKioKICogQ3JlYXRlIGFuIGVtcHR5IGF1ZGl0IGxvZyAoZXhwbGljaXQgc28gcGVyc2lzdGVuY2UgaXMgYSB2aXNpYmxlIGRlY2lzaW9uKS4KICogQHJldHVybnMge0FycmF5PGFueT59ICovCmV4cG9ydCBmdW5jdGlvbiBjcmVhdGVBdWRpdExvZygpIHsKICByZXR1cm4gW107Cn0KCi8qKgogKiBTZXJpYWxpemUgdGhlIGF1ZGl0IGxvZyBmb3IgZXhwb3J0IChhcHBlbmQtb25seSBKU09OIGxpbmVzKS4KICogQHBhcmFtIHtBcnJheTxhbnk+fSBhdWRpdExvZwogKiBAcmV0dXJucyB7c3RyaW5nfSAqLwpleHBvcnQgZnVuY3Rpb24gZXhwb3J0QXVkaXRMb2coYXVkaXRMb2cpIHsKICByZXR1cm4gKGF1ZGl0TG9nID8/IFtdKS5tYXAoKGUpID0+IEpTT04uc3RyaW5naWZ5KGUpKS5qb2luKCJcbiIpICsgKChhdWRpdExvZyA/PyBbXSkubGVuZ3RoID8gIlxuIiA6ICIiKTsKfQoKLyoqCiAqIFNlcmlhbGl6ZSB0aGUgYXVkaXQgbG9nIGludG8gaXRzIGR1cmFibGUgSlNPTkwgZm9ybSAodGhlIHNhdmUgc2lkZSBvZiB0aGUKICogcGVyc2lzdGVuY2UgcGFpcjsgYGxvYWRBdWRpdGAgaXMgdGhlIGludmVyc2UpLiBTYW1lIGJ5dGVzIGFzIGV4cG9ydEF1ZGl0TG9nLAogKiBidXQgcmVmdXNlcyB0byBwZXJzaXN0IGEgY29ycnVwdGVkIGxvZzogZXZlcnkgZW50cnkgbXVzdCBiZSBhbiBvYmplY3QKICogY2FycnlpbmcgYSB1bmlxdWUgbm9uLWVtcHR5IHN0cmluZyBgYXVkaXRJZGAg4oCUIGR1cGxpY2F0ZSBpZHMgd291bGQgYnJlYWsgdGhlCiAqIEFVRCBudW1iZXJpbmcgdGhhdCBhbnN3ZXJRdWVzdGlvbiByZWxpZXMgb24uCiAqIEBwYXJhbSB7QXJyYXk8YW55Pn0gYXVkaXRMb2cKICogQHJldHVybnMge3N0cmluZ30gSlNPTiBsaW5lcyAodHJhaWxpbmcgbmV3bGluZSB3aGVuIG5vbi1lbXB0eSkKICogQHRocm93cyB7RXJyb3J9IG5hbWluZyB0aGUgb2ZmZW5kaW5nIGVudHJ5IGluZGV4CiAqLwpleHBvcnQgZnVuY3Rpb24gc2F2ZUF1ZGl0KGF1ZGl0TG9nKSB7CiAgY29uc3Qgc2VlbiA9IG5ldyBTZXQoKTsKICAoYXVkaXRMb2cgPz8gW10pLmZvckVhY2goKGUsIGkpID0+IHsKICAgIGlmICghZSB8fCB0eXBlb2YgZSAhPT0gIm9iamVjdCIgfHwgQXJyYXkuaXNBcnJheShlKSkgewogICAgICB0aHJvdyBuZXcgRXJyb3IoYHNhdmVBdWRpdDogZW50cnkgJHtpfSBpcyBub3QgYW4gb2JqZWN0YCk7CiAgICB9CiAgICBpZiAodHlwZW9mIGUuYXVkaXRJZCAhPT0gInN0cmluZyIgfHwgIWUuYXVkaXRJZCkgewogICAgICB0aHJvdyBuZXcgRXJyb3IoYHNhdmVBdWRpdDogZW50cnkgJHtpfSBoYXMgbm8gYXVkaXRJZCDigJQgcmVmdXNpbmcgdG8gcGVyc2lzdCBhIGNvcnJ1cHRlZCBsb2dgKTsKICAgIH0KICAgIGlmIChzZWVuLmhhcyhlLmF1ZGl0SWQpKSB7CiAgICAgIHRocm93IG5ldyBFcnJvcihgc2F2ZUF1ZGl0OiBkdXBsaWNhdGUgYXVkaXRJZCAke2UuYXVkaXRJZH0g4oCUIHRoZSBsb2cgaXMgYXBwZW5kLW9ubHk7IGlkcyBuZXZlciByZXBlYXRgKTsKICAgIH0KICAgIHNlZW4uYWRkKGUuYXVkaXRJZCk7CiAgfSk7CiAgcmV0dXJuIGV4cG9ydEF1ZGl0TG9nKGF1ZGl0TG9nKTsKfQoKLyoqCiAqIExvYWQgYSBkdXJhYmxlIGF1ZGl0IGxvZyBiYWNrIGZyb20gaXRzIEpTT05MIGZvcm0gKHRoZSBsb2FkIHNpZGUgb2YgdGhlCiAqIHBlcnNpc3RlbmNlIHBhaXIpIHNvIGEgcmVsb2FkZWQgcGFnZSBvciBuZXcgcHJvY2VzcyBjb250aW51ZXMgdGhlIHNhbWUKICogYXBwZW5kLW9ubHkgbG9nIOKAlCBudW1iZXJpbmcgaW5jbHVkZWQg4oCUIGluc3RlYWQgb2YgcmVzdGFydGluZyBpdC4gUmVmdXNlcywKICogbmV2ZXIgc2lsZW50bHkgcmVwYWlyczogZXZlcnkgbm9uLWVtcHR5IGxpbmUgbXVzdCBwYXJzZSBhcyBhIEpTT04gb2JqZWN0CiAqIHdpdGggYSB1bmlxdWUgbm9uLWVtcHR5IHN0cmluZyBgYXVkaXRJZGAuIE51bGwvZW1wdHkgaW5wdXQgeWllbGRzIGEgZnJlc2gKICogZW1wdHkgbG9nIChjcmVhdGVBdWRpdExvZyBlcXVpdmFsZW50KS4KICogQHBhcmFtIHtzdHJpbmd8bnVsbHx1bmRlZmluZWR9IGpzb25sCiAqIEByZXR1cm5zIHtBcnJheTxhbnk+fSBhIGZyZXNoIGF1ZGl0IGxvZyBhcnJheSwgc2FmZSB0byBoYW5kIHRvIGFuc3dlclF1ZXN0aW9uCiAqIEB0aHJvd3Mge0Vycm9yfSBuYW1pbmcgdGhlIDEtYmFzZWQgbGluZSBudW1iZXIgb2YgdGhlIG1hbGZvcm1lZCBpbnB1dAogKi8KZXhwb3J0IGZ1bmN0aW9uIGxvYWRBdWRpdChqc29ubCkgewogIGNvbnN0IGxvZyA9IGNyZWF0ZUF1ZGl0TG9nKCk7CiAgaWYgKGpzb25sID09IG51bGwpIHJldHVybiBsb2c7CiAgU3RyaW5nKGpzb25sKS5zcGxpdCgiXG4iKS5mb3JFYWNoKChsaW5lLCBpKSA9PiB7CiAgICBjb25zdCB0ZXh0ID0gbGluZS50cmltKCk7CiAgICBpZiAoIXRleHQpIHJldHVybjsgLy8gdG9sZXJhdGUgYmxhbmsgbGluZXMgLyB0cmFpbGluZyBuZXdsaW5lCiAgICBsZXQgZW50cnk7CiAgICB0cnkgewogICAgICBlbnRyeSA9IEpTT04ucGFyc2UodGV4dCk7CiAgICB9IGNhdGNoIHsKICAgICAgdGhyb3cgbmV3IEVycm9yKGBsb2FkQXVkaXQ6IGxpbmUgJHtpICsgMX0gaXMgbm90IHZhbGlkIEpTT05gKTsKICAgIH0KICAgIGlmICghZW50cnkgfHwgdHlwZW9mIGVudHJ5ICE9PSAib2JqZWN0IiB8fCBBcnJheS5pc0FycmF5KGVudHJ5KSkgewogICAgICB0aHJvdyBuZXcgRXJyb3IoYGxvYWRBdWRpdDogbGluZSAke2kgKyAxfSBpcyBub3QgYSBKU09OIG9iamVjdGApOwogICAgfQogICAgaWYgKHR5cGVvZiBlbnRyeS5hdWRpdElkICE9PSAic3RyaW5nIiB8fCAhZW50cnkuYXVkaXRJZCkgewogICAgICB0aHJvdyBuZXcgRXJyb3IoYGxvYWRBdWRpdDogbGluZSAke2kgKyAxfSBoYXMgbm8gYXVkaXRJZGApOwogICAgfQogICAgaWYgKGxvZy5zb21lKChlKSA9PiBlLmF1ZGl0SWQgPT09IGVudHJ5LmF1ZGl0SWQpKSB7CiAgICAgIHRocm93IG5ldyBFcnJvcihgbG9hZEF1ZGl0OiBkdXBsaWNhdGUgYXVkaXRJZCAke2VudHJ5LmF1ZGl0SWR9IGF0IGxpbmUgJHtpICsgMX0g4oCUIHRoZSBsb2cgaXMgYXBwZW5kLW9ubHk7IGlkcyBuZXZlciByZXBlYXRgKTsKICAgIH0KICAgIGxvZy5wdXNoKGVudHJ5KTsKICB9KTsKICByZXR1cm4gbG9nOwp9CgovKiAtLS0tLS0tLS0tIGVzY2FsYXRpb24gdGlja2V0IChkcmFmdHMgdGhlIGFzaykgLS0tLS0tLS0tLSAqLwoKLyoqCiAqIERyYWZ0IGEgZGV0ZXJtaW5pc3RpYyBpbnRha2UgdGlja2V0IGZyb20gYW4gZXNjYWxhdGVkIGFuc3dlciArIGl0cyBhdWRpdC1sb2cKICogZW50cnk6IHdoYXQgd2FzIGFza2VkLCBieSB3aG9tLCB3aGF0IG1hdGNoZWQsIHdoeSBpdCBlc2NhbGF0ZWQsIHdoZXJlIGl0CiAqIHJvdXRlZCwgYW5kIHRoZSBjbG9zZXN0IEtCIGVudHJ5IChpZiBhbnkpIGZvciB0aGUgbGF3eWVyIHRvIHN0YXJ0IGZyb20uCiAqIFBsYWluIGRhdGEg4oCUIEpTT04tc2VyaWFsaXphYmxlIGFzLWlzLgogKiBAcGFyYW0ge3sgYXVkaXRJZDogc3RyaW5nLCByb3V0ZTogc3RyaW5nfG51bGwsIGNvbmZpZGVuY2U/OiB7IHJlYXNvbnM6IHN0cmluZ1tdIH0sIHN1Z2dlc3RlZEVudHJ5PzogYW55IH19IHJlc3VsdCDigJQgZXNjYWxhdGVkIGFuc3dlclF1ZXN0aW9uIHJlc3VsdAogKiBAcGFyYW0ge0FycmF5PGFueT59IGF1ZGl0TG9nCiAqIEByZXR1cm5zIHt7IHJvdXRlOiBzdHJpbmd8bnVsbCwgcXVlc3Rpb246IHN0cmluZ3xudWxsLCBhc2tlcjogc3RyaW5nfG51bGwsIG1hdGNoZWRJZHM6IHN0cmluZ1tdLCByZWFzb25zOiBzdHJpbmdbXSwgc3VnZ2VzdGVkRW50cnk6IHsgaWQ6IHN0cmluZywgcXVlc3Rpb246IHN0cmluZyB9fG51bGwgfX0KICovCmV4cG9ydCBmdW5jdGlvbiBlc2NhbGF0aW9uVGlja2V0KHJlc3VsdCwgYXVkaXRMb2cgPSBbXSkgewogIGNvbnN0IGF1ZGl0ID0gKGF1ZGl0TG9nID8/IFtdKS5maW5kKChlKSA9PiBlLmF1ZGl0SWQgPT09IHJlc3VsdD8uYXVkaXRJZCkgPz8ge307CiAgcmV0dXJuIHsKICAgIHJvdXRlOiByZXN1bHQ/LnJvdXRlID8/IG51bGwsCiAgICBxdWVzdGlvbjogYXVkaXQucXVlc3Rpb24gPz8gbnVsbCwKICAgIGFza2VyOiBhdWRpdC5hc2tlZEJ5ID8/IG51bGwsCiAgICBtYXRjaGVkSWRzOiBhdWRpdC5tYXRjaGVkID8/IFtdLAogICAgcmVhc29uczogcmVzdWx0Py5jb25maWRlbmNlPy5yZWFzb25zID8/IFtdLAogICAgc3VnZ2VzdGVkRW50cnk6IHJlc3VsdD8uc3VnZ2VzdGVkRW50cnkgPz8gbnVsbCwKICB9Owp9CgovKiAtLS0tLS0tLS0tIGNvcnJlY3Rpb24gbG9vcCAobGF3eWVyIGZlZWRiYWNrIOKGkiBndWlkYW5jZSBiYXNlKSAtLS0tLS0tLS0tICovCgovKioKICogUmVjb3JkIGEgbGF3eWVyJ3MgY29ycmVjdGlvbiB0byBhbiBlc2NhbGF0ZWQgcXVlc3Rpb24gYXMgYSBORVcgS0IgZW50cnkgaW4KICogYHBlbmRpbmctYXBwcm92YWxgIHN0YXRlLCBsaW5rZWQgdG8gdGhlIGF1ZGl0IGVudHJ5IHRoYXQgYXNrZWQgaXQuIFRoZSBlbnRyeQogKiBpcyB1bnJldHJpZXZhYmxlIChhbmQgZXhlbXB0IGZyb20gdmFsaWRhdGlvbikgdW50aWwgYXBwcm92ZUVudHJ5IGZsaXBzIGl0LgogKiBAcGFyYW0ge0FycmF5PGFueT59IGtiIOKAlCBtdXRhdGVkIGluIHBsYWNlIChlbnRyeSBhcHBlbmRlZCkKICogQHBhcmFtIHtBcnJheTxhbnk+fSBhdWRpdExvZyDigJQgc291cmNlIG9mIHRoZSBvcmlnaW5hbCBxdWVzdGlvbgogKiBAcGFyYW0ge3sgYXVkaXRJZDogc3RyaW5nLCBhbnN3ZXI6IHN0cmluZywgYXBwcm92ZWRCeT86IHN0cmluZywgdGFncz86IHN0cmluZ1tdLCBqdXJpc2RpY3Rpb24/OiBzdHJpbmcsIHVwZGF0ZWQ/OiBzdHJpbmcgfX0gY29ycmVjdGlvbgogKiBAcmV0dXJucyB7eyBlbnRyeTogYW55LCBzdGF0dXM6ICJwZW5kaW5nLWFwcHJvdmFsIiB9fQogKiBAdGhyb3dzIHtFcnJvcn0gd2hlbiB0aGUgYXVkaXQgaWQgaXMgdW5rbm93biAoY29ycmVjdGlvbnMgbXVzdCBsaW5rIHRvIGFuIGFza2VkIHF1ZXN0aW9uKQogKi8KZXhwb3J0IGZ1bmN0aW9uIGFwcGx5Q29ycmVjdGlvbihrYiwgYXVkaXRMb2csIGNvcnJlY3Rpb24gPSB7fSkgewogIGNvbnN0IGF1ZGl0ID0gKGF1ZGl0TG9nID8/IFtdKS5maW5kKChlKSA9PiBlLmF1ZGl0SWQgPT09IGNvcnJlY3Rpb24uYXVkaXRJZCk7CiAgaWYgKCFhdWRpdCkgewogICAgdGhyb3cgbmV3IEVycm9yKGBhcHBseUNvcnJlY3Rpb246IGF1ZGl0IGVudHJ5ICR7Y29ycmVjdGlvbi5hdWRpdElkfSBub3QgZm91bmQg4oCUIGNvcnJlY3Rpb25zIG11c3QgbGluayB0byBhbiBhc2tlZCBxdWVzdGlvbmApOwogIH0KICBjb25zdCBlbnRyeSA9IHsKICAgIGlkOiBga2ItY29yci0ke1N0cmluZyhjb3JyZWN0aW9uLmF1ZGl0SWQpLnRvTG93ZXJDYXNlKCkucmVwbGFjZSgvXmF1ZC0vLCAiIil9YCwKICAgIHF1ZXN0aW9uOiBhdWRpdC5xdWVzdGlvbiwKICAgIGFuc3dlcjogY29ycmVjdGlvbi5hbnN3ZXIsCiAgICB0YWdzOiBjb3JyZWN0aW9uLnRhZ3MgPz8gW10sCiAgICBqdXJpc2RpY3Rpb246IGNvcnJlY3Rpb24uanVyaXNkaWN0aW9uID8/IG51bGwsCiAgICB1cGRhdGVkOiBjb3JyZWN0aW9uLnVwZGF0ZWQgPz8gbnVsbCwKICAgIGFwcHJvdmVkQnk6IG51bGwsIC8vIHNldCBieSBhcHByb3ZlRW50cnk7IHBlbmRpbmcgZW50cmllcyBhcmUgbmV2ZXIgc2VydmVkCiAgICBzdGF0dXM6ICJwZW5kaW5nLWFwcHJvdmFsIiwKICAgIHNvdXJjZUF1ZGl0SWQ6IGNvcnJlY3Rpb24uYXVkaXRJZCwKICAgIHN1Ym1pdHRlZEJ5OiBjb3JyZWN0aW9uLmFwcHJvdmVkQnkgPz8gbnVsbCwKICB9OwogIChrYiA/PyBbXSkucHVzaChlbnRyeSk7CiAgcmV0dXJuIHsgZW50cnksIHN0YXR1czogZW50cnkuc3RhdHVzIH07Cn0KCi8qKgogKiBBcHByb3ZlIGEgcGVuZGluZy1hcHByb3ZhbCBjb3JyZWN0aW9uOiBmbGlwcyBzdGF0dXMgdG8gImFwcHJvdmVkIiBhbmQgc3RhbXBzCiAqIHRoZSBhcHByb3ZlciwgbWFraW5nIHRoZSBlbnRyeSByZXRyaWV2YWJsZSBmcm9tIHRoYXQgcG9pbnQgb24uIFRoZSBlbnRyeSBtdXN0CiAqIGNhcnJ5IGEgbm9uLWVtcHR5IGFuc3dlciBhbmQgYSBwYXJzZWFibGUgWVlZWS1NTS1ERCBgdXBkYXRlZGAgZGF0ZSDigJQgYXBwcm92aW5nCiAqIGFueXRoaW5nIGxlc3Mgd291bGQgcG9pc29uIHZhbGlkYXRlS2IgYW5kIGJyaWNrIGV2ZXJ5IGxhdGVyIGFuc3dlclF1ZXN0aW9uLgogKiBAcGFyYW0ge0FycmF5PGFueT59IGtiCiAqIEBwYXJhbSB7c3RyaW5nfSBlbnRyeUlkCiAqIEBwYXJhbSB7c3RyaW5nfSBhcHByb3ZlZEJ5CiAqIEByZXR1cm5zIHt7IGVudHJ5OiBhbnksIHN0YXR1czogImFwcHJvdmVkIiB9fQogKiBAdGhyb3dzIHtFcnJvcn0gd2hlbiB0aGUgZW50cnkgaXMgbWlzc2luZywgbm90IHBlbmRpbmcsIHRoZSBhcHByb3ZlciBpcyBibGFuaywKICogICBvciB0aGUgZW50cnkgd291bGQgZmFpbCB2YWxpZGF0ZUtiIChubyBhbnN3ZXIgdGV4dCAvIHVucGFyc2VhYmxlIHVwZGF0ZWQpCiAqLwpleHBvcnQgZnVuY3Rpb24gYXBwcm92ZUVudHJ5KGtiLCBlbnRyeUlkLCBhcHByb3ZlZEJ5KSB7CiAgY29uc3QgZSA9IChrYiA/PyBbXSkuZmluZCgoeCkgPT4geC5pZCA9PT0gZW50cnlJZCk7CiAgaWYgKCFlKSB0aHJvdyBuZXcgRXJyb3IoYGFwcHJvdmVFbnRyeTogbm8gZW50cnkgd2l0aCBpZCAke2VudHJ5SWR9YCk7CiAgaWYgKGUuc3RhdHVzICE9PSAicGVuZGluZy1hcHByb3ZhbCIpIHsKICAgIHRocm93IG5ldyBFcnJvcihgYXBwcm92ZUVudHJ5OiBlbnRyeSAke2VudHJ5SWR9IGlzICcke2Uuc3RhdHVzID8/ICJhcHByb3ZlZCJ9Jywgbm90IHBlbmRpbmctYXBwcm92YWwg4oCUIG9ubHkgcGVuZGluZyBjb3JyZWN0aW9ucyBjYW4gYmUgYXBwcm92ZWRgKTsKICB9CiAgaWYgKCFhcHByb3ZlZEJ5KSB0aHJvdyBuZXcgRXJyb3IoImFwcHJvdmVFbnRyeTogYXBwcm92ZWRCeSBpcyByZXF1aXJlZCIpOwogIGlmICh0eXBlb2YgZS5hbnN3ZXIgIT09ICJzdHJpbmciIHx8ICFlLmFuc3dlci50cmltKCkpIHsKICAgIHRocm93IG5ldyBFcnJvcihgYXBwcm92ZUVudHJ5OiBlbnRyeSAke2VudHJ5SWR9IGhhcyBubyBhbnN3ZXIgdGV4dCDigJQgYXBwcm92aW5nIGl0IHdvdWxkIGZhaWwgdmFsaWRhdGVLYmApOwogIH0KICBpZiAoIXBhcnNlRGF0ZShlLnVwZGF0ZWQpKSB7CiAgICB0aHJvdyBuZXcgRXJyb3IoYGFwcHJvdmVFbnRyeTogZW50cnkgJHtlbnRyeUlkfSBoYXMgbm8gcGFyc2VhYmxlIFlZWVktTU0tREQgdXBkYXRlZCBkYXRlIOKAlCBhcHByb3ZpbmcgaXQgd291bGQgZmFpbCB2YWxpZGF0ZUtiYCk7CiAgfQogIGUuc3RhdHVzID0gImFwcHJvdmVkIjsKICBlLmFwcHJvdmVkQnkgPSBhcHByb3ZlZEJ5OwogIHJldHVybiB7IGVudHJ5OiBlLCBzdGF0dXM6IGUuc3RhdHVzIH07Cn0KCi8qIC0tLS0tLS0tLS0gZXNjYWxhdGlvbiBTTEFzIC0tLS0tLS0tLS0gKi8KCi8qKiBQYXJzZSAiWVlZWS1NTS1ERCIgKFVUQyBtaWRuaWdodCkgb3IgYSBmdWxsIElTTyB0aW1lc3RhbXA7IG51bGwgd2hlbiB1bnBhcnNlYWJsZS4KICogQHBhcmFtIHtzdHJpbmd8bnVsbHx1bmRlZmluZWR9IHYKICogQHJldHVybnMge0RhdGV8bnVsbH0gKi8KZnVuY3Rpb24gcGFyc2VUcyh2KSB7CiAgaWYgKCF2IHx8IHR5cGVvZiB2ICE9PSAic3RyaW5nIikgcmV0dXJuIG51bGw7CiAgY29uc3QgZCA9IHBhcnNlRGF0ZSh2KTsKICBpZiAoZCkgcmV0dXJuIGQ7CiAgY29uc3QgdCA9IERhdGUucGFyc2Uodik7CiAgcmV0dXJuIE51bWJlci5pc05hTih0KSA/IG51bGwgOiBuZXcgRGF0ZSh0KTsKfQoKLyoqCiAqIEZsYWcgZXNjYWxhdGVkIGF1ZGl0IGVudHJpZXMgd2hvc2Ugb3duaW5nIHRlYW0gaXMgcGFzdCBpdHMgcm91dGluZyBTTEEuCiAqIFNMQXMgY29tZSBmcm9tIHRoZSByb3V0aW5nIHRhYmxlJ3MgYHsgdGVhbSwgc2xhRGF5cyB9YCB2YWx1ZXMgKHJ1bGVzLWFzLWRhdGEpOwogKiB0ZWFtcyB3aXRob3V0IGEgY29uZmlndXJlZCBTTEEgYW5kIGVudHJpZXMgd2l0aG91dCBhIHBhcnNlYWJsZSB0cyBhcmUgc2tpcHBlZC4KICogQHBhcmFtIHtBcnJheTxhbnk+fSBhdWRpdExvZwogKiBAcGFyYW0ge1JlY29yZDxzdHJpbmcsc3RyaW5nfHt0ZWFtOnN0cmluZyxzbGFEYXlzOm51bWJlcn0+fSByb3V0aW5nCiAqIEBwYXJhbSB7c3RyaW5nfSBhc09mSXNvIOKAlCBhbmNob3IgZGF0ZTsgbm8gaGlkZGVuIGNsb2NrcwogKiBAcmV0dXJucyB7QXJyYXk8eyBhdWRpdElkOiBzdHJpbmcsIHJvdXRlOiBzdHJpbmcsIHF1ZXN0aW9uOiBzdHJpbmd8bnVsbCwgb3BlbmVkOiBzdHJpbmd8bnVsbCwgYWdlRGF5czogbnVtYmVyLCBzbGFEYXlzOiBudW1iZXIsIG92ZXJkdWVCeURheXM6IG51bWJlciB9Pn0KICovCmV4cG9ydCBmdW5jdGlvbiBvdmVyZHVlRXNjYWxhdGlvbnMoYXVkaXRMb2csIHJvdXRpbmcgPSB7fSwgYXNPZklzbykgewogIGNvbnN0IGFzT2YgPSBwYXJzZVRzKGFzT2ZJc28pOwogIGlmICghYXNPZikgcmV0dXJuIFtdOwogIGNvbnN0IHNsYUJ5VGVhbSA9IHt9OwogIGZvciAoY29uc3QgdiBvZiBPYmplY3QudmFsdWVzKHJvdXRpbmcgPz8ge30pKSB7CiAgICBpZiAodiAmJiB0eXBlb2YgdiA9PT0gIm9iamVjdCIgJiYgdi50ZWFtICYmIE51bWJlci5pc0Zpbml0ZSh2LnNsYURheXMpKSBzbGFCeVRlYW1bdi50ZWFtXSA9IHYuc2xhRGF5czsKICB9CiAgY29uc3Qgb3V0ID0gW107CiAgZm9yIChjb25zdCBlIG9mIGF1ZGl0TG9nID8/IFtdKSB7CiAgICBpZiAoIWUgfHwgIWUuZXNjYWxhdGVkIHx8ICFlLnJvdXRlKSBjb250aW51ZTsKICAgIGNvbnN0IHNsYURheXMgPSBzbGFCeVRlYW1bZS5yb3V0ZV07CiAgICBpZiAoc2xhRGF5cyA9PSBudWxsKSBjb250aW51ZTsgLy8gbm8gU0xBIGNvbmZpZ3VyZWQgZm9yIHRoaXMgdGVhbSDigJQgY2Fubm90IGp1ZGdlCiAgICBjb25zdCBvcGVuZWQgPSBwYXJzZVRzKGUudHMpOwogICAgaWYgKCFvcGVuZWQpIGNvbnRpbnVlOwogICAgY29uc3QgYWdlRGF5cyA9IE1hdGgucm91bmQoKGFzT2YuZ2V0VGltZSgpIC0gb3BlbmVkLmdldFRpbWUoKSkgLyA4NjQwMDAwMCk7CiAgICBpZiAoYWdlRGF5cyA+IHNsYURheXMpIHsKICAgICAgb3V0LnB1c2goewogICAgICAgIGF1ZGl0SWQ6IGUuYXVkaXRJZCwKICAgICAgICByb3V0ZTogZS5yb3V0ZSwKICAgICAgICBxdWVzdGlvbjogZS5xdWVzdGlvbiA/PyBudWxsLAogICAgICAgIG9wZW5lZDogZS50cyA/PyBudWxsLAogICAgICAgIGFnZURheXMsCiAgICAgICAgc2xhRGF5cywKICAgICAgICBvdmVyZHVlQnlEYXlzOiBhZ2VEYXlzIC0gc2xhRGF5cywKICAgICAgfSk7CiAgICB9CiAgfQogIHJldHVybiBvdXQ7Cn0K";
-  import EXAMPLE from "data:text/javascript;base64,ZXhwb3J0IGRlZmF1bHQgewogICJhc09mIjogIjIwMjYtMTEtMDciLAogICJjb21wYW55IjogIk1lcmlkaWFuIFNvZnR3YXJlIENvLiAoZmljdGlvbmFsKSIsCiAgInRocmVzaG9sZHMiOiB7ICJoaWdoIjogOSwgIm1lZGl1bSI6IDUsICJmcmVzaG5lc3NEYXlzIjogMzY1IH0sCiAgInJvdXRpbmciOiB7CiAgICAicHJpdmFjeSI6ICJwcml2YWN5LWNvdW5zZWwiLAogICAgImVtcGxveW1lbnQiOiAicGVvcGxlLWxlZ2FsIiwKICAgICJjb250cmFjdHMiOiAiY29tbWVyY2lhbC1sZWdhbCIsCiAgICAiZXhwZW5zZXMiOiAiZmluYW5jZS1vcHMiLAogICAgImRlZmF1bHQiOiAibGVnYWwtaW50YWtlIgogIH0sCiAgImtub3dsZWRnZUJhc2UiOiBbCiAgICB7CiAgICAgICJpZCI6ICJrYi0wMDEiLAogICAgICAicXVlc3Rpb24iOiAiV2hpY2ggTkRBIHRlbXBsYXRlIHNob3VsZCBJIHVzZSBmb3IgYSBwcm9zcGVjdGl2ZSB2ZW5kb3I/IiwKICAgICAgImFuc3dlciI6ICJVc2UgdGhlIE11dHVhbCBOREEgKEZvcm0gTC0xMDIpIGZvciBhbGwgcHJvc3BlY3RpdmUgdmVuZG9yczsgZG8gbm90IHNpZ24gdGhlIHZlbmRvcidzIG93biBwYXBlci4gRXhjZXB0aW9ucyAoc2hvcnRlciB0ZXJtLCBubyByZXNpZHVhbHMgY2xhdXNlKSByb3V0ZSB0byBDb21tZXJjaWFsIExlZ2FsLiIsCiAgICAgICJ0YWdzIjogWyJuZGEiLCAidmVuZG9yIiwgImNvbnRyYWN0cyJdLAogICAgICAianVyaXNkaWN0aW9uIjogIlVTIiwKICAgICAgInVwZGF0ZWQiOiAiMjAyNi0wOS0xNSIsCiAgICAgICJhcHByb3ZlZEJ5IjogIkEuIEZlcm4sIERlcHV0eSBHQyAoZmljdGlvbmFsKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJrYi0wMDIiLAogICAgICAicXVlc3Rpb24iOiAiV2hpY2ggTkRBIHRlbXBsYXRlIHNob3VsZCBJIHVzZSBmb3IgYW4gaW5kaXZpZHVhbCBjb25zdWx0YW50PyIsCiAgICAgICJhbnN3ZXIiOiAiVXNlIHRoZSBDb25zdWx0YW50IE5EQSAoRm9ybSBMLTEwNCkgd2l0aCB0aGUgSVAgYXNzaWdubWVudCByaWRlciBhdHRhY2hlZC4gSW5kZXBlbmRlbnQtY29udHJhY3RvciBzdGF0dXMgbXVzdCBiZSBjb25maXJtZWQgYnkgUGVvcGxlIExlZ2FsIGJlZm9yZSBzaWduYXR1cmUuIiwKICAgICAgInRhZ3MiOiBbIm5kYSIsICJjb25zdWx0YW50IiwgImNvbnRyYWN0cyIsICJlbXBsb3ltZW50Il0sCiAgICAgICJqdXJpc2RpY3Rpb24iOiAiVVMiLAogICAgICAidXBkYXRlZCI6ICIyMDI2LTA5LTIwIiwKICAgICAgImFwcHJvdmVkQnkiOiAiQS4gRmVybiwgRGVwdXR5IEdDIChmaWN0aW9uYWwpIgogICAgfSwKICAgIHsKICAgICAgImlkIjogImtiLTAwMyIsCiAgICAgICJxdWVzdGlvbiI6ICJDYW4gSSBleHBlbnNlIGNsaWVudCBlbnRlcnRhaW5tZW50IG92ZXIgJDUwMD8iLAogICAgICAiYW5zd2VyIjogIkVudGVydGFpbm1lbnQgYWJvdmUgJDUwMCByZXF1aXJlcyBwcmUtYXBwcm92YWwgZnJvbSBGaW5hbmNlIGFuZCB0aGUgcmVzcG9uc2libGUgcGFydG5lciwgbG9nZ2VkIGluIHRoZSBtYXR0ZXIgZmlsZSBiZWZvcmUgdGhlIGV2ZW50LCBub3QgYWZ0ZXIuIiwKICAgICAgInRhZ3MiOiBbImV4cGVuc2VzIiwgImZpbmFuY2UiXSwKICAgICAgImp1cmlzZGljdGlvbiI6ICJVUyIsCiAgICAgICJ1cGRhdGVkIjogIjIwMjYtMDYtMDIiLAogICAgICAiYXBwcm92ZWRCeSI6ICJGaW5hbmNlIENvbW1pdHRlZSAoZmljdGlvbmFsKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJrYi0wMDQiLAogICAgICAicXVlc3Rpb24iOiAiSG93IGRvIEkgcmVwb3J0IGEgc3VzcGVjdGVkIGRhdGEgcHJpdmFjeSBpbmNpZGVudD8iLAogICAgICAiYW5zd2VyIjogIkVtYWlsIHNlY3VyaXR5LWluY2lkZW50c0BleGFtcGxlLnRlc3Qgd2l0aGluIDEgaG91ciBvZiBkaXNjb3ZlcnkgYW5kIGRvIG5vdCBkaXNjdXNzIGV4dGVybmFsbHkuIFByaXZhY3kgQ291bnNlbCBkZWNpZGVzIG9uIHJlZ3VsYXRvciBub3RpZmljYXRpb24gdW5kZXIgdGhlIGluY2lkZW50IHJ1bmJvb2suIiwKICAgICAgInRhZ3MiOiBbInByaXZhY3kiLCAic2VjdXJpdHkiLCAiaW5jaWRlbnQiXSwKICAgICAgImp1cmlzZGljdGlvbiI6ICJVUyIsCiAgICAgICJ1cGRhdGVkIjogIjIwMjYtMTAtMzAiLAogICAgICAiYXBwcm92ZWRCeSI6ICJSLiBDYXN0ZWxsYW4sIFByaXZhY3kgQ291bnNlbCAoZmljdGlvbmFsKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICJrYi0wMDUiLAogICAgICAicXVlc3Rpb24iOiAiSG93IGxvbmcgZG8gd2UgcmV0YWluIHdlYnNpdGUgdmlzaXRvciBkYXRhPyIsCiAgICAgICJhbnN3ZXIiOiAiMjYgbW9udGhzIHBlciB0aGUgMjAyNCByZXRlbnRpb24gc2NoZWR1bGUsIHRoZW4gYW5vbnltaXplIG9yIGRlbGV0ZSAoUHJpdmFjeSBQb2xpY3kgwqc5KS4iLAogICAgICAidGFncyI6IFsicHJpdmFjeSIsICJkYXRhLXJldGVudGlvbiJdLAogICAgICAianVyaXNkaWN0aW9uIjogIlVTIiwKICAgICAgInVwZGF0ZWQiOiAiMjAyNC0wMy0wMSIsCiAgICAgICJhcHByb3ZlZEJ5IjogIlByaXZhY3kgVGVhbSAoZmljdGlvbmFsKSIKICAgIH0KICBdLAogICJxdWVzdGlvbnMiOiBbCiAgICB7ICJhc2tlZEJ5IjogImoubW9yZWF1QGV4YW1wbGUudGVzdCIsICJxdWVzdGlvbiI6ICJXaGljaCBOREEgdGVtcGxhdGUgZG8gSSB1c2UgZm9yIGEgbmV3IGFuYWx5dGljcyB2ZW5kb3I/IiB9LAogICAgeyAiYXNrZWRCeSI6ICJzLm9rYWZvckBleGFtcGxlLnRlc3QiLCAicXVlc3Rpb24iOiAiQ2FuIEkgZXhwZW5zZSBjbGllbnQgZW50ZXJ0YWlubWVudCBvdmVyICQ1MDAgZm9yIHRoZSBIYWxiZXJkIGRpbm5lcj8iIH0sCiAgICB7ICJhc2tlZEJ5IjogImoubW9yZWF1QGV4YW1wbGUudGVzdCIsICJxdWVzdGlvbiI6ICJIb3cgbG9uZyBkbyB3ZSByZXRhaW4gd2Vic2l0ZSB2aXNpdG9yIGRhdGEgdW5kZXIgdGhlIHByaXZhY3kgcG9saWN5PyIgfSwKICAgIHsgImFza2VkQnkiOiAidC5uZ3V5ZW5AZXhhbXBsZS50ZXN0IiwgInF1ZXN0aW9uIjogIkRvIHdlIG5lZWQgYSBsaWNlbnNlIHRvIGxhdW5jaCBhIHNhdGVsbGl0ZSBmb3IgdGhlIG1hcmtldGluZyB0ZWFtPyIgfSwKICAgIHsgImFza2VkQnkiOiAicy5va2Fmb3JAZXhhbXBsZS50ZXN0IiwgInF1ZXN0aW9uIjogIkEgcmVwb3J0ZXIgaXMgYXNraW5nIGFib3V0IHRoZSBvdXRhZ2Ug4oCUIHdoYXQgZG8gSSBzYXkgYWJvdXQgdGhlIGRhdGEgcHJpdmFjeSBpbmNpZGVudD8iIH0KICBdCn0KCg==";
+    answerQuestion, createAuditLog, exportAuditLog, saveAudit, loadAudit,
+    gaugeConfidence, escalationTicket, applyCorrection, approveEntry,
+    overdueEscalations, parseDate,
+  } from "data:text/javascript;base64,CmNvbnN0IFNUT1BXT1JEUyA9IG5ldyBTZXQoCiJhIGFuIHRoZSBpcyBhcmUgd2FzIHdlcmUgYmUgYmVlbiBiZWluZyBvZiBmb3IgdG8gaW4gb24gYXQgYnkgd2l0aCBhYm91dCBpbnRvIGZyb20gYXMgdGhhdCB0aGlzIGl0IGl0cyBkbyBkb2VzIGRpZCBjYW4gY291bGQgc2hvdWxkIHdvdWxkIHdpbGwgc2hhbGwgbWF5IG1pZ2h0IG11c3QgbmVlZCBuZWVkcyBpIHdlIHlvdSBvdXIgeW91ciB0aGVpciB3aGF0IHdoZW4gd2hlcmUgd2hvIHdob20gaG93IHdoaWNoIGFuZCBvciBpZiBub3Qgbm8geWVzIi5zcGxpdCgiICIpCik7CmV4cG9ydCBmdW5jdGlvbiB0b2tlbml6ZShzKSB7CnJldHVybiBTdHJpbmcocyA/PyAiIikKLnRvTG93ZXJDYXNlKCkKLnJlcGxhY2UoL1teYS16MC05XHMtXS9nLCAiICIpCi5zcGxpdCgvXHMrLykKLmZpbHRlcigodCkgPT4gdC5sZW5ndGggPiAxICYmICFTVE9QV09SRFMuaGFzKHQpKTsKfQpleHBvcnQgZnVuY3Rpb24gZm9sZFRva2VuKHQpIHsKaWYgKHQuZW5kc1dpdGgoImllcyIpICYmIHQubGVuZ3RoID4gNCkgcmV0dXJuIHQuc2xpY2UoMCwgLTMpICsgInkiOwppZiAodC5sZW5ndGggPiA0ICYmIC8oPzp4fHp8Y2h8c2h8c3MpZXMkLy50ZXN0KHQpKSByZXR1cm4gdC5zbGljZSgwLCAtMik7CmlmICh0LmVuZHNXaXRoKCJzIikgJiYgIXQuZW5kc1dpdGgoInNzIikgJiYgdC5sZW5ndGggPiAzKSByZXR1cm4gdC5zbGljZSgwLCAtMSk7CnJldHVybiB0Owp9CmV4cG9ydCBjb25zdCBERUZBVUxUX1NZTk9OWU1TID0gewpjb25maWRlbnRpYWxpdHk6IFsibmRhIl0sCnN1cHBsaWVyOiBbInZlbmRvciJdLApzdGFmZjogWyJlbXBsb3llZSJdLApzcGVuZDogWyJleHBlbnNlIl0sCn07CmV4cG9ydCBmdW5jdGlvbiBleHBhbmRUb2tlbnModG9rZW5zLCBzeW5vbnltcykgewpjb25zdCBncm91cHMgPSBPYmplY3QuZW50cmllcyhzeW5vbnltcyA/PyB7fSkubWFwKChbaywgdiA9IFtdXSkgPT4gW2ssIC4uLnZdKTsKY29uc3QgZXh0cmEgPSBbXTsKZm9yIChjb25zdCB0IG9mIHRva2VucykgZm9yIChjb25zdCBnIG9mIGdyb3VwcykgaWYgKGcuaW5jbHVkZXModCkpIGV4dHJhLnB1c2goLi4uZy5maWx0ZXIoKHgpID0+IHggIT09IHQpKTsKcmV0dXJuIGV4dHJhOwp9CmV4cG9ydCBmdW5jdGlvbiBwYXJzZURhdGUoZCkgewppZiAoIWQgfHwgdHlwZW9mIGQgIT09ICJzdHJpbmciKSByZXR1cm4gbnVsbDsKY29uc3QgbSA9IC9eKFxkezR9KS0oXGR7Mn0pLShcZHsyfSkkLy5leGVjKGQudHJpbSgpKTsKaWYgKCFtKSByZXR1cm4gbnVsbDsKY29uc3QgZHQgPSBuZXcgRGF0ZShEYXRlLlVUQygrbVsxXSwgK21bMl0gLSAxLCArbVszXSkpOwpyZXR1cm4gTnVtYmVyLmlzTmFOKGR0LmdldFRpbWUoKSkgPyBudWxsIDogZHQ7Cn0KZXhwb3J0IGZ1bmN0aW9uIHJldHJpZXZlKGtiLCBxdWVzdGlvbiwgc3lub255bXMgPSBERUZBVUxUX1NZTk9OWU1TKSB7CmNvbnN0IHFCYXNlID0gdG9rZW5pemUocXVlc3Rpb24pOwpjb25zdCBxU2V0ID0gbmV3IFNldChbLi4ucUJhc2UsIC4uLmV4cGFuZFRva2VucyhxQmFzZSwgc3lub255bXMpXSk7CmNvbnN0IHFGb2xkZWQgPSBuZXcgU2V0KFsuLi5xU2V0XS5tYXAoZm9sZFRva2VuKSk7CmNvbnN0IHJlc3VsdHMgPSAoa2IgPz8gW10pLmZsYXRNYXAoKGVudHJ5KSA9PiB7CmlmIChlbnRyeSAmJiBlbnRyeS5zdGF0dXMgJiYgZW50cnkuc3RhdHVzICE9PSAiYXBwcm92ZWQiKSByZXR1cm4gW107IC8vIHBlbmRpbmcgY29ycmVjdGlvbnMgYXJlIGludmlzaWJsZQpjb25zdCBtYXRjaGVkVGFncyA9IFtdOwpmb3IgKGNvbnN0IHRhZyBvZiBlbnRyeT8udGFncyA/PyBbXSkgewpjb25zdCB0ID0gU3RyaW5nKHRhZykudG9Mb3dlckNhc2UoKTsKY29uc3Qgc3Vic3RyaW5nSGl0ID0gWy4uLnFTZXRdLnNvbWUoCihxdCkgPT4gcXQubGVuZ3RoID49IDQgJiYgdC5sZW5ndGggPj0gNCAmJiAodC5pbmNsdWRlcyhxdCkgfHwgcXQuaW5jbHVkZXModCkpCik7CmlmIChxU2V0Lmhhcyh0KSB8fCBxRm9sZGVkLmhhcyhmb2xkVG9rZW4odCkpIHx8IHN1YnN0cmluZ0hpdCkgbWF0Y2hlZFRhZ3MucHVzaChTdHJpbmcodGFnKSk7Cn0KY29uc3QgZUZvbGRlZCA9IHRva2VuaXplKGVudHJ5Py5xdWVzdGlvbiA/PyAiIikubWFwKGZvbGRUb2tlbik7CmNvbnN0IGFGb2xkZWQgPSB0b2tlbml6ZShlbnRyeT8uYW5zd2VyID8/ICIiKS5tYXAoZm9sZFRva2VuKTsKY29uc3QgbWF0Y2hlZFRlcm1zID0gWy4uLnFTZXRdLmZpbHRlcigodCkgPT4gZUZvbGRlZC5pbmNsdWRlcyhmb2xkVG9rZW4odCkpKS5tYXAoZm9sZFRva2VuKTsKY29uc3QgYW5zd2VySGl0cyA9IFsuLi5xU2V0XS5maWx0ZXIoKHQpID0+IGFGb2xkZWQuaW5jbHVkZXMoZm9sZFRva2VuKHQpKSkubWFwKGZvbGRUb2tlbik7CmNvbnN0IHNjb3JlID0gbWF0Y2hlZFRhZ3MubGVuZ3RoICogMyArIG1hdGNoZWRUZXJtcy5sZW5ndGggKiAyICsgYW5zd2VySGl0cy5sZW5ndGg7CnJldHVybiBbeyBlbnRyeSwgc2NvcmUsIG1hdGNoZWRUYWdzLCBtYXRjaGVkVGVybXM6IFsuLi5uZXcgU2V0KFsuLi5tYXRjaGVkVGVybXMsIC4uLmFuc3dlckhpdHNdKV0gfV07Cn0pOwpyZXR1cm4gcmVzdWx0cy5maWx0ZXIoKHIpID0+IHIuc2NvcmUgPiAwKS5zb3J0KAooYSwgYikgPT4gYi5zY29yZSAtIGEuc2NvcmUgfHwgU3RyaW5nKGEuZW50cnkuaWQpLmxvY2FsZUNvbXBhcmUoU3RyaW5nKGIuZW50cnkuaWQpKQopOwp9CmV4cG9ydCBjb25zdCBERUZBVUxUX1RIUkVTSE9MRFMgPSB7IGhpZ2g6IDksIG1lZGl1bTogNSwgZnJlc2huZXNzRGF5czogMzY1IH07CmV4cG9ydCBmdW5jdGlvbiBnYXVnZUNvbmZpZGVuY2Uoa2IsIHF1ZXN0aW9uLCB0aHJlc2hvbGRzID0ge30sIGFzT2ZJc28sIG9wdHMgPSB7fSkgewpjb25zdCB0aCA9IHsgLi4uREVGQVVMVF9USFJFU0hPTERTLCAuLi50aHJlc2hvbGRzIH07CmNvbnN0IHJhbmtlZCA9IHJldHJpZXZlKGtiLCBxdWVzdGlvbiwgb3B0cy5zeW5vbnltcyA/PyBERUZBVUxUX1NZTk9OWU1TKTsKY29uc3QgcmVhc29ucyA9IFtdOwppZiAocmFua2VkLmxlbmd0aCA9PT0gMCkgewpyZXR1cm4geyBsZXZlbDogImxvdyIsIHJlYXNvbnM6IFsibm8ga25vd2xlZGdlLWJhc2UgZW50cnkgbWF0Y2hlZCBhbnkgcXVlc3Rpb24gdGVybSBvciB0YWciXSwgdG9wOiBudWxsLCByYW5rZWQ6IFtdIH07Cn0KY29uc3QgdG9wID0gcmFua2VkWzBdOwpjb25zdCBtYXJnaW4gPSByYW5rZWRbMV0gPyB0b3Auc2NvcmUgLSByYW5rZWRbMV0uc2NvcmUgOiB0b3Auc2NvcmU7CnJlYXNvbnMucHVzaChgYmVzdCBtYXRjaCAiJHt0b3AuZW50cnkucXVlc3Rpb259IiBzY29yZWQgJHt0b3Auc2NvcmV9ICh0YWdzOiAke3RvcC5tYXRjaGVkVGFncy5qb2luKCIsICIpIHx8ICJub25lIn07IHRlcm1zOiAke3RvcC5tYXRjaGVkVGVybXMuam9pbigiLCAiKSB8fCAibm9uZSJ9KWApOwpsZXQgbGV2ZWwgPSB0b3Auc2NvcmUgPj0gdGguaGlnaCA/ICJoaWdoIiA6IHRvcC5zY29yZSA+PSB0aC5tZWRpdW0gPyAibWVkaXVtIiA6ICJsb3ciOwppZiAobGV2ZWwgIT09ICJsb3ciKSByZWFzb25zLnB1c2goYHNjb3JlICR7dG9wLnNjb3JlfSAke3RvcC5zY29yZSA+PSB0aC5oaWdoID8gIuKJpSIgOiAiPCJ9IGhpZ2ggdGhyZXNob2xkICR7dGguaGlnaH1gKTsKaWYgKGxldmVsID09PSAibG93IikgcmVhc29ucy5wdXNoKGBzY29yZSAke3RvcC5zY29yZX0gYmVsb3cgbWVkaXVtIHRocmVzaG9sZCAke3RoLm1lZGl1bX1gKTsKaWYgKGxldmVsID09PSAiaGlnaCIgJiYgbWFyZ2luIDwgMiAmJiByYW5rZWRbMV0pIHsKbGV2ZWwgPSAibWVkaXVtIjsKcmVhc29ucy5wdXNoKGBkb3duZ3JhZGVkOiBydW5uZXItdXAgIiR7cmFua2VkWzFdLmVudHJ5LnF1ZXN0aW9ufSIgaXMgY2xvc2UgKG1hcmdpbiAke21hcmdpbn0pIOKAlCBhbWJpZ3VpdHkgYmV0d2VlbiBlbnRyaWVzYCk7Cn0KY29uc3QgYXNPZiA9IHBhcnNlRGF0ZShhc09mSXNvID8/IG51bGwpOwpjb25zdCB1cGRhdGVkID0gcGFyc2VEYXRlKHRvcC5lbnRyeS51cGRhdGVkID8/IG51bGwpOwppZiAoYXNPZiAmJiB1cGRhdGVkKSB7CmNvbnN0IGFnZURheXMgPSBNYXRoLnJvdW5kKChhc09mLmdldFRpbWUoKSAtIHVwZGF0ZWQuZ2V0VGltZSgpKSAvIDg2NDAwMDAwKTsKaWYgKGFnZURheXMgPiB0aC5mcmVzaG5lc3NEYXlzKSB7CnJlYXNvbnMucHVzaChgZ3VpZGFuY2UgaXMgJHthZ2VEYXlzfWQgb2xkICg+ICR7dGguZnJlc2huZXNzRGF5c31kIGZyZXNobmVzcyB3aW5kb3cpIOKAlCBkb3duZ3JhZGVkIG9uZSB0aWVyYCk7CmxldmVsID0gbGV2ZWwgPT09ICJoaWdoIiA/ICJtZWRpdW0iIDogImxvdyI7Cn0gZWxzZSB7CnJlYXNvbnMucHVzaChgZ3VpZGFuY2UgdmVyaWZpZWQgJHthZ2VEYXlzfWQgYWdvICh3aXRoaW4gJHt0aC5mcmVzaG5lc3NEYXlzfWQgd2luZG93KWApOwp9Cn0KY29uc3QgYXNrZWRKdXIgPSBvcHRzLmp1cmlzZGljdGlvbiA/IFN0cmluZyhvcHRzLmp1cmlzZGljdGlvbikudG9Mb3dlckNhc2UoKSA6IG51bGw7CmNvbnN0IGVudHJ5SnVyID0gdG9wLmVudHJ5Lmp1cmlzZGljdGlvbiA/IFN0cmluZyh0b3AuZW50cnkuanVyaXNkaWN0aW9uKS50b0xvd2VyQ2FzZSgpIDogbnVsbDsKaWYgKGFza2VkSnVyICYmIGVudHJ5SnVyICYmIGFza2VkSnVyICE9PSBlbnRyeUp1cikgewpyZWFzb25zLnB1c2goYGp1cmlzZGljdGlvbiBtaXNtYXRjaDogZ3VpZGFuY2UgY292ZXJzICR7dG9wLmVudHJ5Lmp1cmlzZGljdGlvbn0gYnV0IHF1ZXN0aW9uIGlzIHVuZGVyICR7b3B0cy5qdXJpc2RpY3Rpb259IOKAlCBkb3duZ3JhZGVkIG9uZSB0aWVyOyBjb25maXJtIHdpdGggbG9jYWwgY291bnNlbGApOwpsZXZlbCA9IGxldmVsID09PSAiaGlnaCIgPyAibWVkaXVtIiA6ICJsb3ciOwp9CnJldHVybiB7IGxldmVsLCByZWFzb25zLCB0b3A6IHRvcC5lbnRyeSwgcmFua2VkIH07Cn0KZXhwb3J0IGZ1bmN0aW9uIHJvdXRlVG8oZW50cnksIHJvdXRpbmcgPSB7fSkgewpjb25zdCBwaWNrID0gKHIpID0+IChyID09IG51bGwgPyBudWxsIDogdHlwZW9mIHIgPT09ICJzdHJpbmciID8gciA6IHIudGVhbSk7CmlmICghZW50cnkpIHJldHVybiBwaWNrKHJvdXRpbmdbImRlZmF1bHQiXSkgPz8gImxlZ2FsLWludGFrZSI7CmZvciAoY29uc3QgdGFnIG9mIGVudHJ5LnRhZ3MgPz8gW10pIHsKY29uc3QgciA9IHBpY2socm91dGluZ1t0YWddKTsKaWYgKHIpIHJldHVybiByOwp9CnJldHVybiBwaWNrKHJvdXRpbmdbImRlZmF1bHQiXSkgPz8gImxlZ2FsLWludGFrZSI7Cn0KZXhwb3J0IGZ1bmN0aW9uIHZhbGlkYXRlS2Ioa2IpIHsKY29uc3QgaXNzdWVzID0gW107CmNvbnN0IHNlZW4gPSBuZXcgU2V0KCk7CmZvciAoY29uc3QgZW50cnkgb2Yga2IgPz8gW10pIHsKaWYgKGVudHJ5Py5zdGF0dXMgPT09ICJwZW5kaW5nLWFwcHJvdmFsIikgY29udGludWU7CmNvbnN0IGlkID0gZW50cnkgJiYgZW50cnkuaWQgIT0gbnVsbCA/IFN0cmluZyhlbnRyeS5pZCkgOiBudWxsOwpjb25zdCByZWYgPSBpZCA/PyAiKGVudHJ5IHdpdGhvdXQgaWQpIjsKaWYgKCFpZCkgaXNzdWVzLnB1c2goeyBlbnRyeUlkOiBudWxsLCBmaWVsZDogImlkIiwgaXNzdWU6ICJtaXNzaW5nIGlkIiB9KTsKZWxzZSBpZiAoc2Vlbi5oYXMoaWQpKSBpc3N1ZXMucHVzaCh7IGVudHJ5SWQ6IGlkLCBmaWVsZDogImlkIiwgaXNzdWU6ICJkdXBsaWNhdGUgaWQiIH0pOwppZiAoaWQpIHNlZW4uYWRkKGlkKTsKaWYgKCFlbnRyeSB8fCB0eXBlb2YgZW50cnkuYW5zd2VyICE9PSAic3RyaW5nIiB8fCAhZW50cnkuYW5zd2VyLnRyaW0oKSkgewppc3N1ZXMucHVzaCh7IGVudHJ5SWQ6IHJlZiwgZmllbGQ6ICJhbnN3ZXIiLCBpc3N1ZTogIm1pc3NpbmcgYW5zd2VyIHRleHQiIH0pOwp9CmlmICghZW50cnkgfHwgIWVudHJ5LmFwcHJvdmVkQnkpIHsKaXNzdWVzLnB1c2goeyBlbnRyeUlkOiByZWYsIGZpZWxkOiAiYXBwcm92ZWRCeSIsIGlzc3VlOiAibWlzc2luZyBhcHByb3ZlciDigJQgdW5hcHByb3ZlZCBndWlkYW5jZSBtdXN0IG5vdCBiZSBzZXJ2ZWQiIH0pOwp9CmlmICghZW50cnkgfHwgIXBhcnNlRGF0ZShlbnRyeS51cGRhdGVkKSkgewppc3N1ZXMucHVzaCh7IGVudHJ5SWQ6IHJlZiwgZmllbGQ6ICJ1cGRhdGVkIiwgaXNzdWU6ICJtaXNzaW5nIG9yIHVucGFyc2VhYmxlIFlZWVktTU0tREQgdXBkYXRlZCBkYXRlIiB9KTsKfQp9CnJldHVybiBpc3N1ZXM7Cn0KZXhwb3J0IGZ1bmN0aW9uIGFuc3dlclF1ZXN0aW9uKGtiLCBxdWVzdGlvbiwgb3B0cyA9IHt9LCBhdWRpdExvZyA9IFtdKSB7CmNvbnN0IGlzc3VlcyA9IHZhbGlkYXRlS2Ioa2IpOwppZiAoaXNzdWVzLmxlbmd0aCkgewpjb25zdCBkZXRhaWwgPSBpc3N1ZXMubWFwKChpKSA9PiBgJHtpLmVudHJ5SWQgPz8gIj8ifS4ke2kuZmllbGR9OiAke2kuaXNzdWV9YCkuam9pbigiOyAiKTsKdGhyb3cgbmV3IEVycm9yKGBrbm93bGVkZ2UgYmFzZSBmYWlsZWQgdmFsaWRhdGlvbiAoJHtpc3N1ZXMubGVuZ3RofSBpc3N1ZSR7aXNzdWVzLmxlbmd0aCA9PT0gMSA/ICIiIDogInMifSk6ICR7ZGV0YWlsfWApOwp9CmNvbnN0IHsgbGV2ZWwsIHJlYXNvbnMsIHRvcCwgcmFua2VkIH0gPSBnYXVnZUNvbmZpZGVuY2Uoa2IsIHF1ZXN0aW9uLCBvcHRzLnRocmVzaG9sZHMsIG9wdHMuYXNPZiwgewpqdXJpc2RpY3Rpb246IG9wdHMuanVyaXNkaWN0aW9uLApzeW5vbnltczogb3B0cy5zeW5vbnltcywKfSk7CmNvbnN0IGVzY2FsYXRlID0gbGV2ZWwgPT09ICJsb3ciOwpjb25zdCByb3V0ZSA9IGVzY2FsYXRlID8gcm91dGVUbyh0b3AsIG9wdHMucm91dGluZykgOiBudWxsOwpjb25zdCBhdWRpdElkID0gYEFVRC0ke1N0cmluZyhhdWRpdExvZy5sZW5ndGggKyAxKS5wYWRTdGFydCg1LCAiMCIpfWA7CmNvbnN0IHByb3Zpc2lvbmFsID0gIWVzY2FsYXRlICYmIGxldmVsID09PSAibWVkaXVtIjsKY29uc3QgcmVzdWx0ID0gewphbnN3ZXJlZDogIWVzY2FsYXRlLAphbnN3ZXI6IGVzY2FsYXRlID8gbnVsbCA6IHRvcC5hbnN3ZXIsCnNvdXJjZUlkOiBlc2NhbGF0ZSA/IG51bGwgOiB0b3AuaWQsCmNvbmZpZGVuY2U6IHsgbGV2ZWwsIHJlYXNvbnMgfSwKZXNjYWxhdGUsCnJvdXRlOiBlc2NhbGF0ZSA/IHJvdXRlIDogbnVsbCwKYXVkaXRJZCwKcHJvdmlzaW9uYWwsCmxhYmVsOiBwcm92aXNpb25hbCA/ICJQcm92aXNpb25hbCBndWlkYW5jZSDigJQgY29uZmlybSB3aXRoIExlZ2FsLiIgOiBudWxsLApzdWdnZXN0ZWRFbnRyeTogZXNjYWxhdGUgJiYgdG9wID8geyBpZDogdG9wLmlkLCBxdWVzdGlvbjogdG9wLnF1ZXN0aW9uIH0gOiBudWxsLAp9OwphdWRpdExvZy5wdXNoKHsKYXVkaXRJZCwKdHM6IG9wdHMuYXNPZiA/PyBudWxsLCAvLyBkZXRlcm1pbmlzdGljIHRpbWVzdGFtcCBzdXBwbGllZCBieSBjYWxsZXIgKG9yIG51bGwgZm9yIGNhbGxlci1zaWRlIHN0YW1waW5nKQphc2tlZEJ5OiBvcHRzLmFza2VkQnkgPz8gImFub255bW91cyIsCnF1ZXN0aW9uLAptYXRjaGVkOiByYW5rZWQubWFwKChyKSA9PiByLmVudHJ5LmlkKSwKY29uZmlkZW5jZUxldmVsOiBsZXZlbCwKZXNjYWxhdGVkOiBlc2NhbGF0ZSwKcm91dGU6IHJlc3VsdC5yb3V0ZSwKfSk7CnJldHVybiByZXN1bHQ7Cn0KZXhwb3J0IGZ1bmN0aW9uIGNyZWF0ZUF1ZGl0TG9nKCkgewpyZXR1cm4gW107Cn0KZXhwb3J0IGZ1bmN0aW9uIGV4cG9ydEF1ZGl0TG9nKGF1ZGl0TG9nKSB7CnJldHVybiAoYXVkaXRMb2cgPz8gW10pLm1hcCgoZSkgPT4gSlNPTi5zdHJpbmdpZnkoZSkpLmpvaW4oIlxuIikgKyAoKGF1ZGl0TG9nID8/IFtdKS5sZW5ndGggPyAiXG4iIDogIiIpOwp9CmV4cG9ydCBmdW5jdGlvbiBzYXZlQXVkaXQoYXVkaXRMb2cpIHsKY29uc3Qgc2VlbiA9IG5ldyBTZXQoKTsKKGF1ZGl0TG9nID8/IFtdKS5mb3JFYWNoKChlLCBpKSA9PiB7CmlmICghZSB8fCB0eXBlb2YgZSAhPT0gIm9iamVjdCIgfHwgQXJyYXkuaXNBcnJheShlKSkgewp0aHJvdyBuZXcgRXJyb3IoYHNhdmVBdWRpdDogZW50cnkgJHtpfSBpcyBub3QgYW4gb2JqZWN0YCk7Cn0KaWYgKHR5cGVvZiBlLmF1ZGl0SWQgIT09ICJzdHJpbmciIHx8ICFlLmF1ZGl0SWQpIHsKdGhyb3cgbmV3IEVycm9yKGBzYXZlQXVkaXQ6IGVudHJ5ICR7aX0gaGFzIG5vIGF1ZGl0SWQg4oCUIHJlZnVzaW5nIHRvIHBlcnNpc3QgYSBjb3JydXB0ZWQgbG9nYCk7Cn0KaWYgKHNlZW4uaGFzKGUuYXVkaXRJZCkpIHsKdGhyb3cgbmV3IEVycm9yKGBzYXZlQXVkaXQ6IGR1cGxpY2F0ZSBhdWRpdElkICR7ZS5hdWRpdElkfSDigJQgdGhlIGxvZyBpcyBhcHBlbmQtb25seTsgaWRzIG5ldmVyIHJlcGVhdGApOwp9CnNlZW4uYWRkKGUuYXVkaXRJZCk7Cn0pOwpyZXR1cm4gZXhwb3J0QXVkaXRMb2coYXVkaXRMb2cpOwp9CmV4cG9ydCBmdW5jdGlvbiBsb2FkQXVkaXQoanNvbmwpIHsKY29uc3QgbG9nID0gY3JlYXRlQXVkaXRMb2coKTsKaWYgKGpzb25sID09IG51bGwpIHJldHVybiBsb2c7ClN0cmluZyhqc29ubCkuc3BsaXQoIlxuIikuZm9yRWFjaCgobGluZSwgaSkgPT4gewpjb25zdCB0ZXh0ID0gbGluZS50cmltKCk7CmlmICghdGV4dCkgcmV0dXJuOyAvLyB0b2xlcmF0ZSBibGFuayBsaW5lcyAvIHRyYWlsaW5nIG5ld2xpbmUKbGV0IGVudHJ5Owp0cnkgewplbnRyeSA9IEpTT04ucGFyc2UodGV4dCk7Cn0gY2F0Y2ggewp0aHJvdyBuZXcgRXJyb3IoYGxvYWRBdWRpdDogbGluZSAke2kgKyAxfSBpcyBub3QgdmFsaWQgSlNPTmApOwp9CmlmICghZW50cnkgfHwgdHlwZW9mIGVudHJ5ICE9PSAib2JqZWN0IiB8fCBBcnJheS5pc0FycmF5KGVudHJ5KSkgewp0aHJvdyBuZXcgRXJyb3IoYGxvYWRBdWRpdDogbGluZSAke2kgKyAxfSBpcyBub3QgYSBKU09OIG9iamVjdGApOwp9CmlmICh0eXBlb2YgZW50cnkuYXVkaXRJZCAhPT0gInN0cmluZyIgfHwgIWVudHJ5LmF1ZGl0SWQpIHsKdGhyb3cgbmV3IEVycm9yKGBsb2FkQXVkaXQ6IGxpbmUgJHtpICsgMX0gaGFzIG5vIGF1ZGl0SWRgKTsKfQppZiAobG9nLnNvbWUoKGUpID0+IGUuYXVkaXRJZCA9PT0gZW50cnkuYXVkaXRJZCkpIHsKdGhyb3cgbmV3IEVycm9yKGBsb2FkQXVkaXQ6IGR1cGxpY2F0ZSBhdWRpdElkICR7ZW50cnkuYXVkaXRJZH0gYXQgbGluZSAke2kgKyAxfSDigJQgdGhlIGxvZyBpcyBhcHBlbmQtb25seTsgaWRzIG5ldmVyIHJlcGVhdGApOwp9CmxvZy5wdXNoKGVudHJ5KTsKfSk7CnJldHVybiBsb2c7Cn0KZXhwb3J0IGZ1bmN0aW9uIGVzY2FsYXRpb25UaWNrZXQocmVzdWx0LCBhdWRpdExvZyA9IFtdKSB7CmNvbnN0IGF1ZGl0ID0gKGF1ZGl0TG9nID8/IFtdKS5maW5kKChlKSA9PiBlLmF1ZGl0SWQgPT09IHJlc3VsdD8uYXVkaXRJZCkgPz8ge307CnJldHVybiB7CnJvdXRlOiByZXN1bHQ/LnJvdXRlID8/IG51bGwsCnF1ZXN0aW9uOiBhdWRpdC5xdWVzdGlvbiA/PyBudWxsLAphc2tlcjogYXVkaXQuYXNrZWRCeSA/PyBudWxsLAptYXRjaGVkSWRzOiBhdWRpdC5tYXRjaGVkID8/IFtdLApyZWFzb25zOiByZXN1bHQ/LmNvbmZpZGVuY2U/LnJlYXNvbnMgPz8gW10sCnN1Z2dlc3RlZEVudHJ5OiByZXN1bHQ/LnN1Z2dlc3RlZEVudHJ5ID8/IG51bGwsCn07Cn0KZXhwb3J0IGZ1bmN0aW9uIGFwcGx5Q29ycmVjdGlvbihrYiwgYXVkaXRMb2csIGNvcnJlY3Rpb24gPSB7fSkgewpjb25zdCBhdWRpdCA9IChhdWRpdExvZyA/PyBbXSkuZmluZCgoZSkgPT4gZS5hdWRpdElkID09PSBjb3JyZWN0aW9uLmF1ZGl0SWQpOwppZiAoIWF1ZGl0KSB7CnRocm93IG5ldyBFcnJvcihgYXBwbHlDb3JyZWN0aW9uOiBhdWRpdCBlbnRyeSAke2NvcnJlY3Rpb24uYXVkaXRJZH0gbm90IGZvdW5kIOKAlCBjb3JyZWN0aW9ucyBtdXN0IGxpbmsgdG8gYW4gYXNrZWQgcXVlc3Rpb25gKTsKfQpjb25zdCBlbnRyeSA9IHsKaWQ6IGBrYi1jb3JyLSR7U3RyaW5nKGNvcnJlY3Rpb24uYXVkaXRJZCkudG9Mb3dlckNhc2UoKS5yZXBsYWNlKC9eYXVkLS8sICIiKX1gLApxdWVzdGlvbjogYXVkaXQucXVlc3Rpb24sCmFuc3dlcjogY29ycmVjdGlvbi5hbnN3ZXIsCnRhZ3M6IGNvcnJlY3Rpb24udGFncyA/PyBbXSwKanVyaXNkaWN0aW9uOiBjb3JyZWN0aW9uLmp1cmlzZGljdGlvbiA/PyBudWxsLAp1cGRhdGVkOiBjb3JyZWN0aW9uLnVwZGF0ZWQgPz8gbnVsbCwKYXBwcm92ZWRCeTogbnVsbCwgLy8gc2V0IGJ5IGFwcHJvdmVFbnRyeTsgcGVuZGluZyBlbnRyaWVzIGFyZSBuZXZlciBzZXJ2ZWQKc3RhdHVzOiAicGVuZGluZy1hcHByb3ZhbCIsCnNvdXJjZUF1ZGl0SWQ6IGNvcnJlY3Rpb24uYXVkaXRJZCwKc3VibWl0dGVkQnk6IGNvcnJlY3Rpb24uYXBwcm92ZWRCeSA/PyBudWxsLAp9Owooa2IgPz8gW10pLnB1c2goZW50cnkpOwpyZXR1cm4geyBlbnRyeSwgc3RhdHVzOiBlbnRyeS5zdGF0dXMgfTsKfQpleHBvcnQgZnVuY3Rpb24gYXBwcm92ZUVudHJ5KGtiLCBlbnRyeUlkLCBhcHByb3ZlZEJ5KSB7CmNvbnN0IGUgPSAoa2IgPz8gW10pLmZpbmQoKHgpID0+IHguaWQgPT09IGVudHJ5SWQpOwppZiAoIWUpIHRocm93IG5ldyBFcnJvcihgYXBwcm92ZUVudHJ5OiBubyBlbnRyeSB3aXRoIGlkICR7ZW50cnlJZH1gKTsKaWYgKGUuc3RhdHVzICE9PSAicGVuZGluZy1hcHByb3ZhbCIpIHsKdGhyb3cgbmV3IEVycm9yKGBhcHByb3ZlRW50cnk6IGVudHJ5ICR7ZW50cnlJZH0gaXMgJyR7ZS5zdGF0dXMgPz8gImFwcHJvdmVkIn0nLCBub3QgcGVuZGluZy1hcHByb3ZhbCDigJQgb25seSBwZW5kaW5nIGNvcnJlY3Rpb25zIGNhbiBiZSBhcHByb3ZlZGApOwp9CmlmICghYXBwcm92ZWRCeSkgdGhyb3cgbmV3IEVycm9yKCJhcHByb3ZlRW50cnk6IGFwcHJvdmVkQnkgaXMgcmVxdWlyZWQiKTsKaWYgKHR5cGVvZiBlLmFuc3dlciAhPT0gInN0cmluZyIgfHwgIWUuYW5zd2VyLnRyaW0oKSkgewp0aHJvdyBuZXcgRXJyb3IoYGFwcHJvdmVFbnRyeTogZW50cnkgJHtlbnRyeUlkfSBoYXMgbm8gYW5zd2VyIHRleHQg4oCUIGFwcHJvdmluZyBpdCB3b3VsZCBmYWlsIHZhbGlkYXRlS2JgKTsKfQppZiAoIXBhcnNlRGF0ZShlLnVwZGF0ZWQpKSB7CnRocm93IG5ldyBFcnJvcihgYXBwcm92ZUVudHJ5OiBlbnRyeSAke2VudHJ5SWR9IGhhcyBubyBwYXJzZWFibGUgWVlZWS1NTS1ERCB1cGRhdGVkIGRhdGUg4oCUIGFwcHJvdmluZyBpdCB3b3VsZCBmYWlsIHZhbGlkYXRlS2JgKTsKfQplLnN0YXR1cyA9ICJhcHByb3ZlZCI7CmUuYXBwcm92ZWRCeSA9IGFwcHJvdmVkQnk7CnJldHVybiB7IGVudHJ5OiBlLCBzdGF0dXM6IGUuc3RhdHVzIH07Cn0KZnVuY3Rpb24gcGFyc2VUcyh2KSB7CmlmICghdiB8fCB0eXBlb2YgdiAhPT0gInN0cmluZyIpIHJldHVybiBudWxsOwpjb25zdCBkID0gcGFyc2VEYXRlKHYpOwppZiAoZCkgcmV0dXJuIGQ7CmNvbnN0IHQgPSBEYXRlLnBhcnNlKHYpOwpyZXR1cm4gTnVtYmVyLmlzTmFOKHQpID8gbnVsbCA6IG5ldyBEYXRlKHQpOwp9CmV4cG9ydCBmdW5jdGlvbiBvdmVyZHVlRXNjYWxhdGlvbnMoYXVkaXRMb2csIHJvdXRpbmcgPSB7fSwgYXNPZklzbykgewpjb25zdCBhc09mID0gcGFyc2VUcyhhc09mSXNvKTsKaWYgKCFhc09mKSByZXR1cm4gW107CmNvbnN0IHNsYUJ5VGVhbSA9IHt9Owpmb3IgKGNvbnN0IHYgb2YgT2JqZWN0LnZhbHVlcyhyb3V0aW5nID8/IHt9KSkgewppZiAodiAmJiB0eXBlb2YgdiA9PT0gIm9iamVjdCIgJiYgdi50ZWFtICYmIE51bWJlci5pc0Zpbml0ZSh2LnNsYURheXMpKSBzbGFCeVRlYW1bdi50ZWFtXSA9IHYuc2xhRGF5czsKfQpjb25zdCBvdXQgPSBbXTsKZm9yIChjb25zdCBlIG9mIGF1ZGl0TG9nID8/IFtdKSB7CmlmICghZSB8fCAhZS5lc2NhbGF0ZWQgfHwgIWUucm91dGUpIGNvbnRpbnVlOwpjb25zdCBzbGFEYXlzID0gc2xhQnlUZWFtW2Uucm91dGVdOwppZiAoc2xhRGF5cyA9PSBudWxsKSBjb250aW51ZTsgLy8gbm8gU0xBIGNvbmZpZ3VyZWQgZm9yIHRoaXMgdGVhbSDigJQgY2Fubm90IGp1ZGdlCmNvbnN0IG9wZW5lZCA9IHBhcnNlVHMoZS50cyk7CmlmICghb3BlbmVkKSBjb250aW51ZTsKY29uc3QgYWdlRGF5cyA9IE1hdGgucm91bmQoKGFzT2YuZ2V0VGltZSgpIC0gb3BlbmVkLmdldFRpbWUoKSkgLyA4NjQwMDAwMCk7CmlmIChhZ2VEYXlzID4gc2xhRGF5cykgewpvdXQucHVzaCh7CmF1ZGl0SWQ6IGUuYXVkaXRJZCwKcm91dGU6IGUucm91dGUsCnF1ZXN0aW9uOiBlLnF1ZXN0aW9uID8/IG51bGwsCm9wZW5lZDogZS50cyA/PyBudWxsLAphZ2VEYXlzLApzbGFEYXlzLApvdmVyZHVlQnlEYXlzOiBhZ2VEYXlzIC0gc2xhRGF5cywKfSk7Cn0KfQpyZXR1cm4gb3V0Owp9Cg==";
+  import EXAMPLE from "data:text/javascript;base64,ZXhwb3J0IGRlZmF1bHQgewoiYXNPZiI6ICIyMDI2LTExLTA3IiwKImNvbXBhbnkiOiAiTWVyaWRpYW4gU29mdHdhcmUgQ28uIChmaWN0aW9uYWwpIiwKInRocmVzaG9sZHMiOiB7ICJoaWdoIjogOSwgIm1lZGl1bSI6IDUsICJmcmVzaG5lc3NEYXlzIjogMzY1IH0sCiJyb3V0aW5nIjogewoicHJpdmFjeSI6ICJwcml2YWN5LWNvdW5zZWwiLAoiZW1wbG95bWVudCI6ICJwZW9wbGUtbGVnYWwiLAoiY29udHJhY3RzIjogImNvbW1lcmNpYWwtbGVnYWwiLAoiZXhwZW5zZXMiOiAiZmluYW5jZS1vcHMiLAoiZGVmYXVsdCI6ICJsZWdhbC1pbnRha2UiCn0sCiJrbm93bGVkZ2VCYXNlIjogWwp7CiJpZCI6ICJrYi0wMDEiLAoicXVlc3Rpb24iOiAiV2hpY2ggTkRBIHRlbXBsYXRlIHNob3VsZCBJIHVzZSBmb3IgYSBwcm9zcGVjdGl2ZSB2ZW5kb3I/IiwKImFuc3dlciI6ICJVc2UgdGhlIE11dHVhbCBOREEgKEZvcm0gTC0xMDIpIGZvciBhbGwgcHJvc3BlY3RpdmUgdmVuZG9yczsgZG8gbm90IHNpZ24gdGhlIHZlbmRvcidzIG93biBwYXBlci4gRXhjZXB0aW9ucyAoc2hvcnRlciB0ZXJtLCBubyByZXNpZHVhbHMgY2xhdXNlKSByb3V0ZSB0byBDb21tZXJjaWFsIExlZ2FsLiIsCiJ0YWdzIjogWyJuZGEiLCAidmVuZG9yIiwgImNvbnRyYWN0cyJdLAoianVyaXNkaWN0aW9uIjogIlVTIiwKInVwZGF0ZWQiOiAiMjAyNi0wOS0xNSIsCiJhcHByb3ZlZEJ5IjogIkEuIEZlcm4sIERlcHV0eSBHQyAoZmljdGlvbmFsKSIKfSwKewoiaWQiOiAia2ItMDAyIiwKInF1ZXN0aW9uIjogIldoaWNoIE5EQSB0ZW1wbGF0ZSBzaG91bGQgSSB1c2UgZm9yIGFuIGluZGl2aWR1YWwgY29uc3VsdGFudD8iLAoiYW5zd2VyIjogIlVzZSB0aGUgQ29uc3VsdGFudCBOREEgKEZvcm0gTC0xMDQpIHdpdGggdGhlIElQIGFzc2lnbm1lbnQgcmlkZXIgYXR0YWNoZWQuIEluZGVwZW5kZW50LWNvbnRyYWN0b3Igc3RhdHVzIG11c3QgYmUgY29uZmlybWVkIGJ5IFBlb3BsZSBMZWdhbCBiZWZvcmUgc2lnbmF0dXJlLiIsCiJ0YWdzIjogWyJuZGEiLCAiY29uc3VsdGFudCIsICJjb250cmFjdHMiLCAiZW1wbG95bWVudCJdLAoianVyaXNkaWN0aW9uIjogIlVTIiwKInVwZGF0ZWQiOiAiMjAyNi0wOS0yMCIsCiJhcHByb3ZlZEJ5IjogIkEuIEZlcm4sIERlcHV0eSBHQyAoZmljdGlvbmFsKSIKfSwKewoiaWQiOiAia2ItMDAzIiwKInF1ZXN0aW9uIjogIkNhbiBJIGV4cGVuc2UgY2xpZW50IGVudGVydGFpbm1lbnQgb3ZlciAkNTAwPyIsCiJhbnN3ZXIiOiAiRW50ZXJ0YWlubWVudCBhYm92ZSAkNTAwIHJlcXVpcmVzIHByZS1hcHByb3ZhbCBmcm9tIEZpbmFuY2UgYW5kIHRoZSByZXNwb25zaWJsZSBwYXJ0bmVyLCBsb2dnZWQgaW4gdGhlIG1hdHRlciBmaWxlIGJlZm9yZSB0aGUgZXZlbnQsIG5vdCBhZnRlci4iLAoidGFncyI6IFsiZXhwZW5zZXMiLCAiZmluYW5jZSJdLAoianVyaXNkaWN0aW9uIjogIlVTIiwKInVwZGF0ZWQiOiAiMjAyNi0wNi0wMiIsCiJhcHByb3ZlZEJ5IjogIkZpbmFuY2UgQ29tbWl0dGVlIChmaWN0aW9uYWwpIgp9LAp7CiJpZCI6ICJrYi0wMDQiLAoicXVlc3Rpb24iOiAiSG93IGRvIEkgcmVwb3J0IGEgc3VzcGVjdGVkIGRhdGEgcHJpdmFjeSBpbmNpZGVudD8iLAoiYW5zd2VyIjogIkVtYWlsIHNlY3VyaXR5LWluY2lkZW50c0BleGFtcGxlLnRlc3Qgd2l0aGluIDEgaG91ciBvZiBkaXNjb3ZlcnkgYW5kIGRvIG5vdCBkaXNjdXNzIGV4dGVybmFsbHkuIFByaXZhY3kgQ291bnNlbCBkZWNpZGVzIG9uIHJlZ3VsYXRvciBub3RpZmljYXRpb24gdW5kZXIgdGhlIGluY2lkZW50IHJ1bmJvb2suIiwKInRhZ3MiOiBbInByaXZhY3kiLCAic2VjdXJpdHkiLCAiaW5jaWRlbnQiXSwKImp1cmlzZGljdGlvbiI6ICJVUyIsCiJ1cGRhdGVkIjogIjIwMjYtMTAtMzAiLAoiYXBwcm92ZWRCeSI6ICJSLiBDYXN0ZWxsYW4sIFByaXZhY3kgQ291bnNlbCAoZmljdGlvbmFsKSIKfSwKewoiaWQiOiAia2ItMDA1IiwKInF1ZXN0aW9uIjogIkhvdyBsb25nIGRvIHdlIHJldGFpbiB3ZWJzaXRlIHZpc2l0b3IgZGF0YT8iLAoiYW5zd2VyIjogIjI2IG1vbnRocyBwZXIgdGhlIDIwMjQgcmV0ZW50aW9uIHNjaGVkdWxlLCB0aGVuIGFub255bWl6ZSBvciBkZWxldGUgKFByaXZhY3kgUG9saWN5IMKnOSkuIiwKInRhZ3MiOiBbInByaXZhY3kiLCAiZGF0YS1yZXRlbnRpb24iXSwKImp1cmlzZGljdGlvbiI6ICJVUyIsCiJ1cGRhdGVkIjogIjIwMjQtMDMtMDEiLAoiYXBwcm92ZWRCeSI6ICJQcml2YWN5IFRlYW0gKGZpY3Rpb25hbCkiCn0KXSwKInF1ZXN0aW9ucyI6IFsKeyAiYXNrZWRCeSI6ICJqLm1vcmVhdUBleGFtcGxlLnRlc3QiLCAicXVlc3Rpb24iOiAiV2hpY2ggTkRBIHRlbXBsYXRlIGRvIEkgdXNlIGZvciBhIG5ldyBhbmFseXRpY3MgdmVuZG9yPyIgfSwKeyAiYXNrZWRCeSI6ICJzLm9rYWZvckBleGFtcGxlLnRlc3QiLCAicXVlc3Rpb24iOiAiQ2FuIEkgZXhwZW5zZSBjbGllbnQgZW50ZXJ0YWlubWVudCBvdmVyICQ1MDAgZm9yIHRoZSBIYWxiZXJkIGRpbm5lcj8iIH0sCnsgImFza2VkQnkiOiAiai5tb3JlYXVAZXhhbXBsZS50ZXN0IiwgInF1ZXN0aW9uIjogIkhvdyBsb25nIGRvIHdlIHJldGFpbiB3ZWJzaXRlIHZpc2l0b3IgZGF0YSB1bmRlciB0aGUgcHJpdmFjeSBwb2xpY3k/IiB9LAp7ICJhc2tlZEJ5IjogInQubmd1eWVuQGV4YW1wbGUudGVzdCIsICJxdWVzdGlvbiI6ICJEbyB3ZSBuZWVkIGEgbGljZW5zZSB0byBsYXVuY2ggYSBzYXRlbGxpdGUgZm9yIHRoZSBtYXJrZXRpbmcgdGVhbT8iIH0sCnsgImFza2VkQnkiOiAicy5va2Fmb3JAZXhhbXBsZS50ZXN0IiwgInF1ZXN0aW9uIjogIkEgcmVwb3J0ZXIgaXMgYXNraW5nIGFib3V0IHRoZSBvdXRhZ2Ug4oCUIHdoYXQgZG8gSSBzYXkgYWJvdXQgdGhlIGRhdGEgcHJpdmFjeSBpbmNpZGVudD8iIH0KXQp9Cg==";
+
+  /* ---------- vendored from open-artifacts/_shared/persist.js (storage part; ----------
+     node-only appendLog/loadLog omitted). Dependency-free, localStorage w/ memory fallback. */
   function memoryBackend(name) {
-  const map = new Map();
-  return {
-  backendName: name,
-  get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
-  set(k, v) { map.set(k, { kind: "value", value: JSON.parse(JSON.stringify(v ?? null)) }); },
-  remove(k) { map.delete(k); },
-  append(k, entry) {
-  if (!map.has(k) || map.get(k).kind !== "log") map.set(k, { kind: "log", items: [] });
-  map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null)));
-  },
-  entries(k) { const v = map.get(k); return v && v.kind === "log" ? v.items.slice() : []; },
-  exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join("\n") + (this.entries(k).length ? "\n" : ""); },
-  };
+    const map = new Map();
+    return {
+      backendName: name,
+      get(k) { const v = map.get(k); return v === undefined ? null : v.value; },
+      set(k, v) { map.set(k, { kind: "value", value: JSON.parse(JSON.stringify(v ?? null)) }); },
+      remove(k) { map.delete(k); },
+      append(k, entry) {
+        if (!map.has(k) || map.get(k).kind !== "log") map.set(k, { kind: "log", items: [] });
+        map.get(k).items.push(JSON.parse(JSON.stringify(entry ?? null)));
+      },
+      entries(k) { const v = map.get(k); return v && v.kind === "log" ? v.items.slice() : []; },
+      exportJsonl(k) { return this.entries(k).map((e) => JSON.stringify(e)).join("\n") + (this.entries(k).length ? "\n" : ""); },
+    };
   }
   function probeLocalStorage() {
-  try {
-  const ls = globalThis.localStorage;
-  if (!ls) return null;
-  ls.setItem("__persist_probe__", "1");
-  const ok = ls.getItem("__persist_probe__") === "1";
-  ls.removeItem("__persist_probe__");
-  return ok ? ls : null;
-  } catch { return null; }
+    try {
+      const ls = globalThis.localStorage;
+      if (!ls) return null;
+      ls.setItem("__persist_probe__", "1");
+      const ok = ls.getItem("__persist_probe__") === "1";
+      ls.removeItem("__persist_probe__");
+      return ok ? ls : null;
+    } catch { return null; }
   }
   function localBackend(namespace) {
-  const ls = probeLocalStorage();
-  if (!ls) return memoryBackend("memory-fallback");
-  const key = (k) => `${namespace}:${k}`;
-  const read = (k) => { try { return ls.getItem(key(k)); } catch { return null; } };
-  let degraded = false;
-  const mem = memoryBackend("memory");
-  return {
-  backendName: "local",
-  get(k) {
-  if (degraded) return mem.get(k);
-  const raw = read(k);
-  if (raw == null) return null;
-  try { return JSON.parse(raw); } catch { return null; }
-  },
-  set(k, v) {
-  if (degraded) return mem.set(k, v);
-  try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); }
-  },
-  remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
-  append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
-  entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
-  exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join("\n") + (es.length ? "\n" : ""); },
-  };
+    const ls = probeLocalStorage();
+    if (!ls) return memoryBackend("memory-fallback");
+    const key = (k) => `${namespace}:${k}`;
+    const read = (k) => { try { return ls.getItem(key(k)); } catch { return null; } };
+    let degraded = false;
+    const mem = memoryBackend("memory");
+    return {
+      backendName: "local",
+      get(k) {
+        if (degraded) return mem.get(k);
+        const raw = read(k);
+        if (raw == null) return null;
+        try { return JSON.parse(raw); } catch { return null; }
+      },
+      set(k, v) {
+        if (degraded) return mem.set(k, v);
+        try { ls.setItem(key(k), JSON.stringify(v ?? null)); } catch { degraded = true; mem.set(k, v); }
+      },
+      remove(k) { if (degraded) return mem.remove(k); try { ls.removeItem(key(k)); } catch { degraded = true; } },
+      append(k, entry) { const cur = this.entries(k); cur.push(entry); this.set(k, cur); },
+      entries(k) { const v = this.get(k); return Array.isArray(v) ? v : []; },
+      exportJsonl(k) { const es = this.entries(k); return es.map((e) => JSON.stringify(e)).join("\n") + (es.length ? "\n" : ""); },
+    };
   }
   function createStorage(namespace) {
-  return probeLocalStorage() ? localBackend(namespace) : memoryBackend("memory-fallback");
+    return probeLocalStorage() ? localBackend(namespace) : memoryBackend("memory-fallback");
   }
+  /* ---------- end vendored persist.js ---------- */
+
   const $ = (id) => document.getElementById(id);
   const storage = createStorage("ask-legal");
   const AS_OF = EXAMPLE.asOf;
   const ROUTING = { // demo config: per-team SLAs in days (rules-as-data; core routeTo handles objects)
-  privacy: { team: "privacy-counsel", slaDays: 2 },
-  employment: { team: "people-legal", slaDays: 3 },
-  contracts: { team: "commercial-legal", slaDays: 2 },
-  expenses: { team: "finance-ops", slaDays: 5 },
-  default: { team: "legal-intake", slaDays: 5 },
+    privacy: { team: "privacy-counsel", slaDays: 2 },
+    employment: { team: "people-legal", slaDays: 3 },
+    contracts: { team: "commercial-legal", slaDays: 2 },
+    expenses: { team: "finance-ops", slaDays: 5 },
+    default: { team: "legal-intake", slaDays: 5 },
   };
   const slaByTeam = Object.values(ROUTING).reduce((m, v) => ((m[v.team] = v.slaDays), m), {});
   const DAYS = 86400000;
   const ageDays = (ts) => { const d = parseDate(ts); return d ? Math.round((parseDate(AS_OF) - d) / DAYS) : null; };
+
+  /* ---------- state ---------- */
   let log, kb, kbAdd, actions;
   const opts = () => ({ asOf: AS_OF, askedBy: $("asker").value, thresholds: EXAMPLE.thresholds, routing: ROUTING });
+
   function coreApplyCorrection(corr) {
-  const res = applyCorrection(kb, log, corr); // throws on unknown audit id
-  kbAdd.push(res.entry);
-  return res;
+    const res = applyCorrection(kb, log, corr); // throws on unknown audit id
+    kbAdd.push(res.entry);
+    return res;
   }
+
   function seed() { // first run only: history executed through the core, then persisted — no fabricated rows
-  const asks = [
-  ["j.moreau@example.test", "Which NDA template do I use for a new analytics vendor?", "2026-11-02"],
-  ["s.okafor@example.test", "Can I expense client entertainment over $500 for the Halberd dinner?", "2026-10-20"],
-  ["j.moreau@example.test", "How long do we retain website visitor data under the privacy policy?", "2026-10-05"],
-  ["t.nguyen@example.test", "What is our data-retention approach?", "2026-10-30"],
-  ["t.nguyen@example.test", "Do we need a license to launch a satellite for the marketing team?", "2026-09-15"],
-  ];
-  for (const [who, q, asOf] of asks) answerQuestion(kb, q, { ...opts(), asOf, askedBy: who }, log);
-  const sat = log.find((e) => /satellite/i.test(e.question));
-  coreApplyCorrection({
-  auditId: sat.auditId,
-  answer: "No — Meridian does not launch hardware. Any space-adjacent promotional stunt needs Commercial Legal sign-off and a written aviation/FCC review before it is pitched to a client.",
-  tags: ["marketing", "licensing", "contracts"], jurisdiction: "US", updated: "2026-11-06",
-  approvedBy: "D. Whitcombe, Commercial Legal (fictional)",
-  });
-  actions.push({ ts: AS_OF, actor: "D. Whitcombe, Commercial Legal (fictional)", action: "drafted correction", entryId: `kb-corr-${sat.auditId.toLowerCase().replace(/^aud-/, "")}`, auditId: sat.auditId });
+    const asks = [
+      ["j.moreau@example.test", "Which NDA template do I use for a new analytics vendor?", "2026-11-02"],
+      ["s.okafor@example.test", "Can I expense client entertainment over $500 for the Halberd dinner?", "2026-10-20"],
+      ["j.moreau@example.test", "How long do we retain website visitor data under the privacy policy?", "2026-10-05"],
+      ["t.nguyen@example.test", "What is our data-retention approach?", "2026-10-30"],
+      ["t.nguyen@example.test", "Do we need a license to launch a satellite for the marketing team?", "2026-09-15"],
+    ];
+    for (const [who, q, asOf] of asks) answerQuestion(kb, q, { ...opts(), asOf, askedBy: who }, log);
+    const sat = log.find((e) => /satellite/i.test(e.question));
+    coreApplyCorrection({
+      auditId: sat.auditId,
+      answer: "No — Meridian does not launch hardware. Any space-adjacent promotional stunt needs Commercial Legal sign-off and a written aviation/FCC review before it is pitched to a client.",
+      tags: ["marketing", "licensing", "contracts"], jurisdiction: "US", updated: "2026-11-06",
+      approvedBy: "D. Whitcombe, Commercial Legal (fictional)",
+    });
+    actions.push({ ts: AS_OF, actor: "D. Whitcombe, Commercial Legal (fictional)", action: "drafted correction", entryId: `kb-corr-${sat.auditId.toLowerCase().replace(/^aud-/, "")}`, auditId: sat.auditId });
   }
+
   function restore() {
-  kbAdd = Array.isArray(storage.get("kbAdd")) ? storage.get("kbAdd") : [];
-  actions = Array.isArray(storage.get("actions")) ? storage.get("actions") : [];
-  kb = [...EXAMPLE.knowledgeBase, ...kbAdd];
-  log = loadAudit(storage.get("auditJsonl")); // refuses, never silently repairs
-  if (storage.get("seeded") !== true) {
-  seed();
-  storage.set("seeded", true);
-  persist();
+    kbAdd = Array.isArray(storage.get("kbAdd")) ? storage.get("kbAdd") : [];
+    actions = Array.isArray(storage.get("actions")) ? storage.get("actions") : [];
+    kb = [...EXAMPLE.knowledgeBase, ...kbAdd];
+    log = loadAudit(storage.get("auditJsonl")); // refuses, never silently repairs
+    if (storage.get("seeded") !== true) {
+      seed();
+      storage.set("seeded", true);
+      persist();
+    }
   }
-  }
+
   function persist() {
-  try { storage.set("auditJsonl", saveAudit(log)); } catch (e) { toast("Persistence refused: " + e.message); }
-  storage.set("kbAdd", kbAdd);
-  storage.set("actions", actions);
-  storage.set("askedBy", $("asker").value);
+    try { storage.set("auditJsonl", saveAudit(log)); } catch (e) { toast("Persistence refused: " + e.message); }
+    storage.set("kbAdd", kbAdd);
+    storage.set("actions", actions);
+    storage.set("askedBy", $("asker").value);
   }
+
+  /* ---------- shared UI helpers ---------- */
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function toast(msg) {
-  const d = document.createElement("div");
-  d.textContent = msg;
-  $("toasts").appendChild(d);
-  setTimeout(() => d.remove(), 4200);
+    const d = document.createElement("div");
+    d.textContent = msg;
+    $("toasts").appendChild(d);
+    setTimeout(() => d.remove(), 4200);
   }
   function download(name, text, mime) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
   function cite(id) { // citation click-through: jump to the register entry and flash it
-  showDesk("legal");
-  const row = $("reg-" + id);
-  if (!row) { toast(`Entry ${id} is not in the register (pending or removed).`); return; }
-  row.scrollIntoView({ behavior: "smooth", block: "center" });
-  row.classList.add("flash");
-  setTimeout(() => row.classList.remove("flash"), 1800);
+    showDesk("legal");
+    const row = $("reg-" + id);
+    if (!row) { toast(`Entry ${id} is not in the register (pending or removed).`); return; }
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.add("flash");
+    setTimeout(() => row.classList.remove("flash"), 1800);
   }
   function showDesk(which) {
-  const legal = which === "legal";
-  $("deskLegal").hidden = !legal;
-  $("deskAsk").hidden = legal;
-  $("tabLegal").setAttribute("aria-selected", String(legal));
-  $("tabAsk").setAttribute("aria-selected", String(!legal));
-  window.scrollTo({ top: 0 });
+    const legal = which === "legal";
+    $("deskLegal").hidden = !legal;
+    $("deskAsk").hidden = legal;
+    $("tabLegal").setAttribute("aria-selected", String(legal));
+    $("tabAsk").setAttribute("aria-selected", String(!legal));
+    window.scrollTo({ top: 0 });
   }
+
+  /* ---------- escalation ticket drawer ---------- */
   let lastFocus = null;
   function ticketFor(auditId) { // rebuild a ticket from the audit row: reasons + top match re-derived deterministically
-  const e = log.find((x) => x.auditId === auditId);
-  if (!e) return null;
-  const g = gaugeConfidence(kb, e.question, EXAMPLE.thresholds, e.ts);
-  return escalationTicket(
-  { auditId, route: e.route, confidence: { reasons: g.reasons }, suggestedEntry: g.top ? { id: g.top.id, question: g.top.question } : null },
-  log
-  );
+    const e = log.find((x) => x.auditId === auditId);
+    if (!e) return null;
+    const g = gaugeConfidence(kb, e.question, EXAMPLE.thresholds, e.ts);
+    return escalationTicket(
+      { auditId, route: e.route, confidence: { reasons: g.reasons }, suggestedEntry: g.top ? { id: g.top.id, question: g.top.question } : null },
+      log
+    );
   }
   function openTicket(auditId) {
-  const t = ticketFor(auditId);
-  if (!t) return;
-  $("drawerBody").innerHTML =
-  `<dl><dt>Route</dt><dd>${esc(t.route ?? "—")}</dd>` +
-  `<dt>Question</dt><dd>${esc(t.question ?? "")}</dd>` +
-  `<dt>Asker</dt><dd>${esc(t.asker ?? "—")}</dd>` +
-  `<dt>Matched entries</dt><dd>${t.matchedIds.length ? t.matchedIds.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") : "none — guidance gap"}</dd>` +
-  `<dt>Suggested start</dt><dd>${t.suggestedEntry ? `<button class="kbcite" data-cite="${esc(t.suggestedEntry.id)}">${esc(t.suggestedEntry.id)}</button> ${esc(t.suggestedEntry.question)}` : "—"}</dd>` +
-  `<dt>Why escalated</dt><dd><ul class="reasons">${t.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></dd></dl>`;
-  $("ticketJson").textContent = JSON.stringify(t, null, 2);
-  lastFocus = document.activeElement;
-  $("scrim").hidden = false;
-  $("drawer").hidden = false;
-  $("closeDrawer").focus();
+    const t = ticketFor(auditId);
+    if (!t) return;
+    $("drawerBody").innerHTML =
+      `<dl><dt>Route</dt><dd>${esc(t.route ?? "—")}</dd>` +
+      `<dt>Question</dt><dd>${esc(t.question ?? "")}</dd>` +
+      `<dt>Asker</dt><dd>${esc(t.asker ?? "—")}</dd>` +
+      `<dt>Matched entries</dt><dd>${t.matchedIds.length ? t.matchedIds.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") : "none — guidance gap"}</dd>` +
+      `<dt>Suggested start</dt><dd>${t.suggestedEntry ? `<button class="kbcite" data-cite="${esc(t.suggestedEntry.id)}">${esc(t.suggestedEntry.id)}</button> ${esc(t.suggestedEntry.question)}` : "—"}</dd>` +
+      `<dt>Why escalated</dt><dd><ul class="reasons">${t.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></dd></dl>`;
+    $("ticketJson").textContent = JSON.stringify(t, null, 2);
+    lastFocus = document.activeElement;
+    $("scrim").hidden = false;
+    $("drawer").hidden = false;
+    $("closeDrawer").focus();
   }
   function closeTicket() {
-  $("scrim").hidden = true;
-  $("drawer").hidden = true;
-  if (lastFocus) lastFocus.focus();
+    $("scrim").hidden = true;
+    $("drawer").hidden = true;
+    if (lastFocus) lastFocus.focus();
   }
+
+  /* ---------- colleague desk ---------- */
   function ask() {
-  const question = $("q").value.trim();
-  if (!question) { toast("Type a question first — a sentence or two is enough."); $("q").focus(); return; }
-  let r;
-  try { r = answerQuestion(kb, question, opts(), log); }
-  catch (e) { toast("Refused: " + e.message); return; }
-  persist();
-  $("answer").innerHTML =
-  `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
-  (r.answered
-  ? `<div class="answer">${esc(r.answer)}` +
-  (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
-  `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · audit <code>${r.auditId}</code></small></div>`
-  : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>` +
-  `<div class="rowbtns"><button data-ticket="${r.auditId}">Open escalation ticket</button></div>`) +
-  `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
-  renderAll();
+    const question = $("q").value.trim();
+    if (!question) { toast("Type a question first — a sentence or two is enough."); $("q").focus(); return; }
+    let r;
+    try { r = answerQuestion(kb, question, opts(), log); }
+    catch (e) { toast("Refused: " + e.message); return; }
+    persist();
+    $("answer").innerHTML =
+      `<div class="card"><div class="q">${esc(question)}</div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
+      (r.answered
+        ? `<div class="answer">${esc(r.answer)}` +
+          (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
+          `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · audit <code>${r.auditId}</code></small></div>`
+        : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>` +
+          `<div class="rowbtns"><button data-ticket="${r.auditId}">Open escalation ticket</button></div>`) +
+      `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    renderAll();
   }
+
+  /* ---------- legal desk ---------- */
   function renderCounts() {
-  const pending = kb.filter((e) => e.status === "pending-approval").length;
-  const open = log.filter((e) => e.escalated).length;
-  const overdue = overdueEscalations(log, ROUTING, AS_OF);
-  $("counts").innerHTML =
-  `<span>published <b>${kb.length - pending}</b></span>` +
-  `<span class="${pending ? "warn" : ""}">pending approvals <b>${pending}</b></span>` +
-  `<span>open escalations <b>${open}</b></span>` +
-  `<span class="${overdue.length ? "bad" : ""}">past SLA <b>${overdue.length}</b></span>` +
-  `<span>audit rows <b>${log.length}</b></span>`;
-  $("slaNote").textContent =
-  `SLA from routing table (privacy-counsel 2d · people-legal 3d · commercial-legal 2d · finance-ops 5d · legal-intake 5d) · ages measured against fixed clock ${AS_OF}.`;
+    const pending = kb.filter((e) => e.status === "pending-approval").length;
+    const open = log.filter((e) => e.escalated).length;
+    const overdue = overdueEscalations(log, ROUTING, AS_OF);
+    $("counts").innerHTML =
+      `<span>published <b>${kb.length - pending}</b></span>` +
+      `<span class="${pending ? "warn" : ""}">pending approvals <b>${pending}</b></span>` +
+      `<span>open escalations <b>${open}</b></span>` +
+      `<span class="${overdue.length ? "bad" : ""}">past SLA <b>${overdue.length}</b></span>` +
+      `<span>audit rows <b>${log.length}</b></span>`;
+    $("slaNote").textContent =
+      `SLA from routing table (privacy-counsel 2d · people-legal 3d · commercial-legal 2d · finance-ops 5d · legal-intake 5d) · ages measured against fixed clock ${AS_OF}.`;
   }
+
   function renderQueue() {
-  const over = new Map(overdueEscalations(log, ROUTING, AS_OF).map((o) => [o.auditId, o]));
-  const rows = [...log].reverse().filter((e) => e.escalated);
-  $("queueBody").innerHTML = rows.map((e) => {
-  const o = over.get(e.auditId);
-  const sla = o
-  ? `<span class="sla overdue">overdue ${o.overdueByDays}d</span>`
-  : slaByTeam[e.route] != null && ageDays(e.ts) != null
-  ? `<span class="sla">day ${ageDays(e.ts)} of ${slaByTeam[e.route]}</span>`
-  : `<span class="sla">—</span>`;
-  const done = actions.some((a) => a.action === "approved" && a.auditId === e.auditId) || kbAdd.some((k) => k.sourceAuditId === e.auditId && k.status === "approved");
-  return `<tr><td data-l="id">${e.auditId}</td><td data-l="opened">${esc(e.ts ?? "—")}</td><td data-l="asker">${esc(e.askedBy)}</td>` +
-  `<td data-l="question">${esc(e.question)}</td><td data-l="route">${esc(e.route ?? "—")}</td><td data-l="SLA">${sla}</td>` +
-  `<td data-l="actions"><div class="rowbtns"><button class="chip" data-ticket="${e.auditId}">Ticket</button>` +
-  `<button class="chip" data-corr="${e.auditId}">${done ? "Correct again" : "Draft correction"}</button></div></td></tr>`;
-  }).join("") || `<tr><td colspan="7" data-l="">No escalations yet.</td></tr>`;
+    const over = new Map(overdueEscalations(log, ROUTING, AS_OF).map((o) => [o.auditId, o]));
+    const rows = [...log].reverse().filter((e) => e.escalated);
+    $("queueBody").innerHTML = rows.map((e) => {
+      const o = over.get(e.auditId);
+      const sla = o
+        ? `<span class="sla overdue">overdue ${o.overdueByDays}d</span>`
+        : slaByTeam[e.route] != null && ageDays(e.ts) != null
+          ? `<span class="sla">day ${ageDays(e.ts)} of ${slaByTeam[e.route]}</span>`
+          : `<span class="sla">—</span>`;
+      const done = actions.some((a) => a.action === "approved" && a.auditId === e.auditId) || kbAdd.some((k) => k.sourceAuditId === e.auditId && k.status === "approved");
+      return `<tr><td data-l="id">${e.auditId}</td><td data-l="opened">${esc(e.ts ?? "—")}</td><td data-l="asker">${esc(e.askedBy)}</td>` +
+        `<td data-l="question">${esc(e.question)}</td><td data-l="route">${esc(e.route ?? "—")}</td><td data-l="SLA">${sla}</td>` +
+        `<td data-l="actions"><div class="rowbtns"><button class="chip" data-ticket="${e.auditId}">Ticket</button>` +
+        `<button class="chip" data-corr="${e.auditId}">${done ? "Correct again" : "Draft correction"}</button></div></td></tr>`;
+    }).join("") || `<tr><td colspan="7" data-l="">No escalations yet.</td></tr>`;
   }
+
   function renderApprovals() {
-  const pending = kb.filter((e) => e.status === "pending-approval");
-  $("approvals").innerHTML = pending.map((e) =>
-  `<div class="reg" id="reg-${esc(e.id)}"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
-  `<span class="st pending">pending approval — not served</span><code>${esc(e.sourceAuditId)}</code></div>` +
-  `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
-  `<p class="rmeta">submitted by ${esc(e.submittedBy ?? "—")} · updated ${esc(e.updated ?? "—")} · tags ${esc((e.tags ?? []).join(", ") || "—")}</p>` +
-  `<div class="rowbtns"><button data-approve="${esc(e.id)}">Approve &amp; publish</button>` +
-  `<button class="ghost" data-reject="${esc(e.id)}">Reject</button></div></div>`
-  ).join("") || `<p class="note">Nothing pending — corrections drafted from the escalation queue appear here.</p>`;
+    const pending = kb.filter((e) => e.status === "pending-approval");
+    $("approvals").innerHTML = pending.map((e) =>
+      `<div class="reg" id="reg-${esc(e.id)}"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
+      `<span class="st pending">pending approval — not served</span><code>${esc(e.sourceAuditId)}</code></div>` +
+      `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
+      `<p class="rmeta">submitted by ${esc(e.submittedBy ?? "—")} · updated ${esc(e.updated ?? "—")} · tags ${esc((e.tags ?? []).join(", ") || "—")}</p>` +
+      `<div class="rowbtns"><button data-approve="${esc(e.id)}">Approve &amp; publish</button>` +
+      `<button class="ghost" data-reject="${esc(e.id)}">Reject</button></div></div>`
+    ).join("") || `<p class="note">Nothing pending — corrections drafted from the escalation queue appear here.</p>`;
   }
+
   function renderRegister() {
-  $("register").innerHTML = kb.map((e) => {
-  const pending = e.status === "pending-approval";
-  const stale = !pending && parseDate(AS_OF) - parseDate(e.updated) > EXAMPLE.thresholds.freshnessDays * DAYS;
-  return `<div class="reg" id="reg-${esc(e.id)}" tabindex="-1"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
-  (pending ? `<span class="st pending">pending approval — not served</span>` : `<span class="st">approved</span>`) +
-  (stale ? `<span class="st pending">stale — served downgraded</span>` : "") + `</div>` +
-  `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
-  `<p class="rmeta">${esc((e.tags ?? []).join(" · ") || "no tags")} · ${esc(e.jurisdiction ?? "any")} · updated ${esc(e.updated ?? "—")} · approved by ${esc(e.approvedBy ?? "— (pending)")}</p></div>`;
-  }).join("");
+    $("register").innerHTML = kb.map((e) => {
+      const pending = e.status === "pending-approval";
+      const stale = !pending && parseDate(AS_OF) - parseDate(e.updated) > EXAMPLE.thresholds.freshnessDays * DAYS;
+      return `<div class="reg" id="reg-${esc(e.id)}" tabindex="-1"><div class="rh"><span class="idr">${esc(e.id)}</span>` +
+        (pending ? `<span class="st pending">pending approval — not served</span>` : `<span class="st">approved</span>`) +
+        (stale ? `<span class="st pending">stale — served downgraded</span>` : "") + `</div>` +
+        `<p class="rq">${esc(e.question)}</p><p class="ra">${esc(e.answer)}</p>` +
+        `<p class="rmeta">${esc((e.tags ?? []).join(" · ") || "no tags")} · ${esc(e.jurisdiction ?? "any")} · updated ${esc(e.updated ?? "—")} · approved by ${esc(e.approvedBy ?? "— (pending)")}</p></div>`;
+    }).join("");
   }
+
   function renderActions() {
-  $("actionsList").innerHTML = [...actions].reverse().slice(0, 12)
-  .map((a) => `<li>${esc(a.ts ?? "")} · ${esc(a.actor ?? "")} ${esc(a.action)} ${esc(a.entryId ?? "")}${a.auditId ? " (from " + esc(a.auditId) + ")" : ""}</li>`)
-  .join("") || `<li>No governance actions yet.</li>`;
+    $("actionsList").innerHTML = [...actions].reverse().slice(0, 12)
+      .map((a) => `<li>${esc(a.ts ?? "")} · ${esc(a.actor ?? "")} ${esc(a.action)} ${esc(a.entryId ?? "")}${a.auditId ? " (from " + esc(a.auditId) + ")" : ""}</li>`)
+      .join("") || `<li>No governance actions yet.</li>`;
   }
+
+  /* ---------- audit view ---------- */
   function auditRows() {
-  const conf = $("fConf").value, q = $("fSearch").value.trim().toLowerCase();
-  return log.filter((e) =>
-  (!conf || e.confidenceLevel === conf) &&
-  (!q || `${e.question} ${e.askedBy} ${e.route ?? ""} ${e.auditId}`.toLowerCase().includes(q)));
+    const conf = $("fConf").value, q = $("fSearch").value.trim().toLowerCase();
+    return log.filter((e) =>
+      (!conf || e.confidenceLevel === conf) &&
+      (!q || `${e.question} ${e.askedBy} ${e.route ?? ""} ${e.auditId}`.toLowerCase().includes(q)));
   }
   function renderAudit() {
-  const rows = auditRows();
-  $("auditBody").innerHTML = rows.map((e) =>
-  `<tr><td data-l="id">${e.auditId}</td><td data-l="ts">${esc(e.ts ?? "—")}</td><td data-l="asked by">${esc(e.askedBy)}</td>` +
-  `<td data-l="question">${esc(e.question)}</td><td data-l="matched">${e.matched.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") || "—"}</td>` +
-  `<td data-l="conf.">${esc(e.confidenceLevel)}</td><td data-l="escalated">${e.escalated ? "YES" : ""}</td><td data-l="route">${esc(e.route ?? "—")}</td></tr>`
-  ).join("") || `<tr><td colspan="8" data-l="">No rows match the filters.</td></tr>`;
-  $("storeNote").textContent =
-  `${rows.length} of ${log.length} rows shown · storage backend: ${storage.backendName}` +
-  (storage.backendName === "local" ? " — the log survives reload (append-only ids continue)." : " — localStorage unavailable; the log lives only for this page view.");
+    const rows = auditRows();
+    $("auditBody").innerHTML = rows.map((e) =>
+      `<tr><td data-l="id">${e.auditId}</td><td data-l="ts">${esc(e.ts ?? "—")}</td><td data-l="asked by">${esc(e.askedBy)}</td>` +
+      `<td data-l="question">${esc(e.question)}</td><td data-l="matched">${e.matched.map((id) => `<button class="kbcite" data-cite="${esc(id)}">${esc(id)}</button>`).join(", ") || "—"}</td>` +
+      `<td data-l="conf.">${esc(e.confidenceLevel)}</td><td data-l="escalated">${e.escalated ? "YES" : ""}</td><td data-l="route">${esc(e.route ?? "—")}</td></tr>`
+    ).join("") || `<tr><td colspan="8" data-l="">No rows match the filters.</td></tr>`;
+    $("storeNote").textContent =
+      `${rows.length} of ${log.length} rows shown · storage backend: ${storage.backendName}` +
+      (storage.backendName === "local" ? " — the log survives reload (append-only ids continue)." : " — localStorage unavailable; the log lives only for this page view.");
   }
+
   function renderAll() { renderCounts(); renderQueue(); renderApprovals(); renderRegister(); renderActions(); renderAudit(); }
+
+  /* ---------- correction form ---------- */
   let corrAuditId = null;
   function openCorr(auditId) {
-  const e = log.find((x) => x.auditId === auditId);
-  if (!e) return;
-  corrAuditId = auditId;
-  $("corrFor").textContent = `for ${auditId} — “${e.question}”`;
-  $("corrUpdated").value = AS_OF;
-  $("corrTags").value = "";
-  $("corrCard").hidden = false;
-  $("corrAnswer").focus();
-  $("corrCard").scrollIntoView({ behavior: "smooth", block: "center" });
+    const e = log.find((x) => x.auditId === auditId);
+    if (!e) return;
+    corrAuditId = auditId;
+    $("corrFor").textContent = `for ${auditId} — “${e.question}”`;
+    $("corrUpdated").value = AS_OF;
+    $("corrTags").value = "";
+    $("corrCard").hidden = false;
+    $("corrAnswer").focus();
+    $("corrCard").scrollIntoView({ behavior: "smooth", block: "center" });
   }
   function submitCorr() {
-  const answer = $("corrAnswer").value.trim();
-  if (!answer) { toast("Write the approved answer first — pending entries with no answer would fail validation."); return; }
-  if (!parseDate($("corrUpdated").value)) { toast("Updated must be a real YYYY-MM-DD date — approving anything else would fail validateKb."); return; }
-  const id = `kb-corr-${corrAuditId.toLowerCase().replace(/^aud-/, "")}`;
-  if (kb.some((e) => e.id === id)) { toast(`A correction for ${corrAuditId} already exists (${id}); core ids are audit-derived — approve or reject it first.`); return; }
-  try {
-  const res = coreApplyCorrection({
-  auditId: corrAuditId, answer,
-  tags: $("corrTags").value.split(",").map((t) => t.trim()).filter(Boolean),
-  jurisdiction: $("corrJur").value || null, updated: $("corrUpdated").value,
-  approvedBy: $("corrBy").value.trim() || null,
-  });
-  actions.push({ ts: AS_OF, actor: $("corrBy").value.trim() || "legal", action: "drafted correction", entryId: res.entry.id, auditId: corrAuditId });
-  } catch (e) { toast("Refused: " + e.message); return; }
-  persist(); toast(`Drafted ${id} — pending approval; colleagues cannot see it yet.`);
-  $("corrCard").hidden = true;
-  renderAll();
+    const answer = $("corrAnswer").value.trim();
+    if (!answer) { toast("Write the approved answer first — pending entries with no answer would fail validation."); return; }
+    if (!parseDate($("corrUpdated").value)) { toast("Updated must be a real YYYY-MM-DD date — approving anything else would fail validateKb."); return; }
+    const id = `kb-corr-${corrAuditId.toLowerCase().replace(/^aud-/, "")}`;
+    if (kb.some((e) => e.id === id)) { toast(`A correction for ${corrAuditId} already exists (${id}); core ids are audit-derived — approve or reject it first.`); return; }
+    try {
+      const res = coreApplyCorrection({
+        auditId: corrAuditId, answer,
+        tags: $("corrTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+        jurisdiction: $("corrJur").value || null, updated: $("corrUpdated").value,
+        approvedBy: $("corrBy").value.trim() || null,
+      });
+      actions.push({ ts: AS_OF, actor: $("corrBy").value.trim() || "legal", action: "drafted correction", entryId: res.entry.id, auditId: corrAuditId });
+    } catch (e) { toast("Refused: " + e.message); return; }
+    persist(); toast(`Drafted ${id} — pending approval; colleagues cannot see it yet.`);
+    $("corrCard").hidden = true;
+    renderAll();
   }
+
+  /* ---------- exports ---------- */
   function exportJsonl() {
-  download(`ask-legal-audit-${AS_OF}.jsonl`, exportAuditLog(log), "application/x-ndjson");
-  toast(`Downloaded ask-legal-audit-${AS_OF}.jsonl — ${log.length} entries.`);
+    download(`ask-legal-audit-${AS_OF}.jsonl`, exportAuditLog(log), "application/x-ndjson");
+    toast(`Downloaded ask-legal-audit-${AS_OF}.jsonl — ${log.length} entries.`);
   }
   function csvCell(v) { return `"${String(v ?? "").replace(/"/g, '""')}"`; }
   function exportCsv() {
-  const head = "auditId,ts,askedBy,question,matched,confidenceLevel,escalated,route";
-  const body = log.map((e) => [e.auditId, e.ts, e.askedBy, e.question, e.matched.join(" "), e.confidenceLevel, e.escalated ? "yes" : "no", e.route ?? ""].map(csvCell).join(","));
-  download(`ask-legal-audit-${AS_OF}.csv`, [head, ...body].join("\n"), "text/csv");
-  toast(`Downloaded ask-legal-audit-${AS_OF}.csv — ${log.length} rows.`);
+    const head = "auditId,ts,askedBy,question,matched,confidenceLevel,escalated,route";
+    const body = log.map((e) => [e.auditId, e.ts, e.askedBy, e.question, e.matched.join(" "), e.confidenceLevel, e.escalated ? "yes" : "no", e.route ?? ""].map(csvCell).join(","));
+    download(`ask-legal-audit-${AS_OF}.csv`, [head, ...body].join("\n"), "text/csv");
+    toast(`Downloaded ask-legal-audit-${AS_OF}.csv — ${log.length} rows.`);
   }
   function exportMd() {
-  const pending = kb.filter((e) => e.status === "pending-approval");
-  const over = overdueEscalations(log, ROUTING, AS_OF);
-  const md = [
-  `# ask-legal digest — ${AS_OF} (fictional data)`, "",
-  `Audit rows: ${log.length} · answered ${log.filter((e) => !e.escalated).length} · escalated ${log.filter((e) => e.escalated).length} · past SLA ${over.length}`,
-  `Guidance register: ${kb.length - pending.length} approved, ${pending.length} pending approval`, "",
-  "## Escalation queue",
-  ...(log.filter((e) => e.escalated).map((e) => `- ${e.auditId} (${e.ts}) → ${e.route} — ${e.question}`)),
-  "",
-  "## Guidance register",
-  ...(kb.map((e) => `- ${e.id} [${e.status ?? "approved"}] ${e.question} — updated ${e.updated}, approved by ${e.approvedBy ?? "— (pending)"}`)),
-  "",
-  ].join("\n");
-  download(`ask-legal-digest-${AS_OF}.md`, md, "text/markdown");
-  toast(`Downloaded ask-legal-digest-${AS_OF}.md.`);
+    const pending = kb.filter((e) => e.status === "pending-approval");
+    const over = overdueEscalations(log, ROUTING, AS_OF);
+    const md = [
+      `# ask-legal digest — ${AS_OF} (fictional data)`, "",
+      `Audit rows: ${log.length} · answered ${log.filter((e) => !e.escalated).length} · escalated ${log.filter((e) => e.escalated).length} · past SLA ${over.length}`,
+      `Guidance register: ${kb.length - pending.length} approved, ${pending.length} pending approval`, "",
+      "## Escalation queue",
+      ...(log.filter((e) => e.escalated).map((e) => `- ${e.auditId} (${e.ts}) → ${e.route} — ${e.question}`)),
+      "",
+      "## Guidance register",
+      ...(kb.map((e) => `- ${e.id} [${e.status ?? "approved"}] ${e.question} — updated ${e.updated}, approved by ${e.approvedBy ?? "— (pending)"}`)),
+      "",
+    ].join("\n");
+    download(`ask-legal-digest-${AS_OF}.md`, md, "text/markdown");
+    toast(`Downloaded ask-legal-digest-${AS_OF}.md.`);
   }
+
+  /* ---------- DOCX-import hook: extracted guidance lands pending-approval; approval stays a human action ---------- */
+  globalThis.applyKbDrafts = (drafts) => {
+    const add = (Array.isArray(drafts) ? drafts : []).filter((e) => e && e.id && e.question && e.answer)
+      .map((e) => ({ id: e.id, question: e.question, answer: e.answer, tags: Array.isArray(e.tags) ? e.tags : [],
+        jurisdiction: e.jurisdiction ?? null, updated: parseDate(e.updated) ? e.updated : AS_OF, approvedBy: null,
+        status: "pending-approval", sourceAuditId: e.sourceAuditId ?? null, submittedBy: "DOCX import — unreviewed draft" }));
+    for (const e of add) if (!kb.some((k) => k.id === e.id)) kbAdd.push(e);
+    kb = [...EXAMPLE.knowledgeBase, ...kbAdd];
+    persist();
+    renderAll();
+    showDesk("legal");
+    return add.length;
+  };
+
+  /* ---------- events ---------- */
   document.addEventListener("click", (ev) => {
-  const b = ev.target.closest("button");
-  if (!b) return;
-  if (b.dataset.q) { $("q").value = b.dataset.q; ask(); return; }
-  if (b.dataset.cite) { cite(b.dataset.cite); return; }
-  if (b.dataset.ticket) { openTicket(b.dataset.ticket); return; }
-  if (b.dataset.corr) { showDesk("legal"); openCorr(b.dataset.corr); return; }
-  if (b.dataset.approve) {
-  const approver = $("approver").value.trim();
-  try {
-  const res = approveEntry(kb, b.dataset.approve, approver); // guards: pending-only, approver, answer, date
-  actions.push({ ts: AS_OF, actor: approver, action: "approved", entryId: res.entry.id, auditId: res.entry.sourceAuditId });
-  persist(); toast(`Approved ${res.entry.id} — now retrievable and served.`);
-  } catch (e) { toast("Refused: " + e.message); return; }
-  renderAll(); return;
-  }
-  if (b.dataset.reject) {
-  const id = b.dataset.reject;
-  kbAdd = kbAdd.filter((x) => x.id !== id);
-  kb = kb.filter((x) => x.id !== id); // demo-level removal: the core has no reject API (noted in report)
-  actions.push({ ts: AS_OF, actor: $("approver").value.trim() || "legal", action: "rejected", entryId: id });
-  persist(); toast(`Rejected ${id} — removed from the pending queue.`);
-  renderAll(); return;
-  }
+    const b = ev.target.closest("button");
+    if (!b) return;
+    if (b.dataset.q) { $("q").value = b.dataset.q; ask(); return; }
+    if (b.dataset.cite) { cite(b.dataset.cite); return; }
+    if (b.dataset.ticket) { openTicket(b.dataset.ticket); return; }
+    if (b.dataset.corr) { showDesk("legal"); openCorr(b.dataset.corr); return; }
+    if (b.dataset.approve) {
+      const approver = $("approver").value.trim();
+      try {
+        const res = approveEntry(kb, b.dataset.approve, approver); // guards: pending-only, approver, answer, date
+        actions.push({ ts: AS_OF, actor: approver, action: "approved", entryId: res.entry.id, auditId: res.entry.sourceAuditId });
+        persist(); toast(`Approved ${res.entry.id} — now retrievable and served.`);
+      } catch (e) { toast("Refused: " + e.message); return; }
+      renderAll(); return;
+    }
+    if (b.dataset.reject) {
+      const id = b.dataset.reject;
+      kbAdd = kbAdd.filter((x) => x.id !== id);
+      kb = kb.filter((x) => x.id !== id); // demo-level removal: the core has no reject API (noted in report)
+      actions.push({ ts: AS_OF, actor: $("approver").value.trim() || "legal", action: "rejected", entryId: id });
+      persist(); toast(`Rejected ${id} — removed from the pending queue.`);
+      renderAll(); return;
+    }
   });
   $("askBtn").onclick = ask;
+  /* ---------- live AI mode (only when the val's /api route answers; gh-pages/file:// stay deterministic) ---------- */
   async function askAi(ev) {
-  const btn = ev.target;
-  const question = $("q").value.trim();
-  if (!question) { toast("Type a question first."); $("q").focus(); return; }
-  btn.disabled = true; btn.textContent = "asking…";
-  try {
-  const res = await fetch("/api/ask-legal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
-  const r = await res.json();
-  if (!res.ok) throw new Error(r.error || "unavailable");
-  $("answer").innerHTML =
-  `<div class="card"><div class="q">${esc(question)} <small style="font-weight:400;color:var(--text-secondary)">· live AI, grounded in the guidance register</small></div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
-  (r.answered
-  ? `<div class="answer">${esc(r.answer)}` + (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
-  `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · live-ai mode — not in the audit log</small></div>`
-  : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
-  `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
-  } catch (e) { toast("Live AI unavailable — the deterministic Ask still works." + (e && e.message ? ` (${e.message})` : "")); }
-  btn.disabled = false; btn.textContent = "Ask — live AI";
+    const btn = ev.target;
+    const question = $("q").value.trim();
+    if (!question) { toast("Type a question first."); $("q").focus(); return; }
+    btn.disabled = true; btn.textContent = "asking…";
+    try {
+      const res = await fetch("/api/ask-legal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || "unavailable");
+      $("answer").innerHTML =
+        `<div class="card"><div class="q">${esc(question)} <small style="font-weight:400;color:var(--text-secondary)">· live AI, grounded in the guidance register</small></div><span class="lvl lvl-${r.confidence.level}">${r.confidence.level}</span>` +
+        (r.answered
+          ? `<div class="answer">${esc(r.answer)}` + (r.provisional ? `<br /><small><strong>${esc(r.label)}</strong></small>` : "") +
+            `<br /><small>source <button class="kbcite" data-cite="${esc(r.sourceId)}">${esc(r.sourceId)}</button> · live-ai mode — not in the audit log</small></div>`
+          : `<div class="esc">Escalated to ${esc(r.route)} — no answer returned. Nothing is guessed.</div>`) +
+        `<ul class="reasons">${r.confidence.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    } catch (e) { toast("Live AI unavailable — the deterministic Ask still works." + (e && e.message ? ` (${e.message})` : "")); }
+    btn.disabled = false; btn.textContent = "Ask — live AI";
   }
   (async () => {
-  try {
-  if (!/^https?:$/.test(location.protocol)) return; // file:// — no API
-  const probe = await fetch("/api/ask-legal", { method: "OPTIONS" });
-  if (!(probe.ok || probe.status === 204)) return; // gh-pages — affordance absent
-  const b = document.createElement("button");
-  b.id = "askAiBtn"; b.className = "ghost"; b.textContent = "Ask — live AI";
-  b.title = "Grounded answer via the val's /api/ask-legal route (gpt-5-nano, restates approved guidance only)";
-  $("askBtn").after(b);
-  b.onclick = askAi;
-  } catch {  }
+    try {
+      if (!/^https?:$/.test(location.protocol)) return; // file:// — no API
+      const probe = await fetch("/api/ask-legal", { method: "OPTIONS" });
+      if (!(probe.ok || probe.status === 204)) return; // gh-pages — affordance absent
+      const b = document.createElement("button");
+      b.id = "askAiBtn"; b.className = "ghost"; b.textContent = "Ask — live AI";
+      b.title = "Grounded answer via the val's /api/ask-legal route (gpt-5-nano, restates approved guidance only)";
+      $("askBtn").after(b);
+      b.onclick = askAi;
+    } catch { /* probe failed — deterministic engine only */ }
   })();
   $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
   $("asker").onchange = persist;
@@ -700,10 +823,10 @@ textarea { max-width: 100%; }
   $("scrim").onclick = closeTicket;
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("drawer").hidden) closeTicket(); });
   $("copyTicket").onclick = async () => {
-  const t = $("ticketJson").textContent;
-  try { await navigator.clipboard.writeText(t); }
-  catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
-  toast("Ticket JSON copied to clipboard.");
+    const t = $("ticketJson").textContent;
+    try { await navigator.clipboard.writeText(t); }
+    catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    toast("Ticket JSON copied to clipboard.");
   };
   $("fConf").onchange = renderAudit;
   $("fSearch").oninput = renderAudit;
@@ -711,15 +834,66 @@ textarea { max-width: 100%; }
   $("exportCsv").onclick = exportCsv;
   $("exportMd").onclick = exportMd;
   $("resetData").onclick = () => {
-  if (!confirm("Reset all demo data (audit log, corrections, decisions) to the seeded state?")) return;
-  for (const k of ["auditJsonl", "kbAdd", "actions", "seeded", "askedBy"]) storage.remove(k);
-  location.reload();
+    if (!confirm("Reset all demo data (audit log, corrections, decisions) to the seeded state?")) return;
+    for (const k of ["auditJsonl", "kbAdd", "actions", "seeded", "askedBy"]) storage.remove(k);
+    location.reload();
   };
+
+  /* ---------- boot ---------- */
   restore();
   const savedAsker = storage.get("askedBy");
   if (savedAsker && [...$("asker").options].some((o) => o.value === savedAsker)) $("asker").value = savedAsker;
   renderAll();
   $("q").value = "Which NDA template do I use for a new analytics vendor?"; // prefilled, not auto-asked
+</script>
+
+<script>
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p>' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="docx-chip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "ask-legal", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.entries)) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Draft KB entries extracted from the document — edit the JSON, then Apply. Every entry lands pending-approval; nothing is served until a human approves it below.</p>'
+          + '<textarea id="kbxJson" class="docx-extract-json" rows="12" spellcheck="false">' + esc(JSON.stringify(j.data, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="docx-err" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; draft the entries in the correction form yourself.</p>"
+          + '<textarea class="docx-fallback" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import policy / guidance (.docx)",
+      hint: "drafts KB entries for human approval — never auto-approved",
+      preview,
+      apply: (payload, docText) => {
+        const box = document.getElementById("kbxJson");
+        const raw = box && typeof box.value === "string" ? box.value.trim() : "";
+        if (!raw) throw new Error("no extraction to apply");
+        let entries = null;
+        try { const p = JSON.parse(raw); entries = Array.isArray(p) ? p : Array.isArray(p && p.entries) ? p.entries : null; } catch { entries = null; }
+        if (!entries || !entries.length) throw new Error("the edited JSON holds no entries array");
+        const hook = globalThis.applyKbDrafts;
+        if (typeof hook !== "function") throw new Error("the approvals panel is not ready");
+        const n = hook(entries);
+        const st = document.getElementById("kbxStatus");
+        if (st) st.textContent = n + " draft entries queued as pending-approval — approve or reject each one below; approval stays a human action.";
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>

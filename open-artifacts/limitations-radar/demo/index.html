@@ -54,6 +54,7 @@
   <div class="cols">
     <div>
       <div class="kicker">Claims (JSON)</div>
+      <div id="docxImportMount"></div>
       <textarea id="input" aria-label="Claims (JSON)" spellcheck="false"></textarea>
       <p><button id="run">Run radar</button></p>
       <div class="err" id="err"></div>
@@ -143,6 +144,61 @@ document.getElementById("run").addEventListener("click", () => {
     $err.textContent = "Input error: " + e.message;
   }
 });
+</script>
+
+<script type="module">
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    M.wireDocxImport(mount, {
+      title: "Import intake / complaint (.docx)",
+      hint: "free live AI extracts claim facts — preview, edit, then Apply; deadlines stay core-computed",
+      preview: async (docText) => {
+        const res = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "limitations-radar", text: docText }) });
+        let body = null;
+        try { body = await res.json(); } catch { body = null; }
+        if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.claims)) throw new Error("extraction unavailable"); // fail-closed: the shared module keeps the raw text
+        const d = body.data;
+        const unc = Array.isArray(d.uncertain) ? d.uncertain : [];
+        const conf = (body.confidence || {});
+        const chip = (k) => conf[k] === "high"
+          ? '<span class="sev">' + k + " · high confidence</span>"
+          : '<span class="sev critical">' + k + " · " + (conf[k] === "low" ? "low confidence" : "unreported confidence") + " — review before applying</span>";
+        const uncHtml = unc.map((u) => '<div class="xuncertain"><strong>' + esc(u.claimId) + "</strong> · " + esc(u.field) + " — candidates: " + (Array.isArray(u.candidates) ? u.candidates : []).map(esc).join(" | ") + " — " + esc(u.reason) + "</div>").join("");
+        return '<p style="font-size:12.5px;margin:8px 0 4px">' + chip("claims") + " " + chip("uncertain") + ' <span style="color:var(--text-secondary)">edit the JSON, then Apply — claims land in the box below. Dates are copied as stated, never computed; uncertain claims run per candidate — never collapsed into one guess, so duplicate a claim per candidate if you want each run.</span></p>'
+          + '<textarea class="claims-draft" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline);margin-top:6px">' + esc(JSON.stringify(d.claims, null, 2)) + "</textarea>"
+          + (uncHtml ? '<div style="margin-top:6px">' + uncHtml + "</div>" : "");
+      },
+      apply: (payload, docText) => {
+        const draft = mount.querySelector(".claims-draft");
+        let claims = null;
+        if (draft && typeof draft.value === "string" && draft.value.trim()) {
+          claims = JSON.parse(draft.value); // a parse error propagates → the shared module's fail-closed warning
+        }
+        if (!Array.isArray(claims)) {
+          const p = mount.querySelector(".docx-import-preview");
+          if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">No extracted claims to apply — the raw text is in the preview above; paste claims JSON manually or retry.</p>');
+          return;
+        }
+        const input = document.getElementById("input");
+        let asOf = null;
+        try { const cur = JSON.parse(input.value); if (cur && typeof cur.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cur.asOf)) asOf = cur.asOf; } catch { asOf = null; }
+        if (!asOf) asOf = new Date().toISOString().slice(0, 10); // never guessed from the document
+        input.value = JSON.stringify({ asOf, claims }, null, 2);
+        const p = mount.querySelector(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">' + claims.length + " claim" + (claims.length === 1 ? "" : "s") + ' applied to the claims box — press “Run radar”.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

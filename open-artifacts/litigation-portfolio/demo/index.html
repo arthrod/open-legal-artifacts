@@ -53,6 +53,7 @@
   <p class="disclaimer">Limitation periods ship as US defaults with citations — they are configurable data, not legal advice. Verify every rule against current law in the governing jurisdiction.</p>
 
   <h2>Matter input (JSON)</h2>
+  <div id="docxImportMount"></div>
   <textarea id="input" aria-label="Matter input (JSON)" spellcheck="false"></textarea>
   <div class="actions">
     <button id="run">Evaluate portfolio</button>
@@ -182,6 +183,64 @@ $('csv').addEventListener('click', () => {
   if (window.__portfolio) navigator.clipboard?.writeText(window.__portfolio._csv);
 });
 if (evaluate()) render();
+</script>
+
+<script type="module">
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    M.wireDocxImport(mount, {
+      title: "Import complaint / estimate memo (.docx)",
+      hint: "free live AI extracts matters — preview, edit, then Apply; deadline math stays core-owned",
+      preview: async (docText) => {
+        const res = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "litigation-portfolio", text: docText }) });
+        let body = null;
+        try { body = await res.json(); } catch { body = null; }
+        if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.matters)) throw new Error("extraction unavailable"); // fail-closed: the shared module keeps the raw text
+        const matters = body.data.matters;
+        const conf = body.confidence && body.confidence.matters;
+        const chip = conf === "high"
+          ? '<span class="sev">matters · high confidence</span>'
+          : '<span class="sev critical">matters · ' + (conf === "low" ? "low confidence" : "unreported confidence") + " — review before applying</span>";
+        // exposureBasis = verbatim-quote rule, checked deterministically against the imported text
+        const flagged = [], verbatim = [];
+        for (const m of matters) if (m && typeof m.exposureBasis === "string" && m.exposureBasis) (docText.includes(m.exposureBasis) ? verbatim : flagged).push(m);
+        const flagHtml = flagged.map((m) => '<div class="achip critical">' + esc(m.id) + " exposureBasis not found verbatim in the document — check the quote</div>").join("");
+        const okHtml = verbatim.map((m) => '<div class="achip">' + esc(m.id) + " exposureBasis: verbatim in the document ✓</div>").join("");
+        return '<p style="font-size:12.5px;margin:8px 0 4px">' + chip + ' <span style="color:var(--text-secondary)">edit the JSON, then Apply — matters land in the input below. exposureBasis must be a verbatim quote from the estimate memo; dates and deadlines are never computed.</span></p>'
+          + (flagHtml || "") + (okHtml || "")
+          + '<textarea class="matters-draft" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline);margin-top:6px">' + esc(JSON.stringify(matters, null, 2)) + "</textarea>";
+      },
+      apply: (payload, docText) => {
+        const draft = mount.querySelector(".matters-draft");
+        let matters = null;
+        if (draft && typeof draft.value === "string" && draft.value.trim()) {
+          matters = JSON.parse(draft.value); // a parse error propagates → the shared module's fail-closed warning
+        }
+        if (!Array.isArray(matters)) {
+          const p = mount.querySelector(".docx-import-preview");
+          if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">No extracted matters to apply — the raw text is in the preview above; paste matters JSON manually or retry.</p>');
+          return;
+        }
+        const input = document.getElementById("input");
+        let asOf = null;
+        try { const cur = JSON.parse(input.value); if (cur && typeof cur.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cur.asOf)) asOf = cur.asOf; } catch { asOf = null; }
+        if (!asOf) asOf = new Date().toISOString().slice(0, 10); // never guessed from the documents
+        input.value = JSON.stringify({ asOf, matters }, null, 2);
+        const p = mount.querySelector(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">' + matters.length + " matter" + (matters.length === 1 ? "" : "s") + ' applied to the matter input — press “Evaluate portfolio”.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

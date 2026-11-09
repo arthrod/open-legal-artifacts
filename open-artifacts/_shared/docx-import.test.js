@@ -1,15 +1,18 @@
 // docx-import.test.js — node:test suite for _shared/docx-import.js.
-// Fixtures are REAL .docx archives: docio's writeDocx (STORE) and a crafted
-// DEFLATE zip; the five error codes, the 5 MB guard, the pure renderImportUi
+// Fixtures are REAL .docx archives: docio's writeDocx (STORE) and crafted
+// DEFLATE zips (incl. a full paragraphs+table package in the reconB reference
+// fixture shape); the five error codes, the 5 MB guard, the pure renderImportUi
 // output, and wireDocxImport behavior (via a minimal DOM stub — never a real
-// browser) are pinned. A byte-parity test keeps the vendored docio read path
-// honest. Fictional data; [verify] tags per fleet rules.
+// browser) are pinned. readDocxBlocks pins table-preserving reads: block
+// shapes, join semantics, robustness, and shared error paths. A byte-parity
+// test keeps the vendored docio read path honest. Fictional data; [verify]
+// tags per fleet rules.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateRawSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { writeDocx } from './docio.js';
-import { readDocxText, renderImportUi, wireDocxImport, DEFAULT_MAX_BYTES } from './docx-import.js';
+import { readDocxText, readDocxBlocks, renderImportUi, wireDocxImport, DEFAULT_MAX_BYTES } from './docx-import.js';
 
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -185,6 +188,173 @@ test('readDocxText: never throws on hostile inputs', async () => {
     const res = await readDocxText(bad);
     assert.equal(res.code, 'NOT_DOCX', 'non-buffer input maps to NOT_DOCX, no throw');
   }
+});
+
+/* ---------- readDocxBlocks: table-preserving reader ---------- */
+
+// Full OOXML package in the reconB reference fixture shape (make-test-docx.mjs
+// test1, validated against textutil/unzip in the recon lab): 2 paragraphs
+// (pPr/pStyle, entities, w:tab) + a 2x3 table whose FIRST row is the header,
+// with tblPr/tblGrid/trPr/tcPr padding like real Word output.
+const CT_TYPES = XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
+const PKG_RELS = XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+const TABLE_DOC = XML
+  + '<w:document xmlns:w="' + W_NS + '"><w:body>'
+  + '<w:p><w:pPr><w:pStyle w:val="Ttulo1"/></w:pPr><w:r><w:t>RENT LEDGER — SOURCE EXTRACT</w:t></w:r></w:p>'
+  + '<w:p><w:r><w:t xml:space="preserve">Tenant: Unit 4B &amp; fixtures</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">period: January</w:t></w:r></w:p>'
+  + '<w:tbl><w:tblPr><w:tblStyle w:val="TabeladeGrade"/><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
+  + '<w:tblGrid><w:gridCol w:w="2840"/><w:gridCol w:w="4258"/><w:gridCol w:w="2840"/></w:tblGrid>'
+  + '<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+  + '<w:tc><w:tcPr><w:tcW w:w="2840" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Date</w:t></w:r></w:p></w:tc>'
+  + '<w:tc><w:tcPr><w:tcW w:w="4258" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Description</w:t></w:r></w:p></w:tc>'
+  + '<w:tc><w:tcPr><w:tcW w:w="2840" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Amount</w:t></w:r></w:p></w:tc></w:tr>'
+  + '<w:tr>'
+  + '<w:tc><w:tcPr><w:tcW w:w="2840" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>2026-01-05</w:t></w:r></w:p></w:tc>'
+  + '<w:tc><w:tcPr><w:tcW w:w="4258" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Rent — January</w:t></w:r></w:p></w:tc>'
+  + '<w:tc><w:tcPr><w:tcW w:w="2840" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>2,500.00</w:t></w:r></w:p></w:tc></w:tr>'
+  + '</w:tbl>'
+  + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>'
+  + '</w:body></w:document>';
+
+// DEFLATE like real Word saves; method 0 gives the STORE variant.
+const tableDocx = (method = 8) =>
+  craftZip([['[Content_Types].xml', CT_TYPES], ['_rels/.rels', PKG_RELS], ['word/document.xml', TABLE_DOC]], method);
+
+test('readDocxBlocks: happy path — real .docx with paragraphs AND a table (DEFLATE + STORE)', async () => {
+  const res = await readDocxBlocks(tableDocx());
+  assert.equal(res.error, null);
+  assert.deepEqual(res.blocks, [
+    { type: 'paragraph', text: 'RENT LEDGER — SOURCE EXTRACT' },
+    { type: 'paragraph', text: 'Tenant: Unit 4B & fixtures\tperiod: January' },
+    { type: 'table', rows: [
+      ['Date', 'Description', 'Amount'],
+      ['2026-01-05', 'Rent — January', '2,500.00'],
+    ] },
+  ]);
+  assert.equal(res.blocks[2].rows[0][0], 'Date', 'the header row is rows[0]');
+  const stored = await readDocxBlocks(tableDocx(0));
+  assert.deepEqual(stored.blocks, res.blocks, 'STORE and DEFLATE packages parse identically');
+});
+
+test('readDocxBlocks: join semantics — text = paragraphs joined, one entry per block, tables as TSV', async () => {
+  const res = await readDocxBlocks(tableDocx());
+  assert.equal(res.paragraphs.length, res.blocks.length, 'exactly one paragraphs entry per block');
+  assert.equal(res.text, res.paragraphs.join('\n'));
+  assert.equal(res.paragraphs[2], 'Date\tDescription\tAmount\n2026-01-05\tRent — January\t2,500.00',
+    'table entry: rows joined \\n, cells joined \\t');
+  assert.ok(res.text.includes('\tperiod: January'), 'w:tab inside a paragraph survives as a tab in text');
+  assert.ok(res.text.includes('Date\tDescription\tAmount'), 'table cells reach text tab-joined');
+});
+
+test('readDocxBlocks: consistent with readDocxText on the same document', async () => {
+  const blocks = await readDocxBlocks(tableDocx());
+  const flat = await readDocxText(tableDocx());
+  assert.equal(flat.error, null);
+  assert.deepEqual(blocks.paragraphs.slice(0, 2), flat.paragraphs.slice(0, 2),
+    'paragraph blocks match the flattened reader paragraph-for-paragraph');
+  assert.deepEqual(flat.paragraphs.slice(2), blocks.blocks[2].rows.flat(),
+    'readDocxText flattens the same cell texts in row-major order');
+});
+
+test('readDocxBlocks: paragraph-only writeDocx fixture — every block is a paragraph', async () => {
+  const res = await readDocxBlocks(writeDocx(['Solo one.', 'Solo two.']));
+  assert.deepEqual(res.blocks, [
+    { type: 'paragraph', text: 'Solo one.' },
+    { type: 'paragraph', text: 'Solo two.' },
+  ]);
+  assert.deepEqual(res.paragraphs, ['Solo one.', 'Solo two.']);
+  assert.equal(res.text, 'Solo one.\nSolo two.');
+});
+
+test('readDocxBlocks: robustness — table-first, sdt unwrap, w:cr, entities, multi-paragraph cells, nested tables', async () => {
+  const doc = XML
+    + '<w:document xmlns:w="' + W_NS + '"><w:body>'
+    + '<w:tbl><w:tblPr/>'
+    + '<w:tr>'
+    + '<w:tc><w:tcPr/><w:p><w:r><w:t>two-para cell — first</w:t></w:r></w:p><w:p><w:r><w:t>second para</w:t></w:r></w:p></w:tc>'
+    + '<w:tc><w:tcPr/><w:p><w:r><w:t>simple cell</w:t></w:r></w:p></w:tc></w:tr>'
+    + '<w:tr>'
+    + '<w:tc><w:tcPr/>'
+    + '<w:tbl><w:tblPr/><w:tr><w:tc><w:p><w:r><w:t>nested A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>nested B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    + '<w:p><w:r><w:t>after nested</w:t></w:r></w:p></w:tc>'
+    + '<w:tc><w:tcPr/><w:p><w:r><w:t>end</w:t></w:r></w:p></w:tc></w:tr>'
+    + '</w:tbl>'
+    + '<w:sdt><w:sdtPr><w:alias w:val="bloco"/></w:sdtPr><w:sdtContent>'
+    + '<w:p><w:r><w:t>inside a content control</w:t></w:r></w:p></w:sdtContent></w:sdt>'
+    + '<w:p/>'
+    + '<w:p><w:r><w:t>L1</w:t></w:r><w:br/><w:r><w:t>L2</w:t></w:r><w:cr/><w:r><w:t>L3</w:t></w:r></w:p>'
+    + '<w:p><w:r><w:t xml:space="preserve">caf&#233; &amp;amp; fim</w:t></w:r></w:p>'
+    + '</w:body></w:document>';
+  const res = await readDocxBlocks(craftZip([['word/document.xml', doc]], 0));
+  assert.equal(res.error, null);
+  assert.deepEqual(res.blocks, [
+    { type: 'table', rows: [
+      ['two-para cell — first\nsecond para', 'simple cell'],
+      ['nested A\nnested B\nafter nested', 'end'],
+    ] },
+    { type: 'paragraph', text: 'inside a content control' },
+    { type: 'paragraph', text: '' },
+    { type: 'paragraph', text: 'L1\nL2\nL3' },
+    { type: 'paragraph', text: 'caf\u00e9 &amp; fim' },
+  ]);
+  assert.equal(res.text, res.paragraphs.join('\n'), 'invariants hold on the kitchen-sink document too');
+});
+
+test('readDocxBlocks: error paths are shared with readDocxText — identical failures', async () => {
+  const cases = [
+    ['plain text renamed .docx', new TextEncoder().encode('not a zip')],
+    ['zip without word/document.xml', craftZip([['readme.txt', 'x']], 0)],
+    ['truncated entry', liarCsize(craftZip([['word/document.xml', docXml(['nope'])]], 0))],
+    ['exotic compression', craftZip([['word/document.xml', docXml(['bzip'])]], 12)],
+    ['empty docx', writeDocx([])],
+    ['whitespace-only docx', writeDocx(['   '])],
+  ];
+  for (const [label, input] of cases) {
+    const a = await readDocxBlocks(input);
+    const b = await readDocxText(input);
+    assert.deepEqual(a, b, label + ': both readers return the identical failure');
+    assert.ok(a.code, label + ': carries a code');
+  }
+});
+
+test('readDocxBlocks: TOO_LARGE — shared 5 MB guard, custom maxBytes boundary inclusive', async () => {
+  const huge = await readDocxBlocks(new Uint8Array(DEFAULT_MAX_BYTES + 1));
+  assert.equal(huge.code, 'TOO_LARGE');
+  const buf = tableDocx();
+  assert.equal((await readDocxBlocks(buf, { maxBytes: buf.length - 1 })).code, 'TOO_LARGE');
+  assert.equal((await readDocxBlocks(buf, { maxBytes: buf.length })).error, null,
+    'boundary is inclusive: > maxBytes rejects, == passes');
+});
+
+test('readDocxBlocks: EMPTY — a table of blank cells has no readable text', async () => {
+  const doc = XML + '<w:document xmlns:w="' + W_NS + '"><w:body>'
+    + '<w:tbl><w:tr><w:tc><w:p/></w:tc><w:tc><w:p><w:r><w:t> </w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    + '</w:body></w:document>';
+  const res = await readDocxBlocks(craftZip([['word/document.xml', doc]], 0));
+  assert.equal(res.code, 'EMPTY');
+});
+
+test('readDocxBlocks: never throws on hostile inputs; accepts views and ArrayBuffers', async () => {
+  for (const bad of ['a string', null, undefined, 42, {}]) {
+    const res = await readDocxBlocks(bad);
+    assert.equal(res.code, 'NOT_DOCX', 'non-buffer input maps to NOT_DOCX, no throw');
+  }
+  const zip = new Uint8Array(tableDocx());
+  const padded = new Uint8Array(zip.length + 8); // non-zero byteOffset view
+  padded.set(zip, 8);
+  const view = padded.subarray(8);
+  assert.equal(view.byteOffset, 8);
+  const fromAb = await readDocxBlocks(view.slice().buffer);
+  const fromView = await readDocxBlocks(view);
+  assert.equal(fromAb.error, null);
+  assert.deepEqual(fromView.blocks, fromAb.blocks);
+});
+
+test('readDocxBlocks: structurally truncated document.xml never throws or hangs', async () => {
+  const doc = XML + '<w:document xmlns:w="' + W_NS + '"><w:body><w:p><w:r><w:t>partial</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell';
+  const res = await readDocxBlocks(craftZip([['word/document.xml', doc]], 0));
+  assert.deepEqual(res.blocks, [{ type: 'paragraph', text: 'partial' }],
+    'parses what is there, drops the unfinished tail');
 });
 
 /* ---------- renderImportUi: pure renderer ---------- */

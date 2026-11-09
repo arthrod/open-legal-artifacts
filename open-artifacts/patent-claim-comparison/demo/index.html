@@ -41,8 +41,14 @@
 
   <h2>Claim sets</h2>
   <div class="cols">
-    <textarea id="setA" aria-label="Claim set A (draft claims)" spellcheck="false"></textarea>
-    <textarea id="setB" aria-label="Claim set B (published claims)" spellcheck="false"></textarea>
+    <div>
+      <div id="docx-a"></div>
+      <textarea id="setA" aria-label="Claim set A (draft claims)" spellcheck="false"></textarea>
+    </div>
+    <div>
+      <div id="docx-b"></div>
+      <textarea id="setB" aria-label="Claim set B (published claims)" spellcheck="false"></textarea>
+    </div>
   </div>
   <div class="row">
     <button id="run">Compare sets</button>
@@ -125,6 +131,25 @@ $('csv').addEventListener('click', () => {
 });
 $('run').addEventListener('click', run);
 run();
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Apply fills the claim-set textarea; existing inputs are never touched before
+   the explicit Apply. On module-load failure (e.g. file://) a hint replaces
+   the control and the page keeps working. ---- */
+(async () => {
+  const targets = [['docx-a', 'setA', 'claim set A'], ['docx-b', 'setB', 'claim set B']];
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    for (const [mountId, areaId, label] of targets)
+      M.wireDocxImport($(mountId), {
+        title: 'Import DOCX — ' + label,
+        hint: 'Loads claim text from a .docx into this claim set',
+        apply: (payload) => { $(areaId).value = payload.text; },
+      });
+  } catch {
+    for (const [mountId] of targets) $(mountId).innerHTML = '<p class="muted">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

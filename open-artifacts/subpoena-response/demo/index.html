@@ -33,6 +33,13 @@
   .stop { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin: 10px 0; }
   .chip { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); padding: 2px 6px; margin-right: 6px; }
   .chip.strong { background: var(--flag-tint); }
+  /* DOCX-import preview chrome (shared _shared/docx-import.js control) */
+  .xchips { margin: 6px 0; }
+  .xchip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .xchip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .xnote { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
+  .xfail { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; margin: 6px 0; }
+  textarea.xdata, textarea.xtext { font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -46,6 +53,7 @@
 <div class="wrap"><main>
   <section>
     <div class="sec">Subpoena facts JSON (editable)</div>
+    <div id="docxImportMount"></div>
     <textarea id="input" aria-label="Subpoena facts JSON" spellcheck="false"></textarea>
     <button id="run">Track response →</button>
     <div id="err" class="err"></div>
@@ -138,6 +146,65 @@ $('run').addEventListener('click', () => {
   try { render(trackResponse(JSON.parse($('input').value))); } catch (e) { $('err').textContent = String(e.message ?? e); }
 });
 render(trackResponse(SAMPLE));
+
+// ---- Import DOCX (shared module, D1 dynamic import; fills the facts JSON) ----
+// Subpoena .docx → /api/extract proposes the facts JSON (extract ONLY what the
+// document states; null when not stated; never computes deadlines, never suggests
+// objections). Apply merges STATED fields into the facts input; the deadline engine
+// runs downstream when the user presses "Track response →".
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "subpoena-response", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Extracted facts — review and edit the JSON, then Apply. Only what the document states was extracted; null means “not stated”. Deadlines and objections are never computed or suggested here.</p>'
+          + '<textarea class="xdata" rows="14" spellcheck="false">' + esc(JSON.stringify(j.data, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="xfail" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; enter the facts manually.</p>"
+          + '<textarea class="xtext" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import the subpoena (.docx)",
+      hint: "extracts stated facts for the JSON below — preview, edit, then Apply",
+      preview,
+      apply: () => {
+        const q = (sel) => mount.querySelector(sel);
+        const note = (cls, msg) => { const p = q(".docx-import-preview"); if (p) p.insertAdjacentHTML("beforeend", '<p class="' + cls + '" role="alert">' + esc(msg) + "</p>"); };
+        const box = q(".xdata");
+        if (!box) { note("xnote", "Nothing applied — the document text is preserved above for manual entry."); return; }
+        let d; try { d = JSON.parse(box.value); } catch { note("xfail", "The edited JSON does not parse — fix it and Apply again."); return; }
+        const el = document.getElementById("input");
+        let facts; try { facts = JSON.parse(el.value); } catch { note("xfail", "The facts JSON in the input box does not parse — fix it first."); return; }
+        const stated = (into, from) => { for (const [k, v] of Object.entries(from || {})) if (v !== null && v !== undefined) into[k] = v; return into; };
+        if (d.subpoena) facts.subpoena = stated({ ...facts.subpoena }, d.subpoena);
+        if (d.responsive_scope) {
+          const scope = { ...facts.responsive_scope };
+          if (d.responsive_scope.date_range != null) scope.date_range = d.responsive_scope.date_range;
+          if (d.responsive_scope.custodians != null) scope.custodians = d.responsive_scope.custodians;
+          if (d.responsive_scope.data_types != null) scope.data_types = d.responsive_scope.data_types;
+          facts.responsive_scope = scope;
+        }
+        el.value = JSON.stringify(facts, null, 2);
+        note("xnote", "Applied — stated fields merged into the facts JSON (unstated fields left unchanged; objections untouched). Press “Track response →” to recompute deadlines downstream.");
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

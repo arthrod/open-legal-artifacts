@@ -79,8 +79,11 @@
   <section>
     <h2>Your own snapshot</h2>
     <p class="lede" style="font-size:13px">Paste snapshot JSON (schema in <code>spec.md</code>), optionally a previous snapshot
-      for the diff, and an <code>asOf</code> date. Everything renders client-side with the same <code>core.js</code> —
-      nothing is sent anywhere.</p>
+      for the diff, and an <code>asOf</code> date — or import a .docx engagement letter / email thread (the free live AI
+      extracts matters, previewed and editable before Apply; its text is sent only to that extraction call), or paste a
+      CSV spreadsheet export (zero LLM). Everything renders client-side with the same <code>core.js</code>.</p>
+    <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+    <div id="docxImportMount"></div>
     <div class="row" style="align-items:flex-start">
       <textarea id="currIn" aria-label="Current snapshot JSON" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='{"capturedAt":"…","matters":[…]}'></textarea>
       <textarea id="prevIn" aria-label="Previous snapshot JSON (optional)" rows="10" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder='previous snapshot (optional — enables the diff changelog)'></textarea>
@@ -90,6 +93,17 @@
       <button id="loadBtn">Load snapshots</button>
       <span id="formMsg" style="font-family:var(--font-mono);font-size:12px;align-self:center"></span>
     </div>
+    <details style="margin-top:14px">
+      <summary style="font-family:var(--font-mono);font-size:12px;cursor:pointer">Paste CSV instead — spreadsheet export → snapshot, zero LLM</summary>
+      <p class="lede" style="font-size:12.5px;margin:10px 0 8px">Header row + one matter per row (RFC4180: quotes, embedded commas, CRLF).
+        Empty cells become explicit <code>null</code> so the anomaly layer can catch them. <code>capturedAt</code> comes
+        from you — never guessed.</p>
+      <textarea id="csvIn" aria-label="CSV paste (spreadsheet export)" rows="6" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline)" placeholder="id,name,client,owner,stage,nextStep,nextDeadline,updatedAt&#10;M-101,&quot;Halberd v. Perigee (fictional)&quot;,Halberd Logistics,j.moreau,discovery,Respond to RFP set two,2026-11-20,"></textarea>
+      <div class="row" style="margin-top:10px">
+        <label style="font-family:var(--font-mono);font-size:12px">capturedAt <input id="csvCapturedAt" type="date" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)" /></label>
+        <button id="csvParseBtn" class="ghost">Parse CSV → current snapshot</button>
+      </div>
+    </details>
   </section>
 
   <footer class="disclaimer">
@@ -100,7 +114,7 @@
 </div>
 
 <script type="module">
-  import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs } from "../core/core.js";
+  import { diffSnapshots, buildBoard, diffToCsv, diffToJson, flaggedToIcs, csvToSnapshot } from "../core/core.js";
   import EXAMPLE from "./example.js";
   import { makeLabelFn, TOOL_LABELS, fieldLabel } from "../core/display-labels.js";
 
@@ -182,6 +196,83 @@
   document.getElementById("icsBtn").onclick = () => download("matter-deadlines.ics", flaggedToIcs(board), "text/calendar");
 
   load(EXAMPLE.previous, EXAMPLE.current, EXAMPLE.asOf, "");
+
+  // ---- paste CSV → snapshot (deterministic path: the tested csvToSnapshot, finally wired — closes MASTER §3.2.3) ----
+  /* ---- [csv-paste-wiring] ---- */
+  (() => {
+    const btn = document.getElementById("csvParseBtn");
+    if (!btn) return;
+    btn.onclick = () => {
+      const msg = document.getElementById("formMsg");
+      try {
+        const snap = csvToSnapshot(document.getElementById("csvIn").value, {
+          capturedAt: document.getElementById("csvCapturedAt").value,
+          source: "csv-paste",
+        });
+        document.getElementById("currIn").value = JSON.stringify(snap, null, 2);
+        if (msg) msg.textContent = "CSV parsed — " + snap.matters.length + (snap.matters.length === 1 ? " matter" : " matters") + " loaded into the current-snapshot box — click Load snapshots";
+      } catch (e) {
+        if (msg) msg.textContent = String(e && e.message ? e.message : e);
+      }
+    };
+  })();
+  /* ---- [/csv-paste-wiring] ---- */
+
+  // ---- Import DOCX (shared module, D1 dynamic import; LA path via /api/extract) ----
+  /* ---- [docx-import-wiring] ---- */
+  (async () => {
+    const mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    try {
+      const M = await import("../../_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      M.wireDocxImport(mount, {
+        title: "Import DOCX",
+        hint: "free live AI extracts matters from an engagement letter or email thread — preview, edit, then Apply",
+        preview: async (docText) => {
+          const res = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ schema: "matter-board", text: docText }),
+          });
+          let body = null;
+          try { body = await res.json(); } catch { body = null; }
+          if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.matters)) {
+            throw new Error("extraction unavailable"); // fail-closed: the shared module keeps the raw text
+          }
+          const conf = body.confidence && body.confidence.matters;
+          const chip = conf === "high"
+            ? '<span class="sev">matters · high confidence</span>'
+            : '<span class="sev critical">matters · ' + (conf === "low" ? "low confidence" : "unreported confidence") + " — review before applying</span>";
+          const asOf = (document.getElementById("asOfIn") || {}).value || "";
+          return '<p class="lede" style="font-size:12.5px;margin:8px 0 4px">' + chip + ' <span style="color:var(--text-secondary)">edit the JSON, set capturedAt, then Apply — matters land in the current-snapshot box below. Deadlines are never invented; owner unknown → null.</span></p>'
+            + '<label style="font-family:var(--font-mono);font-size:12px">capturedAt <input class="mb-captured-at" type="date" value="' + esc(asOf) + '" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)" /></label>'
+            + '<textarea class="matters-draft" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline);margin-top:6px">' + esc(JSON.stringify(body.data.matters, null, 2)) + "</textarea>";
+        },
+        apply: (payload, docText) => {
+          const msg = document.getElementById("formMsg");
+          const draft = mount.querySelector(".matters-draft");
+          let matters = null;
+          if (draft && typeof draft.value === "string" && draft.value.trim()) {
+            try { matters = JSON.parse(draft.value); }
+            catch (e) { if (msg) msg.textContent = "matters JSON invalid — fix the preview and Apply again (" + (e && e.message ? e.message : "parse error") + ")"; throw e; }
+          }
+          if (!Array.isArray(matters)) {
+            if (msg) msg.textContent = "No extracted matters to apply — the raw text is in the preview above; paste a snapshot manually or retry.";
+            return;
+          }
+          const capEl = mount.querySelector(".mb-captured-at");
+          const capturedAt = capEl && typeof capEl.value === "string" ? capEl.value : "";
+          document.getElementById("currIn").value = JSON.stringify({ capturedAt, source: "docx-import", matters }, null, 2);
+          if (msg) msg.textContent = String(matters.length) + (matters.length === 1 ? " matter" : " matters") + " applied to the current-snapshot box" + (capturedAt ? "" : " — capturedAt left empty (caller-supplied, never guessed): fill it in before Load") + " — click Load snapshots";
+        },
+      });
+    } catch {
+      mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+  /* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

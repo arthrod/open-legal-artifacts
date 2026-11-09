@@ -53,6 +53,8 @@
         <button id="mode-json" class="mode" style="background:var(--text);color:var(--bg)">JSON input</button>
         <button id="mode-rap" class="mode">Rap-sheet paste</button>
       </p>
+      <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+      <div id="docxImportMount"></div>
       <div id="json-pane">
         <div class="kicker">Case facts (JSON)</div>
         <textarea id="input" aria-label="Case facts (JSON)" spellcheck="false"></textarea>
@@ -203,6 +205,48 @@ document.getElementById("run").addEventListener("click", () => {
     $err.textContent = "Input error: " + e.message;
   }
 });
-</script>
-</body>
-</html>
+
+// ---- Import DOCX (shared module, D1 dynamic import; LA: /api/extract → normalized paste-format text) ----
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&&lt;", ">": "&&gt;", '"': "&&quot;" }[c]));
+  let good = null; // last successful /api/extract reply; null = fail-closed (banner + raw text)
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    M.wireDocxImport(mount, {
+      title: "Import rap sheet (.docx) → normalize",
+      hint: "live extraction into the documented paste format — edit, then Apply into the rap box",
+      preview: async (docText) => {
+        try {
+          const res = await fetch("/api/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schema: "record-sealing-screener", text: docText }) });
+          const j = await res.json();
+          if (!res.ok || !j || j.ok !== true || !j.data || typeof j.data.text !== "string" || !j.data.text.trim()) throw new Error((j && j.message) || "extraction unavailable");
+          good = j;
+          const c = (j.confidence && j.confidence.text) || "missing";
+          const chip = `<span class="xchip ${c === "high" ? "xhi" : "xlo"}" style="font:11px var(--font-mono),monospace;padding:2px 6px;margin:0 4px 0 0;border:var(--hairline);border-radius:var(--radius)${c === "high" ? "" : ";background:var(--flag-tint);font-weight:700"}">text: ${esc(c)}</span>`;
+          return `<p style="margin:4px 0 6px">${chip}</p>`
+            + `<p class="xnote" style="margin:0 0 6px;font-size:12px">Normalized to the documented paste format — unmapped or uncertain fields are omitted, not guessed (they surface as <code>insufficient_data</code>). Edit, then Apply.</p>`
+            + `<textarea class="extract-out" rows="12" spellcheck="false" style="width:100%;box-sizing:border-box;font:12px var(--font-mono),monospace">${esc(j.data.text)}</textarea>`;
+        } catch (e) {
+          good = null;
+          return `<p class="docx-import-error" role="alert">Structured extraction is unavailable (${esc(e.message)}) — nothing was applied. The imported rap-sheet text is below for manual entry.</p>`
+            + `<textarea class="docx-import-text" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box">${esc(docText)}</textarea>`;
+        }
+      },
+      apply: () => {
+        if (!good) throw new Error("no structured extraction to apply");
+        const ta = mount.querySelector("textarea.extract-out");
+        if (!ta || !ta.value.trim()) throw new Error("empty normalized text");
+        document.getElementById("rap").value = ta.value;
+        document.getElementById("mode-rap").click(); // reveal the rap pane (display toggle only — no input values change)
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
+</script>\n</body>\n</html>\n

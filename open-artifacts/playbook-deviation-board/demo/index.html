@@ -134,6 +134,8 @@ code { font-family: var(--font-mono); font-size: 12px; background: var(--hover);
             <input type="radio" id="modeJson" name="ctMode" value="json" />
             <label for="modeJson">Advanced: contract JSON</label>
           </div>
+          <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+          <div id="docxImportMount"></div>
           <textarea id="ctTextInput" spellcheck="false" aria-label="Contract text, one clause per block, clauses separated by blank lines"></textarea>
           <textarea id="ctJsonInput" spellcheck="false" hidden aria-label="Contract JSON"></textarea>
           <p class="hint">A leading “N.n Heading.” prefix is read as the clause heading; blocks are numbered C1, C2, ….</p>
@@ -601,6 +603,32 @@ fillInputs();
 syncModes();
 runBoard(true);
 if (logEntries().length) appendLog({ action: "session", clauseId: null, detail: "session restored — state and decision log reloaded from localStorage" });
+
+// Import DOCX (shared module, D1 dynamic import; one paragraph = one clause block)
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const asClauseBlocks = (t) => String(t).split("\n").join("\n\n"); // one DOCX paragraph = one clause block
+    M.wireDocxImport(mount, {
+      title: "Import DOCX",
+      hint: "each paragraph becomes one clause block",
+      preview: (docText) =>
+        '<textarea class="docx-import-text" rows="10" style="width:100%;box-sizing:border-box">' +
+        asClauseBlocks(docText).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</textarea>",
+      apply: (payload, docText) => {
+        const ctTextInput = document.getElementById("ctTextInput");
+        if (ctTextInput) ctTextInput.value = asClauseBlocks(docText);
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

@@ -40,6 +40,9 @@
   .cite { color: var(--text-secondary); font-size: 12px; }
   .err { border: 2px solid var(--text); background: var(--flag-tint); font-family: var(--font-mono); padding: 12px; margin-top: 12px; display: none; color: var(--bad); border-color: var(--bad);}
   .batch-section { margin-bottom: 32px; }
+  .nf { font-size: 13px; margin: 8px 0; line-height: 1.55; }
+  .nfq { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  .nf button { margin: 0 0 0 8px; padding: 4px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -48,6 +51,15 @@
   <div class="rule"></div>
   <p class="lede">Check an eviction notice's facts against jurisdiction rules-as-data. Every requirement gets PASS / FAIL / UNVERIFIED with the rule cited. Anything not positively attested stays UNVERIFIED — the checker never guesses.</p>
   <p class="disclaimer">The bundled jurisdiction rulesets are editable example data with US defaults (CA, TX, NY, WA, OH, FL, GA, AZ, IL, OR plus a fictional city overlay). Notice law varies by state, city, and lease, and changes often — verify every cited rule against current law. Not legal advice.</p>
+
+  <h2>Paste / upload the notice</h2>
+  <div class="panel">
+    <div id="docxImportMount"></div>
+    <label for="noticeText">Notice text</label>
+    <textarea id="noticeText" placeholder="Paste the notice text — or import a .docx above" aria-label="Notice text"></textarea>
+    <button id="noticeBtn">Extract draft facts</button>
+    <div id="noticeDraft" aria-live="polite"></div>
+  </div>
 
   <h2>Notice facts</h2>
   <div class="panel">
@@ -99,6 +111,7 @@
 
 <script type="module">
 import { checkNotice, renderBoard, toCSV, JURISDICTIONS } from '../core/core.js';
+import { extractDraft } from '../core/extract.js';
 
 const $ = (id) => document.getElementById(id);
 const jurs = Object.keys(JURISDICTIONS);
@@ -239,6 +252,71 @@ function download(name, content, type) {
 $('mdBtn').onclick = () => download('eviction-board.md', boards.map((b) => renderBoard(b)).join('\n\n---\n\n') + '\n', 'text/markdown');
 $('csvBtn').onclick = () => download('eviction-board.csv', boards.map((b) => toCSV(b)).join(''), 'text/csv');
 $('jsonBtn').onclick = () => download('eviction-board.json', JSON.stringify(boards, null, 2) + '\n', 'application/json');
+
+/* ---- [notice-draft-wiring] ---- */
+(function (extractDraft) {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const row = (body, use) => '<div class="nf">' + body + (use || '') + '</div>';
+  const useBtn = (attrs, label) => ' <button type="button" class="nf-use" ' + attrs + '>' + label + '</button>';
+  function renderDraft(d) {
+    const rows = [];
+    if (d.statedPeriodDays != null)
+      rows.push(row('Stated notice period: <b>' + esc(d.statedPeriodDays) + ' day(s)</b> — <span class="nfq">“' + esc(d.statedPeriodDaysQuote) + '”</span>', useBtn('data-days="' + esc(d.statedPeriodDays) + '"', 'Use')));
+    if (d.jurisdictionHint)
+      rows.push(row('State named on the notice: <b>' + esc(d.jurisdictionHint) + '</b>', useBtn('data-jur="' + esc(d.jurisdictionHint) + '"', 'Use')));
+    for (const x of d.dates.slice(0, 4))
+      rows.push(row('Date: <b>' + esc(x.raw) + '</b> (' + esc(x.iso) + ')', useBtn('data-sd="' + esc(x.iso) + '"', 'Use as service date')));
+    for (const a of d.amounts.slice(0, 4))
+      rows.push(row('Amount stated: <b>' + esc(a.amount) + '</b> — <span class="nfq">“' + esc(a.quote) + '”</span>'));
+    for (const [id, h] of Object.entries(d.contentHints || {}))
+      rows.push(row('Content hint (<b>' + esc(id) + '</b>): <span class="nfq">“' + esc(h.quote) + '”</span> — attest it yourself in the form below; extraction is not attestation.'));
+    if (d.serviceMethodDescription)
+      rows.push(row('Service (verbatim): <span class="nfq">“' + esc(d.serviceMethodDescription) + '”</span> — pick the matching service method yourself.'));
+    if (!rows.length) return '<p class="meta">No draft facts extracted — enter the notice facts manually.</p>';
+    return '<p class="meta">Extraction ≠ attestation: every quote above is verbatim from the notice. Nothing is attested or mapped until you press “Use” and confirm — absence of a hint is not evidence of absence.</p>' + rows.join('');
+  }
+  $('noticeBtn').addEventListener('click', () => {
+    $('noticeDraft').innerHTML = renderDraft(extractDraft($('noticeText').value));
+  });
+  // one explicit Use click maps exactly one fact onto the form; attestation
+  // controls (contents selects / quote boxes) are NEVER touched here
+  $('noticeDraft').addEventListener('click', (ev) => {
+    const ds = (ev.target && ev.target.dataset) || {};
+    if (ds.days) $('days').value = ds.days;
+    if (ds.jur) {
+      $('jur').value = ds.jur;
+      if (typeof Event === 'function') { try { $('jur').dispatchEvent(new Event('change')); } catch {} }
+    }
+    if (ds.sd) $('sd').value = ds.sd;
+  });
+})(extractDraft);
+/* ---- [/notice-draft-wiring] ---- */
+
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById('docxImportMount');
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== 'function') throw new Error('docx-import: wireDocxImport missing');
+    const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    M.wireDocxImport(mount, {
+      title: 'Import the notice (.docx)',
+      hint: 'loads the notice text and extracts draft facts — nothing is attested automatically',
+      preview: (docText) =>
+        '<p class="meta">The notice text is ready — Apply loads it into the paste box and runs the deterministic extractor. Extraction ≠ attestation.</p>'
+        + '<textarea class="xtext" rows="8" readonly spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(docText) + '</textarea>',
+      apply: (payload) => {
+        document.getElementById('noticeText').value = payload.text;
+        document.getElementById('noticeBtn').click();
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="meta">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

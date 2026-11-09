@@ -42,6 +42,7 @@
   <hr class="rule">
 
   <h2>Use-case records (JSON)</h2>
+  <div id="docx-import"></div>
   <textarea id="input" aria-label="Use-case records (JSON)" spellcheck="false"></textarea>
   <div class="row">
     <button id="run">Tier &amp; audit</button>
@@ -137,6 +138,119 @@ $('csv').addEventListener('click', async () => {
   catch { $('status').textContent = 'clipboard unavailable — see examples/inventory.csv'; }
 });
 run();
+
+/* ---- DOCX import — class D table adapter (Wave W6b). Shared control from
+   _shared/docx-import.js, consumed per D1 (dynamic import + try/catch → hint;
+   page never breaks). D2 pins wireDocxImport's payload to readDocxText, so
+   the table path captures the picked File with a delegated change listener on
+   the mount and re-reads it block-wise with readDocxBlocks (F3b's D-class
+   seam). Nothing touches #input before the explicit Apply; unmappable rows
+   and unrecognized enum values are flagged in the preview, never guessed. ---- */
+const invMount = $('docx-import');
+let invFile = null;
+invMount.addEventListener('change', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('docx-file-input')) invFile = (e.target.files && e.target.files[0]) || null;
+});
+
+/* inv-table-transform — deterministic DOCX table → records[] (single source
+   of truth: core/adapter.test.js extracts and executes this exact block; keep
+   it self-contained — no references to page scope outside the markers) */
+const INV_ENUMS = {
+  dataSensitivity: ['public', 'internal', 'confidential', 'personal', 'special-category'],
+  humanOversight: ['none', 'notify', 'human-in-loop', 'human-decides'],
+  autonomy: ['assist', 'draft-with-review', 'act-with-review', 'autonomous'],
+  role: ['provider', 'deployer', 'importer', 'distributor', 'authorised-representative', 'manufacturer'],
+  status: ['planned', 'pilot', 'production', 'retired'],
+};
+/* Documented header mapping (normalized lowercase header → record field,
+   mirroring the core's UseCaseRecord typedef). Headers not listed here are
+   ignored and flagged; cell semantics are never guessed. Enum cells are
+   normalized (case/spacing/underscores → enum form); unrecognized values
+   are kept VERBATIM and flagged for the user to fix in the editable JSON. */
+const INV_HEADERS = {
+  'id': 'id', 'use case id': 'id', 'name': 'name', 'use case': 'name', 'use case name': 'name',
+  'purpose': 'purpose', 'description': 'purpose',
+  'data sensitivity': 'dataSensitivity', 'sensitivity': 'dataSensitivity',
+  'human oversight': 'humanOversight', 'oversight': 'humanOversight', 'autonomy': 'autonomy',
+  'department': 'department', 'role': 'role', 'status': 'status', 'owner': 'owner',
+  'next review': 'nextReview', 'review date': 'nextReview', 'eu nexus': 'euNexus',
+  'substantial modification': 'substantialModification', 'existing controls': 'existingControls',
+};
+function invNorm(v) { return String(v ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '-'); }
+function invHeaderKey(h) { return String(h ?? '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+function invMappedCount(rows) { return (rows[0] || []).filter((h) => INV_HEADERS[invHeaderKey(h)]).length; }
+function invTableToRecords(rows) {
+  const flags = [];
+  const head = rows[0] || [];
+  const header = head.map((h) => INV_HEADERS[invHeaderKey(h)] || null);
+  header.forEach((f, j) => { if (!f && String(head[j] ?? '').trim()) flags.push('Column "' + head[j] + '" is not mapped to a record field — its cells are ignored.'); });
+  const records = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if (!row.some((c) => String(c ?? '').trim())) continue;
+    const rec = {};
+    row.forEach((cell, j) => {
+      const field = header[j];
+      if (!field) return;
+      const raw = String(cell ?? '').trim();
+      if (!raw) return;
+      if (field === 'existingControls') { rec[field] = raw.split(';').map((s) => s.trim()).filter(Boolean); return; }
+      if (field === 'euNexus' || field === 'substantialModification') {
+        const b = { yes: true, true: true, y: true, x: true, no: false, false: false, n: false }[invNorm(raw)];
+        if (b === undefined) { rec[field] = raw; flags.push('Row ' + (i + 1) + ': unrecognized ' + field + ' "' + raw + '" — kept verbatim; use yes/no.'); }
+        else rec[field] = b;
+        return;
+      }
+      if (INV_ENUMS[field]) {
+        const norm = invNorm(raw);
+        if (INV_ENUMS[field].includes(norm)) rec[field] = norm;
+        else { rec[field] = raw; flags.push('Row ' + (i + 1) + ': unrecognized ' + field + ' "' + raw + '" — kept verbatim; expected one of: ' + INV_ENUMS[field].join(', ') + '.'); }
+        return;
+      }
+      rec[field] = raw;
+    });
+    if (!rec.id || !rec.name || !rec.purpose) {
+      flags.push('Row ' + (i + 1) + ' is not mappable (needs id, name and purpose) — not imported: [' + row.map((c) => String(c ?? '').trim()).join(' | ') + '].');
+      continue;
+    }
+    for (const req of ['dataSensitivity', 'humanOversight', 'autonomy'])
+      if (!(req in rec)) flags.push('Row ' + (i + 1) + ' (' + rec.id + '): missing required ' + req + ' — add it in the JSON before running.');
+    records.push(rec);
+  }
+  return { records, flags };
+}
+/* end inv-table-transform */
+
+(async () => {
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    M.wireDocxImport(invMount, {
+      title: 'Import inventory table',
+      hint: 'Reads a .docx table into records JSON — review the flags, then Apply',
+      preview: async () => {
+        if (!invFile) throw new Error('no captured file');
+        const res = await M.readDocxBlocks(await invFile.arrayBuffer());
+        if (res.error) throw new Error(res.error);
+        const tables = res.blocks.filter((b) => b.type === 'table');
+        if (!tables.length) return '<p class="docx-import-warning">No table found in this document — this import reads an inventory table (prose inventories are not extracted). The document text is below so nothing is lost.</p><textarea class="docx-import-text" rows="8" style="width:100%;box-sizing:border-box">' + esc(res.text) + '</textarea>';
+        let best = 0;
+        for (let t = 1; t < tables.length; t++) if (invMappedCount(tables[t].rows) > invMappedCount(tables[best].rows)) best = t;
+        const out = invTableToRecords(tables[best].rows);
+        const escText = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); // text content: quotes stay literal (browser serialization)
+        return (out.flags.length ? '<div class="gap" style="margin:0 0 8px">' + out.flags.map((f) => '<div class="gap">⚠ ' + escText(f) + '</div>').join('') + '</div>' : '')
+          + '<p class="muted">' + out.records.length + ' record(s) extracted' + (tables.length > 1 ? ' from the best-mapped of ' + tables.length + ' tables' : '') + ' · ' + out.flags.length + ' flag(s) — fix flagged values in the JSON below, then Apply.</p>'
+          + '<textarea class="inv-records" rows="14" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(JSON.stringify(out.records, null, 2)) + '</textarea>';
+      },
+      apply: () => {
+        const ta = invMount.querySelector('.inv-records');
+        const edited = JSON.parse(ta.value);
+        if (!Array.isArray(edited) || !edited.length) throw new Error('no records to apply');
+        $('input').value = ta.value;
+        $('status').textContent = 'DOCX import applied — ' + edited.length + ' record(s) loaded into the records JSON; press "Tier & audit".';
+      },
+    });
+  } catch { invMount.innerHTML = '<p class="muted">DOCX import is available on the hosted site.</p>'; }
+})();
 </script>
 </body>
 </html>

@@ -111,6 +111,7 @@
 
     <div class="sec">3 · Or paste the term sheet</div>
     <label class="note" for="paste">Paste term-sheet text (PDF text, email, memo) — deterministic keyword capture fills the form; you verify every value.</label>
+    <div id="docx-import"></div>
     <textarea id="paste" style="min-height:100px;margin-top:6px" placeholder="e.g. “1.5x non-participating liquidation preference; broad-based weighted average anti-dilution; two investor board seats…”"></textarea>
     <div class="rowbtns" style="margin:8px 0">
       <button id="capture">Capture into form →</button>
@@ -437,6 +438,24 @@ function rerender(){ R = run(); renderResults(); renderSignoff(); renderGrid(); 
 $('persistnote').textContent = `Working state and the audit log persist in this browser (localStorage via vendored _shared/persist.js) and survive reload. Backend: ${STORE.backendName}.`;
 renderForm(); rerender(); renderAudit();
 if (!AUDIT.length) auditAdd('boot', 'Session state restored / initialized.');
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Apply fills the paste box only; the deterministic keyword capture runs as-is
+   when the user presses Capture into form — nothing is captured without that
+   explicit click. On module-load failure (e.g. file://) a hint replaces the
+   control and the page keeps working. ---- */
+(async () => {
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    M.wireDocxImport($('docx-import'), {
+      title: 'Import DOCX',
+      hint: 'Loads term-sheet text from a .docx into the paste box — “Capture into form →” then works as usual',
+      apply: (payload) => { $('paste').value = payload.text; },
+    });
+  } catch {
+    $('docx-import').innerHTML = '<p class="note" style="margin:6px 0 0">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

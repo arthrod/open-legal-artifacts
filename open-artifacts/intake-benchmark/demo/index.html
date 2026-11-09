@@ -113,6 +113,7 @@
       <label for="fair">Fair mode — score only dimensions every flow reports</label></div>
 
     <h2 id="flows-h">Flows <button class="ghost" id="add-flow">+ Add flow</button></h2>
+    <div id="docxImportMount"></div>
     <div id="flows"></div>
 
     <div class="actions">
@@ -530,6 +531,68 @@ renderFlows();
 renderLog();
 run(true);
 if (restored) toast('Restored your last working session from this browser.');
+
+// ---- Import DOCX (shared module, D1 dynamic import; LA path via /api/extract) ----
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const chip = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    const vcHtml = (vc) => vc.errors.length
+      ? '<div class="vc-errors" role="alert"><strong>Capture-gate errors — Apply will refuse this capture:</strong>' + vc.errors.map((x) => '<p>✕ ' + esc(x) + "</p>").join("") + "</div>"
+      : vc.warnings.length
+        ? '<div class="vc-warn"><strong>Capture QA warnings — read before applying:</strong>' + vc.warnings.map((x) => '<p>⚠ ' + esc(x) + "</p>").join("") + "</div>"
+        : '<p class="vc-ok">Capture QA: no errors, no warnings. Edit freely — Apply re-checks your edited JSON through the same gate.</p>';
+    async function preview(docText) {
+      const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "intake-benchmark", text: docText }) });
+      const j = await r.json();
+      if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+      const vc = validateCapture(j.data);
+      return chip(j.confidence)
+        + '<p class="xnote">Proposed capture — observable steps only (latencies the recording does not show are omitted keys, never guesses). Edit anything, then Apply: the tested capture gate re-audits your edited JSON before it reaches the rubric.</p>'
+        + '<textarea class="flows-draft" rows="12" spellcheck="false">' + esc(JSON.stringify(j.data.flows, null, 2)) + "</textarea>"
+        + vcHtml(vc);
+    }
+    M.wireDocxImport(mount, {
+      title: "Import recorded session (.docx)",
+      hint: "extracts ONLY observable steps — nothing is invented on the way in",
+      preview,
+      apply: () => {
+        const q = (sel) => mount.querySelector(sel);
+        const p = q(".docx-import-preview");
+        const note = (h) => { if (p) p.insertAdjacentHTML("beforeend", h); };
+        const ta = q(".flows-draft");
+        if (!ta) {
+          note('<p class="xnote">No extracted flows to apply — the document text is above; transcribe the steps into the builder by hand.</p>');
+          return;
+        }
+        let v;
+        try { v = JSON.parse(ta.value); }
+        catch (e) {
+          note('<p class="vc-errors" role="alert">The edited JSON does not parse: ' + esc(String((e && e.message) || e)) + "</p>");
+          return;
+        }
+        const cap = Array.isArray(v) ? { flows: v } : v; // the textarea carries the flows array; the gate wants the capture shape
+        const vc = validateCapture(cap);
+        if (!vc.valid) {
+          note(vcHtml(vc));
+          return;
+        }
+        state.flows = cap.flows;
+        renderFlows(); saveSoon(); run();
+        note('<p class="xok">Applied — ' + esc(String(cap.flows.length)) + " flow(s) loaded into the builder. Capture QA re-audits every Compare; scoring stays deterministic.</p>");
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

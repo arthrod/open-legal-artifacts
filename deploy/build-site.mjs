@@ -47,18 +47,30 @@ function inlineJs(html, base) {
   });
 }
 
+// Minify module source BEFORE base64 inlining — base64 blobs are opaque to the
+// whole-page minify pass, so unminified comments/indentation would ride into
+// every page at 4/3x. Same recipe as the page-level pass (line comments only
+// stripped when the line STARTS with //, so URLs in strings survive).
+function minifyModuleSource(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|\n)\s*\/\/[^\n]*/g, "$1")
+    .replace(/\n\s*\n/g, "\n")
+    .replace(/(\n)\s+/g, "$1");
+}
+
 function inlineModuleImports(html, base) {
   return html.replace(/<script type="module">([\s\S]*?)<\/script>/g, (m, code) => {
     const inlined = code
       .replace(/from\s+["'](\.\.?\/[^"']+)["']/g, (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `from "data:text/javascript;base64,${readFileSync(path).toString("base64")}"`;
+        return `from "data:text/javascript;base64,${Buffer.from(minifyModuleSource(readFileSync(path, "utf8"))).toString("base64")}"`;
       })
       .replace(/import\s+["'](\.\.?\/[^"']+)["']/g, (mm, spec) => {
         const path = resolve(base, spec);
         if (!existsSync(path)) return mm;
-        return `import "data:text/javascript;base64,${readFileSync(path).toString("base64")}"`;
+        return `import "data:text/javascript;base64,${Buffer.from(minifyModuleSource(readFileSync(path, "utf8"))).toString("base64")}"`;
       });
     return `<script type="module">${inlined}</script>`;
   });

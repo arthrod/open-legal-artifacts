@@ -56,6 +56,7 @@
       <p style="margin-top:20px" class="kicker">Paste ledger table (CSV/TSV) → deterministic parse, no LLM</p>
       <textarea id="csv" aria-label="Paste ledger table (CSV/TSV)" spellcheck="false" style="min-height:110px" placeholder="id,date,type,amount,applied_to,note&#10;1,2026-01-01,rent,1400,,January rent&#10;2,2026-01-03,payment,1400,,money order #4401"></textarea>
       <p><button id="parse">Parse table → replace ledger</button></p>
+      <div id="docxImportMount"></div>
     </div>
     <div>
       <div class="kicker">Audit result</div>
@@ -98,6 +99,7 @@ const $err = document.getElementById("err");
 const $csv = document.getElementById("csv");
 $input.value = JSON.stringify(EXAMPLE, null, 2);
 
+/* ---- [ledger-csv-wiring] ---- */
 document.getElementById("parse").addEventListener("click", () => {
   $err.textContent = "";
   try {
@@ -112,6 +114,54 @@ document.getElementById("parse").addEventListener("click", () => {
     $err.textContent = "Parse error: " + e.message;
   }
 });
+/* ---- [/ledger-csv-wiring] ---- */
+
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  // header aliases mirror the frozen parseLedgerTable's accepted columns
+  const LEDGER_COLS = { id: "id", entry_id: "id", date: "date", type: "type", amount: "amount", applied_to: "appliedto", note: "note", kind: "kind", rate_pct: "ratepct", principal: "principal", days: "days" };
+  const headerKey = (h) => String(h ?? "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  const mappedCols = (rows) => (rows[0] || []).filter((h) => LEDGER_COLS[headerKey(h)]).length;
+  let ledgerFile = null;
+  mount.addEventListener("change", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("docx-file-input"))
+      ledgerFile = (e.target.files && e.target.files[0]) || null;
+  });
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function" || typeof M.readDocxBlocks !== "function") throw new Error("docx-import: reader missing");
+    M.wireDocxImport(mount, {
+      title: "Import ledger from .docx table",
+      hint: "reads the table as TSV — Apply pastes it into the CSV/TSV box and runs the existing deterministic parser",
+      preview: async () => {
+        if (!ledgerFile) throw new Error("no captured file");
+        const res = await M.readDocxBlocks(await ledgerFile.arrayBuffer());
+        if (res.error) throw new Error(res.error);
+        const tables = res.blocks.filter((b) => b.type === "table");
+        if (!tables.length) return '<p class="docx-import-warning">No table found in this document — this import reads a ledger table. The document text is below so nothing is lost.</p><textarea class="docx-import-text" rows="8" style="width:100%;box-sizing:border-box">' + esc(res.text) + "</textarea>";
+        let best = 0;
+        for (let t = 1; t < tables.length; t++) if (mappedCols(tables[t].rows) > mappedCols(tables[best].rows)) best = t;
+        if (!mappedCols(tables[best].rows)) return '<p class="docx-import-warning">No table in this document has ledger columns (needs date, type and amount) — the document text is below so nothing is lost.</p><textarea class="docx-import-text" rows="8" style="width:100%;box-sizing:border-box">' + esc(res.text) + "</textarea>";
+        const tsv = tables[best].rows.map((r) => r.join("\t")).join("\n");
+        return '<p class="muted" style="font-size:12px">' + (tables[best].rows.length - 1) + " row(s)" + (tables.length > 1 ? " from the best-mapped of " + tables.length + " tables" : "") + ' — edit the TSV if needed (bad rows are ignored with a reason, never silently dropped), then Apply.</p>'
+          + '<textarea class="ledger-tsv" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(tsv) + "</textarea>";
+      },
+      apply: () => {
+        const ta = mount.querySelector(".ledger-tsv");
+        if (!ta || !String(ta.value || "").trim()) throw new Error("no ledger table to apply");
+        $("csv").value = ta.value;
+        $("parse").click();
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="err">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 const money = (n) => (typeof n === "number" ? n.toFixed(2) : "—");

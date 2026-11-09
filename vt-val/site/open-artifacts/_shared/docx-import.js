@@ -12,6 +12,22 @@
 //       TOO_LARGE    bytes exceed opts.maxBytes (default 5 MB)
 //       EMPTY        readable docx, no extractable text (e.g. scanned images)
 //       UNSUPPORTED  archive feature we cannot read (zip64, exotic compression)
+//   await readDocxBlocks(buf, opts?) -> { blocks, text, paragraphs, error: null }
+//                                    | { error, code } — SAME codes and guards
+//       as readDocxText (one shared funnel; never throws). blocks is the
+//       document in reading order, one entry per top-level w:p / w:tbl:
+//         { type: 'paragraph', text }         w:t runs; w:tab -> \t, w:br
+//                                            and w:cr -> \n
+//         { type: 'table', rows: string[][] } header row included as rows[0]
+//                                            (no separate header field)
+//       Join semantics (pinned; D-class adapters rely on them): a cell with
+//       several paragraphs is those paragraphs joined '\n'; paragraphs has
+//       exactly ONE entry per block — a table's entry is its rows joined
+//       '\n' with cells joined '\t' (TSV); text is paragraphs.join('\n').
+//       Known limits: nested tables fold into their containing cell's text;
+//       merged cells (gridSpan) appear once; the w: namespace prefix is
+//       assumed; headers/footers are not read. Table parsers call this
+//       directly — wireDocxImport stays pinned to the readDocxText payload.
 //   renderImportUi(state) -> html string (pure; no DOM). state:
 //       { title?, hint?, status: 'idle'|'reading'|'ready'|'error',
 //         fileName?, previewHtml?, warning?, errorMessage?, errorCode? }
@@ -181,20 +197,150 @@ function mapCode(e) {
   return 'TRUNCATED'; // unknown parse failure — surfaced as damaged, never a crash
 }
 
-export async function readDocxText(buf, opts) {
+// Shared guard funnel: input coercion, the size cap, archive opening, entry
+// resolution, and error mapping live here once so readDocxText and
+// readDocxBlocks cannot drift apart.
+function maxBytesOf(opts) {
   const o = opts && typeof opts === 'object' ? opts : {};
-  const maxBytes = Number.isFinite(o.maxBytes) && o.maxBytes > 0 ? o.maxBytes : DEFAULT_MAX_BYTES;
+  return Number.isFinite(o.maxBytes) && o.maxBytes > 0 ? o.maxBytes : DEFAULT_MAX_BYTES;
+}
+
+async function readDocumentXml(buf, opts) {
+  const maxBytes = maxBytesOf(opts);
   let u8;
   try { u8 = toU8(buf); } catch { return fail('NOT_DOCX'); }
   if (u8.length > maxBytes) return fail('TOO_LARGE', tooLargeMessage(u8.length, maxBytes));
-  let out;
   try {
-    out = await readDocx(u8);
+    const arc = await openArchive(u8);
+    const names = [...arc.entries.keys()];
+    const name = names.includes('word/document.xml')
+      ? 'word/document.xml'
+      : names.find((k) => k.toLowerCase().endsWith('word/document.xml'));
+    if (!name) throw new Error('no word/document.xml in archive');
+    return { xml: new TextDecoder().decode(await arc.read(name)) };
   } catch (e) {
     return fail(mapCode(e));
   }
-  if (!out.text || !out.text.trim()) return fail('EMPTY');
-  return { text: out.text, paragraphs: out.paragraphs, error: null };
+}
+
+export async function readDocxText(buf, opts) {
+  const r = await readDocumentXml(buf, opts);
+  if (r.error) return r;
+  const paragraphs = docxParagraphs(r.xml);
+  const text = paragraphs.join('\n');
+  if (!text || !text.trim()) return fail('EMPTY');
+  return { text, paragraphs, error: null };
+}
+
+// ---------- table-preserving reader (readDocxBlocks) ----------
+// Ported from the PROVEN reconB reference implementation
+// (tmp/ola-docx-2026-11-08/reconB-docx-lab/docx.mjs — validated against real
+// OOXML incl. a 2x3 table): a w:-anchored tag scan with depth-counted element
+// matching, so tables survive as {type:'table', rows} instead of flattening
+// into loose paragraphs. Adapted: block type is 'paragraph' (not the
+// reference's 'p'), entity decoding reuses the vendored decodeXml, and the
+// guards are the shared readDocumentXml funnel above.
+
+// Next opening tag `name` whose name ends at the hit ("<w:pPr" is NOT "w:p").
+function findTag(s, name, from) {
+  const pat = '<' + name;
+  for (let i = s.indexOf(pat, from); i >= 0; i = s.indexOf(pat, i + pat.length)) {
+    const c = s.charCodeAt(i + pat.length);
+    if (c === 0x3e /*>*/ || c === 0x2f /*/*/ || c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d) return i;
+  }
+  return -1;
+}
+
+// Element opening at s[start] (a findTag hit): {content, end} just past its
+// close. Depth-counts nested same-name opens (w:tbl in w:tc, w:p in txbxContent).
+function matchEl(s, start, name) {
+  const gt = s.indexOf('>', start);
+  if (gt < 0) return null;
+  if (s.charCodeAt(gt - 1) === 0x2f) return { content: '', end: gt + 1 }; // self-closing <w:p/>
+  const open = '<' + name, close = '</' + name + '>', contentStart = gt + 1;
+  let depth = 1, j = contentStart;
+  while (depth > 0) {
+    const nc = s.indexOf(close, j);
+    if (nc < 0) return null;
+    const no = findTag(s, name, j);
+    if (no >= 0 && no < nc) {
+      const gt2 = s.indexOf('>', no);
+      if (s.charCodeAt(gt2 - 1) === 0x2f) { j = gt2 + 1; continue; } // nested self-closing: no depth change
+      depth++; j = gt2 + 1;
+    } else {
+      j = nc + close.length;
+      if (--depth === 0) return { content: s.slice(contentStart, nc), end: j };
+    }
+  }
+}
+
+function* iterBlocks(s, name, from = 0) {
+  for (;;) {
+    const start = findTag(s, name, from);
+    if (start < 0) return;
+    const m = matchEl(s, start, name);
+    if (!m) return;
+    yield m;
+    from = m.end;
+  }
+}
+
+// Text of a paragraph / cell chunk: w:t runs, w:tab -> \t, w:br|w:cr -> \n.
+const TOK = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<(w:tab|w:br|w:cr)\b[^>]*>/g;
+function textOf(s) {
+  let out = '';
+  for (const m of s.matchAll(TOK)) out += m[1] !== undefined ? m[1] : (m[2] === 'w:tab' ? '\t' : '\n');
+  return decodeXml(out);
+}
+
+// Cell text: the cell's paragraphs joined '\n' (a nested table's paragraphs
+// fold in here too — documented limit).
+const cellText = (s) => [...iterBlocks(s, 'w:p')].map((m) => textOf(m.content)).join('\n');
+
+function tableRows(tblXml) {
+  const rows = [];
+  for (const r of iterBlocks(tblXml, 'w:tr')) {
+    rows.push([...iterBlocks(r.content, 'w:tc')].map((c) => cellText(c.content)));
+  }
+  return rows;
+}
+
+function xmlToBlocks(xml) {
+  const bodyStart = findTag(xml, 'w:body', 0);
+  let s = xml;
+  if (bodyStart >= 0) {
+    const b = matchEl(xml, bodyStart, 'w:body');
+    if (b) s = b.content;
+  }
+  s = s // unwrap content controls so blocks inside w:sdtContent are kept
+    .replace(/<w:sdtPr(?:\s[^>]*)?>[\s\S]*?<\/w:sdtPr>/g, '')
+    .replace(/<\/?w:sdt(?:Content)?(?:\s[^>]*)?>/g, '');
+  const blocks = [];
+  let i = 0;
+  for (;;) { // document order: next top-level w:p or w:tbl (cells' paragraphs stay inside their table)
+    const np = findTag(s, 'w:p', i), nt = findTag(s, 'w:tbl', i);
+    if (np < 0 && nt < 0) break;
+    const useTable = nt >= 0 && (np < 0 || nt < np);
+    const m = matchEl(s, useTable ? nt : np, useTable ? 'w:tbl' : 'w:p');
+    if (!m) break;
+    blocks.push(useTable ? { type: 'table', rows: tableRows(m.content) } : { type: 'paragraph', text: textOf(m.content) });
+    i = m.end;
+  }
+  return blocks;
+}
+
+// One paragraphs entry per block: paragraph -> its text; table -> TSV
+// (rows '\n'-joined, cells '\t'-joined). text is paragraphs.join('\n').
+const blockToParagraph = (b) => (b.type === 'table' ? b.rows.map((r) => r.join('\t')).join('\n') : b.text);
+
+export async function readDocxBlocks(buf, opts) {
+  const r = await readDocumentXml(buf, opts);
+  if (r.error) return r;
+  const blocks = xmlToBlocks(r.xml);
+  const paragraphs = blocks.map(blockToParagraph);
+  const text = paragraphs.join('\n');
+  if (!text || !text.trim()) return fail('EMPTY');
+  return { blocks, text, paragraphs, error: null };
 }
 
 // ---------- pure renderer ----------

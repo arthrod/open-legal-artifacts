@@ -73,6 +73,8 @@
 
   <section>
     <h2>1 · Agreement text</h2>
+    <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+    <div id="docxImportMount"></div>
     <textarea id="agreement" aria-label="Agreement text" spellcheck="false"></textarea>
     <div class="meta" id="docmeta"></div>
     <div class="row">
@@ -195,6 +197,32 @@
   // prefilled worked example, auto-renders the deviation table on load
   $("agreement").value = EXAMPLE.agreementText;
   run();
+
+  // Import DOCX (shared module, D1 3-up dynamic import; one paragraph = one clause block)
+  /* ---- [docx-import-wiring] ---- */
+  (async () => {
+    const mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    try {
+      const M = await import("../../../open-artifacts/_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      const asClauseBlocks = (t) => String(t).split("\n").join("\n\n"); // one DOCX paragraph = one block for splitClauses
+      M.wireDocxImport(mount, {
+        title: "Import DOCX",
+        hint: "each paragraph becomes one block — preview, then Apply",
+        preview: (docText) =>
+          '<textarea class="docx-import-text" rows="10" style="width:100%;box-sizing:border-box">' +
+          asClauseBlocks(docText).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</textarea>",
+        apply: (payload, docText) => {
+          const agreement = document.getElementById("agreement");
+          if (agreement) agreement.value = asClauseBlocks(docText);
+        },
+      });
+    } catch {
+      mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+  /* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

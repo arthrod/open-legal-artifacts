@@ -154,6 +154,8 @@ textarea{width:100%;font-family:var(--font-mono);font-size:12px;line-height:1.6;
 <section aria-label="Run your own document">
   <h2>Run your own document</h2>
   <p class="hint">Paste a document below. Mark each quotation as <code>“quoted text”[1]</code> and give its footnote as <code>[1] Source name, pinpoint</code> — the source is matched by name against the loaded sources (footnotes matching no source are reported, never guessed).</p>
+  <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+  <div id="docxImportMount"></div>
   <label class="kicker" for="docPaste" style="display:block;margin-bottom:6px">Document text (paste here)</label>
   <textarea id="docPaste" placeholder="The record shows “Mr. Beltran signed the delivery receipt at 4:20 p.m.”[1]&#10;&#10;[1] Deposition of Sandra Okafor (Jan. 14, 2026), p. 12"></textarea>
   <div class="row">
@@ -1339,6 +1341,28 @@ $('jsonIn').value=JSON.stringify(input,null,2);
 renderAll();renderAudit();
 if(bootNotice){toast(bootNotice);live(bootNotice)}
 else if(Object.keys(decisions).length||store.entries('audit').length)toast("Restored your working state — decisions and audit log reloaded.");
+
+// Import DOCX (shared module, D1 dynamic import; fills the document paste box)
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    M.wireDocxImport(mount, {
+      title: "Import DOCX",
+      hint: "loads the document text into the paste box below — preview, then Apply",
+      apply: (payload) => {
+        const docPaste = document.getElementById("docPaste");
+        if (docPaste) docPaste.value = payload.text;
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

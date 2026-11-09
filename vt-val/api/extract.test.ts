@@ -271,8 +271,11 @@ test("normalizeConfidence: high only when the model says high; absent data field
   assert.deepEqual(normalizeConfidence(["a"], {}, { a: "high" }), { a: "missing" }, "model claiming high for an absent field is still missing");
 });
 
-test("EXTRACT_SCHEMAS ships exactly the two F3 exemplars with usable prompt contracts", () => {
-  assert.deepEqual(Object.keys(EXTRACT_SCHEMAS).sort(), ["fact-chronology", "obligations-checker"]);
+test("EXTRACT_SCHEMAS ships the two F3 exemplars with usable prompt contracts (Wave W registrations verified by schemas/registry.test.ts)", () => {
+  for (const key of ["fact-chronology", "obligations-checker"]) {
+    assert.ok(key in EXTRACT_SCHEMAS, key + " exemplar present");
+  }
+  assert.ok(Object.keys(EXTRACT_SCHEMAS).length >= 23, "2 exemplars + 21 Wave W registrations");
   for (const [key, s] of Object.entries(EXTRACT_SCHEMAS)) {
     assert.ok(Array.isArray(s.fields) && s.fields.length > 0, key + ": fields");
     assert.equal(typeof s.system, "string", key + ": system");

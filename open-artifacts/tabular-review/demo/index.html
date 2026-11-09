@@ -97,6 +97,8 @@
     <div class="panel">
       <p style="font-size:13px">Paste a contract and add it to the review set. Its cells start UNVERIFIED — no answer supplied —
         the core never answers; open a cell and supply an answer + quote to watch it verify.</p>
+      <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+      <div id="docxImportMount"></div>
       <div class="form-grid">
         <div class="field"><label for="docName">Document name</label><input type="text" id="docName" placeholder="NDA — Example Co (fictional)" /></div>
         <div class="field"><label for="docText">Document text (paste)</label></div>
@@ -563,6 +565,28 @@
   renderDiff();
   if (!restored) audit("session-start", "seeded 13 documents × 5 questions (66 cells)");
   else audit("session-restore", `state restored: ${st.input.documents.length} documents, ${storage.entries("audit").length} log entries`);
+
+  // ---- Import DOCX (shared module, D1 dynamic import; fills the document-text paste box) ----
+  /* ---- [docx-import-wiring] ---- */
+  (async () => {
+    const mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    try {
+      const M = await import("../../_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      M.wireDocxImport(mount, {
+        title: "Import DOCX",
+        hint: "loads the document text into the paste box below — preview, then Apply",
+        apply: (payload) => {
+          const docText = document.getElementById("docText");
+          if (docText) docText.value = payload.text;
+        },
+      });
+    } catch {
+      mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+  /* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

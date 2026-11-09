@@ -40,6 +40,15 @@
   ul.factors li.applies { color: var(--text); font-weight: 600; }
   .err { color: var(--bad); font-family: var(--font-mono); font-size: 12px; margin-top: 12px; }
   .unset { font-family: var(--font-mono); font-size: 12px; background: #fff; border: var(--hairline); padding: 10px 12px; margin-bottom: 14px; }
+  /* DOCX-import preview chrome (shared _shared/docx-import.js control) */
+  .xchips { margin: 6px 0; }
+  .xchip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .xchip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .xnote { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
+  .xfail { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; margin: 6px 0; }
+  .xgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 8px 0; }
+  .xlabel { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+  .xfield, textarea.xtext { width: 100%; box-sizing: border-box; border: var(--hairline); background: #fff; padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -56,6 +65,7 @@
   <div class="cols">
     <div>
       <div class="kicker">Charge facts (JSON)</div>
+      <div id="docxImportMount"></div>
       <textarea id="input" aria-label="Charge facts (JSON)" spellcheck="false"></textarea>
       <p class="btnrow">
         <button id="run">Run reality check</button>
@@ -174,6 +184,76 @@ document.getElementById("run").addEventListener("click", () => {
     $err.textContent = "Input error: " + e.message;
   }
 });
+
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "criminal-charge-reality-check", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+        const d = j.data;
+        const field = (cls, label, val) => '<label class="xlabel">' + esc(label) + '</label><input type="text" class="' + cls + '" value="' + esc(val == null ? "" : String(val)) + '" />';
+        const unc = (d.uncertain || []).find((u) => u && u.field === "chargeClass" && Array.isArray(u.candidates) && u.candidates.length > 0);
+        let html = chips(j.confidence)
+          + '<p class="xnote">Proposed charge facts — edit anything, then Apply. An uncertain class is never collapsed: every candidate is run.</p>'
+          + '<div class="xgrid">'
+          + field("x-jur", "Jurisdiction", d.jurisdiction)
+          + field("x-filed", "Filed on (ISO, as stated)", d.filedOn)
+          + field("x-charge", "Charge (verbatim)", d.charge)
+          + (unc
+            ? unc.candidates.map((c, i) => field("x-cand-" + i, "Candidate class " + (i + 1), c)).join("")
+            : field("x-class", "Charge class", d.chargeClass))
+          + "</div>";
+        if (unc) html += '<input type="hidden" class="x-reason" value="' + esc(unc.reason) + '" /><p class="xnote">Uncertain class — ' + esc(unc.reason) + '. Apply keeps every candidate in uncertain[]; “Run reality check” runs one report per candidate.</p>';
+        if (d.client && Object.keys(d.client).length) html += '<input type="hidden" class="x-client" value="' + esc(JSON.stringify(d.client)) + '" /><p class="xnote">Client facts as stated: ' + esc(JSON.stringify(d.client)) + '</p>';
+        return html;
+      } catch (e) {
+        return '<p class="xfail" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; paste it and type the charge facts yourself.</p>"
+          + '<textarea class="xtext" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import charging instrument (.docx)",
+      hint: "loads the complaint/filing and proposes charge facts — you still run the check",
+      preview,
+      apply: (payload, docText) => {
+        const q = (sel) => mount.querySelector(sel);
+        const val = (sel) => { const el = q(sel); return el && typeof el.value === "string" ? el.value.trim() : ""; };
+        const box = document.getElementById("input");
+        if (!q(".x-jur")) {
+          if (box) box.value = docText;
+          const p = q(".docx-import-preview");
+          if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">Applied: the document text now sits in the facts box — type the charge facts yourself and run the check.</p>');
+          return;
+        }
+        const cands = [".x-cand-0", ".x-cand-1", ".x-cand-2", ".x-cand-3"].map(val).filter(Boolean);
+        const input = {
+          jurisdiction: val(".x-jur") || null,
+          chargeClass: cands.length ? null : (val(".x-class") || null),
+          charge: val(".x-charge") || null,
+          filedOn: /^\d{4}-\d{2}-\d{2}$/.test(val(".x-filed")) ? val(".x-filed") : null,
+        };
+        if (cands.length) input.uncertain = [{ field: "chargeClass", candidates: cands, reason: val(".x-reason") || "charge class uncertain as extracted" }];
+        try { const c = JSON.parse(val(".x-client") || "null"); if (c && typeof c === "object") input.client = c; } catch { /* client facts dropped, never guessed */ }
+        if (box) box.value = JSON.stringify(input, null, 2);
+        const p = q(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">Applied — now press “Run reality check”. An uncertain class runs one report per candidate; uncertainty is never collapsed.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

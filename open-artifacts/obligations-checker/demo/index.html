@@ -65,6 +65,11 @@
   .diff-table { border-collapse: collapse; width: 100%; font-size: 13px; }
   .diff-table th { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; border-bottom: 2px solid var(--text); padding: 8px 10px; }
   .diff-table td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
+  /* DOCX-import confidence chips (extraction preview) */
+  .conf-chips { margin: 6px 0; }
+  .conf-chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .conf-chip.conf-flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .conf-note { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -82,6 +87,7 @@
   </div>
 
   <h2>Input</h2>
+  <div id="docxImportMount"></div>
   <details class="shell" open>
     <summary>Paste contract / add an obligation</summary>
     <form id="pasteform">
@@ -546,6 +552,56 @@ if (saved && saved?.input?.obligations) {
   audit('seed', { obligations: working.input.obligations.length });
 }
 renderChips(); renderSource(); renderAudit();
+
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let extracted = false; // set only when /api/extract returned a validated register draft
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    M.wireDocxImport(mount, {
+      title: "Import contract (.docx)",
+      hint: "free live AI extracts the obligations (names, dates and source sentences verbatim — never a computed date); edit the JSON, then Apply",
+      preview: async (docText) => {
+        try {
+          const res = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "obligations-checker", text: docText }) });
+          let j = null;
+          try { j = await res.json(); } catch { j = null; }
+          if (!res.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.obligations)) throw new Error((j && j.message) || "extraction unavailable");
+          extracted = true;
+          const chips = Object.entries(j.confidence || { obligations: "missing" }).map(([k, lvl]) =>
+            '<span class="conf-chip' + (lvl === "high" ? "" : " conf-flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("");
+          const asof = document.getElementById("asof");
+          const duesoon = document.getElementById("duesoon");
+          const register = { asOf: (asof && asof.value) || "", settings: { dueSoonDays: Number((duesoon && duesoon.value) || 21) || 21 }, obligations: j.data.obligations, satisfaction: [] };
+          return '<p class="conf-chips">' + chips + "</p>"
+            + '<p class="conf-note">Extraction preview — obligations carry party names and source sentences verbatim and ids derive from clause citations, so re-runs diff cleanly. Edit the register JSON, then Apply.</p>'
+            + '<textarea class="docx-extract-json" rows="12" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)">' + esc(JSON.stringify(register, null, 2)) + "</textarea>";
+        } catch (e) {
+          extracted = false;
+          return '<p class="docx-import-error" role="alert" style="border:1px solid var(--bad);color:var(--bad);font-family:var(--font-mono);font-size:12px;padding:8px 10px">Structured extraction unavailable — ' + esc(String((e && e.message) || e)) + ". Nothing was applied. The contract text is below; land it in the paste box and add the obligations yourself.</p>"
+            + '<textarea class="docx-import-text" rows="8" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(docText) + "</textarea>";
+        }
+      },
+      apply: (payload, docText) => {
+        const box = mount.querySelector(".docx-extract-json");
+        const v = box && typeof box.value === "string" ? box.value.trim() : "";
+        if (extracted && v) {
+          document.getElementById("input").value = v;
+          document.getElementById("run").click();
+          return;
+        }
+        document.getElementById("paste").value = docText;
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="conf-note">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

@@ -44,6 +44,7 @@
   <p class="lede">Intake → placement → closure workflow with guarded transitions, deterministic volunteer-skill matching (tag match with score), stale-case flags, malpractice-aware deadline warnings (overdue court date = critical), per-stage SLA aging, volunteer-capacity rollups, and impact numbers. No LLM — the board is a pure function of the input.</p>
 
   <h2>Board input (JSON)</h2>
+  <div id="docxImportMount"></div>
   <textarea id="input" aria-label="Board input (JSON)" spellcheck="false"></textarea>
   <button id="run">Rebuild board</button>
   <button id="ics">Download deadlines (.ics)</button>
@@ -143,6 +144,94 @@ $('ics').addEventListener('click', () => {
 });
 
 $('run').click();
+
+// ---- Import DOCX (shared module, D1 dynamic import; LA path via /api/extract) ----
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    const rosterSkills = () => {
+      try {
+        const v = JSON.parse(document.getElementById("input").value);
+        return new Set((v.volunteers || []).flatMap((x) => (Array.isArray(x && x.skills) ? x.skills.map(String) : [])));
+      } catch { return new Set(); }
+    };
+    const splitTags = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+    async function preview(docText) {
+      const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "pro-bono-case-board", text: docText }) });
+      const j = await r.json();
+      if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+      const d = j.data;
+      const roster = rosterSkills();
+      const offRoster = [...new Set([...(d.requiredSkills || []), ...(d.optionalSkills || [])])].filter((t) => roster.size > 0 && !roster.has(t));
+      const field = (cls, label, val) => '<label class="xlabel">' + esc(label) + '</label><input type="text" class="' + cls + '" value="' + esc(val == null ? "" : String(val)) + '" />';
+      return chips(j.confidence)
+        + '<p class="xnote">Proposed intake fields — edit anything, then Apply. Tags must come from your roster&rsquo;s taxonomy; volunteer matching stays the board&rsquo;s deterministic job.</p>'
+        + '<div class="xgrid">'
+        + field("x-problem", "Problem summary", d.problem)
+        + field("x-required", "Required skills (comma-separated)", (d.requiredSkills || []).join(", "))
+        + field("x-optional", "Optional skills (comma-separated)", (d.optionalSkills || []).join(", "))
+        + "</div>"
+        + (d.confidence != null ? '<p class="xnote">Extraction self-confidence: ' + esc(d.confidence) + '</p>' : "")
+        + ((d.unknownTerms || []).length ? '<div class="x-unknown" role="note"><strong>Terms not in the taxonomy:</strong> ' + d.unknownTerms.map(esc).join(", ") + " — left out of the skill fields for you to place by hand.</div>" : "")
+        + (offRoster.length ? '<div class="x-unknown" role="note"><strong>Not in the current roster:</strong> ' + offRoster.map(esc).join(", ") + " — these tags match no volunteer until the roster carries them.</div>" : "");
+    }
+    M.wireDocxImport(mount, {
+      title: "Import intake note (.docx)",
+      hint: "proposes problem + skill tags from the taxonomy — it never proposes a volunteer",
+      preview,
+      apply: () => {
+        const q = (sel) => mount.querySelector(sel);
+        const p = q(".docx-import-preview");
+        const note = (h) => { if (p) p.insertAdjacentHTML("beforeend", h); };
+        const val = (sel) => { const el = q(sel); return el && typeof el.value === "string" ? el.value.trim() : ""; };
+        if (!q(".x-problem")) {
+          note('<p class="xnote">No extracted fields to apply — the document text is above; type the case fields into the board input by hand.</p>');
+          return;
+        }
+        const problem = val(".x-problem");
+        if (!problem) {
+          note('<p class="vc-errors" role="alert">A problem summary is required before a draft case can be appended.</p>');
+          return;
+        }
+        let board;
+        try { board = JSON.parse(document.getElementById("input").value); }
+        catch { board = null; }
+        if (!board || typeof board !== "object" || Array.isArray(board)) {
+          note('<p class="vc-errors" role="alert">The board input is not a JSON object — fix it (or reload the example) and Apply again.</p>');
+          return;
+        }
+        board.cases = Array.isArray(board.cases) ? board.cases : [];
+        const ids = new Set(board.cases.map((c) => c && c.id));
+        let n = 1; while (ids.has("PB-DRAFT-" + n)) n++;
+        const id = "PB-DRAFT-" + n;
+        board.cases.push({
+          id,
+          client: "",
+          problem,
+          state: "intake",
+          openedDate: null,
+          lastActivityDate: null,
+          requiredSkills: splitTags(val(".x-required")),
+          optionalSkills: splitTags(val(".x-optional")),
+          volunteerId: null,
+          hours: 0,
+        });
+        document.getElementById("input").value = JSON.stringify(board, null, 2);
+        note('<p class="xok">Applied — draft case ' + esc(id) + " appended to the board input with no invented dates and no volunteer. Fill in the client name and dates, then press Rebuild board; the board will flag the missing dates until you do.</p>");
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

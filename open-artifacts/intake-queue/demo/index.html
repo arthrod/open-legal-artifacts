@@ -71,7 +71,17 @@
   @media (max-width: 480px) {
     .hide-sm { display: none; }
     td, th { padding: 8px 6px; }
+    .xgrid { grid-template-columns: 1fr; }
   }
+  /* DOCX-import preview chrome (shared _shared/docx-import.js control) */
+  .xchips { margin: 6px 0; }
+  .xchip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .xchip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .xnote { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
+  .xfail { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; margin: 6px 0; }
+  .xgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 8px 0; }
+  .xlabel { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+  .xfield, textarea.xtext { width: 100%; box-sizing: border-box; border: var(--hairline); background: #fff; padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -85,6 +95,7 @@
 
   <h2>New enquiry — paste &amp; verify</h2>
   <p class="lede">Paste the enquiry text and the names you extracted from it. Every extracted name must appear verbatim in the source (word-delimited) before the submission may enter the queue — a guard against LLM extraction drift.</p>
+  <div id="docxImportMount"></div>
   <div class="field"><label for="ing-source">Enquiry source text (paste the email / form / letter)</label>
   <textarea id="ing-source" spellcheck="false" style="min-height:90px"></textarea></div>
   <div class="fgrid">
@@ -1110,6 +1121,70 @@ if (restored && restored.input && Array.isArray(restored.input.submissions) && A
   auditRow('process', `screened ${q.items.length} submissions (fresh demo queue)`);
   renderAll();
 }
+
+// ---- Import DOCX (shared module, D1 dynamic import; fills the paste-&-verify section) ----
+// Upload fills #ing-source; /api/extract proposes {client, opposing, matterType,
+// deadlineSeen}; Apply fills the four fields. The ingestSubmission verbatim gate is
+// NEVER bypassed — the user still presses "Verify & add to queue" themselves.
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "intake-queue", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+        const d = j.data;
+        const field = (cls, label, val) => '<label class="xlabel">' + esc(label) + '</label><input type="text" class="' + cls + '" value="' + esc(val == null ? "" : String(val)) + '" />';
+        return chips(j.confidence)
+          + '<p class="xnote">Proposed extraction — edit anything, then Apply. The names must still verify verbatim in the source before the queue accepts them.</p>'
+          + '<div class="xgrid">'
+          + field("x-client", "Client name", d.client && d.client.name)
+          + field("x-opposing", "Opposing party", d.opposing && d.opposing.name)
+          + field("x-matter", "Matter type", d.matterType)
+          + field("x-deadline", "Deadline as stated (ISO)", d.deadlineSeen && d.deadlineSeen.date)
+          + "</div>"
+          + (d.deadlineSeen && d.deadlineSeen.quote ? '<p class="xnote">Deadline as stated in the document: “' + esc(d.deadlineSeen.quote) + '”</p>' : "");
+      } catch (e) {
+        return '<p class="xfail" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; paste it and type the names yourself.</p>"
+          + '<textarea class="xtext" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import enquiry (.docx)",
+      hint: "loads the email/letter and proposes the names — you still verify",
+      preview,
+      apply: (payload, docText) => {
+        const q = (sel) => mount.querySelector(sel);
+        const val = (sel) => { const el = q(sel); return el && typeof el.value === "string" ? el.value.trim() : ""; };
+        const src = document.getElementById("ing-source");
+        if (src) src.value = docText;
+        if (!q(".x-client")) {
+          const p = q(".docx-import-preview");
+          if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">Applied: the document text now sits in the source box — type the names and verify as usual.</p>');
+          return;
+        }
+        const cv = val(".x-client"), ov = val(".x-opposing"), mv = val(".x-matter"), dv = val(".x-deadline");
+        if (cv) { const el = document.getElementById("ing-client"); if (el) el.value = cv; }
+        if (ov) { const el = document.getElementById("ing-opposing"); if (el) el.value = ov; }
+        if (mv) { const el = document.getElementById("ing-matter"); if (el) el.value = mv; }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dv)) { const el = document.getElementById("ing-deadline"); if (el) el.value = dv; }
+        const p = q(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">Applied — now press “Verify &amp; add to queue”: the names must still appear verbatim in the source.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

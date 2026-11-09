@@ -43,6 +43,11 @@
   button:hover { background: var(--accent); color: var(--text); }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  /* DOCX-import extraction preview chrome */
+  .conf-chips { margin: 6px 0; }
+  .conf-chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 2px 6px; margin-right: 6px; display: inline-block; }
+  .conf-chip.conf-flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .conf-note { font-size: 12px; color: var(--text-secondary); margin: 6px 0; max-width: 78ch; }
 </style>
 </head>
 <body>
@@ -58,6 +63,19 @@
     <p class="lede" style="font-size:13px">Worked example (fictional): Northwind Robotics contract portfolio,
       lead times as rules-as-data (auto-renewal 90d, termination 30d, price-adjustment 120d, default 60d).</p>
   </header>
+
+  <section>
+    <h2>Import a contract — clauses in, calendar out</h2>
+    <p class="lede" style="font-size:13px">Load a contract .docx: free live AI copies its renewal/notice/termination clauses into an editable preview — quotes and temporal phrases stay verbatim, and no date is ever invented. Ambiguous phrases keep both readings with a flag; unresolvable ones stay off the calendar. Apply re-renders it from the imported clauses.</p>
+    <div id="docxImportMount"></div>
+    <details style="border:var(--hairline);background:#fff;padding:10px 14px">
+      <summary style="font-family:var(--font-mono);font-size:12px;cursor:pointer">Calendar input JSON — paste or edit</summary>
+      <label for="calInput" style="display:block;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin:10px 0 4px">Input (asOf, rules, confirmations, contracts)</label>
+      <textarea id="calInput" spellcheck="false" style="width:100%;box-sizing:border-box;min-height:160px;font-family:var(--font-mono);font-size:12px;border:var(--hairline);padding:12px"></textarea>
+      <div class="row"><button id="calRun">Render calendar from JSON</button></div>
+      <p id="calMsg" role="status" style="font-size:12px;color:var(--text-secondary)"></p>
+    </details>
+  </section>
 
   <section>
     <h2>Portfolio state</h2>
@@ -103,10 +121,11 @@
     return `lead time from default rules (${e.leadTimeDays}d)`;
   };
 
-  const cal = buildCalendar(EXAMPLE, EXAMPLE.rules, EXAMPLE.confirmations);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-  document.getElementById("legend").textContent = LEGEND_TEXT;
+  let cal = null;
+  function renderAll(input) {
+    cal = buildCalendar(input, input.rules, input.confirmations);
+    document.getElementById("legend").textContent = LEGEND_TEXT;
   document.getElementById("stats").innerHTML =
     `<div class="stat"><b>${cal.summary.confirmed}</b><span>${esc(L("confirmed").label)}</span></div>` +
     `<div class="stat"><b>${cal.summary.ambiguous}</b><span>${esc(L("ambiguous").label)}</span></div>` +
@@ -132,12 +151,92 @@
   document.getElementById("coverage").innerHTML = cal.coverage.length
     ? cal.coverage.map((c) => `<li><b>${esc(c.contractName)}</b> <code>${esc(c.contractId)}</code><br />${esc(c.reason)}</li>`).join("")
     : `<li>none — every contract has at least one dated clause</li>`;
+  }
+
+  renderAll(EXAMPLE);
+
+  /* ---------- editable input (paste box + DOCX-import target) ---------- */
+  const calInput = document.getElementById("calInput");
+  const calMsg = document.getElementById("calMsg");
+  calInput.value = JSON.stringify(EXAMPLE, null, 2);
+  document.getElementById("calRun").addEventListener("click", () => {
+    let input;
+    try { input = JSON.parse(calInput.value); }
+    catch (e) { calMsg.textContent = "Input JSON invalid — fix it and render again (" + (e && e.message ? e.message : "parse error") + ")"; return; }
+    if (!input || typeof input !== "object" || !Array.isArray(input.contracts)) {
+      calMsg.textContent = "Input JSON must carry a contracts[] array — nothing rendered.";
+      return;
+    }
+    try { renderAll(input); }
+    catch (e) { calMsg.textContent = "Core rejected the input — " + (e && e.message ? e.message : String(e)); return; }
+    const clauseCount = input.contracts.reduce((n, c) => n + (Array.isArray(c.clauses) ? c.clauses.length : 0), 0);
+    calMsg.textContent = "Calendar rendered from the input JSON — " + input.contracts.length + " contract(s), " + clauseCount + " clause(s).";
+  });
 
   document.getElementById("icsBtn").onclick = () => {
     const blob = new Blob([toICS(cal)], { type: "text/calendar" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "renewal-calendar.ics"; a.click();
   };
+
+  /* ---- [docx-import-wiring] ---- */
+  (async () => {
+    const mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    const esc2 = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    let extracted = false; // set only when /api/extract returned validated clauses
+    try {
+      const M = await import("../../_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      M.wireDocxImport(mount, {
+        title: "Import contract (.docx)",
+        hint: "clauses are copied verbatim — temporal phrases are never interpreted into dates; preview, edit, then Apply",
+        preview: async (docText) => {
+          try {
+            const res = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "renewal-calendar", text: docText }) });
+            let body = null;
+            try { body = await res.json(); } catch { body = null; }
+            if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.clauses)) throw new Error((body && body.message) || "extraction unavailable");
+            extracted = true;
+            const lvl = body.confidence && body.confidence.clauses;
+            const chip = '<span class="conf-chip' + (lvl === "high" ? "" : " conf-flag") + '">clauses: ' + esc2(lvl || "missing") + (lvl === "high" ? "" : " — review before applying") + "</span>";
+            return '<p class="conf-chips">' + chip + "</p>"
+              + '<p class="conf-note">Edit the clause JSON (type: auto-renewal|evergreen|termination-for-convenience|notice|price-adjustment; keep quotes verbatim), then Apply — the calendar re-renders from the imported clauses.</p>'
+              + '<textarea class="rc-clauses-draft" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)">' + esc2(JSON.stringify(body.data.clauses, null, 2)) + "</textarea>";
+          } catch (e) {
+            extracted = false;
+            return '<p class="docx-import-error" role="alert" style="border:1px solid var(--bad);color:var(--bad);font-family:var(--font-mono);font-size:12px;padding:8px 10px">Structured extraction unavailable — ' + esc2(String((e && e.message) || e)) + ". Nothing was applied. The contract text is below; copy its clauses into the JSON by hand.</p>"
+              + '<textarea class="docx-import-text" rows="8" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc2(docText) + "</textarea>";
+          }
+        },
+        apply: (payload, docText) => {
+          const input = document.getElementById("calInput");
+          const run = document.getElementById("calRun");
+          const msg = document.getElementById("calMsg");
+          const draft = mount.querySelector(".rc-clauses-draft");
+          let clauses = null;
+          if (extracted && draft && typeof draft.value === "string" && draft.value.trim()) {
+            try { clauses = JSON.parse(draft.value); }
+            catch (e) { if (msg) msg.textContent = "Clause JSON invalid — fix the preview and Apply again (" + (e && e.message ? e.message : "parse error") + ")"; throw e; }
+          }
+          if (!Array.isArray(clauses)) {
+            if (msg) msg.textContent = "No extracted clauses to apply — the raw contract text is in the preview above; paste the clauses into the JSON by hand.";
+            return;
+          }
+          let base = null;
+          try { base = JSON.parse(input.value); } catch { base = null; }
+          if (!base || typeof base !== "object" || !base.rules) base = { asOf: "2026-11-07", rules: {}, confirmations: [] };
+          const next = { asOf: base.asOf || "2026-11-07", company: base.company || "Imported contracts", rules: base.rules || {}, confirmations: [], contracts: [{ id: "IMPORT-001", name: "Imported contract", counterparty: null, clauses }] };
+          input.value = JSON.stringify(next, null, 2);
+          run.click();
+          if (msg) msg.textContent = clauses.length + (clauses.length === 1 ? " clause" : " clauses") + " applied — calendar re-rendered from the imported contract.";
+        },
+      });
+    } catch {
+      mount.innerHTML = '<p class="conf-note">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+  /* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

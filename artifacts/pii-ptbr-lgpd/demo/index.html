@@ -63,6 +63,7 @@
     <div class="sec">Texto de entrada (exemplo fictício)</div>
     <textarea id="input" aria-label="Texto de entrada" spellcheck="false" readonly></textarea>
     <div class="toggle"><input type="checkbox" id="custom"><label for="custom">usar texto próprio (libera a caixa para colar)</label></div>
+    <div id="docx-import"></div>
     <button id="run">Reanalisar →</button>
     <div id="err" class="err"></div>
     <p class="note">detector determinístico por regras: padrões (com checksum de CPF/CNPJ) + gazetteers. Confiança fixa por regra, correspondência por regra, não pontuação de modelo.</p>
@@ -147,6 +148,28 @@ $('custom').addEventListener('change', (ev) => {
 });
 
 render(EXAMPLE); // auto-render the prefilled example on load
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Importing implies own text: Apply checks "usar texto próprio" itself if
+   still unchecked (unlock only — the checkbox is never removed nor hidden)
+   and fills the input box; reanalysis still runs only on Reanalisar. On
+   module-load failure (e.g. file://) a hint replaces the control and the page
+   keeps working. ---- */
+(async () => {
+  try {
+    const M = await import("../../../open-artifacts/_shared/docx-import.js");
+    M.wireDocxImport($('docx-import'), {
+      title: 'Importar DOCX',
+      hint: 'Carrega o texto de um .docx como texto próprio',
+      apply: (payload) => {
+        if (!$('custom').checked) { $('custom').checked = true; $('input').readOnly = false; }
+        $('input').value = payload.text;
+      },
+    });
+  } catch {
+    $('docx-import').innerHTML = '<p class="note" style="margin:8px 0 0">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

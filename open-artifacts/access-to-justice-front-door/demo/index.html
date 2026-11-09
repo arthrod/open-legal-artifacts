@@ -38,6 +38,7 @@
   <p class="disclaimer">Referral information only. Not legal advice, no merit evaluation, no substitute for a licensed attorney.</p>
 
   <label for="desc">What is happening?</label>
+  <div id="docx-import"></div>
   <textarea id="desc">My landlord taped a notice to quit on my door and I'm three weeks behind on rent after my hours got cut.</textarea>
   <button id="run">Find help</button>
 
@@ -90,6 +91,23 @@ async function runAi() {
   } catch { /* probe failed — deterministic matcher only */ }
 })();
 $('run').click();
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Apply fills the problem-description box; the deterministic matcher runs only
+   when the visitor presses Find help. On module-load failure (e.g. file://) a
+   hint replaces the control and the page keeps working. ---- */
+(async () => {
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    M.wireDocxImport($('docx-import'), {
+      title: 'Import DOCX',
+      hint: 'Loads the visitor story from a .docx into the box below',
+      apply: (payload) => { $('desc').value = payload.text; },
+    });
+  } catch {
+    $('docx-import').innerHTML = '<p class="foot" style="margin-top:12px">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

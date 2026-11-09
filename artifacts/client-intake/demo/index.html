@@ -92,6 +92,7 @@
       <label for="f-name">Name <span class="req">(optional — seeds the name suggestion)</span></label>
       <input type="text" id="f-name" autocomplete="off" />
       <label for="f-narrative">Describe what's going on <span class="req">(a sentence or two, fictional)</span></label>
+      <div id="docx-import"></div>
       <textarea id="f-narrative">My landlord is trying to evict me after I withheld part of one rent payment because repairs were ignored for months. There is a court date on 2026-11-18. I want to stay in my apartment.</textarea>
       <div class="actions">
         <button class="primary" id="btn-start">Propose the intake questions →</button>
@@ -544,6 +545,24 @@ function loadWorkedExample() {
 renderStart();
 renderRail();
 loadWorkedExample();
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Wired into the start step's narrative box: Apply fills #f-narrative; the
+   flow itself still only advances on Propose the intake questions. On
+   module-load failure (e.g. file://) a hint replaces the control and the page
+   keeps working. ---- */
+(async () => {
+  try {
+    const M = await import("../../../open-artifacts/_shared/docx-import.js");
+    M.wireDocxImport($('docx-import'), {
+      title: 'Import DOCX',
+      hint: 'Loads the matter description from a .docx into the narrative box',
+      apply: (payload) => { $('f-narrative').value = payload.text; },
+    });
+  } catch {
+    $('docx-import').innerHTML = '<p class="notes" style="margin-top:10px">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

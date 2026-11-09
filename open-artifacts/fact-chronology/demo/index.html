@@ -97,7 +97,7 @@
   </section>
 
   <section>
-    <h2>Version diff (v1 → v2)</h2>
+    <h2>Version diff</h2>
     <div id="diff"></div>
   </section>
 
@@ -109,6 +109,26 @@
   <section id="undatedSection">
     <h2>Undated / unparseable entries (kept visible)</h2>
     <div class="tl" id="undated"></div>
+  </section>
+
+  <section>
+    <h2>Your own chronology</h2>
+    <p class="lede" style="font-size:13px">Bring your own facts: edit the JSON (schema in <code>spec.md</code>) or import a .docx — the free live AI
+      extracts dated events with verbatim quotes (previewed and editable before anything lands), and the imported text is added
+      as a document so every quote is machine-checked (verbatim / approximate / unfound). Ambiguous dates stay in
+      <code>dateLabel</code> with <code>date:null</code>; nothing is invented. Nothing above changes until you click
+      <b>Build chronology</b> — the worked example is the default.</p>
+    <!-- Import DOCX control (shared open-artifacts/_shared/docx-import.js; additive) -->
+    <div id="docxImportMount"></div>
+    <div class="row-btns" style="align-items:flex-start">
+      <textarea id="factsIn" aria-label="Facts JSON" rows="12" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline);box-sizing:border-box" placeholder="[{&quot;id&quot;:&quot;F1&quot;,&quot;date&quot;:&quot;2025-01-09&quot;,&quot;topic&quot;:&quot;termination&quot;,&quot;text&quot;:&quot;…&quot;,&quot;source&quot;:{&quot;docId&quot;:&quot;doc1&quot;,&quot;quote&quot;:&quot;…&quot;,&quot;pinpoint&quot;:&quot;¶ 1&quot;}}]"></textarea>
+      <textarea id="docsIn" aria-label="Documents JSON" rows="12" spellcheck="false" style="flex:1;min-width:280px;font-family:var(--font-mono);font-size:12px;padding:10px;border:var(--hairline);box-sizing:border-box" placeholder="[{&quot;id&quot;:&quot;doc1&quot;,&quot;name&quot;:&quot;Complaint&quot;,&quot;text&quot;:&quot;full text — enables quote verification&quot;}]"></textarea>
+    </div>
+    <div class="row-btns">
+      <label style="font-family:var(--font-mono);font-size:12px;align-self:center">case <input id="caseIn" type="text" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline);min-width:260px" /></label>
+      <button id="buildBtn">Build chronology</button>
+      <span id="fcMsg" style="font-family:var(--font-mono);font-size:12px;align-self:center"></span>
+    </div>
   </section>
 
   <footer class="disclaimer">
@@ -126,8 +146,7 @@
   import EXAMPLE, { EXAMPLE_V1 } from "./example.js";
   import { makeLabelFn, mapToCanonical, TOOL_LABELS, LEGEND_TEXT } from "../core/display-labels.js";
 
-  const out = buildChronology(EXAMPLE);
-  const s = out.summary;
+  let out = buildChronology(EXAMPLE);
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const SIGN = { high: "🔴", medium: "🟡", low: "⚪" };
   const L = makeLabelFn(TOOL_LABELS["fact-chronology"]);
@@ -139,7 +158,9 @@
   document.getElementById("legend").textContent = LEGEND_TEXT;
   let format = "working";
 
-  document.getElementById("counts").innerHTML =
+  function renderCounts() {
+    const s = out.summary;
+    document.getElementById("counts").innerHTML =
     `<div><b>${s.facts}</b><span>facts</span></div>` +
     `<div><b>${s.dated}</b><span>dated entries</span></div>` +
     `<div><b>${s.merged}</b><span>merged dupes</span></div>` +
@@ -147,6 +168,8 @@
     `<div><b>${s.conflicts}</b><span>conflicts</span></div>` +
     `<div><b>${s.gaps}</b><span>gaps &gt; 90d</span></div>` +
     `<div><b>v${out.version}</b><span>version</span></div>`;
+  }
+  renderCounts();
 
   function anchorBadges(a) {
     const parts = [];
@@ -218,17 +241,19 @@
   document.getElementById("vWitness").onclick = () => { format = "witness"; render(); };
   render();
 
-  // version diff: v1 (previous amendment) vs v2 (current) — deterministic
-  const prev = buildChronology(EXAMPLE_V1);
-  const d = diffChronology(prev, out);
-  const changeList = [
-    ...d.added.map((id) => `+ ${esc(id)} added`),
-    ...d.removed.map((id) => `− ${esc(id)} removed`),
-    ...d.changed.map((c) => `~ ${esc(c.factId)} changed (${esc(c.fields.join("+"))})`),
-  ].map((t) => `<div class="src">${t}</div>`).join("");
-  document.getElementById("diff").innerHTML =
-    `<div class="diffbox"><span class="k">diff</span><b>v${d.fromVersion} → v${d.toVersion}</b> — machine-computed, reproducible: ${esc(d.summary)}</div>` +
-    (changeList || `<div class="gapbox">No differences.</div>`);
+  // version diff: v1 (previous amendment) vs v2 (current) — deterministic;
+  // user builds below re-diff against the previous user build instead
+  function renderDiff(d, note) {
+    const changeList = [
+      ...d.added.map((id) => `+ ${esc(id)} added`),
+      ...d.removed.map((id) => `− ${esc(id)} removed`),
+      ...d.changed.map((c) => `~ ${esc(c.factId)} changed (${esc(c.fields.join("+"))})`),
+    ].map((t) => `<div class="src">${t}</div>`).join("");
+    document.getElementById("diff").innerHTML =
+      `<div class="diffbox"><span class="k">diff</span><b>v${d.fromVersion} → v${d.toVersion}</b> — machine-computed, reproducible${note ? ` (${esc(note)})` : ""}: ${esc(d.summary)}</div>` +
+      (changeList || `<div class="gapbox">No differences.</div>`);
+  }
+  renderDiff(diffChronology(buildChronology(EXAMPLE_V1), out), null);
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
@@ -238,6 +263,100 @@
   const exportName = { working: "chronology.md", sof: "chronology-sof.md", witness: "chronology-witness.md" };
   document.getElementById("mdBtn").onclick = () => download(exportName[format], renderChronology(out, { format }), "text/markdown");
   document.getElementById("jsonBtn").onclick = () => download("chronology-output.json", JSON.stringify(out, null, 2) + "\n", "application/json");
+
+  // ---- your own chronology: the example is the default until the user builds ----
+  document.getElementById("factsIn").value = JSON.stringify(EXAMPLE.facts, null, 2);
+  document.getElementById("docsIn").value = JSON.stringify(EXAMPLE.documents, null, 2);
+  document.getElementById("caseIn").value = EXAMPLE.caseName;
+  let lastUserOut = null;
+  /* ---- [chronology-input-wiring] ---- */
+  (() => {
+    const btn = document.getElementById("buildBtn");
+    if (!btn) return;
+    btn.onclick = () => {
+      const msg = document.getElementById("fcMsg");
+      try {
+        const documents = JSON.parse(document.getElementById("docsIn").value);
+        const facts = JSON.parse(document.getElementById("factsIn").value);
+        if (!Array.isArray(documents) || documents.some((d) => !d || typeof d !== "object" || typeof d.id !== "string" || typeof d.name !== "string")) {
+          throw new Error("documents: expected an array of { id, name, text? }");
+        }
+        if (!Array.isArray(facts) || facts.some((f) => !f || typeof f !== "object" || typeof f.id !== "string" || typeof f.text !== "string" || !f.source || typeof f.source !== "object" || typeof f.source.docId !== "string")) {
+          throw new Error("facts: expected an array of { id, text, source: { docId, quote } }");
+        }
+        const base = { caseName: document.getElementById("caseIn").value.trim() || "Untitled chronology", documents, facts };
+        const version = lastUserOut ? diffChronology(lastUserOut, buildChronology(base)).toVersion : 1;
+        out = buildChronology({ ...base, version });
+        const d = lastUserOut ? diffChronology(lastUserOut, out) : null;
+        renderCounts();
+        render();
+        if (d) renderDiff(d, "your chronology — diff vs your previous build");
+        else document.getElementById("diff").innerHTML = '<div class="gapbox">First build of your chronology — build again after editing to see a version diff.</div>';
+        lastUserOut = out;
+        if (msg) msg.textContent = "built — " + out.summary.facts + (out.summary.facts === 1 ? " fact" : " facts") + ", " + out.summary.conflicts + " conflicts, " + out.summary.gaps + " gaps";
+      } catch (e) {
+        if (msg) msg.textContent = String(e && e.message ? e.message : e);
+      }
+    };
+  })();
+  /* ---- [/chronology-input-wiring] ---- */
+
+  // ---- Import DOCX (shared module, D1 dynamic import; LA path via /api/extract) ----
+  /* ---- [docx-import-wiring] ---- */
+  (async () => {
+    const mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    try {
+      const M = await import("../../_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      M.wireDocxImport(mount, {
+        title: "Import DOCX",
+        hint: "free live AI extracts dated facts with verbatim quotes — preview, edit, then Apply",
+        preview: async (docText) => {
+          const res = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ schema: "fact-chronology", text: docText }),
+          });
+          let body = null;
+          try { body = await res.json(); } catch { body = null; }
+          if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.facts)) {
+            throw new Error("extraction unavailable"); // fail-closed: the shared module keeps the raw text
+          }
+          const conf = body.confidence && body.confidence.facts;
+          const chip = conf === "high"
+            ? '<span class="tag v-verified">facts · high confidence</span>'
+            : '<span class="tag warn">facts · ' + (conf === "low" ? "low confidence" : "unreported confidence") + " — review before applying</span>";
+          return '<p class="legend" style="margin:8px 0 4px">' + chip + ' <span class="computed">edit the JSON, then Apply — facts land in the inputs below and the document text is added for quote verification.</span></p>'
+            + '<textarea class="facts-draft" rows="10" spellcheck="false" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline)">' + esc(JSON.stringify(body.data.facts, null, 2)) + "</textarea>";
+        },
+        apply: (payload, docText) => {
+          const msg = document.getElementById("fcMsg");
+          const draft = mount.querySelector(".facts-draft");
+          let facts = null;
+          if (draft && typeof draft.value === "string" && draft.value.trim()) {
+            try { facts = JSON.parse(draft.value); }
+            catch (e) { if (msg) msg.textContent = "facts JSON invalid — fix the preview and Apply again (" + (e && e.message ? e.message : "parse error") + ")"; throw e; }
+          }
+          if (!Array.isArray(facts)) {
+            if (msg) msg.textContent = "No extracted facts to apply — the raw document text is in the preview above; paste facts manually or retry.";
+            return;
+          }
+          document.getElementById("factsIn").value = JSON.stringify(facts, null, 2);
+          let docs = [];
+          try { const v = JSON.parse(document.getElementById("docsIn").value); if (Array.isArray(v)) docs = v; } catch { docs = []; }
+          docs = docs.filter((d) => !d || d.id !== "imported-docx");
+          docs.push({ id: "imported-docx", name: "Imported .docx (quote-verification text)", text: docText });
+          document.getElementById("docsIn").value = JSON.stringify(docs, null, 2);
+          if (msg) msg.textContent = String(facts.length) + (facts.length === 1 ? " fact" : " facts") + " applied — click Build chronology";
+        },
+      });
+    } catch {
+      mount.innerHTML = '<p class="docx-import-fallback">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+  /* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

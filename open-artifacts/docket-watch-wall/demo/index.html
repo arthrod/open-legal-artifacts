@@ -34,6 +34,12 @@
   .stats { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 20px; }
   .pill { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:4px 10px; background:#fff; }
   .pill b { font-weight:400; background: var(--flag-tint); padding:0 4px; margin-left:6px; }
+  /* DOCX import preview chrome (shared _shared/docx-import.js control) */
+  .docx-chip { font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); padding:1px 7px; margin:0 6px 4px 0; display:inline-block; background:#fff; }
+  .docx-chip.flag { border-color:var(--bad); color:var(--bad); font-weight:700; }
+  .docx-err { border:1px solid var(--bad); color:var(--bad); font-family:var(--font-mono); font-size:12px; padding:10px 12px; margin:8px 0; }
+  .docx-fallback, .docx-extract-json { width:100%; box-sizing:border-box; font-family:var(--font-mono); font-size:12px; border:1px solid var(--border); border-radius:0; background:#fff; padding:10px; color:var(--text); resize:vertical; }
+  .xnote { color:var(--text-secondary); font-size:12px; font-family:var(--font-mono); margin:6px 0; }
 </style>
 </head>
 <body>
@@ -43,6 +49,8 @@
   <hr class="rule">
 
   <h2>Feed (JSON)</h2>
+  <div id="docxImportMount"></div>
+  <p class="muted" id="dwStatus" role="status"></p>
   <textarea id="feed" aria-label="Feed (JSON)" spellcheck="false"></textarea>
   <div class="row">
     <button id="run">Review wall</button>
@@ -132,6 +140,58 @@ $('mark').addEventListener('click', () => {
   run();
 });
 run();
+</script>
+
+<script>
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p>' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="docx-chip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "docket-watch-wall", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.entries)) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Docket entries extracted from the report — edit the JSON, then Apply. Dates are copied verbatim, never computed; parties are always arrays.</p>'
+          + '<textarea id="dwJson" class="docx-extract-json" rows="12" spellcheck="false">' + esc(JSON.stringify(j.data, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="docx-err" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The report text is below; type the entries into the feed JSON yourself.</p>"
+          + '<textarea class="docx-fallback" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import docket report (.docx)",
+      hint: "extracts entries[] for the feed — you review before Apply",
+      preview,
+      apply: (payload, docText) => {
+        const box = document.getElementById("dwJson");
+        const raw = box && typeof box.value === "string" ? box.value.trim() : "";
+        if (!raw) throw new Error("no extraction to apply");
+        let entries = null;
+        try { const p = JSON.parse(raw); entries = Array.isArray(p) ? p : Array.isArray(p && p.entries) ? p.entries : null; } catch { entries = null; }
+        if (!entries || !entries.length) throw new Error("the edited JSON holds no entries array");
+        const partiesOf = (v) => Array.isArray(v) ? v : typeof v === "string" && v.trim() ? v.split(/\s*;\s*|\s+v\.\s+/).map((s) => s.trim()).filter(Boolean) : [];
+        const clean = entries.map((e) => ({ ...e, case: { ...e.case, parties: partiesOf(e.case && e.case.parties) } }));
+        const feedBox = document.getElementById("feed");
+        if (feedBox) feedBox.value = JSON.stringify(clean, null, 2);
+        const st = document.getElementById("dwStatus");
+        if (st) st.textContent = clean.length + " entries loaded into the feed — Review wall re-run.";
+        const runBtn = document.getElementById("run");
+        if (runBtn && typeof runBtn.click === "function") runBtn.click();
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

@@ -48,6 +48,7 @@
     <div class="sec">Case facts JSON (editable)</div>
     <textarea id="input" aria-label="Case facts JSON" spellcheck="false"></textarea>
     <button id="run">Read case →</button>
+    <div id="docxImportMount"></div>
     <div class="sec">Paste a notice (fictional) → deterministic parse</div>
     <textarea id="notice" aria-label="Paste a notice (fictional)" spellcheck="false" style="min-height:130px"></textarea>
     <button id="parse">Parse notice → merge into facts</button>
@@ -137,6 +138,23 @@ $('parse').addEventListener('click', () => {
   } catch (e) { $('err').textContent = String(e.message ?? e); }
 });
 render(readCase(SAMPLE));
+
+/* ---- DOCX import — shared control, additive (open-artifacts/_shared/docx-import.js).
+   Apply fills the notice paste box; the deterministic parseNotice handles the rest.
+   Existing inputs are never touched before the explicit Apply. On module-load
+   failure (e.g. file://) a hint replaces the control and the page keeps working. ---- */
+(async () => {
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    M.wireDocxImport($('docxImportMount'), {
+      title: 'Import notice (.docx)',
+      hint: 'Loads the notice text; the deterministic parser does the rest',
+      apply: (payload) => { $('notice').value = payload.text; },
+    });
+  } catch {
+    $('docxImportMount').innerHTML = '<p class="muted">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

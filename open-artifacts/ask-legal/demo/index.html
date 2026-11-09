@@ -98,6 +98,11 @@
     table.stackable td::before { content: attr(data-l); font-family: var(--font-mono); font-size: 12px;
       color: var(--text-secondary); text-align: left; }
   }
+  .docx-chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 1px 7px; margin: 0 6px 4px 0; display: inline-block; background: #fff; }
+  .docx-chip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .docx-err { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 10px 12px; margin: 8px 0; }
+  .docx-fallback, .docx-extract-json { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); border-radius: 0; background: #fff; padding: 10px; color: var(--text); resize: vertical; }
+  .xnote { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -154,6 +159,10 @@
       <thead><tr><th scope="col">id</th><th scope="col">opened</th><th scope="col">asker</th><th scope="col">question</th><th scope="col">route</th><th scope="col">SLA</th><th scope="col">actions</th></tr></thead>
       <tbody id="queueBody"></tbody>
     </table></div>
+
+    <h3 style="margin-top:28px">Import a policy / guidance document (.docx)</h3>
+    <div id="docxImportMount"></div>
+    <p class="note" id="kbxStatus" role="status"></p>
 
     <h3 style="margin-top:28px">Pending approvals — corrections are invisible to colleagues until approved</h3>
     <div id="approvals"></div>
@@ -582,6 +591,20 @@
     toast(`Downloaded ask-legal-digest-${AS_OF}.md.`);
   }
 
+  /* ---------- DOCX-import hook: extracted guidance lands pending-approval; approval stays a human action ---------- */
+  globalThis.applyKbDrafts = (drafts) => {
+    const add = (Array.isArray(drafts) ? drafts : []).filter((e) => e && e.id && e.question && e.answer)
+      .map((e) => ({ id: e.id, question: e.question, answer: e.answer, tags: Array.isArray(e.tags) ? e.tags : [],
+        jurisdiction: e.jurisdiction ?? null, updated: parseDate(e.updated) ? e.updated : AS_OF, approvedBy: null,
+        status: "pending-approval", sourceAuditId: e.sourceAuditId ?? null, submittedBy: "DOCX import — unreviewed draft" }));
+    for (const e of add) if (!kb.some((k) => k.id === e.id)) kbAdd.push(e);
+    kb = [...EXAMPLE.knowledgeBase, ...kbAdd];
+    persist();
+    renderAll();
+    showDesk("legal");
+    return add.length;
+  };
+
   /* ---------- events ---------- */
   document.addEventListener("click", (ev) => {
     const b = ev.target.closest("button");
@@ -673,6 +696,55 @@
   if (savedAsker && [...$("asker").options].some((o) => o.value === savedAsker)) $("asker").value = savedAsker;
   renderAll();
   $("q").value = "Which NDA template do I use for a new analytics vendor?"; // prefilled, not auto-asked
+</script>
+
+<script>
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p>' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="docx-chip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "ask-legal", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.entries)) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Draft KB entries extracted from the document — edit the JSON, then Apply. Every entry lands pending-approval; nothing is served until a human approves it below.</p>'
+          + '<textarea id="kbxJson" class="docx-extract-json" rows="12" spellcheck="false">' + esc(JSON.stringify(j.data, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="docx-err" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; draft the entries in the correction form yourself.</p>"
+          + '<textarea class="docx-fallback" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import policy / guidance (.docx)",
+      hint: "drafts KB entries for human approval — never auto-approved",
+      preview,
+      apply: (payload, docText) => {
+        const box = document.getElementById("kbxJson");
+        const raw = box && typeof box.value === "string" ? box.value.trim() : "";
+        if (!raw) throw new Error("no extraction to apply");
+        let entries = null;
+        try { const p = JSON.parse(raw); entries = Array.isArray(p) ? p : Array.isArray(p && p.entries) ? p.entries : null; } catch { entries = null; }
+        if (!entries || !entries.length) throw new Error("the edited JSON holds no entries array");
+        const hook = globalThis.applyKbDrafts;
+        if (typeof hook !== "function") throw new Error("the approvals panel is not ready");
+        const n = hook(entries);
+        const st = document.getElementById("kbxStatus");
+        if (st) st.textContent = n + " draft entries queued as pending-approval — approve or reject each one below; approval stays a human action.";
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

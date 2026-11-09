@@ -80,6 +80,21 @@
   </header>
 
   <section>
+    <h2>Bring your own log</h2>
+    <p class="lede" style="font-size:13px">Import a buyer-questions .docx — the extracted questions land in an editable preview; Apply loads them into the log box below.
+      Imported questions start <b>open</b>: no answers, no auto-drafting. Or paste a log JSON directly
+      (<code>{ items: [{ id, buyerId, category, question, receivedAt }] }</code>). The board, contradictions, gate and readiness score recompute from whatever log is loaded.</p>
+    <div id="docxImportMount"></div>
+    <textarea id="logJson" aria-label="Q&amp;A log JSON" rows="6" spellcheck="false" placeholder="{ items: [{ id: 'Q-001', buyerId: 'B1', category: 'litigation', question: '…', receivedAt: '2026-09-28' }] }"
+      style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12.5px;padding:8px 10px;border:var(--hairline);background:#fff"></textarea>
+    <div class="row">
+      <button id="loadLogBtn">Load log</button>
+      <button id="resetLogBtn" class="ghost">Back to worked example</button>
+      <span class="q" id="sqxStatus" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section>
     <h2>Workflow state</h2>
     <div class="counts" id="counts"></div>
     <div class="readiness" id="readiness"></div>
@@ -120,9 +135,10 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   let currentFilter = "all";
   let currentLog = null;
+  let logInput = EXAMPLE;
 
   function render() {
-    const log = buildQaLog(EXAMPLE);
+    const log = buildQaLog(logInput);
     currentLog = log;
     const s = log.summary;
     document.getElementById("counts").innerHTML =
@@ -182,6 +198,9 @@
   }
 
   render();
+  /* Hooks for the log-input wiring (below): swap the render input — never a second render path. */
+  globalThis.sqLoadLog = (input) => { logInput = input; currentFilter = "all"; render(); return currentLog ? currentLog.items.length : 0; };
+  globalThis.sqResetLog = () => { logInput = EXAMPLE; currentFilter = "all"; render(); };
   document.getElementById("filterChips").addEventListener("click", (ev) => {
     const btn = ev.target.closest("button[data-b]");
     if (!btn) return;
@@ -267,6 +286,84 @@
     };
   }
   renderGate();
+</script>
+
+<script>
+/* ---- [docx-import-wiring] ---- */
+/* Self-contained: only document, the D1 dynamic import, and the page hooks
+   globalThis.sqLoadLog / sqResetLog. Buyer-questions .docx → /api/extract → items[]
+   (IO contract shape) in an editable preview; Apply loads them via the same Load
+   path. The model never drafts answers — items are stripped to the five IO fields. */
+(function () {
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); };
+  function setStatus(t) { var el = document.getElementById("sqxStatus"); if (el) el.textContent = t; }
+  var logBox = document.getElementById("logJson");
+  function validLog(v) {
+    return !!(v && Array.isArray(v.items) && v.items.length > 0 && v.items.every(function (it) {
+      return it && typeof it.question === "string" && it.question.trim() !== "";
+    }));
+  }
+  function loadFromBox() {
+    var v;
+    try { v = JSON.parse(logBox.value); } catch (e) { setStatus("Not loaded — JSON parse error: " + String(e && e.message || e)); return false; }
+    if (!validLog(v)) { setStatus("Not loaded — expected { items: […] }, every item carrying a question."); return false; }
+    if (typeof globalThis.sqLoadLog === "function") globalThis.sqLoadLog(v);
+    setStatus("Loaded " + v.items.length + " item(s) — the board, contradictions, gate and readiness score now run on this log.");
+    return true;
+  }
+  var loadBtn = document.getElementById("loadLogBtn");
+  if (loadBtn) loadBtn.addEventListener("click", loadFromBox);
+  var resetBtn = document.getElementById("resetLogBtn");
+  if (resetBtn) resetBtn.addEventListener("click", function () {
+    if (typeof globalThis.sqResetLog === "function") globalThis.sqResetLog();
+    setStatus("Back to the worked example — Project Copperfield.");
+  });
+
+  (async function () {
+    var mount = document.getElementById("docxImportMount");
+    if (!mount) return;
+    try {
+      const M = await import("../../_shared/docx-import.js");
+      if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+      M.wireDocxImport(mount, {
+        title: "Import buyer questions (.docx)",
+        hint: "questions document → items[] via live AI — review, edit, Apply; answers are never drafted",
+        preview: async function (docText) {
+          var out;
+          try {
+            var r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "sell-side-qa-log", text: docText }) });
+            var j = null;
+            try { j = await r.json(); } catch (e) { j = null; }
+            if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.items)) throw new Error((j && j.message) || "extraction unavailable");
+            out = j;
+          } catch (e) {
+            return '<p class="docx-err" role="alert" style="font-family:var(--font-mono);font-size:12px;color:#b00020;margin:6px 0">Structured extraction failed — ' + esc(String(e && e.message || e)) + '. Nothing was applied. The buyer-questions text is preserved below — paste it as JSON or retry.</p>'
+              + '<textarea class="docx-fallback" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(docText) + '</textarea>';
+          }
+          var conf = (out.confidence && out.confidence.items) || "missing";
+          var chip = '<span class="docx-chip' + (conf === "high" ? "" : " flag") + '">items: ' + esc(conf) + (conf === "high" ? "" : " — review") + '</span>';
+          return '<p style="margin:6px 0">' + chip + ' <span class="q">' + out.data.items.length + ' question(s) proposed — edit anything, then Apply to load them into the log box. Imported items start open (no answers, no auto-drafting).</span></p>'
+            + '<textarea id="sqxJson" class="docx-extract-json" rows="10" style="width:100%;box-sizing:border-box;font-family:var(--font-mono);font-size:12px">' + esc(JSON.stringify(out.data, null, 2)) + '</textarea>';
+        },
+        apply: function () {
+          var ta = document.getElementById("sqxJson");
+          if (!ta || typeof ta.value !== "string") throw new Error("no extracted items to apply");
+          var v;
+          try { v = JSON.parse(ta.value); } catch (e) { throw new Error("the extraction preview is not valid JSON"); }
+          if (!validLog(v)) throw new Error("no valid items in the extraction preview");
+          var clean = v.items.map(function (it) {
+            return { id: it.id, buyerId: it.buyerId, category: it.category, question: it.question, receivedAt: it.receivedAt };
+          });
+          logBox.value = JSON.stringify({ items: clean }, null, 2);
+          loadFromBox();
+        }
+      });
+    } catch (e) {
+      mount.innerHTML = '<p class="q">DOCX import is available on the hosted site.</p>';
+    }
+  })();
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

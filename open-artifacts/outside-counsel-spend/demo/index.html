@@ -44,6 +44,13 @@
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
   .scroll { overflow-x: auto; }
+  .lbl { display:block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 10px 0 4px; }
+  textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; padding: 8px; border: var(--hairline); background: #fff; }
+  .xnote { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
+  .xchip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 1px 6px; margin: 0 4px 4px 0; }
+  .xchip.flag { border-color: var(--warn); background: var(--flag-tint); }
+  .xfail, .ledes-fail { font-size: 12px; color: var(--bad); border: 1px solid var(--bad); padding: 8px; }
+  .ledes-errors { font-size: 12px; color: var(--bad); padding-left: 16px; margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -60,6 +67,28 @@
     <p class="lede" style="font-size:13px">Worked example (fictional): Verdant Robotics, two firms, four matters,
       Jul–Oct 2026. Integer-cents arithmetic, no hidden clocks.</p>
   </header>
+
+  <section>
+    <h2>Import ledger</h2>
+    <p class="lede" style="font-size:13px">Two paths. (a) An invoice <b>.docx</b> (non-LEDES formats) is extracted to
+      ledger JSON — rates, amounts, and narratives copied verbatim, never invented — into an editable preview.
+      (b) A <b>LEDES 1998B</b> paste parses fully deterministically (core/ledes.js); malformed lines are skipped and
+      surfaced, never guessed. Either path lands in the ledger box; <i>Rebuild audit</i> re-runs the engine against
+      the worked example's rate cards, budgets, and guidelines.</p>
+    <div id="docxImportMount"></div>
+    <label class="lbl" for="ledgerIn">Ledger entries (JSON array)</label>
+    <textarea id="ledgerIn" rows="7" spellcheck="false" placeholder='[{"id":"L-1","matterId":"M-210","firmId":"HPL","period":"2026-09","date":"2026-09-03","timekeeper":"A. Reyes","level":"partner","type":"fee","billing":"hourly","hours":4,"rate":850,"amount":3400,"category":null,"narrative":"verbatim time-entry text"}]'></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="ledgerBtn">Rebuild audit</button>
+      <span id="ledgerMsg" style="font-size:12px;color:var(--text-secondary)"></span>
+    </div>
+    <label class="lbl" for="ledesIn" style="margin-top:16px">Or paste LEDES 1998B text (deterministic)</label>
+    <textarea id="ledesIn" rows="5" spellcheck="false" placeholder="LEDES_FILE_TYPE[]|INVOICE_DATE[]|…"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="ledesBtn" class="ghost">Parse LEDES</button>
+    </div>
+    <div id="ledesOut"></div>
+  </section>
 
   <section>
     <h2>Audit summary</h2>
@@ -107,9 +136,10 @@
 
 <script type="module">
   import { runSpendAudit, auditToCsv, auditToJson, renderTalkingPoints } from "../core/core.js";
+  import { parseLedes } from "../core/ledes.js";
   import EXAMPLE from "./example.js";
 
-  const audit = runSpendAudit(EXAMPLE);
+  let audit = runSpendAudit(EXAMPLE);
   const firm = (f) => EXAMPLE.meta.firmNames[f] ?? f;
   const matter = (m) => EXAMPLE.meta.matterNames[m] ?? m;
   const usd = (n) => (n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" }));
@@ -120,98 +150,111 @@
       rows.map((r) => (r.cls ? `<tr class="${r.cls}">` : "<tr>") + r.cells.map((c) => `<td${c.cls ? ` class="${c.cls}"` : ""}>${c.v}</td>`).join("") + "</tr>").join("");
   };
 
-  const s = audit.summary;
-  document.getElementById("counts").innerHTML =
-    `<div><b>${s.entries}</b><span>entries</span></div>` +
-    `<div><b>${usd(s.netSpend)}</b><span>net spend</span></div>` +
-    `<div><b>${s.rateExceptions}</b><span>rate exceptions</span></div>` +
-    `<div><b>${s.overBudget}</b><span>over budget</span></div>` +
-    `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>` +
-    `<div><b>${s.guidelineFlags ?? 0}</b><span>guideline flags</span></div>` +
-    `<div><b>${s.anomalyFlags ?? 0}</b><span>anomaly flags</span></div>`;
+  function renderAll() {
+    const s = audit.summary;
+    document.getElementById("counts").innerHTML =
+      `<div><b>${s.entries}</b><span>entries</span></div>` +
+      `<div><b>${usd(s.netSpend)}</b><span>net spend</span></div>` +
+      `<div><b>${s.rateExceptions}</b><span>rate exceptions</span></div>` +
+      `<div><b>${s.overBudget}</b><span>over budget</span></div>` +
+      `<div><b>${s.writeOffFlags}</b><span>write-off flags</span></div>` +
+      `<div><b>${s.guidelineFlags ?? 0}</b><span>guideline flags</span></div>` +
+      `<div><b>${s.anomalyFlags ?? 0}</b><span>anomaly flags</span></div>`;
 
-  table("rates", ["Entry", "Matter × Firm", "Timekeeper (level)", "Period", "Billed", "Expected", "Impact", "Status"], [
-    ...audit.rateFindings.map((f) => ({
-      cls: "flag",
-      cells: [
-        { v: `<code>${esc(f.entryId)}</code>`, cls: "mono" },
-        { v: `${esc(matter(f.matterId))} × ${esc(firm(f.firmId))}` },
-        { v: `${esc(f.timekeeper ?? "?")} (${esc(f.level ?? "?")})` },
-        { v: esc(f.period), cls: "mono" },
-        { v: `${usd(f.billedRate)}/h`, cls: "amt" },
-        { v: f.expectedRate === null ? "—" : `${usd(f.expectedRate)}/h`, cls: "amt" },
-        { v: f.amountImpact === null ? "—" : usd(f.amountImpact), cls: "amt" },
-        { v: `<span class="pill ${f.status}">${f.status}</span>` },
-      ],
-    })),
-    ...(audit.rateFindings.length ? [] : [{ cells: [{ v: "no rate exceptions" }] }]),
-  ]);
+    table("rates", ["Entry", "Matter × Firm", "Timekeeper (level)", "Period", "Billed", "Expected", "Impact", "Status"], [
+      ...audit.rateFindings.map((f) => ({
+        cls: "flag",
+        cells: [
+          { v: `<code>${esc(f.entryId)}</code>`, cls: "mono" },
+          { v: `${esc(matter(f.matterId))} × ${esc(firm(f.firmId))}` },
+          { v: `${esc(f.timekeeper ?? "?")} (${esc(f.level ?? "?")})` },
+          { v: esc(f.period), cls: "mono" },
+          { v: `${usd(f.billedRate)}/h`, cls: "amt" },
+          { v: f.expectedRate === null ? "—" : `${usd(f.expectedRate)}/h`, cls: "amt" },
+          { v: f.amountImpact === null ? "—" : usd(f.amountImpact), cls: "amt" },
+          { v: `<span class="pill ${f.status}">${f.status}</span>` },
+        ],
+      })),
+      ...(audit.rateFindings.length ? [] : [{ cells: [{ v: "no rate exceptions" }] }]),
+    ]);
 
-  table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "Drivers", "", "Status"], [
-    ...audit.budgetVariances.map((b) => ({
-      cls: b.status === "over" ? "flag" : "",
-      cells: [
-        { v: `${esc(matter(b.matterId))} × ${esc(firm(b.firmId))}` },
-        { v: usd(b.gross), cls: "amt" },
-        { v: usd(b.writeOffs), cls: "amt" },
-        { v: usd(b.net), cls: "amt" },
-        { v: b.approved === null ? "—" : usd(b.approved), cls: "amt" },
-        { v: b.variance === null ? "—" : `${usd(b.variance)}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}`, cls: "amt" },
-        { v: b.drivers ? b.drivers.map((d) => `<code>${esc(d.entryId)}</code> ${usd(d.amount)}`).join(", ") : "—", cls: "mono" },
-        { v: b.approved === null ? "" : `<div class="bar"><i class="${b.status === "over" ? "over" : ""}" style="width:${Math.min(100, Math.round((b.net / b.approved) * 100))}%"></i></div>` },
-        { v: `<span class="pill ${b.status}">${b.status}</span>` },
-      ],
-    })),
-  ]);
+    table("budgets", ["Matter × Firm", "Gross", "Write-offs", "Net", "Approved", "Variance", "Drivers", "", "Status"], [
+      ...audit.budgetVariances.map((b) => ({
+        cls: b.status === "over" ? "flag" : "",
+        cells: [
+          { v: `${esc(matter(b.matterId))} × ${esc(firm(b.firmId))}` },
+          { v: usd(b.gross), cls: "amt" },
+          { v: usd(b.writeOffs), cls: "amt" },
+          { v: usd(b.net), cls: "amt" },
+          { v: b.approved === null ? "—" : usd(b.approved), cls: "amt" },
+          { v: b.variance === null ? "—" : `${usd(b.variance)}${b.variancePct !== null ? ` (${b.variancePct}%)` : ""}`, cls: "amt" },
+          { v: b.drivers ? b.drivers.map((d) => `<code>${esc(d.entryId)}</code> ${usd(d.amount)}`).join(", ") : "—", cls: "mono" },
+          { v: b.approved === null ? "" : `<div class="bar"><i class="${b.status === "over" ? "over" : ""}" style="width:${Math.min(100, Math.round((b.net / b.approved) * 100))}%"></i></div>` },
+          { v: `<span class="pill ${b.status}">${b.status}</span>` },
+        ],
+      })),
+    ]);
 
-  table("writeoffs", ["Entry", "Matter × Firm", "Period", "Bill", "Write-off", "Pct", "Flag"], [
-    ...audit.writeOffFlags.map((w) => ({
-      cls: "flag",
-      cells: [
-        { v: `<code>${esc(w.entryId)}</code>`, cls: "mono" },
-        { v: `${esc(matter(w.matterId))} × ${esc(firm(w.firmId))}` },
-        { v: esc(w.period), cls: "mono" },
-        { v: usd(w.amount), cls: "amt" },
-        { v: usd(w.writeOff), cls: "amt" },
-        { v: `${w.writeOffPct}%`, cls: "amt" },
-        { v: `<span class="pill ${w.flag}">${w.flag}</span>` },
-      ],
-    })),
-    ...(audit.writeOffFlags.length ? [] : [{ cells: [{ v: "no write-offs above threshold" }] }]),
-  ]);
+    table("writeoffs", ["Entry", "Matter × Firm", "Period", "Bill", "Write-off", "Pct", "Flag"], [
+      ...audit.writeOffFlags.map((w) => ({
+        cls: "flag",
+        cells: [
+          { v: `<code>${esc(w.entryId)}</code>`, cls: "mono" },
+          { v: `${esc(matter(w.matterId))} × ${esc(firm(w.firmId))}` },
+          { v: esc(w.period), cls: "mono" },
+          { v: usd(w.amount), cls: "amt" },
+          { v: usd(w.writeOff), cls: "amt" },
+          { v: `${w.writeOffPct}%`, cls: "amt" },
+          { v: `<span class="pill ${w.flag}">${w.flag}</span>` },
+        ],
+      })),
+      ...(audit.writeOffFlags.length ? [] : [{ cells: [{ v: "no write-offs above threshold" }] }]),
+    ]);
 
-  table("guidelines", ["Kind", "Rule", "Ref", "Matter × Firm", "Period", "Detail", "Impact"], [
-    ...(audit.guidelineFindings ?? []).map((g) => ({
-      cls: "flag",
-      cells: [
-        { v: `<span class="pill ${g.flag}">${g.flag}</span>` },
-        { v: `<code>${esc(g.ruleId)}</code>`, cls: "mono" },
-        { v: g.entryIds.length === 1 ? `<code>${esc(g.entryIds[0])}</code>` : `${g.entryIds.length} entries`, cls: "mono" },
-        { v: g.matterId === null ? "—" : `${esc(matter(g.matterId))}${g.firmId ? ` × ${esc(firm(g.firmId))}` : ""}` },
-        { v: g.period ?? "—", cls: "mono" },
-        { v: esc(g.detail) },
-        { v: g.amountImpact === null ? "—" : usd(g.amountImpact), cls: "amt" },
-      ],
-    })),
-    ...(audit.anomalyFlags ?? []).map((a) => ({
-      cls: "flag",
-      cells: [
-        { v: `<span class="pill ${a.flag}">${a.flag}</span>` },
-        { v: "—", cls: "mono" },
-        { v: a.entryIds.map((i) => `<code>${esc(i)}</code>`).join(", "), cls: "mono" },
-        { v: esc(firm(a.firmId)) },
-        { v: `${esc(a.fromPeriod)}→${esc(a.toPeriod)}`, cls: "mono" },
-        { v: esc(a.detail) },
-        { v: "—", cls: "amt" },
-      ],
-    })),
-    ...((audit.guidelineFindings?.length ?? 0) + (audit.anomalyFlags?.length ?? 0) ? [] : [{ cells: [{ v: "no guideline or anomaly flags" }] }]),
-  ]);
+    table("guidelines", ["Kind", "Rule", "Ref", "Matter × Firm", "Period", "Detail", "Impact"], [
+      ...(audit.guidelineFindings ?? []).map((g) => ({
+        cls: "flag",
+        cells: [
+          { v: `<span class="pill ${g.flag}">${g.flag}</span>` },
+          { v: `<code>${esc(g.ruleId)}</code>`, cls: "mono" },
+          { v: g.entryIds.length === 1 ? `<code>${esc(g.entryIds[0])}</code>` : `${g.entryIds.length} entries`, cls: "mono" },
+          { v: g.matterId === null ? "—" : `${esc(matter(g.matterId))}${g.firmId ? ` × ${esc(firm(g.firmId))}` : ""}` },
+          { v: g.period ?? "—", cls: "mono" },
+          { v: esc(g.detail) },
+          { v: g.amountImpact === null ? "—" : usd(g.amountImpact), cls: "amt" },
+        ],
+      })),
+      ...(audit.anomalyFlags ?? []).map((a) => ({
+        cls: "flag",
+        cells: [
+          { v: `<span class="pill ${a.flag}">${a.flag}</span>` },
+          { v: "—", cls: "mono" },
+          { v: a.entryIds.map((i) => `<code>${esc(i)}</code>`).join(", "), cls: "mono" },
+          { v: esc(firm(a.firmId)) },
+          { v: `${esc(a.fromPeriod)}→${esc(a.toPeriod)}`, cls: "mono" },
+          { v: esc(a.detail) },
+          { v: "—", cls: "amt" },
+        ],
+      })),
+      ...((audit.guidelineFindings?.length ?? 0) + (audit.anomalyFlags?.length ?? 0) ? [] : [{ cells: [{ v: "no guideline or anomaly flags" }] }]),
+    ]);
 
-  // period rollups with interactive period filter
-  const periods = ["all", ...audit.periodRollups.map((p) => p.period)];
+    // period rollups with interactive period filter
+    const periods = ["all", ...audit.periodRollups.map((p) => p.period)];
+    chips.innerHTML = periods.map((p, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-p="${p}">${p}</button>`).join("");
+    renderPeriods("all");
+  }
   const chips = document.getElementById("periodChips");
-  chips.innerHTML = periods.map((p, i) => `<button class="chip ${i === 0 ? "active" : ""}" data-p="${p}">${p}</button>`).join("");
+  renderAll();
+
+  // setLedger: the rebuild gate's one entry into the page state (ledger replaced; rate cards,
+  // budgets, guidelines stay from the worked example). Returns the fresh audit.
+  function setLedger(ledger) {
+    audit = runSpendAudit({ ...EXAMPLE, ledger });
+    renderAll();
+    return audit;
+  }
+
   function renderPeriods(filter) {
     const rows = audit.periodRollups.filter((p) => filter === "all" || p.period === filter);
     table("periods", ["Period", "Entries", "Fees", "Disbursements", "Write-offs", "Net", "By firm (net)"], [
@@ -241,7 +284,6 @@
         : []),
     ]);
   }
-  renderPeriods("all");
   chips.addEventListener("click", (ev) => {
     const btn = ev.target.closest("button[data-p]");
     if (!btn) return;
@@ -258,6 +300,106 @@
   document.getElementById("jsonBtn").onclick = () => download("spend-audit.json", auditToJson(audit), "application/json");
   document.getElementById("csvBtn").onclick = () => download("spend-findings.csv", auditToCsv(audit), "text/csv");
   document.getElementById("tpBtn").onclick = () => download("spend-talking-points.md", renderTalkingPoints(audit, { firmNames: EXAMPLE.meta.firmNames, matterNames: EXAMPLE.meta.matterNames }), "text/markdown");
+
+/* ---- [ledger-rebuild-wiring] ---- */
+(() => {
+  const btn = document.getElementById("ledgerBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const msg = document.getElementById("ledgerMsg");
+    const ta = document.getElementById("ledgerIn");
+    try {
+      const v = JSON.parse(ta.value);
+      if (!Array.isArray(v) || v.length === 0) throw new Error("expected a non-empty JSON array of ledger entries");
+      const a = setLedger(v);
+      msg.textContent = `Rebuilt — ${a.summary.entries} entries audited against the worked example's rate cards, budgets, and guidelines.`;
+    } catch (e) {
+      msg.textContent = `Not applied — ${e instanceof SyntaxError ? "invalid JSON" : String(e.message || e)}. The audit above is unchanged.`;
+    }
+  });
+})();
+/* ---- [/ledger-rebuild-wiring] ---- */
+
+// Path (b): LEDES 1998B paste-box — fully deterministic through the tested parseLedes
+// (core/ledes.js). Malformed lines are skipped and surfaced; zero parseable entries
+// applies nothing.
+/* ---- [ledes-import-wiring] ---- */
+(() => {
+  const out = document.getElementById("ledesOut");
+  const btn = document.getElementById("ledesBtn");
+  if (!out || !btn) return;
+  const esc = (s) => String(s ?? "").replace(/[&<>\""]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  btn.addEventListener("click", () => {
+    const res = parseLedes(document.getElementById("ledesIn").value);
+    const errHtml = res.errors.length
+      ? '<ul class="ledes-errors">' + res.errors.map((e) => "<li>line " + esc(e.line) + ": " + esc(e.error) + " — " + esc(e.detail) + "</li>").join("") + "</ul>"
+      : "";
+    if (res.ledger.length === 0) {
+      out.innerHTML = '<p class="ledes-fail" role="alert">No parseable line items — nothing applied.</p>' + errHtml;
+      return;
+    }
+    out.innerHTML = '<div class="ledes-preview"><p class="xnote">' + res.ledger.length + " entries parsed deterministically"
+      + (res.errors.length ? "; " + res.errors.length + " malformed line(s) skipped:" : "; no parse errors.") + "</p>" + errHtml
+      + '<textarea class="xledes" rows="8" spellcheck="false">' + esc(JSON.stringify(res.ledger, null, 2)) + "</textarea>"
+      + '<div class="row" style="margin-top:8px"><button type="button" class="ledes-apply-btn">Apply to ledger box</button></div></div>';
+    const applyBtn = out.querySelector(".ledes-apply-btn");
+    applyBtn.addEventListener("click", () => {
+      const t = out.querySelector(".xledes");
+      const el = document.getElementById("ledgerIn");
+      if (el && t && typeof t.value === "string") el.value = t.value;
+      const p = out.querySelector(".ledes-preview");
+      if (p) p.insertAdjacentHTML("beforeend", '<p class="xnote">Applied to the ledger box — press “Rebuild audit”.</p>');
+    });
+  });
+})();
+/* ---- [/ledes-import-wiring] ---- */
+
+// Path (a): invoice .docx (non-LEDES) → /api/extract (schema outside-counsel-spend) →
+// editable ledger-JSON preview (rates/amounts copied verbatim, never invented) → Apply
+// fills the ledger box. Rebuild is the user's explicit action — never auto-clicked.
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>\""]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "outside-counsel-spend", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Proposed ledger entries — rates and amounts are copied from the invoice and narratives are verbatim; edit the JSON, then Apply. LEDES 1998B text does not belong here — use the paste-box below.</p>'
+          + '<textarea class="xled" rows="10" spellcheck="false">' + esc(JSON.stringify(j.data.ledger, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="xfail" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The invoice text is below; copy the lines into ledger JSON or paste LEDES below.</p>"
+          + '<textarea class="xtext" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import invoice (.docx, non-LEDES)",
+      hint: "extracts ledger entries — verbatim rates/amounts/narratives; you review before Apply",
+      preview,
+      apply: (payload, docText) => {
+        const q = (sel) => mount.querySelector(sel);
+        const el = document.getElementById("ledgerIn");
+        const t = q(".xled");
+        if (el) el.value = t && typeof t.value === "string" ? t.value : docText;
+        const p = q(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", t
+          ? '<p class="xnote">Applied to the ledger box — press “Rebuild audit” to re-run the engine.</p>'
+          : '<p class="xnote">Applied: the invoice text now sits in the ledger box — turn the lines into ledger JSON, or paste LEDES below.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

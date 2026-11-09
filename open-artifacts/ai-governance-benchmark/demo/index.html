@@ -70,6 +70,7 @@
     <button id="run">Run benchmark →</button>
     <div id="err" class="err"></div>
     <div class="sec">Assessment JSON (built from the interview; edits live until the next interview change)</div>
+    <div id="docx-import"></div>
     <textarea id="input" aria-label="Assessment JSON" spellcheck="false"></textarea>
   </section>
   <section id="out" aria-live="polite"></section>
@@ -238,6 +239,54 @@ $('org').value = SAMPLE.org.name;
 buildInterview();
 syncJson();
 run();
+
+/* ---- Import DOCX (shared module, D1 dynamic import; completed-questionnaire .docx
+   → answers[] via POST /api/extract, adapted from the spec's answer-interview
+   contract: NEVER a level without quoted evidence ≤280 chars; questions the document
+   does not answer are omitted so the rubric scores them 0 and flags them; cohort
+   percentile labels untouched) ---- */
+(async () => {
+  const mount = $('docx-import');
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== 'function') throw new Error('docx-import: wireDocxImport missing');
+    const escT = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const agovFail = (msg, text) =>
+      '<p class="err" role="alert">' + escT(msg) + '</p>'
+      + '<p class="muted">Nothing was applied — answer the interview from this text or paste an assessment JSON.</p>'
+      + '<textarea class="agov-raw" rows="10" style="width:100%;box-sizing:border-box">' + escT(text) + '</textarea>';
+    M.wireDocxImport(mount, {
+      title: 'Import completed questionnaire',
+      hint: '.docx → answers[] via live AI (gpt-5-nano); review, edit, then Apply',
+      preview: async (docText) => {
+        let res;
+        try {
+          res = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'ai-governance-benchmark', text: docText }) });
+        } catch { return agovFail('The extraction service could not be reached — nothing was extracted. The questionnaire text is preserved below.', docText); }
+        let body = null;
+        try { body = await res.json(); } catch { body = null; }
+        if (!res.ok || !body || body.ok !== true || !body.data || !Array.isArray(body.data.answers))
+          return agovFail('Structured extraction unavailable' + (body && body.message ? ' — ' + body.message.replace(/\.\s*$/, '') : '') + '. The questionnaire text is preserved below.', docText);
+        const conf = (body.confidence && body.confidence.answers) || 'missing';
+        const chip = conf === 'high'
+          ? '<span class="muted">extraction confidence: high</span>'
+          : '<span class="err">extraction confidence: ' + escT(conf) + ' — review the answers before applying</span>';
+        return '<p style="margin:0 0 8px">' + chip + ' · <span class="muted">' + body.data.answers.length + ' of ' + QUESTION_BANK.length + ' questions answered — the rest score 0 and are flagged by the rubric. Every level must trace to its quoted evidence; edit anything wrong, then Apply (then Run benchmark →).</span></p>'
+          + '<textarea class="agov-json" rows="14" style="width:100%;box-sizing:border-box">' + escT(JSON.stringify({ answers: body.data.answers }, null, 2)) + '</textarea>';
+      },
+      apply: () => {
+        const ta = mount.querySelector('.agov-json');
+        if (!ta) throw new Error('no extracted answers to apply');
+        const v = JSON.parse(ta.value);
+        if (!v || !Array.isArray(v.answers)) throw new Error('no answers array');
+        $('input').value = JSON.stringify({ org: state.org, answers: v.answers }, null, 2);
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="muted">DOCX import is available on the hosted site.</p>';
+  }
+})();
 </script>
 </body>
 </html>

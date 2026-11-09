@@ -44,6 +44,12 @@
   button.ghost { background: transparent; color: var(--text); }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
   code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  .lbl { display:block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 10px 0 4px; }
+  textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; padding: 8px; border: var(--hairline); background: #fff; }
+  .xnote { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
+  .xchip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 1px 6px; margin: 0 4px 4px 0; }
+  .xchip.flag { border-color: var(--warn); background: var(--flag-tint); }
+  .xfail { font-size: 12px; color: var(--bad); border: 1px solid var(--bad); padding: 8px; }
 </style>
 </head>
 <body>
@@ -59,6 +65,20 @@
     <p class="lede" style="font-size:13px">Worked example (fictional): Northwind Robotics group, 5 entities × 5 obligations,
       filing history included — missed filings surface as the earliest unfiled period, not last year's.</p>
   </header>
+
+  <section>
+    <h2>Import entities</h2>
+    <p class="lede" style="font-size:13px">Load a Secretary-of-State / formation record (.docx): names and dates are
+      extracted verbatim — an unreadable formation date becomes <code>null</code>, never a guess — previewed for edits,
+      and applied to the entities box below. Rebuild recomputes deadlines against the worked example's rule base.</p>
+    <div id="docxImportMount"></div>
+    <label class="lbl" for="entIn">Entities (JSON array)</label>
+    <textarea id="entIn" rows="7" spellcheck="false" placeholder='[{"id":"E-1","name":"Legal Name, Inc.","jurisdiction":"US-DE","type":"corp","formedOn":"2020-03-15","status":"active"}]'></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="entBtn">Rebuild calendar</button>
+    </div>
+    <p id="entMsg" style="font-size:12px;color:var(--text-secondary)"></p>
+  </section>
 
   <section>
     <h2>Portfolio state</h2>
@@ -102,85 +122,101 @@
   import { buildMatrix, toCsv, toICS, report, auditHealth } from "../core/core.js";
   import EXAMPLE from "./example.js";
 
-  const m = buildMatrix(EXAMPLE);
-  const rep = report(m);
-  const health = auditHealth(EXAMPLE);
+  let current = EXAMPLE;
+  let m = buildMatrix(current);
+  let rep = report(m);
+  let health = auditHealth(current);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  document.getElementById("stats").innerHTML =
-    `<div class="stat"><b>${m.counts.delinquent}</b><span>delinquent</span></div>` +
-    `<div class="stat"><b>${m.counts["due-soon"]}</b><span>due soon</span></div>` +
-    `<div class="stat"><b>${m.counts.scheduled}</b><span>scheduled</span></div>` +
-    `<div class="stat"><b>${m.counts.satisfied}</b><span>satisfied</span></div>` +
-    `<div class="stat"><b>${m.counts.unknown}</b><span>unknown</span></div>` +
-    `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>` +
-    `<div class="stat"><b>$${m.feeTotals.recorded}</b><span>fees recorded</span></div>` +
-    `<div class="stat"><b>${health.counts.flags}</b><span>health flags</span></div>`;
+  function renderAll() {
+    m = buildMatrix(current);
+    rep = report(m);
+    health = auditHealth(current);
+    document.getElementById("stats").innerHTML =
+      `<div class="stat"><b>${m.counts.delinquent}</b><span>delinquent</span></div>` +
+      `<div class="stat"><b>${m.counts["due-soon"]}</b><span>due soon</span></div>` +
+      `<div class="stat"><b>${m.counts.scheduled}</b><span>scheduled</span></div>` +
+      `<div class="stat"><b>${m.counts.satisfied}</b><span>satisfied</span></div>` +
+      `<div class="stat"><b>${m.counts.unknown}</b><span>unknown</span></div>` +
+      `<div class="stat"><b>${m.counts["n/a"]}</b><span>n/a</span></div>` +
+      `<div class="stat"><b>$${m.feeTotals.recorded}</b><span>fees recorded</span></div>` +
+      `<div class="stat"><b>${health.counts.flags}</b><span>health flags</span></div>`;
 
-  document.getElementById("health").innerHTML = health.flags.length
-    ? health.flags.map((f) => `<li>⚠️ <code>${esc(f.code)}</code> <b>${esc(f.entityName)}</b>${f.jurisdiction ? ` (${esc(f.jurisdiction)})` : ""} — ${esc(f.detail)}</li>`).join("")
-    : `<li>no health flags 🎉</li>`;
+    document.getElementById("health").innerHTML = health.flags.length
+      ? health.flags.map((f) => `<li>⚠️ <code>${esc(f.code)}</code> <b>${esc(f.entityName)}</b>${f.jurisdiction ? ` (${esc(f.jurisdiction)})` : ""} — ${esc(f.detail)}</li>`).join("")
+      : `<li>no health flags 🎉</li>`;
 
-  document.getElementById("delinq").innerHTML = m.delinquent.length
-    ? m.delinquent.map((d) => `<li>🔴 <b>${esc(d.entityName)}</b> — ${esc(d.obligationName)}: due ${esc(d.dueOn)}, overdue <span class="days">${d.overdueDays}d</span></li>`).join("")
-    : `<li>none — no delinquent obligations 🎉</li>`;
+    document.getElementById("delinq").innerHTML = m.delinquent.length
+      ? m.delinquent.map((d) => `<li>🔴 <b>${esc(d.entityName)}</b> — ${esc(d.obligationName)}: due ${esc(d.dueOn)}, overdue <span class="days">${d.overdueDays}d</span></li>`).join("")
+      : `<li>none — no delinquent obligations 🎉</li>`;
 
-  // Filing-window filter: bucket actionable cells into 30/60/90/180d windows (overdue always included).
-  const asOfMs = Date.parse(m.asOf + "T00:00:00Z");
-  const daysOut = (cell) => Math.round((Date.parse(cell.dueOn + "T00:00:00Z") - asOfMs) / 86400000);
-  let winFilter = Infinity; // "all" by default
-  const tb = document.getElementById("matrix").querySelector("tbody");
+    // Filing-window filter: bucket actionable cells into 30/60/90/180d windows (overdue always included).
+    const asOfMs = Date.parse(m.asOf + "T00:00:00Z");
+    const daysOut = (cell) => Math.round((Date.parse(cell.dueOn + "T00:00:00Z") - asOfMs) / 86400000);
+    let winFilter = Infinity; // "all" by default
+    const tb = document.getElementById("matrix").querySelector("tbody");
 
-  function renderMatrix() {
-    tb.innerHTML = "";
-    let shown = 0;
-    m.entities.forEach((e, r) => {
-      m.obligations.forEach((o, c) => {
-        const cell = m.grid[r][c];
-        const d = cell.dueOn ? daysOut(cell) : null;
-        if (winFilter !== Infinity && (!cell.dueOn || !["delinquent", "due-soon", "scheduled"].includes(cell.status) || d > winFilter)) return;
-        shown++;
-        const tr = document.createElement("tr");
-        const due = cell.dueOn
-          ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
-          : esc(cell.skipReason ?? cell.ruleNote ?? "—");
-        tr.innerHTML =
-          `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn ?? "?")}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
-          `<td>${esc(o.name)}${o.verifiedOn ? `<div class="sub">verified ${esc(o.verifiedOn)}</div>` : ""}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
-          `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
-          `<td>${esc(cell.ruleNote ?? "")}${cell.ruleStale ? `<div class="sub" style="color:var(--warn)">rule stale — verified &gt;365d ago</div>` : ""}</td>` +
-          `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
-        tb.appendChild(tr);
+    function renderMatrix() {
+      tb.innerHTML = "";
+      let shown = 0;
+      m.entities.forEach((e, r) => {
+        m.obligations.forEach((o, c) => {
+          const cell = m.grid[r][c];
+          const d = cell.dueOn ? daysOut(cell) : null;
+          if (winFilter !== Infinity && (!cell.dueOn || !["delinquent", "due-soon", "scheduled"].includes(cell.status) || d > winFilter)) return;
+          shown++;
+          const tr = document.createElement("tr");
+          const due = cell.dueOn
+            ? `${esc(cell.dueOn)}${cell.status === "delinquent" ? " ⚠" : ""}`
+            : esc(cell.skipReason ?? cell.ruleNote ?? "—");
+          tr.innerHTML =
+            `<td class="ent"><b>${esc(e.name)}</b><div class="sub">${esc(e.id)} · ${esc(e.jurisdiction)} · ${esc(e.type)} · formed ${esc(e.formedOn ?? "?")}${e.status !== "active" ? ` · ${esc(e.status)}` : ""}</div></td>` +
+            `<td>${esc(o.name)}${o.verifiedOn ? `<div class="sub">verified ${esc(o.verifiedOn)}</div>` : ""}<div class="sub">${esc(o.statuteCite ?? "")}</div></td>` +
+            `<td>${due}</td><td>${esc(String(cell.period ?? "—"))}</td>` +
+            `<td>${esc(cell.ruleNote ?? "")}${cell.ruleStale ? `<div class="sub" style="color:var(--warn)">rule stale — verified &gt;365d ago</div>` : ""}</td>` +
+            `<td><span class="pill ${cell.status}">${cell.status}</span></td>`;
+          tb.appendChild(tr);
+        });
       });
-    });
-    return shown;
-  }
+      return shown;
+    }
 
-  const winBtns = document.getElementById("winBtns");
-  const mkBtn = (label, value) => {
-    const b = document.createElement("button");
-    b.className = "ghost";
-    b.textContent = label;
-    b.onclick = () => {
-      winFilter = value;
-      const n = renderMatrix();
-      [...winBtns.querySelectorAll("button")].forEach((x) => {
-        const on = x === b;
-        x.style.background = on ? "var(--text)" : "";
-        x.style.color = on ? "var(--bg)" : "";
-      });
-      countSpan.textContent = value === Infinity ? `${n} of ${m.counts.cells} cells` : `${n} filing${n === 1 ? "" : "s"} due ≤${value}d (overdue included)`;
+    const winBtns = document.getElementById("winBtns");
+    winBtns.innerHTML = '<span style="font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);align-self:center">Filing window:</span>';
+    const mkBtn = (label, value) => {
+      const b = document.createElement("button");
+      b.className = "ghost";
+      b.textContent = label;
+      b.onclick = () => {
+        winFilter = value;
+        const n = renderMatrix();
+        [...winBtns.querySelectorAll("button")].forEach((x) => {
+          const on = x === b;
+          x.style.background = on ? "var(--text)" : "";
+          x.style.color = on ? "var(--bg)" : "";
+        });
+        countSpan.textContent = value === Infinity ? `${n} of ${m.counts.cells} cells` : `${n} filing${n === 1 ? "" : "s"} due ≤${value}d (overdue included)`;
+      };
+      winBtns.appendChild(b);
+      return b;
     };
-    winBtns.appendChild(b);
-    return b;
-  };
-  mkBtn("All", Infinity);
-  rep.windows.forEach((w) => mkBtn(`≤${w.days}d (${w.count})`, w.days));
-  const countSpan = document.createElement("span");
-  countSpan.id = "matrixCount";
-  countSpan.style.cssText = "font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);align-self:center;margin-left:4px";
-  winBtns.appendChild(countSpan);
-  countSpan.textContent = `${renderMatrix()} of ${m.counts.cells} cells`;
+    mkBtn("All", Infinity);
+    rep.windows.forEach((w) => mkBtn(`≤${w.days}d (${w.count})`, w.days));
+    const countSpan = document.createElement("span");
+    countSpan.id = "matrixCount";
+    countSpan.style.cssText = "font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);align-self:center;margin-left:4px";
+    winBtns.appendChild(countSpan);
+    countSpan.textContent = `${renderMatrix()} of ${m.counts.cells} cells`;
+  }
+  renderAll();
+
+  // setEntities: the rebuild gate's one entry into the page state (entities replaced;
+  // obligations/filings stay from the worked example). Returns the fresh matrix.
+  function setEntities(entities) {
+    current = { ...current, entities };
+    renderAll();
+    return m;
+  }
 
   function download(name, content, type) {
     const blob = new Blob([content], { type });
@@ -189,6 +225,72 @@
   }
   document.getElementById("csvBtn").onclick = () => download("entity-compliance.csv", toCsv(m), "text/csv");
   document.getElementById("icsBtn").onclick = () => download("entity-compliance.ics", toICS(m), "text/calendar");
+
+/* ---- [entities-rebuild-wiring] ---- */
+(() => {
+  const btn = document.getElementById("entBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const msg = document.getElementById("entMsg");
+    const ta = document.getElementById("entIn");
+    try {
+      const v = JSON.parse(ta.value);
+      if (!Array.isArray(v) || v.length === 0) throw new Error("expected a non-empty JSON array of entities");
+      const mx = setEntities(v);
+      msg.textContent = `Rebuilt ${mx.counts.cells} cells (${v.length} entities) against the worked-example rule base.`;
+    } catch (e) {
+      msg.textContent = `Not applied — ${e instanceof SyntaxError ? "invalid JSON" : String(e.message || e)}. The calendar above is unchanged.`;
+    }
+  });
+})();
+/* ---- [/entities-rebuild-wiring] ---- */
+
+// DOCX import (class LA): SoS/formation record → /api/extract (schema entity-compliance-calendar)
+// → editable entities-JSON preview (names/dates verbatim; unreadable dates null) → Apply fills
+// the entities box. Rebuild is the user's explicit action — never auto-clicked.
+/* ---- [docx-import-wiring] ---- */
+(async () => {
+  const mount = document.getElementById("docxImportMount");
+  if (!mount) return;
+  try {
+    const M = await import("../../_shared/docx-import.js");
+    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+      '<span class="xchip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+    async function preview(docText) {
+      try {
+        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "entity-compliance-calendar", text: docText }) });
+        const j = await r.json();
+        if (!r.ok || !j || j.ok !== true || !j.data) throw new Error((j && j.message) || "extraction unavailable");
+        return chips(j.confidence)
+          + '<p class="xnote">Proposed entities — names and dates are verbatim from the record; an unreadable formation date is null, never a guess. Edit the JSON, then Apply.</p>'
+          + '<textarea class="xent" rows="10" spellcheck="false">' + esc(JSON.stringify(j.data.entities, null, 2)) + "</textarea>";
+      } catch (e) {
+        return '<p class="xfail" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The record text is below.</p>"
+          + '<textarea class="xtext" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+      }
+    }
+    M.wireDocxImport(mount, {
+      title: "Import formation record (.docx)",
+      hint: "extracts entities — verbatim names/dates; you review before Apply",
+      preview,
+      apply: (payload, docText) => {
+        const q = (sel) => mount.querySelector(sel);
+        const el = document.getElementById("entIn");
+        const t = q(".xent");
+        if (el) el.value = t && typeof t.value === "string" ? t.value : docText;
+        const p = q(".docx-import-preview");
+        if (p) p.insertAdjacentHTML("beforeend", t
+          ? '<p class="xnote">Applied to the entities box — press “Rebuild calendar” to recompute against the worked-example rule base.</p>'
+          : '<p class="xnote">Applied: the record text now sits in the entities box — structure it into entities JSON, then press “Rebuild calendar”.</p>');
+      },
+    });
+  } catch {
+    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  }
+})();
+/* ---- [/docx-import-wiring] ---- */
 </script>
 </body>
 </html>

@@ -12,6 +12,31 @@
  *    sourceId can never be served as an answer anchor.
  */
 
+
+// Wave W schema modules (coordinator registration pass — one entry per schemas/*.ts).
+// Registered keys must equal the file basename; registry.test.ts enforces both directions.
+import { schema as ai_governance_benchmark_schema } from "./schemas/ai-governance-benchmark.ts";
+import { schema as ask_legal_schema } from "./schemas/ask-legal.ts";
+import { schema as criminal_charge_reality_check_schema } from "./schemas/criminal-charge-reality-check.ts";
+import { schema as discovery_response_log_schema } from "./schemas/discovery-response-log.ts";
+import { schema as docket_watch_wall_schema } from "./schemas/docket-watch-wall.ts";
+import { schema as entity_compliance_calendar_schema } from "./schemas/entity-compliance-calendar.ts";
+import { schema as intake_benchmark_schema } from "./schemas/intake-benchmark.ts";
+import { schema as intake_queue_schema } from "./schemas/intake-queue.ts";
+import { schema as jurisdiction_survey_matrix_schema } from "./schemas/jurisdiction-survey-matrix.ts";
+import { schema as limitations_radar_schema } from "./schemas/limitations-radar.ts";
+import { schema as litigation_portfolio_schema } from "./schemas/litigation-portfolio.ts";
+import { schema as matter_board_schema } from "./schemas/matter-board.ts";
+import { schema as outside_counsel_spend_schema } from "./schemas/outside-counsel-spend.ts";
+import { schema as privilege_log_builder_schema } from "./schemas/privilege-log-builder.ts";
+import { schema as pro_bono_case_board_schema } from "./schemas/pro-bono-case-board.ts";
+import { schema as record_clearance_schema } from "./schemas/record-clearance.ts";
+import { schema as record_sealing_screener_schema } from "./schemas/record-sealing-screener.ts";
+import { schema as regulatory_horizon_scan_schema } from "./schemas/regulatory-horizon-scan.ts";
+import { schema as renewal_calendar_schema } from "./schemas/renewal-calendar.ts";
+import { schema as sell_side_qa_log_schema } from "./schemas/sell-side-qa-log.ts";
+import { schema as subpoena_response_schema } from "./schemas/subpoena-response.ts";
+
 export type Valid<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /** Narrow a Valid<T> to its value (null on failure) — bridge for askJson's validators. */
@@ -317,4 +342,25 @@ export const EXTRACT_SCHEMAS: Record<string, ExtractSchema> = {
     maxTokens: 1500,
     validateData: validateExtractObligations,
   },
+  "ai-governance-benchmark": ai_governance_benchmark_schema,
+  "ask-legal": ask_legal_schema,
+  "criminal-charge-reality-check": criminal_charge_reality_check_schema,
+  "discovery-response-log": discovery_response_log_schema,
+  "docket-watch-wall": docket_watch_wall_schema,
+  "entity-compliance-calendar": entity_compliance_calendar_schema,
+  "intake-benchmark": intake_benchmark_schema,
+  "intake-queue": intake_queue_schema,
+  "jurisdiction-survey-matrix": jurisdiction_survey_matrix_schema,
+  "limitations-radar": limitations_radar_schema,
+  "litigation-portfolio": litigation_portfolio_schema,
+  "matter-board": matter_board_schema,
+  "outside-counsel-spend": outside_counsel_spend_schema,
+  "privilege-log-builder": privilege_log_builder_schema,
+  "pro-bono-case-board": pro_bono_case_board_schema,
+  "record-clearance": record_clearance_schema,
+  "record-sealing-screener": record_sealing_screener_schema,
+  "regulatory-horizon-scan": regulatory_horizon_scan_schema,
+  "renewal-calendar": renewal_calendar_schema,
+  "sell-side-qa-log": sell_side_qa_log_schema,
+  "subpoena-response": subpoena_response_schema,
 };
