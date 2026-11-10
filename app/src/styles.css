@@ -2,26 +2,27 @@
    Open Legal Artifacts — app styles
    Built on the arthur.law design tokens: bg #fafaf8, text #0a0a0a,
    text-secondary #6b6b6b, accent #ffd400 (structural only), hairline
-   #e8e8e5, hover #f0f0ee, Manrope + Departure Mono, radius 0, 1100px.
+   #e8e8e5, hover #f0f0ee, Libre Franklin + Roboto Mono, radius 0, 1100px.
    ========================================================================= */
 
-/* Manrope — self-hosted variable font from /fonts/ (no Google Fonts).
+/* Libre Franklin — self-hosted variable font from /fonts/ (no Google Fonts).
    Dual src so it resolves on both the root host and the GH Pages
    /open-legal-artifacts/ base; the browser falls through on 404. */
 @font-face {
-  font-family: "Manrope";
-  src: url("/fonts/Manrope-Variable.woff2") format("woff2"),
-    url("/open-legal-artifacts/fonts/Manrope-Variable.woff2") format("woff2");
+  font-family: "Libre Franklin";
+  src: url("/fonts/libre-franklin.woff2") format("woff2"),
+    url("/open-legal-artifacts/fonts/libre-franklin.woff2") format("woff2");
   font-weight: 100 900;
+  font-style: normal;
   font-display: swap;
 }
 
-/* Departure Mono — self-hosted from /fonts/ */
+/* Roboto Mono — self-hosted variable font from /fonts/ (pfa type DNA). */
 @font-face {
-  font-family: "Departure Mono";
-  src: url("/fonts/DepartureMono-Regular.woff2") format("woff2"),
-    url("/open-legal-artifacts/fonts/DepartureMono-Regular.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "Roboto Mono";
+  src: url("/fonts/roboto-mono.woff2") format("woff2"),
+    url("/open-legal-artifacts/fonts/roboto-mono.woff2") format("woff2");
+  font-weight: 100 700;
   font-style: normal;
   font-display: swap;
 }
@@ -34,8 +35,8 @@
   --border: #e8e8e5;
   --hover: #f0f0ee;
 
-  --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-body: "Libre Franklin", system-ui, -apple-system, sans-serif;
+  --font-mono: "Roboto Mono", "Space Mono", ui-monospace, monospace;
 
   --max-width: 1100px;
   --pad-x: 40px;
@@ -309,7 +310,7 @@ pre {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(310px, 100%), 1fr));
   gap: 1px;
   background: var(--border);
   border: var(--hairline);
@@ -324,12 +325,14 @@ pre {
   grid-column: span 2;
 }
 
-/* Originals: fixed 2×2 — four equal-density tiles instead of 3+1 full-span */
+/* Originals: fixed 2×2 — four equal-density tiles instead of 3+1 full-span.
+   minmax(0,·) so tracks can shrink below content min-width at narrow views. */
 .cards-2col {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .tile {
+  min-width: 0;
   background: var(--bg);
   padding: 1.4rem 1.4rem 1.2rem;
   display: flex;
@@ -1021,7 +1024,13 @@ td.unverified {
   }
 
   .cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* one column on mobile — a span-2 orphan would spawn an implicit second
+     track wider than the viewport; neutralize the desktop spans */
+  .cards:not(.cards-2col) > .tile:last-child:nth-child(n) {
+    grid-column: auto;
   }
 
   .section-head {

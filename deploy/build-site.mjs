@@ -135,16 +135,14 @@ console.log("building app…");
 execSync("npm run build", { cwd: join(ROOT, "app"), stdio: "inherit" });
 const distIndex = join(ROOT, "app", "dist", "index.html");
 if (existsSync(distIndex)) {
-  // GOOGLE_FONTS_FIX: the VT val cannot serve binary woff2 — the landing's
-  // @font-face url()s 404 there (Manrope + Departure Mono silently fall back
-  // to system fonts). Strip them; load Manrope + JetBrains Mono from CDN.
+  // SINGLE-FILE POLICY: the VT val cannot serve binary woff2 — the landing's
+  // @font-face url()s 404 there. Strip them; the landing uses the same
+  // system-font fallback as the 33 demo pages (no external font requests —
+  // the no-phone-home standard). GH Pages mirror serves the app's own
+  // self-hosted fonts.
   let landing = bundle(distIndex);
-  landing = landing.replace(/@font-face\{font-family:Manrope;[^}]*\}/g, "");
-  landing = landing.replace(/@font-face\{font-family:Departure Mono;[^}]*\}/g, "");
-  landing = landing.replace(
-    "</title>",
-    '</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">',
-  );
+  landing = landing.replace(/@font-face\{font-family:Libre Franklin;[^}]*\}/g, "");
+  landing = landing.replace(/@font-face\{font-family:Roboto Mono;[^}]*\}/g, "");
   writeFileSync(join(SITE, "index.html"), landing);
   console.log(`site/index.html (${(statSync(join(SITE, "index.html")).size / 1024).toFixed(1)} KB)`);
 }
@@ -162,7 +160,7 @@ for (const OA of demoRoots) {
     seen.add(entry);
     let html = decorate(bundle(demo), { entry, repoUrl: `${GITHUB}/tree/main/${root}/${entry}` });
     // Single-file deploy: system-font fallback only. Strip ALL @font-face blocks
-    // (Manrope variable + Departure Mono) — var stacks fall back to system-ui/ui-monospace.
+    // (Libre Franklin + Roboto Mono) — var stacks fall back to system-ui/ui-monospace.
     const pre = html.length;
     html = html.replace(/@font-face\s*\{[^}]*\}/g, "");
     if (pre !== html.length || html.length > 78_000) {

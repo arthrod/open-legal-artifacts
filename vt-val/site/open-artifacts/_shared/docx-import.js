@@ -369,7 +369,8 @@ export function renderImportUi(state) {
   const error = status === 'error' && s.errorMessage ? '<p class="docx-import-error" role="alert">' + esc(s.errorMessage) + '</p>' : '';
   const preview = status === 'ready' && s.previewHtml != null ? '<div class="docx-import-preview">' + s.previewHtml + '</div>' : '';
   const btn = (cls, label, dis) => '<button type="button" class="' + cls + '"' + (dis ? ' disabled' : '') + '>' + label + '</button>';
-  return '<section class="docx-import" style="margin:12px 0;padding:10px 12px;border:1px solid #d8d8d2;border-radius:6px">'
+  return '<section class="docx-import" style="margin:12px 0;padding:10px 12px;border:1px solid #d8d8d2">'
+    + '<style>.docx-import button{font:inherit}</style>'
     + '<div class="docx-import-head"><strong class="docx-import-title">' + title + '</strong>' + hint + '</div>'
     + '<div class="docx-import-controls">'
     + '<input type="file" class="docx-file-input" accept=".docx" hidden aria-label="Choose a .docx file">'
