@@ -18,9 +18,9 @@
     background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: #333; }
+  button:hover { background: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); border: var(--hairline); }
-  button.ghost:hover { background: var(--flag-tint); }
+  button.ghost:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
   .btnrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   select { font-family: var(--font-mono); font-size: 12px; background: #fff; color: var(--text); border: var(--hairline); border-radius: var(--radius); padding: 8px 10px; }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
@@ -42,12 +42,12 @@
   .unset { font-family: var(--font-mono); font-size: 12px; background: #fff; border: var(--hairline); padding: 10px 12px; margin-bottom: 14px; }
   /* DOCX-import preview chrome (shared _shared/docx-import.js control) */
   .xchips { margin: 6px 0; }
-  .xchip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .xchip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
   .xchip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
   .xnote { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
   .xfail { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; margin: 6px 0; }
   .xgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 8px 0; }
-  .xlabel { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+  .xlabel { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
   .xfield, textarea.xtext { width: 100%; box-sizing: border-box; border: var(--hairline); background: #fff; padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
@@ -68,7 +68,7 @@
       <div id="docxImportMount"></div>
       <textarea id="input" aria-label="Charge facts (JSON)" spellcheck="false"></textarea>
       <p class="btnrow">
-        <button id="run">Run reality check</button>
+        <button id="run">Run reality check →</button>
         <select id="example" aria-label="Prefilled example"></select>
       </p>
       <div class="err" id="err"></div>

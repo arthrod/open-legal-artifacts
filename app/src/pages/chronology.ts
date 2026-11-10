@@ -18,7 +18,7 @@ export function chronologyPage(): HTMLElement {
     <p class="demo-sub">The sample has three sources disagreeing on <code>employment-status</code> (employed / resigned / terminated) — all three entries get conflict flags. Edit the JSON and re-render.</p>
     <label for="fc-facts">Facts (JSON array)</label>
     <textarea id="fc-facts" rows="14"></textarea>
-    <div class="actions"><button id="fc-run">Build chronology</button></div>
+    <div class="actions"><button id="fc-run">Build chronology →</button></div>
     <div class="result" id="fc-result"></div>
   </section>`);
 

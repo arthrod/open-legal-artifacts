@@ -31,7 +31,7 @@ export function deviationBoardPage(): HTMLElement {
     <textarea id="db-clauses" rows="8"></textarea>
     <label for="db-playbook">Playbook (JSON)</label>
     <textarea id="db-playbook" rows="10"></textarea>
-    <div class="actions"><button id="db-run">Classify clauses</button></div>
+    <div class="actions"><button id="db-run">Classify clauses →</button></div>
     <div class="result" id="db-result"></div>
   </section>`);
 

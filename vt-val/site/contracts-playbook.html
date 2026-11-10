@@ -100,6 +100,10 @@
   --max-width: var(--page-max); /* 1100 → 1180 (pfa page width) */
   --t-base: 0.2s ease;          /* kept at v2 value, NOT aliased to --t-mid */
 
+  /* READING MODE (DESIGN-SYSTEM): stronger secondary text for paper/faint
+     fills — --muted on --faint is 4.3:1 (fails AA); this clears it. */
+  --muted-strong: #4A4A47;
+
   /* LAYOUT CONSTANTS (v2, kept verbatim — structural, not brand) */
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
@@ -234,9 +238,25 @@ a {
   margin-right: 12px;
 }
 
-/* ----- Focus (v2 block, ported verbatim) ----- */
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+/* ----- Focus (v2 block, ported; offset raised 2px → 3px, compliance wave 1) -----
+   Inputs keep the 2px ink :focus-visible outline (a11y tests pin it) AND gain
+   the hard-offset 3px 3px 0 mark shadow — spec table "Input: focus". */
+:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+textarea:focus, input:focus, select:focus {
+  outline: 2px solid var(--text); outline-offset: 3px;
+  box-shadow: 3px 3px 0 var(--mark);
+}
+
+/* ----- Hover alignment (compliance wave 1) — spec table "Hover / press
+   states": buttons lift −2px on hover; links wipe a mark underline in.
+   `translate` (not `transform`) so it composes with positioned controls. ----- */
+button:hover:not(:disabled) { translate: 0 -2px; }
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 
 /* ----- Mobile (390px) ----- */
 img, svg, video, canvas { max-width: 100%; }
@@ -298,7 +318,7 @@ textarea { max-width: 100%; }
   .scroll { overflow-x: auto; }
 </style>
 </head>
-<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/contracts-playbook" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
+<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:12px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/artifacts/contracts-playbook" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <header>
     <div class="kicker">open-legal-artifacts · deterministic core</div>

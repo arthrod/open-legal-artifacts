@@ -27,7 +27,7 @@ export function tabularReviewPage(): HTMLElement {
     <label for="tr-questions">Questions (JSON array)</label>
     <textarea id="tr-questions" rows="8"></textarea>
     <div class="actions">
-      <button id="tr-run">Build table</button>
+      <button id="tr-run">Build table →</button>
       <button id="tr-csv" class="secondary">Download CSV</button>
     </div>
     <div class="result" id="tr-result"></div>

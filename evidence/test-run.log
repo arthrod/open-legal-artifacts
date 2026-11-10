@@ -90,3 +90,6 @@ gh-pages landing: 200
 gh-pages libre-franklin.woff2: 200
 gh-pages roboto-mono.woff2: 200
 VT ask-legal page: 200
+
+# Design-system compliance pass — 2026-11-10T07:19:34Z
+Spec: design/DESIGN-SYSTEM.md (canonical, 2026-11-10). Fixed: accent-at-rest selected toggles (2), colored edge stripes incl. var(--tile-stripe) + inset-shadow forms (7 demos), muted-on-faint → --muted-strong (jsm/fact + code chips), 11px navs + sub-12px sweep (14 demos), fact-chronology 390px overflow, landing tile stripes/offset/→. Coordinator rulings on record: status colors stay (functional legal encoding); accent tags/badges permitted per spec table; no attorney-advertising footer. Guard: 11 checks (stripe regex now catches var()+inset forms). Gate3 puppeteer: 4 touched demos PASS. Suites: 809 JS + guard 11/11, 0 fail.

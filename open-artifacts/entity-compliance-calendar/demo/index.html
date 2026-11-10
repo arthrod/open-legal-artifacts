@@ -13,7 +13,7 @@
   .lede { font-size: 17px; color: var(--text-secondary); max-width: 62ch; margin-bottom: 8px; }
   section { margin-top: 48px; }
   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  h2::before { content: ""; display: inline-block; width: 9px; height: 9px; background: var(--accent); margin-right: 8px; }
   .stats { display: flex; border: var(--hairline); background: #fff; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { padding: 14px 22px; border-right: var(--hairline); }
   .stat b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 500; }
@@ -32,7 +32,7 @@
   .pill.scheduled { background: #fff; }
   .pill.satisfied { background: #fff; color: var(--text-secondary); border-color: var(--border); }
   .pill.na { background: var(--hover); color: var(--text-secondary); border-color: var(--border); }
-  .pill.unknown { background: var(--flag-tint); color: var(--text-secondary); border-color: var(--border); border-style: dashed; }
+  .pill.unknown { background: var(--flag-tint); color: var(--muted-strong); border-color: var(--border); border-style: dashed; }
   .flag li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
   .flag code { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
   .delinq li { list-style: none; padding: 10px 0; border-bottom: var(--hairline); font-size: 13px; }
@@ -47,7 +47,7 @@
   .lbl { display:block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 10px 0 4px; }
   textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 12px; padding: 8px; border: var(--hairline); background: #fff; }
   .xnote { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
-  .xchip { display: inline-block; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border); padding: 1px 6px; margin: 0 4px 4px 0; }
+  .xchip { display: inline-block; font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 1px 6px; margin: 0 4px 4px 0; }
   .xchip.flag { border-color: var(--warn); background: var(--flag-tint); }
   .xfail { font-size: 12px; color: var(--bad); border: 1px solid var(--bad); padding: 8px; }
 </style>
@@ -75,7 +75,7 @@
     <label class="lbl" for="entIn">Entities (JSON array)</label>
     <textarea id="entIn" rows="7" spellcheck="false" placeholder='[{"id":"E-1","name":"Legal Name, Inc.","jurisdiction":"US-DE","type":"corp","formedOn":"2020-03-15","status":"active"}]'></textarea>
     <div class="row" style="margin-top:10px">
-      <button id="entBtn">Rebuild calendar</button>
+      <button id="entBtn">Rebuild calendar →</button>
     </div>
     <p id="entMsg" style="font-size:12px;color:var(--text-secondary)"></p>
   </section>
@@ -84,7 +84,7 @@
     <h2>Portfolio state</h2>
     <div class="stats" id="stats"></div>
     <div class="row">
-      <button id="csvBtn">Export CSV</button>
+      <button id="csvBtn">Export CSV →</button>
       <button id="icsBtn" class="ghost">Export .ics (with recurrence)</button>
     </div>
   </section>

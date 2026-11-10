@@ -100,6 +100,10 @@
   --max-width: var(--page-max); /* 1100 → 1180 (pfa page width) */
   --t-base: 0.2s ease;          /* kept at v2 value, NOT aliased to --t-mid */
 
+  /* READING MODE (DESIGN-SYSTEM): stronger secondary text for paper/faint
+     fills — --muted on --faint is 4.3:1 (fails AA); this clears it. */
+  --muted-strong: #4A4A47;
+
   /* LAYOUT CONSTANTS (v2, kept verbatim — structural, not brand) */
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
@@ -234,9 +238,25 @@ a {
   margin-right: 12px;
 }
 
-/* ----- Focus (v2 block, ported verbatim) ----- */
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+/* ----- Focus (v2 block, ported; offset raised 2px → 3px, compliance wave 1) -----
+   Inputs keep the 2px ink :focus-visible outline (a11y tests pin it) AND gain
+   the hard-offset 3px 3px 0 mark shadow — spec table "Input: focus". */
+:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+textarea:focus, input:focus, select:focus {
+  outline: 2px solid var(--text); outline-offset: 3px;
+  box-shadow: 3px 3px 0 var(--mark);
+}
+
+/* ----- Hover alignment (compliance wave 1) — spec table "Hover / press
+   states": buttons lift −2px on hover; links wipe a mark underline in.
+   `translate` (not `transform`) so it composes with positioned controls. ----- */
+button:hover:not(:disabled) { translate: 0 -2px; }
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 
 /* ----- Mobile (390px) ----- */
 img, svg, video, canvas { max-width: 100%; }
@@ -256,27 +276,27 @@ textarea { max-width: 100%; }
   p.lede { max-width: 64ch; color: var(--text-secondary); font-size: 15px; line-height: 1.65; }
   section { margin-top: 48px; }
   h2 { font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-  h2::before { content: ""; display: block; width: 24px; height: 1px; background: var(--border); margin-bottom: 12px; }
+  h2::before { content: ""; display: inline-block; width: 9px; height: 9px; background: var(--accent); margin-right: 8px; }
   .counts { display: flex; gap: 0; border: var(--hairline); background: #fff; margin-bottom: 8px; flex-wrap: wrap; }
   .counts div { padding: 12px 20px; border-right: var(--hairline); flex: 1; min-width: 100px; }
   .counts div:last-child { border-right: none; }
   .counts b { font-family: var(--font-mono); font-size: 20px; font-weight: 500; display: block; }
   .counts span { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); }
   .tl { border: var(--hairline); background: #fff; }
-  .tl .row { display: grid; grid-template-columns: 150px 1fr; gap: 0; border-bottom: var(--hairline); }
+  .tl .row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0; border-bottom: var(--hairline); }
   .tl .row:last-child { border-bottom: none; }
   .tl .when { font-family: var(--font-mono); font-size: 12px; padding: 12px 12px; border-right: var(--hairline); color: var(--text-secondary); }
   .tl .when b { color: var(--text); font-weight: 500; display: block; }
-  .tl .what { padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
-  .tl .src { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+  .tl .what { padding: 12px 14px; font-size: 13.5px; line-height: 1.6; min-width: 0; overflow-wrap: anywhere; }
+  .tl .src { margin-top: 6px; font-size: 12px; color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
   .tl .src + .src { margin-top: 2px; }
   .tl .src b { color: var(--text); }
   .prec { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; border: 1px solid var(--border); padding: 0 4px; margin-left: 6px; color: var(--text-secondary); }
   .sig { margin-left: 6px; }
   .tag { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--border); padding: 0 5px; margin-left: 6px; white-space: nowrap; }
-  .tag.warn { border-color: var(--accent); color: var(--text); background: rgba(234,209,130,.25); }
-  .tag.v-verified { border-color: var(--ok); color: var(--ok); }
-  .tag.v-supported { border-color: var(--warn); color: var(--warn); }
+  .tag.warn { color: var(--text); background: var(--flag-tint); }
+  .tag.v-verified { color: var(--ok); }
+  .tag.v-supported { color: var(--warn); }
   .tag.v-notfound { background: var(--text); color: var(--bg); border-color: var(--text); }
   .legend { font-size: 12px; color: var(--text-secondary); margin: 8px 0 0; max-width: 78ch; }
   .conflict, .gapbox, .diffbox { border: var(--hairline); background: #fff; padding: 14px 18px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; }
@@ -288,13 +308,13 @@ textarea { max-width: 100%; }
     background: var(--text); color: var(--bg); cursor: pointer; border-radius: var(--radius); }
   button:hover { background: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); }
-  button[aria-pressed="true"] { background: var(--accent); color: var(--text); border-color: var(--text); }
+  button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
   .variant-note { font-size: 12.5px; color: var(--text-secondary); margin: 10px 0 0; line-height: 1.6; }
   .disclaimer { margin-top: 64px; padding-top: 16px; border-top: var(--hairline); font-size: 12px; color: var(--text-secondary); }
-  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; }
+  code { font-family: var(--font-mono); font-size: 12px; background: var(--hover); padding: 1px 4px; color: var(--muted-strong); }
 </style>
 </head>
-<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/fact-chronology" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
+<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:12px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/fact-chronology" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <header>
     <div class="kicker">open-legal-artifacts · deterministic core</div>
@@ -316,8 +336,8 @@ textarea { max-width: 100%; }
     <div class="counts" id="counts"></div>
     <p class="legend" id="legend"></p>
     <div class="row-btns">
-      <button id="mdBtn">Export current view (.md)</button>
-      <button id="jsonBtn" class="ghost">Export output.json</button>
+      <button id="mdBtn">Export current view (.md) →</button>
+      <button id="jsonBtn" class="ghost">Export output.json →</button>
     </div>
   </section>
 
@@ -366,7 +386,7 @@ textarea { max-width: 100%; }
     </div>
     <div class="row-btns">
       <label style="font-family:var(--font-mono);font-size:12px;align-self:center">case <input id="caseIn" type="text" style="font-family:var(--font-mono);font-size:12px;padding:8px;border:var(--hairline);min-width:260px" /></label>
-      <button id="buildBtn">Build chronology</button>
+      <button id="buildBtn">Build chronology →</button>
       <span id="fcMsg" style="font-family:var(--font-mono);font-size:12px;align-self:center"></span>
     </div>
   </section>

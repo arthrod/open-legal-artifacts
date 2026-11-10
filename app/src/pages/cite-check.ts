@@ -53,7 +53,7 @@ export function citeCheckPage(): HTMLElement {
     <textarea id="cc-quote" rows="3">"an employer who fails to maintain accurate payroll records for three consecutive quarters may be deemed to have acted with gross negligence."</textarea>
     <label for="cc-source">Source text</label>
     <textarea id="cc-source" rows="8"></textarea>
-    <div class="actions"><button id="cc-run">Check quote</button></div>
+    <div class="actions"><button id="cc-run">Check quote →</button></div>
     <div class="result" id="cc-result"></div>
   </section>`);
 

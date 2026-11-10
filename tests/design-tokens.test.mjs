@@ -107,6 +107,56 @@ test('a11y floors and kept blocks in every demo tokens.css', () => {
   }
 });
 
+test('compliance wave 1: selected toggles are ink at rest, never accent fill', () => {
+  // accent-at-rest heuristic: an aria-pressed="true" selector must not fill var(--accent)
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    const demoDir = join(OA, d, 'demo');
+    for (const f of readdirSync(demoDir)) {
+      if (!/\.(html|css)$/.test(f)) continue;
+      const src = readFileSync(join(demoDir, f), 'utf8');
+      assert.doesNotMatch(
+        src,
+        /aria-pressed="true"\]\s*\{[^}]*background:\s*var\(--accent\)/,
+        `${d}/demo/${f}: selected toggle fills the accent at rest (spec: selected = ink fill, bg text)`
+      );
+    }
+  }
+});
+
+test('compliance wave 1: no accent left/top border stripes in demos', () => {
+  // decorative edge stripes in the accent are an anti-pattern; encode via ink
+  // structural border + status chip instead. Catches literal px widths,
+  // var()-indirected widths (e.g. var(--tile-stripe)), and inset-shadow forms.
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    const demoDir = join(OA, d, 'demo');
+    for (const f of readdirSync(demoDir)) {
+      if (!/\.(html|css)$/.test(f)) continue;
+      const src = readFileSync(join(demoDir, f), 'utf8');
+      assert.doesNotMatch(
+        src,
+        /border-(left|top):\s*(?:\d+px|var\(--[\w-]+\))\s+solid\s+var\(--accent\)/,
+        `${d}/demo/${f}: accent border stripe (anti-pattern: coloured edge stripe)`
+      );
+      assert.doesNotMatch(
+        src,
+        /box-shadow:\s*inset\s+\d+px\s+0\s+0\s+var\(--accent\)/,
+        `${d}/demo/${f}: inset accent shadow stripe (anti-pattern: coloured edge stripe)`
+      );
+    }
+  }
+});
+
+test('compliance wave 1: --muted-strong reading token in canonical and every copy', () => {
+  // reading-mode secondary text on paper/faint: --muted on --faint is 4.3:1 (fails AA)
+  assert.match(canonical, /--muted-strong:\s*#4A4A47/, 'canonical tokens.css: --muted-strong #4A4A47 missing');
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    assert.match(demoTokens(d), /--muted-strong:\s*#4A4A47/, `${d}: --muted-strong #4A4A47 missing`);
+  }
+});
+
 test('legacy alias layer: each old name resolves to var(--new)', () => {
   const aliases = {
     '--text': '--ink',

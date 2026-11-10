@@ -104,6 +104,10 @@
   --max-width: var(--page-max); /* 1100 → 1180 (pfa page width) */
   --t-base: 0.2s ease;          /* kept at v2 value, NOT aliased to --t-mid */
 
+  /* READING MODE (DESIGN-SYSTEM): stronger secondary text for paper/faint
+     fills — --muted on --faint is 4.3:1 (fails AA); this clears it. */
+  --muted-strong: #4A4A47;
+
   /* LAYOUT CONSTANTS (v2, kept verbatim — structural, not brand) */
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
@@ -238,9 +242,25 @@ a {
   margin-right: 12px;
 }
 
-/* ----- Focus (v2 block, ported verbatim) ----- */
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+/* ----- Focus (v2 block, ported; offset raised 2px → 3px, compliance wave 1) -----
+   Inputs keep the 2px ink :focus-visible outline (a11y tests pin it) AND gain
+   the hard-offset 3px 3px 0 mark shadow — spec table "Input: focus". */
+:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+textarea:focus, input:focus, select:focus {
+  outline: 2px solid var(--text); outline-offset: 3px;
+  box-shadow: 3px 3px 0 var(--mark);
+}
+
+/* ----- Hover alignment (compliance wave 1) — spec table "Hover / press
+   states": buttons lift −2px on hover; links wipe a mark underline in.
+   `translate` (not `transform`) so it composes with positioned controls. ----- */
+button:hover:not(:disabled) { translate: 0 -2px; }
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 
 /* ----- Mobile (390px) ----- */
 img, svg, video, canvas { max-width: 100%; }
@@ -259,13 +279,13 @@ textarea { max-width: 100%; }
 /* Dark theme (auto via prefers-color-scheme; [data-theme] overrides) */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #111110; --ink: #f2f2ee; --muted: #9a9a94;
+    --bg: #111110; --ink: #f2f2ee; --muted: #9a9a94; --muted-strong: #b9b9b3;
     --faint: #2c2c29; --hover: #1d1d1b; --flag-tint: #2e2a1d;
     --ok: #5fbf72; --warn: #d4b34a; --bad: #e57368; --surface: #191918;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #111110; --ink: #f2f2ee; --muted: #9a9a94;
+  --bg: #111110; --ink: #f2f2ee; --muted: #9a9a94; --muted-strong: #b9b9b3;
   --faint: #2c2c29; --hover: #1d1d1b; --flag-tint: #2e2a1d;
   --ok: #5fbf72; --warn: #d4b34a; --bad: #e57368; --surface: #191918;
 }

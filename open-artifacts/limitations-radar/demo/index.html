@@ -18,10 +18,10 @@
     background: #fff; border: var(--hairline); padding: 14px; border-radius: var(--radius); resize: vertical; }
   button { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; background: var(--text); color: var(--bg);
     border: none; padding: 12px 22px; cursor: pointer; border-radius: var(--radius); }
-  button:hover { background: #333; }
+  button:hover { background: var(--accent); color: var(--text); }
   .cols { display: grid; gap: 24px; margin-top: 32px; }
   @media (min-width: 768px) { .cols { grid-template-columns: 1fr 1fr; } }
-  .claim { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: var(--tile-stripe) solid var(--accent); }
+  .claim { border: var(--hairline); background: #fff; padding: 16px 18px 12px; margin-bottom: 14px; border-radius: var(--radius); border-top: 1px solid var(--ink); }
   .claim.expired { background: var(--flag-tint); border-top-color: var(--text); }
   .claim h3 { margin: 0 0 4px; font-size: 14.5px; }
   .badge { font-family: var(--font-mono); font-size: 12px; padding: 3px 8px; display: inline-block; border: 1.5px solid transparent; }
@@ -29,7 +29,7 @@
   .badge.data_needed { color: var(--warn); border-color: var(--warn); }
   .badge.v-unverified { color: var(--text-secondary); border: 1px dashed var(--text-secondary); }
   .badge small { font-size: 10px; letter-spacing: 0; }
-  .rchip { font-family: var(--font-mono); font-size: 11px; border: var(--hairline); background: var(--hover); padding: 1px 5px; white-space: nowrap; }
+  .rchip { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: var(--hover); padding: 1px 5px; white-space: nowrap; }
   .badge.filed_timely { color: var(--ok); border: var(--hairline); }
   .badge.filed_late, .badge.deadline_passed_unfiled { background: var(--text); color: var(--bg); border-color: var(--text); }
   .big { font-family: var(--font-mono); font-size: 20px; margin: 6px 0 2px; }

@@ -31,6 +31,7 @@
   --bg: #fafaf8;
   --text: #0a0a0a;
   --text-secondary: #6b6b6b;
+  --muted-strong: #4a4a47; /* on faint/hover fills #6b6b6b fails AA — use this there */
   --accent: #ffd400;
   --border: #e8e8e5;
   --hover: #f0f0ee;
@@ -46,7 +47,6 @@
   --hairline: 1px solid var(--border);
   --rule-yellow-h: 2px;
   --rule-yellow-w: 56px;
-  --tile-stripe: 4px;
   --radius: 0;
 
   /* sticky header + sticky index toolbar (Z-Scale Rule: named layers only —
@@ -100,7 +100,7 @@ a {
    :focus-visible gap; demo textareas keep their own field focus style). */
 :focus-visible {
   outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .visually-hidden {
@@ -338,16 +338,11 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  border-top: var(--tile-stripe) solid transparent;
   transition: background 0.15s ease;
 }
 
-.tile-striped {
-  border-top-color: var(--accent);
-}
-
 .tile:hover {
-  background: var(--hover);
+  background: #fff; /* surface, not --hover: muted meta stays AA on the fill */
 }
 
 .tile-top {
@@ -542,15 +537,14 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  border: var(--hairline);
-  border-left: 4px solid var(--accent);
+  border: var(--hairline); /* was a 4px accent left-stripe — hairline box instead */
   padding: 1rem 1.2rem;
   margin-top: 1.5rem;
   text-decoration: none;
 }
 
 .fulltool-card:hover {
-  background: var(--hover);
+  background: #fff;
 }
 
 .fulltool-title {
@@ -643,7 +637,7 @@ pre {
 }
 
 .ext-row:hover {
-  background: var(--hover);
+  background: #fff; /* surface, not --hover: muted blurb stays AA on the fill */
 }
 
 .ext-name {
@@ -894,7 +888,7 @@ th {
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--muted-strong); /* muted-strong on the faint fill (Contrast Split Rule) */
 }
 
 tr:last-child td {

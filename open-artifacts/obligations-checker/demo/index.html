@@ -13,6 +13,7 @@
   .rule { width: var(--rule-yellow-w); height: var(--rule-yellow-h); background: var(--accent); margin: 0 0 20px; }
   .lede { color: var(--text-secondary); max-width: 64ch; line-height: 1.6; margin: 0 0 8px; }
   h2 { font-family: var(--font-mono); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 40px 0 12px; }
+  h2::before { content: ""; display: inline-block; width: 9px; height: 9px; background: var(--accent); margin-right: 8px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--border); border: var(--hairline); margin-bottom: 24px; }
   .card { background: #fff; padding: 16px; }
   .card .k { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
@@ -24,23 +25,20 @@
   button:hover { background: var(--accent); border-color: var(--accent); color: var(--text); }
   button.ghost { background: transparent; color: var(--text); }
   button.ghost:hover { background: var(--hover); }
-  button[aria-pressed="true"] { background: var(--accent); color: var(--text); border-color: var(--text); }
+  button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
   .chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--text); padding: 1px 7px; display: inline-block; white-space: nowrap; }
-  .chip.overdue { background: var(--flag-tint); color: var(--bad); border-color: var(--bad); }
+  .chip.overdue { background: var(--flag-tint); color: var(--bad); }
   .chip.unscheduled, .chip.conditional { border-style: dashed; color: var(--text-secondary); border-color: var(--text-secondary); }
   .clause { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
   button.clause-btn { font-family: var(--font-mono); font-size: 12px; border: none; background: none; color: var(--text); padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
   .notes { color: var(--text-secondary); font-size: 12px; }
   .quote { color: var(--text-secondary); font-size: 12px; font-style: italic; }
-  .err { border: 2px solid var(--bad); background: var(--flag-tint); font-family: var(--font-mono); font-size: 12px; padding: 12px; margin-top: 12px; display: none; color: var(--bad); }
+  .err { border: var(--hairline); background: var(--flag-tint); font-family: var(--font-mono); font-size: 12px; padding: 12px; margin-top: 12px; display: none; color: var(--bad); }
   .toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin: 24px 0 0; font-size: 12px; }
   .toolbar label { display: block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
   .chips button { padding: 3px 10px; }
-  .obl { border: var(--hairline); border-left: 4px solid var(--border); background: #fff; padding: 14px 16px; margin-bottom: 10px; }
-  .obl.overdue { border-left-color: var(--bad); }
-  .obl.due-soon { border-left-color: var(--warn); }
-  .obl.satisfied { border-left-color: var(--ok); }
+  .obl { border: var(--hairline); background: #fff; padding: 14px 16px; margin-bottom: 10px; }
   .obl .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 6px; }
   .obl .text { margin: 2px 0 6px; }
   .satisfy-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 10px; padding: 10px; border: var(--hairline); background: var(--hover); }
@@ -67,7 +65,7 @@
   .diff-table td { border-bottom: var(--hairline); padding: 8px 10px; vertical-align: top; }
   /* DOCX-import confidence chips (extraction preview) */
   .conf-chips { margin: 6px 0; }
-  .conf-chip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .conf-chip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
   .conf-chip.conf-flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
   .conf-note { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
 </style>
@@ -93,7 +91,7 @@
     <form id="pasteform">
       <label for="paste">Paste the contract text (becomes the source document — obligations are added below; extraction is not guessed)</label>
       <textarea id="paste" rows="4" style="min-height:80px" placeholder="Paste contract text here…"></textarea>
-      <button type="submit">Use as source document</button>
+      <button type="submit">Use as source document →</button>
     </form>
     <form id="addform" style="margin-top:16px">
       <div class="form-grid">
@@ -109,7 +107,7 @@
       </div>
       <label for="f-text">Obligation text *</label>
       <textarea id="f-text" rows="2" required style="min-height:44px" placeholder="pay the annual maintenance fee of $12,000"></textarea>
-      <button type="submit">Add obligation</button>
+      <button type="submit">Add obligation →</button>
       <div class="err" id="adderr" role="alert"></div>
     </form>
   </details>
@@ -117,7 +115,7 @@
     <summary>Advanced — register JSON</summary>
     <label for="input">Edit the raw register input (asOf, settings, obligations, satisfaction)</label>
     <textarea id="input" spellcheck="false" style="min-height:260px"></textarea>
-    <button id="run">Apply JSON and rebuild</button>
+    <button id="run">Apply JSON and rebuild →</button>
     <div class="err" id="err" role="alert"></div>
   </details>
 
@@ -132,7 +130,7 @@
   <form id="diffform" class="toolbar" style="margin-top:0">
     <div><label for="diff-from">From as-of</label><input type="date" id="diff-from" /></div>
     <div><label for="diff-to">To as-of</label><input type="date" id="diff-to" /></div>
-    <button type="submit">Compare registers</button>
+    <button type="submit">Compare registers →</button>
   </form>
   <div id="diffout" aria-live="polite" style="margin-top:16px"></div>
 

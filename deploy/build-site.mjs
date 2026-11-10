@@ -108,7 +108,7 @@ function decorate(html, info) {
   if (!html.includes("ola-backlink") && !html.includes("ola-navbar")) {
     const M = `font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;`;
     const L = `color:#6b6b6b;text-decoration:none;`;
-    const bar = `<div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;${M}font-size:11px;">` +
+    const bar = `<div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;${M}font-size:12px;">` +
       `<a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open\u00b7legal\u00b7artifacts</a>` +
       `<span style="display:inline-flex;gap:16px;white-space:nowrap;">` +
       `<a href="/" style="${L}">Catalog</a>` +
