@@ -74,6 +74,9 @@
   --lift:    7px 7px 0 var(--mark); /* THE ONE SHADOW: hard offset block, on hover */
   --lift-sm: 6px 6px 0 var(--mark);
 
+  /* ----- Hatch (the one texture motif: fills placeholders & empty states) ----- */
+  --hatch: repeating-linear-gradient(45deg, var(--faint) 0 1px, transparent 1px 13px);
+
   /* ---------- MOTION ---------- */
   --ease:   cubic-bezier(.2,.7,.2,1);
   --t-fast: .18s ease;
@@ -321,7 +324,7 @@ button.card:hover { translate: 0 -3px; box-shadow: var(--lift); position: relati
 .dchip { display: inline-block; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; margin-top: 6px; border: var(--hairline); color: var(--text); background: var(--hover); }
 .dchip.reject { color: var(--bad); border-color: var(--bad); }
 .dchip.accept { color: var(--ok); border-color: var(--ok); }
-.empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); padding: 10px 12px; }
+.empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); padding: 10px 12px; background: var(--hatch); }
 .src { border: var(--hairline); background: #fff; padding: 12px 16px; margin-bottom: 10px; }
 .src .srcid { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; color: var(--text-secondary); display: block; margin-bottom: 4px; }
 .src p { font-size: 13.5px; line-height: 1.65; margin: 0; }

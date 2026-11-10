@@ -93,3 +93,8 @@ VT ask-legal page: 200
 
 # Design-system compliance pass — 2026-11-10T07:19:34Z
 Spec: design/DESIGN-SYSTEM.md (canonical, 2026-11-10). Fixed: accent-at-rest selected toggles (2), colored edge stripes incl. var(--tile-stripe) + inset-shadow forms (7 demos), muted-on-faint → --muted-strong (jsm/fact + code chips), 11px navs + sub-12px sweep (14 demos), fact-chronology 390px overflow, landing tile stripes/offset/→. Coordinator rulings on record: status colors stay (functional legal encoding); accent tags/badges permitted per spec table; no attorney-advertising footer. Guard: 11 checks (stripe regex now catches var()+inset forms). Gate3 puppeteer: 4 touched demos PASS. Suites: 809 JS + guard 11/11, 0 fail.
+
+# Compliance closure — 2026-11-10T07:28:44Z
+Inspector items closed: (1) 10px badge → 12px (limitations-radar); (2) --hatch token in canonical + all 36 copies, applied to playbook .empty state (other demos' empty states are text panels — hatch behind text ruled out for legibility); (3) guard +3 checks: raw sub-12px font-size sweep, muted-on-faint paired-rule check (caught & fixed 3 real residuals: entity-compliance .pill.na, tabular th, + fleet pairs), --hatch presence; guard 14/14; (4) fresh bundle receipt below.
+Suites: JS 809 pass / 0 fail + guard 14/14.
+Bundle sizes >80,000 bytes: 0 (max:    78090 bytes)

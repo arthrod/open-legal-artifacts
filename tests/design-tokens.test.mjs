@@ -175,3 +175,47 @@ test('legacy alias layer: each old name resolves to var(--new)', () => {
   assert.match(canonical, /--hairline:\s*1px solid var\(--faint\)/, 'alias --hairline missing');
   assert.match(canonical, /--t-base:\s*0\.2s ease/, '--t-base kept at .2s ease');
 });
+
+test('compliance wave 2: no raw sub-12px font-size in demo CSS', () => {
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    const demoDir = join(OA, d, 'demo');
+    for (const f of readdirSync(demoDir)) {
+      if (!/\.(html|css)$/.test(f)) continue;
+      const src = readFileSync(join(demoDir, f), 'utf8');
+      for (const m of src.matchAll(/font-size:\s*([\d.]+)px/g)) {
+        assert.ok(Number(m[1]) >= 12, `${d}/demo/${f}: ${m[0]} is below the 12px floor`);
+      }
+    }
+  }
+});
+
+test('compliance wave 2: no muted text on faint/surface fills (paired rule)', () => {
+  // the known pairing patterns: a selector setting color:var(--text-secondary|--muted) together with
+  // a background of var(--hover|--faint|--flag-tint) in the same rule
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    const demoDir = join(OA, d, 'demo');
+    for (const f of readdirSync(demoDir)) {
+      if (!/\.(html|css)$/.test(f)) continue;
+      const src = readFileSync(join(demoDir, f), 'utf8');
+      for (const rule of src.matchAll(/([^{}]+)\{([^{}]+)\}/g)) {
+        const body = rule[2];
+        const muted = /color:\s*var\(--(text-secondary|muted)\)/.test(body);
+        const fill = /background(?:-color)?:\s*var\(--(hover|faint|flag-tint|surface)\)/.test(body);
+        if (muted && fill) {
+          assert.fail(`${d}/demo/${f}: rule '${rule[1].trim().slice(0, 60)}' puts muted text on a faint fill (contrast <4.5:1) — use --muted-strong or ink`);
+        }
+      }
+    }
+  }
+});
+
+test('compliance wave 2: --hatch texture token present in canonical and every copy', () => {
+  const canon = readFileSync(join(ROOT, 'design', 'tokens.css'), 'utf8');
+  assert.match(canon, /--hatch:\s*repeating-linear-gradient/);
+  for (const d of demoDirs) {
+    if (d === '_shared') continue;
+    assert.match(demoTokens(d), /--hatch:/, `${d}: --hatch token missing from its tokens.css`);
+  }
+});

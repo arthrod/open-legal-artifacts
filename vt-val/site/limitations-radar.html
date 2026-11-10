@@ -75,6 +75,9 @@
   --lift:    7px 7px 0 var(--mark); /* THE ONE SHADOW: hard offset block, on hover */
   --lift-sm: 6px 6px 0 var(--mark);
 
+  /* ----- Hatch (the one texture motif: fills placeholders & empty states) ----- */
+  --hatch: repeating-linear-gradient(45deg, var(--faint) 0 1px, transparent 1px 13px);
+
   /* ---------- MOTION ---------- */
   --ease:   cubic-bezier(.2,.7,.2,1);
   --t-fast: .18s ease;
@@ -288,7 +291,7 @@ textarea { max-width: 100%; }
   .badge.deadline_upcoming { color: var(--warn); border-color: var(--warn); }
   .badge.data_needed { color: var(--warn); border-color: var(--warn); }
   .badge.v-unverified { color: var(--text-secondary); border: 1px dashed var(--text-secondary); }
-  .badge small { font-size: 10px; letter-spacing: 0; }
+  .badge small { font-size: 12px; letter-spacing: 0; }
   .rchip { font-family: var(--font-mono); font-size: 12px; border: var(--hairline); background: var(--hover); padding: 1px 5px; white-space: nowrap; }
   .badge.filed_timely { color: var(--ok); border: var(--hairline); }
   .badge.filed_late, .badge.deadline_passed_unfiled { background: var(--text); color: var(--bg); border-color: var(--text); }
