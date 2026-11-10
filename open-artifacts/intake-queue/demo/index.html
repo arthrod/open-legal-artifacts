@@ -65,6 +65,7 @@
   --font-mono: var(--mono);
   --max-width: var(--page-max); 
   --t-base: 0.2s ease;          
+  --muted-strong: #4A4A47;
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
   --section-gap: 96px;
@@ -167,8 +168,18 @@ body {
   vertical-align: middle;
   margin-right: 12px;
 }
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+textarea:focus, input:focus, select:focus {
+  outline: 2px solid var(--text); outline-offset: 3px;
+  box-shadow: 3px 3px 0 var(--mark);
+}
+button:hover:not(:disabled) { translate: 0 -2px; }
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 img, svg, video, canvas { max-width: 100%; }
 textarea { max-width: 100%; }
 @media (max-width: 480px) {
@@ -240,16 +251,16 @@ textarea { max-width: 100%; }
   .xgrid { grid-template-columns: 1fr; }
   }
   .xchips { margin: 6px 0; }
-  .xchip { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
+  .xchip { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--ok); color: var(--ok); padding: 1px 7px; margin: 0 4px 2px 0; display: inline-block; }
   .xchip.flag { border-color: var(--bad); color: var(--bad); font-weight: 700; }
   .xnote { font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
   .xfail { border: 1px solid var(--bad); color: var(--bad); font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; margin: 6px 0; }
   .xgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 8px 0; }
-  .xlabel { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+  .xlabel { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
   .xfield, textarea.xtext { width: 100%; box-sizing: border-box; border: var(--hairline); background: #fff; padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; }
 </style>
 </head>
-<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/intake-queue" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
+<body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:12px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/intake-queue" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <h1>Intake queue</h1>
   <div class="rule"></div>
