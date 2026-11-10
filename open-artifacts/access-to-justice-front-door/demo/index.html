@@ -6,41 +6,101 @@
 <title>Access to justice front door — open artifact</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0a0a'%3E%3C/rect%3E%3Crect x='3' y='6' width='10' height='2' fill='%23ffd400'%3E%3C/rect%3E%3Crect x='3' y='10' width='7' height='1.5' fill='%23fafaf8'%3E%3C/rect%3E%3C/svg%3E" />
 <style>
-/* =========================================================================
-   Arthur Rodrigues — Personal Site Design Tokens
-   Refined minimal · editorial-technical · signage-adjacent
-   ========================================================================= */
+/* Arthur Rodrigues — Design Tokens v3 (pfa DNA): warm paper, single ink,
+   one highlighter mark, hairlines, mono uppercase labels, square corners.
+   v3 = pfa tokens + .ds-* classes + LEGACY ALIAS layer (v2 names → v3 values,
+   demos keep working unmodified). A11y baked in: --fs-body 18px, 12px floors.
+   The v2 :focus-visible block is ported verbatim. */
 
-/* ---------- Webfonts ---------- */
-/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
+/* ---------- Webfonts (self-hosted, fonts/ relative) ---------- */
 
 
-/* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
 
 
 :root {
-  /* ----- Color tokens (the only colors permitted on the site) ----- */
-  --bg: #fafaf8; /* near-white, warmth-shifted */
-  --text: #0a0a0a; /* near-black, warmth-shifted */
-  --text-secondary: #6b6b6b; /* neutral mid-grey */
-  --accent: #ffd400; /* highlighter yellow — structural, never textual */
-  --border: #e8e8e5; /* hairline */
-  --hover: #f0f0ee; /* tile hover state */
+  /* ---------- CORE PALETTE (the whole system is 5 values) ---------- */
+  --bg:        #FAFAF8; /* warm off-white "paper" — the page */
+  --ink:       #0A0A0A; /* single near-black — text, borders, dark surfaces */
+  --muted:     #6B6B6B; /* secondary text — passes AA on --bg (~5.3:1) */
+  --faint:     #E8E8E5; /* hairlines / dividers — the canonical border tint */
+  --surface:   #F0F0EE; /* raised cards — the allowed warm grey, not pure white */
 
-  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  /* ---------- THE ACCENT (a highlighter, not a button color) ---------- */
+  --mark:        #FFD400; /* highlighter yellow — a BACKGROUND/MARK fill */
+  --mark-text:   #0A0A0A; /* legible ink sitting ON the accent fill */
+  --mark-on-dark:#FFD400; /* accent as a mark/arrow on dark surfaces */
+
+  --ink-prose:  var(--ink);   /* long-form body copy */
+  --ink-soft:   var(--ink);   /* lede / intro paragraphs */
+  --ink-body:   var(--muted); /* card & feature paragraphs */
+
+  /* INK ON DARK SURFACES — --on-dark-dim (#6B6B6B on ink, ~2.5:1) ships for
+     pfa parity; no demo may use it for body text. */
+  --on-dark:       #FAFAF8; /* primary text on --ink */
+  --on-dark-muted: #E8E8E5; /* secondary text on --ink */
+  --on-dark-faint: #E8E8E5; /* labels / meta on --ink */
+  --on-dark-dim:   #6B6B6B; /* footer body (see note above) */
+  --on-dark-line:  #6B6B6B; /* hairlines on --ink */
+
+  --ff:   "Libre Franklin", system-ui, -apple-system, sans-serif; /* body + display */
+  --mono: "Roboto Mono", "Space Mono", ui-monospace, monospace;   /* labels, code, wordmark */
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;       /* optional editorial display */
+  --brand-font: var(--mono);
+
+  --brand-weight:   700; /* headlines run BOLD — Libre Franklin at full weight */
+  --display-weight: 700;
+  --mono-weight:    600; /* mono labels set semibold */
+
+  /* TYPE SCALE (fluid; 12px floors per base.css a11y overrides) */
+  --fs-display: clamp(36px, 6vw, 68px);    /* project / page H1 */
+  --fs-h1:      clamp(34px, 5.4vw, 60px);  /* hero H1 */
+  --fs-h2:      clamp(26px, 3.4vw, 40px);  /* section / contact H2 */
+  --fs-h3:      clamp(24px, 2.6vw, 32px);  /* feature card title */
+  --fs-title:   21px;                      /* offer / card title */
+  --fs-lede:    clamp(17px, 1.7vw, 21px);  /* intro paragraph */
+  --fs-body:    18px;                      /* base body (base.css override baked in) */
+  --fs-sm:      15px;                      /* card body */
+  --fs-xs:      14px;                      /* dense card body */
+  --fs-label:   12px;                      /* mono section labels — 12px FLOOR */
+  --fs-micro:   12px;                      /* mono eyebrows / dt — raised to the 12px floor */
+
+  --page-max: 1180px;           /* content max-width (v2 1100 → pfa 1180) */
+  --px: clamp(20px, 5vw, 56px); /* horizontal page gutter */
+
+  /* ---------- BORDERS & RADII ---------- */
+  --border-ink:   1px solid var(--ink);   /* structural border — cards, panels */
+  --border-faint: 1px solid var(--faint); /* dividers, hairlines, soft cards */
+  --radius: 0; /* THE SYSTEM IS SQUARE — corners are sharp. */
+
+  --lift:    7px 7px 0 var(--mark); /* THE ONE SHADOW: hard offset block, on hover */
+  --lift-sm: 6px 6px 0 var(--mark);
+
+  /* ---------- MOTION ---------- */
+  --ease:   cubic-bezier(.2,.7,.2,1);
+  --t-fast: .18s ease;
+  --t-mid:  .25s ease;
+
+  /* STATUS (kept from v2; text/border only; --flag-tint is the one surface spend) */
   --ok: #1b6b2f;
   --warn: #8a6d00;
   --bad: #b3261e;
   --flag-tint: #f2e9d0;
 
-  /* ----- Focus ----- */
+  /* LEGACY ALIAS LAYER — v2 names → v3 values: demos written against v2
+     keep working, and each old name resolves to the new token so
+     restyling propagates. */
+  --text: var(--ink);
+  --text-secondary: var(--muted);
+  --accent: var(--mark);
+  --border: var(--faint);
+  --hover: var(--surface);
+  --hairline: 1px solid var(--faint);
+  --font-body: var(--ff);
+  --font-mono: var(--mono);
+  --max-width: var(--page-max); /* 1100 → 1180 (pfa page width) */
+  --t-base: 0.2s ease;          /* kept at v2 value, NOT aliased to --t-mid */
 
-  /* ----- Type stacks ----- */
-  --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
-
-  /* ----- Layout constants ----- */
-  --max-width: 1100px;
+  /* LAYOUT CONSTANTS (v2, kept verbatim — structural, not brand) */
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
   --section-gap: 96px;
@@ -49,20 +109,11 @@
   --hero-pad-mobile: 64px;
   --hero-max-width: 780px;
   --bp-mobile: 768px;
-
-  /* ----- Borders & rules ----- */
-  --hairline: 1px solid var(--border);
   --rule-yellow-h: 2px;
   --rule-yellow-w: 56px;
   --tile-stripe: 4px;
-  --radius: 0; /* never go above 0 */
-
-  /* ----- Motion ----- */
-  --t-fast: 0.15s ease;
-  --t-base: 0.2s ease;
 }
 
-/* ---------- Base resets ---------- */
 *,
 *::before,
 *::after {
@@ -74,19 +125,21 @@
 html,
 body {
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--font-body);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--fs-body); /* 18px (base.css a11y override baked in) */
   line-height: 1.6;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
+/* Selection echoes the accent */
 ::selection {
-  background: var(--accent);
-  color: var(--text);
+  background: var(--mark);
+  color: var(--mark-text);
 }
 
 a {
@@ -94,13 +147,50 @@ a {
   text-decoration: none;
 }
 
-/* =========================================================================
-   Semantic type classes — apply directly OR copy properties into elements
-   ========================================================================= */
+/* SEMANTIC ELEMENT STYLES (.ds-* — the pfa system) */
+
+.ds-bg { background: var(--bg); color: var(--ink); }
+
+/* --- Display & headings --- */
+.ds-h1 { font-family: var(--ff); font-weight: var(--display-weight); font-size: var(--fs-h1);
+  line-height: 1.05; letter-spacing: -0.025em; }
+.ds-h2 { font-family: var(--ff); font-weight: 500; font-size: var(--fs-h2);
+  line-height: 1.12; letter-spacing: -0.02em; }
+.ds-h3 { font-family: var(--ff); font-weight: 600; font-size: var(--fs-h3);
+  line-height: 1.1; letter-spacing: -0.025em; }
+
+/* --- Body copy --- */
+.ds-lede { font-size: var(--fs-lede); line-height: 1.55; color: var(--ink-soft); }
+.ds-p { font-size: var(--fs-body); line-height: 1.6; color: var(--ink-prose); }
+.ds-small { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-body); }
+
+/* --- Mono label / eyebrow / section header --- */
+.ds-mono, .ds-eyebrow, .ds-label {
+  font-family: var(--mono); font-weight: var(--mono-weight);
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.ds-eyebrow { font-size: var(--fs-label); }
+.ds-label { font-size: var(--fs-micro); letter-spacing: 0.1em; }
+
+/* --- The highlighter MARK — the signature move --- */
+.ds-mark {
+  background-image: linear-gradient(var(--mark), var(--mark));
+  background-repeat: no-repeat; background-size: 100% 0.78em; background-position: 0 62%;
+  color: var(--mark-text); padding: 0 0.1em;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+
+/* --- Inline code --- */
+.ds-code { font-family: var(--mono); font-weight: var(--mono-weight); font-size: 0.92em;
+  background: var(--faint); color: var(--ink); padding: 0.1em 0.4em; }
+
+/* LEGACY TYPE UTILITIES (.t-*) — v2 class set, restyled to the new DNA via
+   the alias layer: mono → Roboto Mono semibold labels, body → Libre Franklin. */
 
 /* Wordmark (mono, dot in secondary grey) */
 .t-wordmark {
   font-family: var(--font-mono);
+  font-weight: var(--brand-weight);
   font-size: 15px;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -127,7 +217,8 @@ a {
 /* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-weight: var(--mono-weight);
+  font-size: var(--fs-label); /* 12px floor */
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -143,7 +234,7 @@ a {
   margin-right: 12px;
 }
 
-/* ----- Focus (top-level) ----- */
+/* ----- Focus (v2 block, ported verbatim) ----- */
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
 

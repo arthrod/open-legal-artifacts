@@ -6,41 +6,65 @@
 <title>Regulatory horizon scan — open artifact</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23fafaf8'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%23ffd400'/%3E%3C/svg%3E" />
 <style>
-/* =========================================================================
-   Arthur Rodrigues — Personal Site Design Tokens
-   Refined minimal · editorial-technical · signage-adjacent
-   ========================================================================= */
-
-/* ---------- Webfonts ---------- */
-/* Self-hosted only — no external font requests. Manrope variable (400–700) + Departure Mono from /fonts/. */
-
-
-/* Departure Mono — self-hosted from /fonts/. Includes woff2 / woff / otf for broad UA coverage. */
-
-
 :root {
-  /* ----- Color tokens (the only colors permitted on the site) ----- */
-  --bg: #fafaf8; /* near-white, warmth-shifted */
-  --text: #0a0a0a; /* near-black, warmth-shifted */
-  --text-secondary: #6b6b6b; /* neutral mid-grey */
-  --accent: #ffd400; /* highlighter yellow — structural, never textual */
-  --border: #e8e8e5; /* hairline */
-  --hover: #f0f0ee; /* tile hover state */
-
-  /* ----- Status (text/border use only; --flag-tint is the single allowed surface spend) ----- */
+  --bg:        #FAFAF8; 
+  --ink:       #0A0A0A; 
+  --muted:     #6B6B6B; 
+  --faint:     #E8E8E5; 
+  --surface:   #F0F0EE; 
+  --mark:        #FFD400; 
+  --mark-text:   #0A0A0A; 
+  --mark-on-dark:#FFD400; 
+  --ink-prose:  var(--ink);   
+  --ink-soft:   var(--ink);   
+  --ink-body:   var(--muted); 
+  --on-dark:       #FAFAF8; 
+  --on-dark-muted: #E8E8E5; 
+  --on-dark-faint: #E8E8E5; 
+  --on-dark-dim:   #6B6B6B; 
+  --on-dark-line:  #6B6B6B; 
+  --ff:   "Libre Franklin", system-ui, -apple-system, sans-serif; 
+  --mono: "Roboto Mono", "Space Mono", ui-monospace, monospace;   
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;       
+  --brand-font: var(--mono);
+  --brand-weight:   700; 
+  --display-weight: 700;
+  --mono-weight:    600; 
+  --fs-display: clamp(36px, 6vw, 68px);    
+  --fs-h1:      clamp(34px, 5.4vw, 60px);  
+  --fs-h2:      clamp(26px, 3.4vw, 40px);  
+  --fs-h3:      clamp(24px, 2.6vw, 32px);  
+  --fs-title:   21px;                      
+  --fs-lede:    clamp(17px, 1.7vw, 21px);  
+  --fs-body:    18px;                      
+  --fs-sm:      15px;                      
+  --fs-xs:      14px;                      
+  --fs-label:   12px;                      
+  --fs-micro:   12px;                      
+  --page-max: 1180px;           
+  --px: clamp(20px, 5vw, 56px); 
+  --border-ink:   1px solid var(--ink);   
+  --border-faint: 1px solid var(--faint); 
+  --radius: 0; 
+  --lift:    7px 7px 0 var(--mark); 
+  --lift-sm: 6px 6px 0 var(--mark);
+  --ease:   cubic-bezier(.2,.7,.2,1);
+  --t-fast: .18s ease;
+  --t-mid:  .25s ease;
   --ok: #1b6b2f;
   --warn: #8a6d00;
   --bad: #b3261e;
   --flag-tint: #f2e9d0;
-
-  /* ----- Focus ----- */
-
-  /* ----- Type stacks ----- */
-  --font-body: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "Departure Mono", ui-monospace, "SF Mono", monospace;
-
-  /* ----- Layout constants ----- */
-  --max-width: 1100px;
+  --text: var(--ink);
+  --text-secondary: var(--muted);
+  --accent: var(--mark);
+  --border: var(--faint);
+  --hover: var(--surface);
+  --hairline: 1px solid var(--faint);
+  --font-body: var(--ff);
+  --font-mono: var(--mono);
+  --max-width: var(--page-max); 
+  --t-base: 0.2s ease;          
   --pad-x-desktop: 40px;
   --pad-x-mobile: 24px;
   --section-gap: 96px;
@@ -49,64 +73,69 @@
   --hero-pad-mobile: 64px;
   --hero-max-width: 780px;
   --bp-mobile: 768px;
-
-  /* ----- Borders & rules ----- */
-  --hairline: 1px solid var(--border);
   --rule-yellow-h: 2px;
   --rule-yellow-w: 56px;
   --tile-stripe: 4px;
-  --radius: 0; /* never go above 0 */
-
-  /* ----- Motion ----- */
-  --t-fast: 0.15s ease;
-  --t-base: 0.2s ease;
 }
-
-/* ---------- Base resets ---------- */
-*,
+  *,
 *::before,
 *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
-
-html,
+  html,
 body {
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--font-body);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--fs-body); 
   line-height: 1.6;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
-
 ::selection {
-  background: var(--accent);
-  color: var(--text);
+  background: var(--mark);
+  color: var(--mark-text);
 }
-
-a {
+  a {
   color: inherit;
   text-decoration: none;
 }
-
-/* =========================================================================
-   Semantic type classes — apply directly OR copy properties into elements
-   ========================================================================= */
-
-/* Wordmark (mono, dot in secondary grey) */
+.ds-bg { background: var(--bg); color: var(--ink); }
+.ds-h1 { font-family: var(--ff); font-weight: var(--display-weight); font-size: var(--fs-h1);
+  line-height: 1.05; letter-spacing: -0.025em; }
+.ds-h2 { font-family: var(--ff); font-weight: 500; font-size: var(--fs-h2);
+  line-height: 1.12; letter-spacing: -0.02em; }
+.ds-h3 { font-family: var(--ff); font-weight: 600; font-size: var(--fs-h3);
+  line-height: 1.1; letter-spacing: -0.025em; }
+.ds-lede { font-size: var(--fs-lede); line-height: 1.55; color: var(--ink-soft); }
+.ds-p { font-size: var(--fs-body); line-height: 1.6; color: var(--ink-prose); }
+.ds-small { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-body); }
+.ds-mono, .ds-eyebrow, .ds-label {
+  font-family: var(--mono); font-weight: var(--mono-weight);
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.ds-eyebrow { font-size: var(--fs-label); }
+.ds-label { font-size: var(--fs-micro); letter-spacing: 0.1em; }
+.ds-mark {
+  background-image: linear-gradient(var(--mark), var(--mark));
+  background-repeat: no-repeat; background-size: 100% 0.78em; background-position: 0 62%;
+  color: var(--mark-text); padding: 0 0.1em;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.ds-code { font-family: var(--mono); font-weight: var(--mono-weight); font-size: 0.92em;
+  background: var(--faint); color: var(--ink); padding: 0.1em 0.4em; }
 .t-wordmark {
   font-family: var(--font-mono);
+  font-weight: var(--brand-weight);
   font-size: 15px;
   letter-spacing: 0.04em;
   line-height: 1;
 }
-
-/* Nav link */
 .t-nav {
   font-family: var(--font-body);
   font-size: 13px;
@@ -114,8 +143,6 @@ a {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-
-/* Hero positioning paragraph */
 .t-positioning {
   font-family: var(--font-body);
   font-size: 30px;
@@ -123,17 +150,15 @@ a {
   letter-spacing: -0.018em;
   line-height: 1.35;
 }
-
-/* Eyebrow — preceded by 24px hairline */
 .t-eyebrow {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-weight: var(--mono-weight);
+  font-size: var(--fs-label); 
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-
-.t-eyebrow::before {
+  .t-eyebrow::before {
   content: "";
   display: inline-block;
   width: 24px;
@@ -142,128 +167,112 @@ a {
   vertical-align: middle;
   margin-right: 12px;
 }
-
-/* ----- Focus (top-level) ----- */
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 textarea:focus, input:focus, select:focus { outline: 2px solid var(--text); outline-offset: 2px; }
-
-/* ----- Mobile (390px) ----- */
 img, svg, video, canvas { max-width: 100%; }
 textarea { max-width: 100%; }
 @media (max-width: 480px) {
   table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
-
-</style>
-<style>.wrap{max-width:var(--max-width);margin:0 auto;padding:48px var(--pad-x-mobile) 96px}.rule{width:var(--rule-yellow-w);height:var(--rule-yellow-h);background:var(--accent);margin:20px 0 24px}h1{font-family:var(--font-body);font-size:26px;letter-spacing:0.01em;font-weight:700}.lede{font-size:17px;color:var(--text-secondary);max-width:62ch;margin-bottom:8px}section{margin-top:44px}h2{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px}h2::before{content:"";display:block;width:24px;height:1px;background:var(--border);margin-bottom:12px}.h2row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}textarea,input[type="text"],input[type="date"],select{font-family:var(--font-mono);font-size:12px;line-height:1.5;border:var(--hairline);background:#fff;padding:8px 10px}textarea{width:100%;min-height:96px;padding:12px;resize:vertical}select,input[type="date"]{padding:6px 8px}label{font-size:13px}.frow{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.frow>div{display:flex;flex-direction:column;gap:4px}.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}button{font-family:var(--font-mono);font-size:13px;padding:10px 18px;border:1px solid var(--text);background:var(--text);color:var(--bg);cursor:pointer}button:hover{background:var(--accent);color:var(--text);border-color:var(--text)}button.ghost{background:transparent;color:var(--text)}button.small{padding:4px 10px;font-size:12px}#statusLine{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px;border:var(--hairline);background:#fff;padding:10px 14px;margin-top:20px}#statusLine b{font-weight:500}.ok{color:var(--text-secondary);font-size:13px}.err{color:#b00020;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap}.chip{display:inline-block;font-family:var(--font-mono);font-size:12px;border:var(--hairline);padding:2px 8px;margin:2px 4px 2px 0;background:#fff}.chip.dup{background:var(--flag-tint);color:var(--bad);border-color:var(--bad)}.chip.gap-high{background:var(--flag-tint);color:var(--bad);border-color:var(--bad)}.chip.gap-medium{color:var(--warn);border-color:var(--warn)}.chip.gap-low{color:var(--text-secondary)}.chip.band-high{border-color:var(--accent);background:var(--accent);color:var(--text)}.chip.band-medium{border-color:var(--warn);color:var(--warn)}.chip.band-low{color:var(--text-secondary)}.flag{font-family:var(--font-mono);font-size:12px;color:var(--bad)}.weights{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 24px;margin-top:8px}.weights fieldset{border:var(--hairline);padding:8px 12px 10px;margin:0}.weights legend{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;padding:0 4px}.wrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px}.wrow label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.wrow input{width:64px;padding:3px 6px}.rdiff{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:10px}.rdiff code{color:var(--text)}code{font-family:var(--font-mono);font-size:12px;background:var(--hover);padding:1px 4px}.tl-scroll{overflow-x:auto;border:var(--hairline);background:#fff;padding:12px 12px 8px}.tl{min-width:720px}.tl-months{position:relative;height:20px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-bottom:4px}.tl-months span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}.tl-lane{display:grid;grid-template-columns:84px 1fr;align-items:center;border-top:var(--hairline);min-height:30px}.tl-juris{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.tl-track{position:relative;height:26px}.tl-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;border:2px solid var(--text);background:var(--bg);padding:0;cursor:pointer}.tl-dot:hover{outline:2px solid var(--accent)}.tl-dot.band-high{background:var(--accent)}.tl-dot.band-medium{background:#fff;border-color:var(--warn)}.tl-dot.past{opacity:0.45}.tl-dot.kind-comment{border-radius:2px}.tl-now{position:absolute;top:-6px;bottom:0;width:0;border-left:2px solid var(--bad)}.tl-now i{position:absolute;top:-16px;left:4px;font-style:normal;font-family:var(--font-mono);font-size:12px;color:var(--bad);white-space:nowrap}.tl-legend{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}.dotdemo{display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid var(--text);background:var(--accent);vertical-align:-1px}.card{border:var(--hairline);background:#fff;margin-bottom:14px;padding:14px 16px;box-shadow:inset 4px 0 0 var(--border)}.card.band-high{box-shadow:inset 4px 0 0 var(--accent)}.card.band-medium{box-shadow:inset 4px 0 0 #b9a800}.card.flash{outline:3px solid var(--accent);outline-offset:2px}.card-head{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.card-rank{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.card-title{font-size:16px;font-weight:700;flex:1 1 320px}.card-score{font-family:var(--font-mono);font-size:13px;font-weight:500}.card-chips{margin-top:6px}.card-dates{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:6px}.cite{font-size:12px;color:var(--text-secondary);margin-top:6px}.cite button{font-size:12px;padding:2px 8px;margin-left:6px}.card-review{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:var(--hairline)}.card-review label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.card-review input[type="checkbox"]{width:15px;height:15px}.card-review input[type="text"]{width:180px}.card-review select{max-width:140px}.done-yes{color:var(--ok);font-weight:500}.bk{margin:8px 0 0;columns:2;column-gap:24px}.bk li{list-style:none;font-size:12px;color:var(--text-secondary);margin-top:3px;break-inside:avoid}.bk b{color:var(--text);font-family:var(--font-mono);font-weight:500}.bk li.flag{color:var(--bad)}@media (max-width:760px){.bk{columns:1}}.diff li{list-style:none;padding:6px 0;border-bottom:var(--hairline);font-size:13px}.from{text-decoration:line-through;color:var(--text-secondary);font-family:var(--font-mono);font-size:12px}.to{font-family:var(--font-mono);font-size:12px;background:var(--flag-tint);padding:0 3px;color:var(--warn)}#logTable{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:var(--hairline)}#logTable th{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;text-align:left;border-bottom:2px solid var(--text);padding:6px 8px}#logTable td{border-bottom:var(--hairline);padding:5px 8px;font-family:var(--font-mono);vertical-align:top}#drawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,92vw);background:#fff;border-left:2px solid var(--text);box-shadow:-8px 0 24px rgba(0,0,0,0.12);padding:20px;overflow-y:auto;z-index:50}#drawer h3{font-size:16px;margin:6px 0 8px}#drawer .src{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}#drawer blockquote{border-left:3px solid var(--accent);padding:10px 12px;margin:14px 0;font-size:14px;line-height:1.6;background:var(--hover)}#drawer mark{background:var(--accent);padding:0 2px}#scrim{position:fixed;inset:0;background:rgba(10,10,10,0.3);z-index:40}#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:12px;padding:8px 16px;z-index:60;opacity:0;pointer-events:none;transition:opacity var(--t-fast)}#toast.show{opacity:1}.disclaimer{margin-top:64px;padding-top:16px;border-top:var(--hairline);font-size:12px;color:var(--text-secondary)}.docx-err{color:#b00020;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;border:1px solid #b00020;padding:8px 10px;margin:6px 0}.xchips{margin:6px 0}.docx-chip{font-family:var(--font-mono);font-size:11px;border:1px solid var(--ok);color:var(--ok);padding:1px 7px;margin:0 4px 2px 0;display:inline-block}.docx-chip.flag{border-color:var(--bad);color:var(--bad);font-weight:700}.xnote{font-size:12px;color:var(--text-secondary);margin:6px 0}[hidden]{display:none !important}</style>
+  </style>
+<style>.wrap{max-width:var(--max-width);margin:0 auto;padding:48px var(--pad-x-mobile) 96px}.rule{width:var(--rule-yellow-w);height:var(--rule-yellow-h);background:var(--accent);margin:20px 0 24px}h1{font-family:var(--font-body);font-size:26px;letter-spacing:0.01em;font-weight:700}.lede{font-size:17px;color:var(--text-secondary);max-width:62ch;margin-bottom:8px}section{margin-top:44px}h2{font-family:var(--font-mono);font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px}h2::before{content:"";display:block;width:24px;height:1px;background:var(--border);margin-bottom:12px}.h2row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}textarea,input[type="text"],input[type="date"],select{font-family:var(--font-mono);font-size:12px;line-height:1.5;border:var(--hairline);background:#fff;padding:8px 10px}textarea{width:100%;min-height:96px;padding:12px;resize:vertical}select,input[type="date"]{padding:6px 8px}label{font-size:13px}.frow{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.frow>div{display:flex;flex-direction:column;gap:4px}.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}button{font-family:var(--font-mono);font-size:13px;padding:10px 18px;border:1px solid var(--text);background:var(--text);color:var(--bg);cursor:pointer}button:hover{background:var(--accent);color:var(--text);border-color:var(--text)}button.ghost{background:transparent;color:var(--text)}button.small{padding:4px 10px;font-size:12px}#statusLine{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px;border:var(--hairline);background:#fff;padding:10px 14px;margin-top:20px}#statusLine b{font-weight:500}.ok{color:var(--text-secondary);font-size:13px}.err{color:#b00020;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap}.chip{display:inline-block;font-family:var(--font-mono);font-size:12px;border:var(--hairline);padding:2px 8px;margin:2px 4px 2px 0;background:#fff}.chip.dup{background:var(--flag-tint);color:var(--bad);border-color:var(--bad)}.chip.gap-high{background:var(--flag-tint);color:var(--bad);border-color:var(--bad)}.chip.gap-medium{color:var(--warn);border-color:var(--warn)}.chip.gap-low{color:var(--text-secondary)}.chip.band-high{border-color:var(--accent);background:var(--accent);color:var(--text)}.chip.band-medium{border-color:var(--warn);color:var(--warn)}.chip.band-low{color:var(--text-secondary)}.flag{font-family:var(--font-mono);font-size:12px;color:var(--bad)}.weights{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 24px;margin-top:8px}.weights fieldset{border:var(--hairline);padding:8px 12px 10px;margin:0}.weights legend{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;padding:0 4px}.wrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px}.wrow label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.wrow input{width:64px;padding:3px 6px}.rdiff{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:10px}.rdiff code{color:var(--text)}code{font-family:var(--font-mono);font-size:12px;background:var(--hover);padding:1px 4px}.tl-scroll{overflow-x:auto;border:var(--hairline);background:#fff;padding:12px 12px 8px}.tl{min-width:720px}.tl-months{position:relative;height:20px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-bottom:4px}.tl-months span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}.tl-lane{display:grid;grid-template-columns:84px 1fr;align-items:center;border-top:var(--hairline);min-height:30px}.tl-juris{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.tl-track{position:relative;height:26px}.tl-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;border:2px solid var(--text);background:var(--bg);padding:0;cursor:pointer}.tl-dot:hover{outline:2px solid var(--accent)}.tl-dot.band-high{background:var(--accent)}.tl-dot.band-medium{background:#fff;border-color:var(--warn)}.tl-dot.past{opacity:0.45}.tl-dot.kind-comment{border-radius:2px}.tl-now{position:absolute;top:-6px;bottom:0;width:0;border-left:2px solid var(--bad)}.tl-now i{position:absolute;top:-16px;left:4px;font-style:normal;font-family:var(--font-mono);font-size:12px;color:var(--bad);white-space:nowrap}.tl-legend{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}.dotdemo{display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid var(--text);background:var(--accent);vertical-align:-1px}.card{border:var(--hairline);background:#fff;margin-bottom:14px;padding:14px 16px;box-shadow:inset 4px 0 0 var(--border)}.card.band-high{box-shadow:inset 4px 0 0 var(--accent)}.card.band-medium{box-shadow:inset 4px 0 0 #b9a800}.card.flash{outline:3px solid var(--accent);outline-offset:2px}.card-head{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.card-rank{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.card-title{font-size:16px;font-weight:700;flex:1 1 320px}.card-score{font-family:var(--font-mono);font-size:13px;font-weight:500}.card-chips{margin-top:6px}.card-dates{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);margin-top:6px}.cite{font-size:12px;color:var(--text-secondary);margin-top:6px}.cite button{font-size:12px;padding:2px 8px;margin-left:6px}.card-review{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:var(--hairline)}.card-review label{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}.card-review input[type="checkbox"]{width:15px;height:15px}.card-review input[type="text"]{width:180px}.card-review select{max-width:140px}.done-yes{color:var(--ok);font-weight:500}.bk{margin:8px 0 0;columns:2;column-gap:24px}.bk li{list-style:none;font-size:12px;color:var(--text-secondary);margin-top:3px;break-inside:avoid}.bk b{color:var(--text);font-family:var(--font-mono);font-weight:500}.bk li.flag{color:var(--bad)}@media (max-width:760px){.bk{columns:1}}.diff li{list-style:none;padding:6px 0;border-bottom:var(--hairline);font-size:13px}.from{text-decoration:line-through;color:var(--text-secondary);font-family:var(--font-mono);font-size:12px}.to{font-family:var(--font-mono);font-size:12px;background:var(--flag-tint);padding:0 3px;color:var(--warn)}#logTable{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:var(--hairline)}#logTable th{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;text-align:left;border-bottom:2px solid var(--text);padding:6px 8px}#logTable td{border-bottom:var(--hairline);padding:5px 8px;font-family:var(--font-mono);vertical-align:top}#drawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,92vw);background:#fff;border-left:2px solid var(--text);padding:20px;overflow-y:auto;z-index:50}#drawer h3{font-size:16px;margin:6px 0 8px}#drawer .src{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)}#drawer blockquote{border-left:3px solid var(--accent);padding:10px 12px;margin:14px 0;font-size:14px;line-height:1.6;background:var(--hover)}#drawer mark{background:var(--accent);padding:0 2px}#scrim{position:fixed;inset:0;background:rgba(10,10,10,0.3);z-index:40}#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:12px;padding:8px 16px;z-index:60;opacity:0;pointer-events:none;transition:opacity var(--t-fast)}#toast.show{opacity:1}.disclaimer{margin-top:64px;padding-top:16px;border-top:var(--hairline);font-size:12px;color:var(--text-secondary)}.docx-err{color:#b00020;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;border:1px solid #b00020;padding:8px 10px;margin:6px 0}.xchips{margin:6px 0}.docx-chip{font-family:var(--font-mono);font-size:11px;border:1px solid var(--ok);color:var(--ok);padding:1px 7px;margin:0 4px 2px 0;display:inline-block}.docx-chip.flag{border-color:var(--bad);color:var(--bad);font-weight:700}.xnote{font-size:12px;color:var(--text-secondary);margin:6px 0}[hidden]{display:none !important}</style>
 </head>
 <body><div class="ola-navbar" style="position:sticky;top:0;z-index:99;background:#0a0a0a;border-bottom:1px solid #e8e8e5;"><div style="max-width:1100px;margin:0 auto;padding:8px var(--pad-x-desktop, 40px);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;font-family:ui-monospace,'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px;"><a href="/" style="color:#fafaf8;text-decoration:none;font-size:12px;">open·legal·artifacts</a><span style="display:inline-flex;gap:16px;white-space:nowrap;"><a href="/" style="color:#6b6b6b;text-decoration:none;">Catalog</a><span aria-current="page" style="color:#fafaf8;border-bottom:2px solid #ffd400;padding-bottom:2px;">Demo</span><a href="https://github.com/arthrod/open-legal-artifacts/tree/main/open-artifacts/regulatory-horizon-scan" rel="noopener" target="_blank" style="color:#6b6b6b;text-decoration:none;">Repo ↗</a></span></div></div>
 <div class="wrap">
   <header>
-    <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
-    <div class="rule"></div>
-    <h1>Regulatory horizon scan</h1>
-    <p class="lede">Feed in, deduped + classified + impact-ranked scan out — scored by a transparent rubric you can audit, re-weight, and diff.</p>
+  <div class="t-wordmark">open-legal-artifacts<span style="color:var(--text-secondary)">.exe</span></div>
+  <div class="rule"></div>
+  <h1>Regulatory horizon scan</h1>
+  <p class="lede">Feed in, deduped + classified + impact-ranked scan out — scored by a transparent rubric you can audit, re-weight, and diff.</p>
   </header>
-
   <div id="statusLine" aria-live="polite"></div>
-
   <section>
-    <h2>Feed input</h2>
-    <div class="frow">
-      <div><label for="asOf">As-of date (anchors all time math)</label><input type="date" id="asOf" /></div>
-    </div>
-    <div style="margin-top:12px">
-      <div id="docxImportMount"></div>
-      <label for="pasteBox">Paste feed items — one JSON item per line, a JSON array, or a full <code>{"currentFeed": […]}</code> document</label>
-      <textarea id="pasteBox" spellcheck="false" style="margin-top:4px; min-height:64px"
-        placeholder='{"title": "WA Chatbot Disclosure Bill", "jurisdiction": "Washington", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-04-01", "summary": "Disclosure duties for generative AI chatbots (fictional).", "source": "WA Legislature feed (fictional)", "provenance": "primary", "link": "https://example.gov/wa-chatbot"}'></textarea>
-    </div>
-    <div class="row">
-      <button id="addBtn">Add items to feed</button>
-      <button id="replaceBtn" class="ghost">Replace feed</button>
-      <button id="exampleBtn" class="ghost">Reload worked example</button>
-      <button id="clearBtn" class="ghost">Clear feed</button>
-      <button id="advToggle" class="ghost" aria-expanded="false" aria-controls="adv">Advanced: full feed JSON ▾</button>
-    </div>
-    <div id="adv" hidden style="margin-top:12px">
-      <label for="input">Full feed JSON (asOf + currentFeed — asOf here is wired to the scan)</label>
-      <textarea id="input" spellcheck="false" style="min-height:180px"></textarea>
-      <div class="row"><button id="run">Run scan</button></div>
-    </div>
-    <p class="err" id="err" hidden></p>
+  <h2>Feed input</h2>
+  <div class="frow">
+  <div><label for="asOf">As-of date (anchors all time math)</label><input type="date" id="asOf" /></div>
+  </div>
+  <div style="margin-top:12px">
+  <div id="docxImportMount"></div>
+  <label for="pasteBox">Paste feed items — one JSON item per line, a JSON array, or a full <code>{"currentFeed": […]}</code> document</label>
+  <textarea id="pasteBox" spellcheck="false" style="margin-top:4px; min-height:64px"
+  placeholder='{"title": "WA Chatbot Disclosure Bill", "jurisdiction": "Washington", "status": "proposed", "itemType": "rule", "effectiveDate": "2027-04-01", "summary": "Disclosure duties for generative AI chatbots (fictional).", "source": "WA Legislature feed (fictional)", "provenance": "primary", "link": "https://example.gov/wa-chatbot"}'></textarea>
+  </div>
+  <div class="row">
+  <button id="addBtn">Add items to feed</button>
+  <button id="replaceBtn" class="ghost">Replace feed</button>
+  <button id="exampleBtn" class="ghost">Reload worked example</button>
+  <button id="clearBtn" class="ghost">Clear feed</button>
+  <button id="advToggle" class="ghost" aria-expanded="false" aria-controls="adv">Advanced: full feed JSON ▾</button>
+  </div>
+  <div id="adv" hidden style="margin-top:12px">
+  <label for="input">Full feed JSON (asOf + currentFeed — asOf here is wired to the scan)</label>
+  <textarea id="input" spellcheck="false" style="min-height:180px"></textarea>
+  <div class="row"><button id="run">Run scan</button></div>
+  </div>
+  <p class="err" id="err" hidden></p>
   </section>
-
   <section>
-    <h2>Rubric weights (rules-as-data — edit and re-run)</h2>
-    <div id="weights" class="weights"></div>
-    <div class="row">
-      <button id="rerun" class="ghost">Apply weights &amp; re-run</button>
-      <button id="resetW" class="ghost">Reset to rubric defaults</button>
-    </div>
-    <p class="rdiff" id="rubricDiff"></p>
+  <h2>Rubric weights (rules-as-data — edit and re-run)</h2>
+  <div id="weights" class="weights"></div>
+  <div class="row">
+  <button id="rerun" class="ghost">Apply weights &amp; re-run</button>
+  <button id="resetW" class="ghost">Reset to rubric defaults</button>
+  </div>
+  <p class="rdiff" id="rubricDiff"></p>
   </section>
-
   <section>
-    <h2>Filters</h2>
-    <div class="frow">
-      <div style="flex:1 1 220px"><label for="q">Search title / summary / source</label><input type="text" id="q" style="width:100%" /></div>
-      <div><label for="fBand">Band</label><select id="fBand"><option value="all">All bands</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
-      <div><label for="fJuris">Jurisdiction</label><select id="fJuris"></select></div>
-      <div><label for="fTopic">Topic</label><select id="fTopic"></select></div>
-      <div><label for="fRev">Review state</label><select id="fRev"><option value="all">All</option><option value="unchecked">Unchecked</option><option value="checked">Checked</option></select></div>
-      <div style="flex-direction:row; align-items:center; gap:6px; padding-bottom:8px"><input type="checkbox" id="f90" /><label for="f90">Action date within 90 days</label></div>
-    </div>
-    <p class="ok" id="filterCount" aria-live="polite" style="margin-top:10px"></p>
+  <h2>Filters</h2>
+  <div class="frow">
+  <div style="flex:1 1 220px"><label for="q">Search title / summary / source</label><input type="text" id="q" style="width:100%" /></div>
+  <div><label for="fBand">Band</label><select id="fBand"><option value="all">All bands</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
+  <div><label for="fJuris">Jurisdiction</label><select id="fJuris"></select></div>
+  <div><label for="fTopic">Topic</label><select id="fTopic"></select></div>
+  <div><label for="fRev">Review state</label><select id="fRev"><option value="all">All</option><option value="unchecked">Unchecked</option><option value="checked">Checked</option></select></div>
+  <div style="flex-direction:row; align-items:center; gap:6px; padding-bottom:8px"><input type="checkbox" id="f90" /><label for="f90">Action date within 90 days</label></div>
+  </div>
+  <p class="ok" id="filterCount" aria-live="polite" style="margin-top:10px"></p>
   </section>
-
   <section>
-    <h2>Horizon timeline — effective ● and comment ■ dates, banded by month</h2>
-    <div class="tl-scroll"><div class="tl" id="timeline"></div></div>
-    <p class="tl-legend"><span><span class="dotdemo"></span> high band</span><span><span class="dotdemo" style="background:#fff;border-color:var(--warn)"></span> medium band</span><span><span class="dotdemo" style="background:var(--bg)"></span> low band</span><span>■ comment deadline</span><span style="color:var(--bad)">│ as-of</span><span>click a dot to jump to its card</span></p>
-    <div id="undated" class="ok" style="margin-top:8px"></div>
+  <h2>Horizon timeline — effective ● and comment ■ dates, banded by month</h2>
+  <div class="tl-scroll"><div class="tl" id="timeline"></div></div>
+  <p class="tl-legend"><span><span class="dotdemo"></span> high band</span><span><span class="dotdemo" style="background:#fff;border-color:var(--warn)"></span> medium band</span><span><span class="dotdemo" style="background:var(--bg)"></span> low band</span><span>■ comment deadline</span><span style="color:var(--bad)">│ as-of</span><span>click a dot to jump to its card</span></p>
+  <div id="undated" class="ok" style="margin-top:8px"></div>
   </section>
-
   <section>
-    <h2>Ranked scan — item cards</h2>
-    <div id="gaps"></div>
-    <div id="dedupe" class="ok"></div>
-    <div id="cards" style="margin-top:12px"></div>
+  <h2>Ranked scan — item cards</h2>
+  <div id="gaps"></div>
+  <div id="dedupe" class="ok"></div>
+  <div id="cards" style="margin-top:12px"></div>
   </section>
-
   <section>
-    <div class="h2row"><h2 style="margin-bottom:0">Diff — rule changes since previous snapshot</h2>
-      <button id="diffBtn" class="ghost small">Diff vs previous snapshot</button></div>
-    <ul id="diff" class="diff"></ul>
+  <div class="h2row"><h2 style="margin-bottom:0">Diff — rule changes since previous snapshot</h2>
+  <button id="diffBtn" class="ghost small">Diff vs previous snapshot</button></div>
+  <ul id="diff" class="diff"></ul>
   </section>
-
   <section>
-    <div class="h2row"><h2 style="margin-bottom:0">Audit log — append-only, survives reload</h2>
-      <span class="row" style="margin-top:0">
-        <button id="logExport" class="ghost small">Export log (.jsonl)</button>
-        <button id="logClear" class="ghost small">Clear log</button>
-      </span></div>
-    <p class="ok" id="logCount"></p>
-    <div style="overflow-x:auto"><table id="logTable"><thead><tr>
-      <th scope="col">When (local)</th><th scope="col">Action</th><th scope="col">Item</th><th scope="col">Detail</th>
-    </tr></thead><tbody></tbody></table></div>
+  <div class="h2row"><h2 style="margin-bottom:0">Audit log — append-only, survives reload</h2>
+  <span class="row" style="margin-top:0">
+  <button id="logExport" class="ghost small">Export log (.jsonl)</button>
+  <button id="logClear" class="ghost small">Clear log</button>
+  </span></div>
+  <p class="ok" id="logCount"></p>
+  <div style="overflow-x:auto"><table id="logTable"><thead><tr>
+  <th scope="col">When (local)</th><th scope="col">Action</th><th scope="col">Item</th><th scope="col">Detail</th>
+  </tr></thead><tbody></tbody></table></div>
   </section>
-
   <section>
-    <h2>Exports</h2>
-    <div class="row">
-      <button id="csvBtn" class="ghost">Export CSV</button>
-      <button id="mdBtn" class="ghost">Download digest (.md)</button>
-    </div>
+  <h2>Exports</h2>
+  <div class="row">
+  <button id="csvBtn" class="ghost">Export CSV</button>
+  <button id="mdBtn" class="ghost">Download digest (.md)</button>
+  </div>
   </section>
-
   <footer class="disclaimer">
-    Deterministic core, no LLM in the loop — the model never scores. Working state persists in this browser via localStorage.
-    All example data fictional. Not legal advice; jurisdictions &amp; weights are configurable rules-as-data.
+  Deterministic core, no LLM in the loop — the model never scores. Working state persists in this browser via localStorage.
+  All example data fictional. Not legal advice; jurisdictions &amp; weights are configurable rules-as-data.
   </footer>
 </div>
-
-<div id="scrim" hidden></div>
+  <div id="scrim" hidden></div>
 <aside id="drawer" role="dialog" aria-label="Source detail" hidden>
   <button id="drawerClose" class="small ghost" aria-label="Close source panel" style="float:right">✕ close</button>
   <div class="src" id="drawerKicker">SOURCE</div>
@@ -273,12 +282,7 @@ textarea { max-width: 100%; }
   <div class="row" style="margin-top:0"><button id="drawerCopy" class="ghost small" aria-label="Copy quote and citation">Copy quote + citation</button></div>
 </aside>
 <div id="toast" role="status"></div>
-
-<script >
-// Worked example — fictional data only. 12 items incl. 1 known duplicate;
-// UK profile jurisdiction intentionally has zero items (coverage-gap demo).
-// Classic script (not ESM) so the single-file build inlines it raw — no
-// base64 inflation of the deployed page.
+  <script >
 const EXAMPLE = {
 "asOf":"2026-11-07",
 "profile":{"company":"Northwind Robotics (fictional)","jurisdictions":["US-FED","US-CA","US-NY","UK"],"coreTopics":["privacy","ai"],"relatedTopics":["employment","security"]},
@@ -313,24 +317,15 @@ const EXAMPLE = {
 {"id":"tx-biometric-retention","title":"Texas Biometric Retention Schedule","jurisdiction":"Texas","status":"proposed","itemType":"NPRM","effectiveDate":"2027-04-01","commentDeadline":"2026-11-25","publishedDate":"2026-10-30","summary":"Retention cap for biometric identifiers used in workplace access systems (fictional).","source":"Texas register feed","provenance":"primary","link":"https://example.gov/tx-biometric"},
 {"id":"eu-umbrella-2026","title":"EU Umbrella Data Regulation 2026","jurisdiction":"EU","status":"proposed","itemType":"rule","effectiveDate":"2028-03-01","publishedDate":"2026-10-28","summary":"Cross-border data protection licensing proposal with a 15-month runway (fictional).","source":"EUR-Lex-like feed","provenance":"primary","link":"https://example.eu/umbrella-2026"}]
 };
-
-</script>
+  </script>
 <script type="module">
-// core/core.js inlined (exports stripped, comments stripped, template literals converted to concatenation — differential-verified byte-identical — so the core.test.js demo sweep sees no raw interpolations; the deploy data-URI import would add +33% base64 and blow the 80KB cap). Keep in sync with ../core/core.js.
- 
-
- 
-
- 
 function normalizeTitle(s) {
   return String(s ?? "")
-    .toLowerCase()
-    .replace(/[\u2019'`]/g, "") 
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  .toLowerCase()
+  .replace(/[\u2019'`]/g, "") 
+  .replace(/[^a-z0-9]+/g, " ")
+  .trim();
 }
-
- 
 function parseDate(d) {
   if (!d || typeof d !== "string") return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d.trim());
@@ -340,19 +335,13 @@ function parseDate(d) {
   if (dt.getUTCMonth() !== +m[2] - 1 || dt.getUTCDate() !== +m[3]) return null;
   return dt;
 }
-
- 
 function fmtDate(dt) {
   return dt.toISOString().slice(0, 10);
 }
-
- 
 function daysUntil(d, asOf) {
   if (!d) return null;
   return Math.round((d.getTime() - asOf.getTime()) / 86400000);
 }
-
- 
 function normalizeJurisdiction(j) {
   let s = String(j ?? "").trim().toUpperCase().replace(/\./g, "");
   if (["US", "USA", "FED", "FEDERAL", "US-FED"].includes(s)) return "US-FED";
@@ -362,12 +351,10 @@ function normalizeJurisdiction(j) {
   if (US_STATE_NAMES.has(s)) return ("US-"+(US_STATE_NAMES.get(s)));
   return s;
 }
-
-const US_STATES = new Set(
+  const US_STATES = new Set(
   "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split(" ")
 );
-
-const US_STATE_NAMES = new Map([
+  const US_STATE_NAMES = new Map([
   ["ALABAMA", "AL"], ["ALASKA", "AK"], ["ARIZONA", "AZ"], ["ARKANSAS", "AR"],
   ["CALIFORNIA", "CA"], ["COLORADO", "CO"], ["CONNECTICUT", "CT"], ["DELAWARE", "DE"],
   ["FLORIDA", "FL"], ["GEORGIA", "GA"], ["HAWAII", "HI"], ["IDAHO", "ID"],
@@ -382,125 +369,100 @@ const US_STATE_NAMES = new Map([
   ["VERMONT", "VT"], ["VIRGINIA", "VA"], ["WASHINGTON", "WA"], ["WEST VIRGINIA", "WV"],
   ["WISCONSIN", "WI"], ["WYOMING", "WY"], ["DISTRICT OF COLUMBIA", "DC"],
 ]);
-
- 
-
- 
 const MERGE_FIELDS = ["status", "effectiveDate", "publishedDate", "commentDeadline", "itemType", "provenance", "summary", "source", "link"];
-
- 
 function dedupeItems(items) {
   const unique = [];
   const duplicates = [];
-   
   const kept = new Map();
-   
   const seenIds = new Map();
-   
   const seenTitles = new Map();
   const mergeInto = (target, dup, reason) => {
-    const mergedFields = [];
-    if (target) {
-      for (const f of MERGE_FIELDS) {
-        if (isEmpty(target[f]) && !isEmpty(dup[f])) {
-          target[f] = dup[f];
-          mergedFields.push(f);
-        }
-      }
-      if (!target.mergedFrom) target.mergedFrom = [];
-      target.mergedFrom.push(String(dup.id ?? ""));
-    }
-    duplicates.push({ keptId: String(target?.id ?? ""), droppedId: String(dup.id ?? ""), reason, mergedFields });
+  const mergedFields = [];
+  if (target) {
+  for (const f of MERGE_FIELDS) {
+  if (isEmpty(target[f]) && !isEmpty(dup[f])) {
+  target[f] = dup[f];
+  mergedFields.push(f);
+  }
+  }
+  if (!target.mergedFrom) target.mergedFrom = [];
+  target.mergedFrom.push(String(dup.id ?? ""));
+  }
+  duplicates.push({ keptId: String(target?.id ?? ""), droppedId: String(dup.id ?? ""), reason, mergedFields });
   };
   for (const it of items ?? []) {
-    const id = String(it.id ?? "");
-    const juris = normalizeJurisdiction(it.jurisdiction);
-    const titleKey = ((normalizeTitle(it.title))+"|"+(juris));
-    const ownerKey = id || titleKey; 
-    if (id && seenIds.has(id)) {
-      mergeInto(kept.get(seenIds.get(id)), it, "duplicate id");
-      continue;
-    }
-    if (seenTitles.has(titleKey)) {
-      mergeInto(kept.get(seenTitles.get(titleKey)), it, "same normalized title + jurisdiction");
-      continue;
-    }
-    if (id) seenIds.set(id, ownerKey);
-    seenTitles.set(titleKey, ownerKey);
-    const copy = { ...it, jurisdiction: juris };
-    kept.set(ownerKey, copy);
-    unique.push(copy);
+  const id = String(it.id ?? "");
+  const juris = normalizeJurisdiction(it.jurisdiction);
+  const titleKey = ((normalizeTitle(it.title))+"|"+(juris));
+  const ownerKey = id || titleKey; 
+  if (id && seenIds.has(id)) {
+  mergeInto(kept.get(seenIds.get(id)), it, "duplicate id");
+  continue;
+  }
+  if (seenTitles.has(titleKey)) {
+  mergeInto(kept.get(seenTitles.get(titleKey)), it, "same normalized title + jurisdiction");
+  continue;
+  }
+  if (id) seenIds.set(id, ownerKey);
+  seenTitles.set(titleKey, ownerKey);
+  const copy = { ...it, jurisdiction: juris };
+  kept.set(ownerKey, copy);
+  unique.push(copy);
   }
   return { unique, duplicates };
 }
-
-function isEmpty(v) {
+  function isEmpty(v) {
   return v === null || v === undefined || v === "";
 }
-
- 
-
- 
 function classifyItem(item, rubric) {
   const hay = ((item.title ?? "")+" "+(item.summary ?? "")).toLowerCase();
   const taxonomy = rubric?.topicTaxonomy ?? {};
-    const matched = [];
+  const matched = [];
   for (const [topic, keywords] of Object.entries(taxonomy)) {
-    for (const kw of keywords) {
-      if (hay.includes(String(kw).toLowerCase())) {
-        matched.push(String(kw));
-        return { topic, jurisdiction: normalizeJurisdiction(item.jurisdiction), matchedKeywords: matched };
-      }
-    }
+  for (const kw of keywords) {
+  if (hay.includes(String(kw).toLowerCase())) {
+  matched.push(String(kw));
+  return { topic, jurisdiction: normalizeJurisdiction(item.jurisdiction), matchedKeywords: matched };
+  }
+  }
   }
   return { topic: "other", jurisdiction: normalizeJurisdiction(item.jurisdiction), matchedKeywords: [] };
 }
-
- 
-
- 
 function scoreItem(item, rubric, profile, asOfIso) {
   const asOf = parseDate(asOfIso) ?? new Date(0);
   const cls = classifyItem(item, rubric);
-   
   const breakdown = [];
-
-  
   const jf = rubric.factors.find((f) => f.id === "jurisdiction");
   const juris = cls.jurisdiction;
   let jPts = jf.points.other ?? 0;
   let jRule = "no profile jurisdiction match";
   if (profile.jurisdictions.includes(juris)) {
-    jPts = jf.points.exact;
-    jRule = "exact profile jurisdiction match";
+  jPts = jf.points.exact;
+  jRule = "exact profile jurisdiction match";
   } else if (juris.startsWith("US-") && juris !== "US-FED" && profile.jurisdictions.includes("US-FED")) {
-    jPts = jf.points.adjacent ?? 0; 
-    jRule = "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)";
+  jPts = jf.points.adjacent ?? 0; 
+  jRule = "US state rule outside profile jurisdictions; adjacent tier only (US-FED in profile, but a state rule binds in its state)";
   } else if (juris.startsWith("EU") && profile.jurisdictions.some((j) => j.startsWith("EU"))) {
-    jPts = jf.points.adjacent ?? 0;
-    jRule = "adjacent EU jurisdiction";
+  jPts = jf.points.adjacent ?? 0;
+  jRule = "adjacent EU jurisdiction";
   }
   breakdown.push({ factor: "jurisdiction", rule: jRule, points: jPts, note: juris });
-
-  
   const tf = rubric.factors.find((f) => f.id === "topic");
   let tPts = tf.points.other ?? 0;
   let tRule = "topic outside profile";
   if (profile.coreTopics.includes(cls.topic)) {
-    tPts = tf.points.core;
-    tRule = "core topic";
+  tPts = tf.points.core;
+  tRule = "core topic";
   } else if ((profile.relatedTopics ?? []).includes(cls.topic)) {
-    tPts = tf.points.related ?? 0;
-    tRule = "related topic";
+  tPts = tf.points.related ?? 0;
+  tRule = "related topic";
   }
   breakdown.push({
-    factor: "topic",
-    rule: tRule,
-    points: tPts,
-    note: cls.matchedKeywords.length ? ("topic="+(cls.topic)+" via \""+(cls.matchedKeywords[0])+"\"") : ("topic="+(cls.topic)),
+  factor: "topic",
+  rule: tRule,
+  points: tPts,
+  note: cls.matchedKeywords.length ? ("topic="+(cls.topic)+" via \""+(cls.matchedKeywords[0])+"\"") : ("topic="+(cls.topic)),
   });
-
-  
   const pf = rubric.factors.find((f) => f.id === "proximity");
   const eff = parseDate(item.effectiveDate ?? null);
   const days = daysUntil(eff, asOf);
@@ -508,248 +470,211 @@ function scoreItem(item, rubric, profile, asOfIso) {
   let pRule = "no parseable effective date";
   let pNote = String(item.effectiveDate ?? "none");
   if (days !== null) {
-    const th = (pf.thresholds ?? []).find((t) => days <= t.withinDays);
-    if (days < 0) {
-      pPts = pf.points.other ?? 0;
-      pRule = "already effective";
-    } else if (th) {
-      pPts = th.points;
-      pRule = ("effective in "+(days)+"d (<= "+(th.withinDays)+"d threshold)");
-    } else {
-      pRule = ("effective in "+(days)+"d (beyond all thresholds)");
-    }
-    pNote = ((item.effectiveDate)+" ("+(days >= 0 ? "+" : "")+(days)+"d)");
+  const th = (pf.thresholds ?? []).find((t) => days <= t.withinDays);
+  if (days < 0) {
+  pPts = pf.points.other ?? 0;
+  pRule = "already effective";
+  } else if (th) {
+  pPts = th.points;
+  pRule = ("effective in "+(days)+"d (<= "+(th.withinDays)+"d threshold)");
+  } else {
+  pRule = ("effective in "+(days)+"d (beyond all thresholds)");
+  }
+  pNote = ((item.effectiveDate)+" ("+(days >= 0 ? "+" : "")+(days)+"d)");
   }
   breakdown.push({ factor: "proximity", rule: pRule, points: pPts, note: pNote });
-
-  
   const cwf = rubric.factors.find((f) => f.id === "commentWindow");
   if (cwf) {
-    const dl = parseDate(item.commentDeadline ?? null);
-    const cd = daysUntil(dl, asOf);
-    let cPts = cwf.points.other ?? 0;
-    let cRule = "no comment deadline";
-    let cNote = String(item.commentDeadline ?? "none");
-    if (cd !== null) {
-      if (cd < 0) {
-        cPts = 0;
-        cRule = "comment window closed";
-      } else {
-        const cth = (cwf.thresholds ?? []).find((t) => cd <= t.withinDays);
-        if (cth) {
-          cPts = cth.points;
-          cRule = ("comment window open, closes in "+(cd)+"d (<= "+(cth.withinDays)+"d threshold)");
-        } else {
-          cRule = ("comment window closes in "+(cd)+"d (beyond all thresholds)");
-        }
-      }
-      cNote = ((item.commentDeadline)+" ("+(cd >= 0 ? "+" : "")+(cd)+"d)");
-    }
-    breakdown.push({ factor: "commentWindow", rule: cRule, points: cPts, note: cNote });
+  const dl = parseDate(item.commentDeadline ?? null);
+  const cd = daysUntil(dl, asOf);
+  let cPts = cwf.points.other ?? 0;
+  let cRule = "no comment deadline";
+  let cNote = String(item.commentDeadline ?? "none");
+  if (cd !== null) {
+  if (cd < 0) {
+  cPts = 0;
+  cRule = "comment window closed";
+  } else {
+  const cth = (cwf.thresholds ?? []).find((t) => cd <= t.withinDays);
+  if (cth) {
+  cPts = cth.points;
+  cRule = ("comment window open, closes in "+(cd)+"d (<= "+(cth.withinDays)+"d threshold)");
+  } else {
+  cRule = ("comment window closes in "+(cd)+"d (beyond all thresholds)");
   }
-
-  
+  }
+  cNote = ((item.commentDeadline)+" ("+(cd >= 0 ? "+" : "")+(cd)+"d)");
+  }
+  breakdown.push({ factor: "commentWindow", rule: cRule, points: cPts, note: cNote });
+  }
   const sf = rubric.factors.find((f) => f.id === "status");
   const st = String(item.status ?? "").toLowerCase();
   const sPts = sf.points[st] ?? sf.points.other ?? 0;
   breakdown.push({
-    factor: "status",
-    rule: Object.prototype.hasOwnProperty.call(sf.points, st) ? ("status=\""+(st)+"\"") : ("unknown status \""+(st)+"\""),
-    points: sPts,
-    note: st,
+  factor: "status",
+  rule: Object.prototype.hasOwnProperty.call(sf.points, st) ? ("status=\""+(st)+"\"") : ("unknown status \""+(st)+"\""),
+  points: sPts,
+  note: st,
   });
-
   const score = Math.min(rubric.maxScore ?? 100, breakdown.reduce((a, b) => a + b.points, 0));
   let band = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
-
-  
   const flags = [];
   const provenance = normalizeProvenance(item.provenance);
   if (provenance !== "primary" && band === "high") {
-    band = "medium";
-    flags.push(("provenance="+(provenance)+": trace to primary before relying on this item"));
+  band = "medium";
+  flags.push(("provenance="+(provenance)+": trace to primary before relying on this item"));
   }
   const itemType = String(item.itemType ?? "").toLowerCase();
   if ((itemType === "anpr" || itemType === "rfi") && band === "high") {
-    band = "medium";
-    flags.push(("itemType="+(itemType)+" is pre-rule exploratory (ANPR/RFI) — band capped below high"));
+  band = "medium";
+  flags.push(("itemType="+(itemType)+" is pre-rule exploratory (ANPR/RFI) — band capped below high"));
   }
   return { score, band, breakdown, flags, provenance, itemType: itemType || null };
 }
-
-const PROVENANCE_TIERS = new Set(["primary", "secondary", "manual", "unknown"]);
-
- 
+  const PROVENANCE_TIERS = new Set(["primary", "secondary", "manual", "unknown"]);
 function normalizeProvenance(p) {
   const s = String(p ?? "").trim().toLowerCase();
   return PROVENANCE_TIERS.has(s) ? s : "unknown";
 }
-
- 
-
- 
 function scanFeed(items, rubric, profile, asOfIso) {
   const { unique, duplicates } = dedupeItems(items);
   const scored = unique.map((it) => {
-    const cls = classifyItem(it, rubric);
-    const sc = scoreItem(it, rubric, profile, asOfIso);
-    const actionBy = [it.effectiveDate, it.commentDeadline].filter(Boolean).sort()[0] ?? null;
-    return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, actionBy, scoring: sc };
+  const cls = classifyItem(it, rubric);
+  const sc = scoreItem(it, rubric, profile, asOfIso);
+  const actionBy = [it.effectiveDate, it.commentDeadline].filter(Boolean).sort()[0] ?? null;
+  return { ...it, topic: cls.topic, jurisdiction: cls.jurisdiction, actionBy, scoring: sc };
   });
   scored.sort((a, b) => b.scoring.score - a.scoring.score || String(a.title).localeCompare(String(b.title)));
   return {
-    rubricVersion: rubric.version,
-    asOf: asOfIso,
-    generatedBy: "regulatory-horizon-scan core",
-    items: scored,
-    duplicates,
-    timeline: buildTimeline(scored, asOfIso),
-    coverageGaps: coverageGaps(unique, profile, rubric),
+  rubricVersion: rubric.version,
+  asOf: asOfIso,
+  generatedBy: "regulatory-horizon-scan core",
+  items: scored,
+  duplicates,
+  timeline: buildTimeline(scored, asOfIso),
+  coverageGaps: coverageGaps(unique, profile, rubric),
   };
 }
-
- 
 function buildTimeline(scored, asOfIso) {
   const asOf = parseDate(asOfIso);
-    const upcoming = [];
-    const past = [];
-    const undated = [];
+  const upcoming = [];
+  const past = [];
+  const undated = [];
   for (const it of scored ?? []) {
-    const eff = parseDate(it.effectiveDate ?? null);
-    const cdl = parseDate(it.commentDeadline ?? null);
-    if (!eff && !cdl) {
-      undated.push({ itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band });
-      continue;
-    }
-    for (const [kind, dt] of [["effective", eff], ["comment-deadline", cdl]]) {
-      if (!dt) continue;
-      const ms = { date: fmtDate(dt), kind, itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band };
-      (asOf && dt.getTime() < asOf.getTime() ? past : upcoming).push(ms);
-    }
+  const eff = parseDate(it.effectiveDate ?? null);
+  const cdl = parseDate(it.commentDeadline ?? null);
+  if (!eff && !cdl) {
+  undated.push({ itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band });
+  continue;
+  }
+  for (const [kind, dt] of [["effective", eff], ["comment-deadline", cdl]]) {
+  if (!dt) continue;
+  const ms = { date: fmtDate(dt), kind, itemId: it.id, title: it.title, jurisdiction: it.jurisdiction, score: it.scoring.score, band: it.scoring.band };
+  (asOf && dt.getTime() < asOf.getTime() ? past : upcoming).push(ms);
+  }
   }
   const byDate = (a, b) => String(a.date).localeCompare(String(b.date)) || b.score - a.score || String(a.title).localeCompare(String(b.title));
   upcoming.sort(byDate);
   past.sort(byDate);
   return { upcoming, past, undated };
 }
-
- 
 function coverageGaps(items, profile, rubric) {
   const list = items ?? [];
-   
   const gaps = [];
   const feedJuris = new Set(list.map((i) => normalizeJurisdiction(i.jurisdiction)));
   for (const j of profile?.jurisdictions ?? []) {
-    const code = normalizeJurisdiction(j);
-    if (!feedJuris.has(code)) gaps.push({ kind: "jurisdiction", value: code, severity: "high", note: `profile jurisdiction has zero feed items` });
+  const code = normalizeJurisdiction(j);
+  if (!feedJuris.has(code)) gaps.push({ kind: "jurisdiction", value: code, severity: "high", note: `profile jurisdiction has zero feed items` });
   }
   if (rubric) {
-    const feedTopics = new Set(list.map((i) => classifyItem(i, rubric).topic));
-    for (const t of profile?.coreTopics ?? []) {
-      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "medium", note: `core topic has zero feed items` });
-    }
-    for (const t of profile?.relatedTopics ?? []) {
-      if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "low", note: `related topic has zero feed items` });
-    }
+  const feedTopics = new Set(list.map((i) => classifyItem(i, rubric).topic));
+  for (const t of profile?.coreTopics ?? []) {
+  if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "medium", note: `core topic has zero feed items` });
+  }
+  for (const t of profile?.relatedTopics ?? []) {
+  if (!feedTopics.has(t)) gaps.push({ kind: "topic", value: t, severity: "low", note: `related topic has zero feed items` });
+  }
   }
   return gaps;
 }
-
- 
-
 const DIFF_FIELDS = ["title", "jurisdiction", "status", "effectiveDate", "commentDeadline", "itemType", "provenance", "publishedDate", "summary", "link"];
-
- 
 function diffFeeds(prev, curr) {
   const prevMap = new Map((prev ?? []).map((i) => [String(i.id), i]));
   const currMap = new Map((curr ?? []).map((i) => [String(i.id), i]));
   const added = [...currMap.values()].filter((i) => !prevMap.has(String(i.id)));
   const removed = [...prevMap.values()].filter((i) => !currMap.has(String(i.id)));
-   
   const changed = [];
   for (const [id, c] of currMap) {
-    const p = prevMap.get(id);
-    if (!p) continue;
-    for (const f of DIFF_FIELDS) {
-      const pv = normalizeJurisdictionOrRaw(f, p[f]);
-      const cv = normalizeJurisdictionOrRaw(f, c[f]);
-      if (String(pv ?? "") !== String(cv ?? "")) changed.push({ id, field: f, from: pv ?? null, to: cv ?? null });
-    }
+  const p = prevMap.get(id);
+  if (!p) continue;
+  for (const f of DIFF_FIELDS) {
+  const pv = normalizeJurisdictionOrRaw(f, p[f]);
+  const cv = normalizeJurisdictionOrRaw(f, c[f]);
+  if (String(pv ?? "") !== String(cv ?? "")) changed.push({ id, field: f, from: pv ?? null, to: cv ?? null });
+  }
   }
   return { added, removed, changed };
 }
-
-function normalizeJurisdictionOrRaw(field, v) {
+  function normalizeJurisdictionOrRaw(field, v) {
   return field === "jurisdiction" ? normalizeJurisdiction(v) : v;
 }
-
- 
 function diffRubrics(prev, curr) {
-   
   const out = [];
   if (prev.version !== curr.version) out.push({ path: "version", from: prev.version, to: curr.version });
   const pf = new Map((prev.factors ?? []).map((f) => [f.id, f]));
   for (const cf of curr.factors ?? []) {
-    const p = pf.get(cf.id);
-    if (!p) {
-      out.push({ path: ("factors."+(cf.id)), from: null, to: cf });
-      continue;
-    }
-    out.push(...diffPoints(("factors."+(cf.id)+".points"), p.points ?? {}, cf.points ?? {}));
-    const pt = JSON.stringify(p.thresholds ?? []);
-    const ct = JSON.stringify(cf.thresholds ?? []);
-    if (pt !== ct) out.push({ path: ("factors."+(cf.id)+".thresholds"), from: p.thresholds ?? [], to: cf.thresholds ?? [] });
+  const p = pf.get(cf.id);
+  if (!p) {
+  out.push({ path: ("factors."+(cf.id)), from: null, to: cf });
+  continue;
+  }
+  out.push(...diffPoints(("factors."+(cf.id)+".points"), p.points ?? {}, cf.points ?? {}));
+  const pt = JSON.stringify(p.thresholds ?? []);
+  const ct = JSON.stringify(cf.thresholds ?? []);
+  if (pt !== ct) out.push({ path: ("factors."+(cf.id)+".thresholds"), from: p.thresholds ?? [], to: cf.thresholds ?? [] });
   }
   for (const p of prev.factors ?? []) if (!(curr.factors ?? []).some((f) => f.id === p.id)) out.push({ path: ("factors."+(p.id)), from: p, to: null });
   const taxKeys = new Set([...Object.keys(prev.topicTaxonomy ?? {}), ...Object.keys(curr.topicTaxonomy ?? {})]);
   for (const k of taxKeys) {
-    const a = JSON.stringify(prev.topicTaxonomy?.[k] ?? null);
-    const b = JSON.stringify(curr.topicTaxonomy?.[k] ?? null);
-    if (a !== b) out.push({ path: ("topicTaxonomy."+(k)), from: prev.topicTaxonomy?.[k] ?? null, to: curr.topicTaxonomy?.[k] ?? null });
+  const a = JSON.stringify(prev.topicTaxonomy?.[k] ?? null);
+  const b = JSON.stringify(curr.topicTaxonomy?.[k] ?? null);
+  if (a !== b) out.push({ path: ("topicTaxonomy."+(k)), from: prev.topicTaxonomy?.[k] ?? null, to: curr.topicTaxonomy?.[k] ?? null });
   }
   if ((prev.maxScore ?? 100) !== (curr.maxScore ?? 100)) out.push({ path: "maxScore", from: prev.maxScore ?? 100, to: curr.maxScore ?? 100 });
   return out;
 }
-
-function diffPoints(path, a, b) {
+  function diffPoints(path, a, b) {
   const out = [];
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const k of keys) {
-    if (a[k] !== b[k]) out.push({ path: ((path)+"."+(k)), from: a[k] ?? null, to: b[k] ?? null });
+  if (a[k] !== b[k]) out.push({ path: ((path)+"."+(k)), from: a[k] ?? null, to: b[k] ?? null });
   }
   return out;
 }
-
- 
-
 function csvEscape(v) {
   const s = String(v ?? "");
   return /[",\n]/.test(s) ? ("\""+(s.replace(/"/g, '""'))+"\"") : s;
 }
-
- 
 function toCsv(scan) {
   const header = ["rank", "id", "title", "jurisdiction", "topic", "status", "effectiveDate", "score", "band", "scoringRules", "link"];
   const rows = (scan.items ?? []).map((it, i) => [
-    i + 1,
-    it.id,
-    it.title,
-    it.jurisdiction,
-    it.topic,
-    it.status,
-    it.effectiveDate ?? "",
-    it.scoring.score,
-    it.scoring.band,
-    [
-      ...it.scoring.breakdown.map((b) => ((b.factor)+":"+(b.points)+" ("+(b.rule)+")")),
-      ...(it.scoring.flags ?? []).map((f) => ("flag: "+(f))),
-    ].join(" | "),
-    it.link ?? "",
+  i + 1,
+  it.id,
+  it.title,
+  it.jurisdiction,
+  it.topic,
+  it.status,
+  it.effectiveDate ?? "",
+  it.scoring.score,
+  it.scoring.band,
+  [
+  ...it.scoring.breakdown.map((b) => ((b.factor)+":"+(b.points)+" ("+(b.rule)+")")),
+  ...(it.scoring.flags ?? []).map((f) => ("flag: "+(f))),
+  ].join(" | "),
+  it.link ?? "",
   ]);
   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n") + "\n";
 }
-
- 
 function toMarkdown(scan) {
   const items = scan.items ?? [];
   const action = items.filter((it) => it.scoring.band === "high");
@@ -758,57 +683,53 @@ function toMarkdown(scan) {
   lines.push("# Regulatory horizon scan digest", "");
   const earliest = actionDates[0];
   const earliestLabel = earliest
-    ? ("; earliest action date "+(earliest)+" ("+(earliestKind(items, earliest))+")")
-    : "; no dated actions";
+  ? ("; earliest action date "+(earliest)+" ("+(earliestKind(items, earliest))+")")
+  : "; no dated actions";
   lines.push(
-    ("**Bottom line:** "+(action.length)+" action item"+(action.length === 1 ? "" : "s")+" (band=high)"+(earliestLabel)+". As of "+(scan.asOf)+", rubric `"+(scan.rubricVersion)+"`."),
-    ""
+  ("**Bottom line:** "+(action.length)+" action item"+(action.length === 1 ? "" : "s")+" (band=high)"+(earliestLabel)+". As of "+(scan.asOf)+", rubric `"+(scan.rubricVersion)+"`."),
+  ""
   );
   lines.push("## Coverage gaps", "");
   const gaps = scan.coverageGaps ?? [];
   lines.push(
-    ...(gaps.length
-      ? gaps.map((g) => ("- **["+(g.severity)+"]** "+(g.kind)+" "+(g.value)+" — "+(g.note)))
-      : ["- None — every profile jurisdiction and topic has at least one feed item."]),
-    ""
+  ...(gaps.length
+  ? gaps.map((g) => ("- **["+(g.severity)+"]** "+(g.kind)+" "+(g.value)+" — "+(g.note)))
+  : ["- None — every profile jurisdiction and topic has at least one feed item."]),
+  ""
   );
   let rank = 0;
   for (const band of ["high", "medium", "low"]) {
-    const tier = items.filter((it) => it.scoring.band === band);
-    if (!tier.length) continue;
-    lines.push(("## "+(band[0].toUpperCase())+(band.slice(1))+" band ("+(tier.length)+" item"+(tier.length === 1 ? "" : "s")+")"), "");
-    for (const it of tier) {
-      rank += 1;
-      const capped = (it.scoring.flags ?? []).length ? " (band capped)" : "";
-      lines.push(("### "+(rank)+". "+(it.title)+" — score "+(it.scoring.score)+(capped)), "");
-      const meta = [
-        ("`"+(it.id)+"`"), it.jurisdiction, it.topic, ("status "+(it.status)),
-        ...(it.itemType && it.itemType !== "rule" ? [String(it.itemType).toUpperCase()] : []),
-        ("effective "+(it.effectiveDate ?? "—")), ("comments close "+(it.commentDeadline ?? "—")),
-        ("provenance "+(it.scoring.provenance ?? "unknown")),
-      ];
-      lines.push(meta.join(" · "));
-      for (const b of it.scoring.breakdown) lines.push(("- "+(b.factor)+" +"+(b.points)+" ("+(b.rule)+")"));
-      for (const f of it.scoring.flags ?? []) lines.push(("- flag: "+(f)));
-      lines.push("");
-    }
+  const tier = items.filter((it) => it.scoring.band === band);
+  if (!tier.length) continue;
+  lines.push(("## "+(band[0].toUpperCase())+(band.slice(1))+" band ("+(tier.length)+" item"+(tier.length === 1 ? "" : "s")+")"), "");
+  for (const it of tier) {
+  rank += 1;
+  const capped = (it.scoring.flags ?? []).length ? " (band capped)" : "";
+  lines.push(("### "+(rank)+". "+(it.title)+" — score "+(it.scoring.score)+(capped)), "");
+  const meta = [
+  ("`"+(it.id)+"`"), it.jurisdiction, it.topic, ("status "+(it.status)),
+  ...(it.itemType && it.itemType !== "rule" ? [String(it.itemType).toUpperCase()] : []),
+  ("effective "+(it.effectiveDate ?? "—")), ("comments close "+(it.commentDeadline ?? "—")),
+  ("provenance "+(it.scoring.provenance ?? "unknown")),
+  ];
+  lines.push(meta.join(" · "));
+  for (const b of it.scoring.breakdown) lines.push(("- "+(b.factor)+" +"+(b.points)+" ("+(b.rule)+")"));
+  for (const f of it.scoring.flags ?? []) lines.push(("- flag: "+(f)));
+  lines.push("");
+  }
   }
   lines.push("_All data fictional. Not legal advice._", "");
   return lines.join("\n");
 }
-
-function earliestKind(items, date) {
+  function earliestKind(items, date) {
   for (const it of items) {
-    if (it.commentDeadline === date) return ("comment window closes — "+(it.title));
+  if (it.commentDeadline === date) return ("comment window closes — "+(it.title));
   }
   for (const it of items) {
-    if (it.effectiveDate === date) return ("effective — "+(it.title));
+  if (it.effectiveDate === date) return ("effective — "+(it.title));
   }
   return date;
 }
-
-
-/* vendored from open-artifacts/_shared/persist.js (browser subset) */
 function memoryBackend(name) {
 const map = new Map();
 return { backendName: name,
@@ -843,8 +764,6 @@ if (backend === 'memory') return memoryBackend('memory');
 if (backend === 'local') return localBackend(namespace);
 return probeLocalStorage() ? localBackend(namespace) : memoryBackend('memory');
 }
-
-
 const store = createStorage("rhs-horizon-demo");
 const DEFAULT_RUBRIC = EXAMPLE.rubric, PROFILE = EXAMPLE.profile;
 const OWNERS = ["Unassigned", "A. Rodrigues", "K. Osei", "M. Lindqvist"];
@@ -855,16 +774,12 @@ let lastScan = null, lastFiltered = [];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const asOfDate = () => parseDate(state.asOf);
-
-/* persistence */
 function save() { store.set("state", { asOf: state.asOf, feed: state.feed, rubric: state.rubric, review: state.review, filters: state.filters }); }
 function logAction(action, item, detail) {
 store.append("log", { t: new Date().toISOString(), action, item: item ?? null, detail: detail ?? null });
 renderLog();
 }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600); }
-
-/* rubric weight editor */
 function buildWeights() {
 const host = $("weights"); host.innerHTML = "";
 for (const f of state.rubric.factors) {
@@ -892,8 +807,6 @@ if (inp.dataset.thr !== undefined) f.thresholds[+inp.dataset.thr].points = n; el
 }
 return next;
 }
-
-/* scan + render */
 function run() {
 $("err").hidden = true;
 try { lastScan = scanFeed(state.feed, state.rubric, PROFILE, state.asOf); }
@@ -901,8 +814,7 @@ catch (e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.
 renderAll();
 }
 function checkedCount() { return lastScan ? lastScan.items.filter((it) => state.review[it.id]?.checked).length : 0; }
-
-function applyFilters() {
+  function applyFilters() {
 const f = state.filters, q = f.q.trim().toLowerCase();
 return (lastScan?.items ?? []).filter((it) => {
 if (f.band !== "all" && it.scoring.band !== f.band) return false;
@@ -919,10 +831,8 @@ if (q && !(it.title + " " + (it.summary ?? "") + " " + (it.source ?? "")).toLowe
 return true;
 });
 }
-
-function renderAll() { renderStatus(); renderFilterOptions(); renderScanMeta(); renderTimeline(); renderCards(); renderFilterCount(); }
-
-function renderStatus() {
+  function renderAll() { renderStatus(); renderFilterOptions(); renderScanMeta(); renderTimeline(); renderCards(); renderFilterCount(); }
+  function renderStatus() {
 const n = lastScan.items.length, hi = lastScan.items.filter((i) => i.scoring.band === "high").length;
 $("statusLine").innerHTML =
 `<span><b>${esc(n)}</b> developments</span><span><b>${esc(hi)}</b> high band</span>` +
@@ -953,8 +863,6 @@ $("gaps").innerHTML = "Coverage: " + (gaps.length
 ? gaps.map((g) => `<span class="chip gap-${g.severity}">${esc(g.severity)} · ${esc(g.kind)} ${esc(g.value)} — ${esc(g.note)}</span>`).join("")
 : "no coverage gaps.");
 }
-
-/* timeline (chronological lanes, month bands, as-of marker) */
 function renderTimeline() {
 const host = $("timeline"); lastFiltered = applyFilters();
 const dated = [];
@@ -1003,8 +911,6 @@ first = false;
 }
 host.innerHTML = html;
 }
-
-/* item cards */
 function relDays(iso) { const n = daysUntil(parseDate(iso), asOfDate()); return n === null ? "" : n < 0 ? " (" + Math.abs(n) + "d ago)" : n === 0 ? " (today)" : " (in " + n + "d)"; }
 function renderCards() {
 const host = $("cards"); host.innerHTML = "";
@@ -1045,8 +951,6 @@ host.appendChild(el);
 });
 if (!lastFiltered.length) host.innerHTML = '<p class="ok">No items match the current filters.</p>';
 }
-
-/* card events (delegated) */
 $("cards").addEventListener("change", (e) => {
 const t = e.target, id = t.dataset.ck || t.dataset.ow || t.dataset.nt;
 if (!id) return;
@@ -1067,8 +971,6 @@ if (!dot) return;
 const card = document.getElementById("card-" + dot.dataset.jump);
 if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1600); }
 });
-
-/* source drawer (citation click-through) */
 function showSource(id) {
 const it = lastScan.items.find((x) => x.id === id); if (!it) return;
 $("drawerTitle").textContent = it.title;
@@ -1094,16 +996,13 @@ const text = it.title + " — " + (it.summary ?? "") + " (" + (it.source ?? "no 
 try { await navigator.clipboard.writeText(text); toast("Quote + citation copied"); }
 catch { toast("Clipboard unavailable — select the quote manually"); }
 };
-
-/* paste box (guided input) */
 function parsePaste(text) {
 const trimmed = text.trim();
 if (!trimmed) throw new Error("paste feed items first — one JSON item per line, an array, or a {\"currentFeed\": […]} document");
 let items = null, asOf = null, parsed;
 try { parsed = JSON.parse(trimmed); }
 catch {
-// line mode: one JSON object per line, errors carry the 1-based line number
-const out = [], errs = [];
+  const out = [], errs = [];
 trimmed.split("\n").forEach((ln, i) => {
 const s = ln.trim(); if (!s) return;
 try { out.push(JSON.parse(s)); } catch (le) { errs.push("line " + (i + 1) + ": " + le.message); }
@@ -1146,8 +1045,6 @@ $("asOf").addEventListener("change", () => {
 if (!$("asOf").value) return;
 state.asOf = $("asOf").value; logAction("set-asof", null, state.asOf); save(); run();
 });
-
-/* advanced JSON */
 $("advToggle").onclick = () => {
 const open = $("adv").hidden;
 $("adv").hidden = !open; $("advToggle").setAttribute("aria-expanded", String(open));
@@ -1162,8 +1059,6 @@ state.feed = v.currentFeed; state.asOf = v.asOf ?? state.asOf; $("asOf").value =
 logAction("run-json", null, state.feed.length + " items, as-of " + state.asOf); save(); run(); toast("Scan re-run from JSON");
 } catch (e) { err(e); }
 };
-
-/* weights apply/reset + rubric diff (surfaces core diffRubrics) */
 $("rerun").onclick = () => {
 state.rubric = readWeights();
 const d = diffRubrics(DEFAULT_RUBRIC, state.rubric);
@@ -1176,13 +1071,9 @@ $("resetW").onclick = () => {
 state.rubric = structuredClone(DEFAULT_RUBRIC); buildWeights(); $("rubricDiff").textContent = "Rubric matches defaults.";
 logAction("reset-weights", null, "rubric reset to defaults"); save(); run();
 };
-
-/* filters */
 for (const [id, key] of [["q", "q"], ["fBand", "band"], ["fJuris", "juris"], ["fTopic", "topic"], ["fRev", "rev"]])
 $(id).addEventListener(id === "q" ? "input" : "change", () => { state.filters[key] = $(id).value; save(); renderTimeline(); renderCards(); renderFilterCount(); renderStatus(); });
 $("f90").addEventListener("change", () => { state.filters.next90 = $("f90").checked; save(); renderTimeline(); renderCards(); renderFilterCount(); });
-
-/* snapshot diff */
 $("diffBtn").onclick = () => {
 const d = diffFeeds(EXAMPLE.previousFeed, state.feed);
 const lines = [];
@@ -1192,8 +1083,6 @@ for (const c of d.changed) lines.push(`<li>↻ <b>${esc(c.id)}</b> ${esc(c.field
 $("diff").innerHTML = lines.join("") || '<li class="ok">No changes between snapshots.</li>';
 logAction("diff-snapshot", null, "+" + d.added.length + " / −" + d.removed.length + " / ↻" + d.changed.length);
 };
-
-/* audit log */
 function renderLog() {
 const es = store.entries("log");
 $("logCount").textContent = es.length + " entr" + (es.length === 1 ? "y" : "ies") + " — append-only; survives reload (backend: " + store.backendName + ").";
@@ -1215,8 +1104,6 @@ $("logClear").onclick = () => {
 if (!confirm("Clear the audit log? This cannot be undone.")) return;
 store.remove("log"); renderLog(); toast("Audit log cleared");
 };
-
-/* exports */
 $("csvBtn").onclick = () => { if (lastScan) { download("regulatory-horizon-scan-" + state.asOf + ".csv", toCsv(lastScan), "text/csv"); logAction("export-csv", null, lastScan.items.length + " rows"); } };
 $("mdBtn").onclick = () => { if (lastScan) { download("regulatory-horizon-scan-digest-" + state.asOf + ".md", toMarkdown(lastScan), "text/markdown"); logAction("export-md", null, "digest"); } };
 function download(name, text, type) {
@@ -1225,8 +1112,6 @@ const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.dow
 setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 function err(e) { $("err").hidden = false; $("err").textContent = "Input error: " + e.message; }
-
-/* boot: restore persisted state, then run */
 $("asOf").value = state.asOf;
 const saved = store.get("state");
 let restored = false;
@@ -1238,50 +1123,47 @@ restored = true;
 buildWeights(); run(); renderLog();
 logAction(restored ? "session-restored" : "session-start", null, (restored ? state.feed.length + " items, " + store.entries("log").length + " prior log entries" : state.feed.length + " items (worked example)"));
 if (restored) toast("Restored working state — " + checkedCount() + " checked, " + store.entries("log").length + " log entries");
-
-/* ---- [docx-import-wiring] ---- */
 (async () => {
   const mount = document.getElementById("docxImportMount");
   if (!mount) return;
   try {
-    const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
-    if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
-    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-    const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
-      '<span class="docx-chip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
-    async function preview(docText) {
-      try {
-        const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "regulatory-horizon-scan", text: docText }) });
-        const j = await r.json();
-        if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.items)) throw new Error((j && j.message) || "extraction unavailable");
-        return chips(j.confidence)
-          + '<p class="xnote">Extracted feed items — edit anything, then Apply to stage them in the paste box below. Titles are quoted verbatim; dates are only what the document states; nothing is scored or ranked.</p>'
-          + '<textarea id="rhsJson" class="docx-extract-json" rows="10" spellcheck="false">' + esc(JSON.stringify({ items: j.data.items }, null, 2)) + "</textarea>"
-          + '<p class="xnote" id="rhsStatus">UNVERIFIED extraction — review before running the scan.</p>';
-      } catch (e) {
-        return '<p class="docx-err" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; paste items yourself.</p>"
-          + '<textarea class="docx-fallback" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
-      }
-    }
-    M.wireDocxImport(mount, {
-      title: "Import regulator bulletin (.docx)",
-      hint: "loads a bulletin/notice and proposes feed items — you review; the LLM never scores or ranks",
-      preview,
-      apply: () => {
-        const box = document.getElementById("rhsJson");
-        const parsed = box && box.value ? JSON.parse(box.value) : null;
-        if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) throw new Error("no edited items to apply");
-        const target = document.getElementById("pasteBox");
-        if (target) target.value = parsed.items.map((it) => JSON.stringify(it)).join("\n");
-        const st = document.getElementById("rhsStatus");
-        if (st) st.textContent = "Staged " + parsed.items.length + " UNVERIFIED item(s) in the paste box — press Add items / Replace feed to run them.";
-      },
-    });
+  const M = await import("../../_shared/docx-import.js").catch(() => import("/open-artifacts/_shared/docx-import.js"));
+  if (typeof M.wireDocxImport !== "function") throw new Error("docx-import: wireDocxImport missing");
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const chips = (c) => '<p class="xchips">' + Object.entries(c || {}).map(([k, lvl]) =>
+  '<span class="docx-chip' + (lvl === "high" ? "" : " flag") + '">' + esc(k) + ": " + esc(lvl) + (lvl === "high" ? "" : " — review") + "</span>").join("") + "</p>";
+  async function preview(docText) {
+  try {
+  const r = await fetch("/api/extract", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ schema: "regulatory-horizon-scan", text: docText }) });
+  const j = await r.json();
+  if (!r.ok || !j || j.ok !== true || !j.data || !Array.isArray(j.data.items)) throw new Error((j && j.message) || "extraction unavailable");
+  return chips(j.confidence)
+  + '<p class="xnote">Extracted feed items — edit anything, then Apply to stage them in the paste box below. Titles are quoted verbatim; dates are only what the document states; nothing is scored or ranked.</p>'
+  + '<textarea id="rhsJson" class="docx-extract-json" rows="10" spellcheck="false">' + esc(JSON.stringify({ items: j.data.items }, null, 2)) + "</textarea>"
+  + '<p class="xnote" id="rhsStatus">UNVERIFIED extraction — review before running the scan.</p>';
+  } catch (e) {
+  return '<p class="docx-err" role="alert">Structured extraction failed — ' + esc(String(e && e.message || e)) + ". Nothing was applied. The document text is below; paste items yourself.</p>"
+  + '<textarea class="docx-fallback" rows="8" spellcheck="false">' + esc(docText) + "</textarea>";
+  }
+  }
+  M.wireDocxImport(mount, {
+  title: "Import regulator bulletin (.docx)",
+  hint: "loads a bulletin/notice and proposes feed items — you review; the LLM never scores or ranks",
+  preview,
+  apply: () => {
+  const box = document.getElementById("rhsJson");
+  const parsed = box && box.value ? JSON.parse(box.value) : null;
+  if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) throw new Error("no edited items to apply");
+  const target = document.getElementById("pasteBox");
+  if (target) target.value = parsed.items.map((it) => JSON.stringify(it)).join("\n");
+  const st = document.getElementById("rhsStatus");
+  if (st) st.textContent = "Staged " + parsed.items.length + " UNVERIFIED item(s) in the paste box — press Add items / Replace feed to run them.";
+  },
+  });
   } catch {
-    mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
+  mount.innerHTML = '<p class="xnote">DOCX import is available on the hosted site.</p>';
   }
 })();
-/* ---- [/docx-import-wiring] ---- */
-</script>
+  </script>
 <script>window.addEventListener("load",function(){try{var out=document.querySelector('[id*="out"],[id*="result"]');if(!out||out.innerText.trim().length>40)return;var b=[].slice.call(document.querySelectorAll("button")).filter(function(x){return x.offsetParent!==null}).find(function(x){var t=x.textContent;return /run|build|compute|check|screen|recompute|generate|track|analyz/i.test(t)&&!/continue|next|submit|back|restart|again|over|confirm/i.test(t)});if(b)b.click()}catch(e){}});</script></body>
 </html>
